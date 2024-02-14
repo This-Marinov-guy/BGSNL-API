@@ -25,7 +25,7 @@ const app = express();
 app.use(
   cors({
     origin: [
-      'https://bgsnl.vercel.app',
+      'https://bulgariansociety.netlify.app',
       "https://bulgariansociety.nl",
       "https://www.bulgariansociety.nl",
     ],
@@ -81,6 +81,6 @@ mongoose
   .then(() => {
     console.log("Connected to DB");
     app.listen(process.env.PORT || 80);
-    console.log(`Runnig on port ${process.env.PORT || 80}`);
+    console.log(`Server running on port ${process.env.PORT || 80}`);
   })
   .catch((err) => console.log("Failed to Connect ", err));
