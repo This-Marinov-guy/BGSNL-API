@@ -25,7 +25,7 @@ const app = express();
 app.use(
   cors({
     origin: [
-      'https://bulgariansociety.netlify.app',
+      'https://bgsnl.vercel.app',
       "https://bulgariansociety.nl",
       "https://www.bulgariansociety.nl",
     ],
