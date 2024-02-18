@@ -223,7 +223,7 @@ const login = async (req, res, next) => {
     return next(error);
   }
 
-  res.status(201).json({ userId: existingUser.id, token: token });
+  res.status(201).json({ userId: existingUser.id, token: token, region: existingUser.region });
 };
 
 const postActiveMember = async (req, res, next) => {
