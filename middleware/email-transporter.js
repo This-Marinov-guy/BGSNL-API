@@ -5,8 +5,8 @@ dotenv.config();
 const client = new MailtrapClient({ endpoint: process.env.MAIL_ENDPOINT, token: process.env.MAIL_TOKEN });
 
 const sender = {
-  email: "bulgariansociety.rtm@vladislavmarinov.com",
-  name: "Bulgarian Society Rotterdam",
+  email: "bulgariansociety.lwd@vladislavmarinov.com",
+  name: "Bulgarian Society Leeuwarden",
 };
 
 const sendTicketEmail = (
