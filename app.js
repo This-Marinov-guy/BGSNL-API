@@ -42,7 +42,7 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
   if (req.originalUrl === "/api/payment/webhook-checkout") {
-    next();
+    bodyParser.raw({type: '*/*'})(req, res, next)
   } else {
     bodyParser.json()(req, res, next);
   }
@@ -56,7 +56,7 @@ app.use("/api/contest", contestRouter);
 app.use("/api/database", databaseRouter);
 app.use("/api/special", specialEventsRouter)
 
-//no page found
+//no page found 
 app.use((req, res, next) => {
   const error = new HttpError("Page not found", 404);
   return next(error);
