@@ -42,16 +42,8 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
   if (req.originalUrl === "/api/payment/webhook-checkout") {
-    let data = '';
-    req.setEncoding('utf8');
-    req.on('data', function(chunk) {
-        data += chunk;
-    });
-    req.on('end', function() {
-        req.rawBody = data;
-        next();
-    });
-    } else {
+    next();
+  } else {
     bodyParser.json()(req, res, next);
   }
 });
