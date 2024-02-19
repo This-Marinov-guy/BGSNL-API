@@ -39,7 +39,7 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
   if (req.originalUrl === "/api/payment/webhook-checkout") {
-    bodyParser.raw({type: '*/*'})(req, res, next)
+    next()
   } else {
     bodyParser.json()(req, res, next);
   }
