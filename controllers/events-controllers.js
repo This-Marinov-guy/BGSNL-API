@@ -15,7 +15,7 @@ const postSoldTicketQuantity = async (req, res, next) => {
   }
 
   try {
-    const {eventName, region } = req.body
+    const { eventName, region } = req.body
     const event = await Event.findOne({ event: eventName, region });
 
     let ticketsSold;
@@ -34,7 +34,7 @@ const postSoldTicketQuantity = async (req, res, next) => {
 }
 
 const postAddMemberToEvent = async (req, res, next) => {
-  const { eventName,region, eventDate, userId, preferences } = req.body;
+  const { eventName, region, eventDate, userId, preferences } = req.body;
   let societyEvent;
   try {
     societyEvent = await Event.findOneOrCreate(
@@ -92,7 +92,7 @@ const postAddMemberToEvent = async (req, res, next) => {
     req.file.location
   );
 
-  eventToSpreadsheet(eventName)
+  eventToSpreadsheet(eventName, region)
 
   res.status(201).json({ message: "Success" });
 };
@@ -152,7 +152,7 @@ const postAddGuestToEvent = async (req, res, next) => {
     req.file.location
   );
 
-  eventToSpreadsheet(eventName)
+  eventToSpreadsheet(eventName, region)
 
   res.status(201).json({ message: "Success" });
 };

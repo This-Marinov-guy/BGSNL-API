@@ -9,8 +9,7 @@ import User from "../models/User.js";
 import { sendTicketEmail, welcomeEmail } from "../middleware/email-transporter.js";
 import { format } from "date-fns";
 import { formatReverseDate } from "../util/dateConvert.js";
-import { eventToSpreadsheet } from "../util/searchInDatabase.js";
-import { usersToSpreadsheet } from "./database-controllers.js";
+import { eventToSpreadsheet, usersToSpreadsheet } from "../util/searchInDatabase.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",
@@ -176,7 +175,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
         welcomeEmail(email, name)
 
-        usersToSpreadsheet();
+        usersToSpreadsheet(region);
 
         break;
       }
@@ -231,7 +230,7 @@ const postWebhookCheckout = async (req, res, next) => {
           metadata.file
         );
 
-        eventToSpreadsheet(eventName)
+        eventToSpreadsheet(eventName, region)
 
         break;
       }
@@ -301,7 +300,7 @@ const postWebhookCheckout = async (req, res, next) => {
           metadata.file
         );
 
-        eventToSpreadsheet(eventName)
+        eventToSpreadsheet(eventName, region)
 
         break;
       }
@@ -334,7 +333,7 @@ const postWebhookCheckout = async (req, res, next) => {
           );
         }
 
-        usersToSpreadsheet()
+        usersToSpreadsheet(user.status)
 
         break;
       }

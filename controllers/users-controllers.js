@@ -10,7 +10,7 @@ import { format } from "date-fns";
 import { formatReverseDate } from "../util/dateConvert.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/KEYS.js";
-import { activeMembersToSpreadsheet, usersToSpreadsheet } from "./database-controllers.js";
+import { usersToSpreadsheet } from "../util/searchInDatabase.js";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
@@ -161,7 +161,7 @@ const signup = async (req, res, next) => {
 
   welcomeEmail(email, name)
 
-  usersToSpreadsheet()
+  usersToSpreadsheet(region)
 
   res.status(201).json({ userId: createdUser.id, token: token });
 };
@@ -388,7 +388,7 @@ const patchUserInfo = async (req, res, next) => {
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  usersToSpreadsheet()
+  usersToSpreadsheet(user.region)
 
   res.status(200).json({ message: "done" });
 };
@@ -417,7 +417,7 @@ const patchUserStatus = async (req, res, next) => {
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  usersToSpreadsheet()
+  usersToSpreadsheet(user.status)
 
   res.status(200).json({ message: "done" });
 };
