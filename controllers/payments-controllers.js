@@ -56,7 +56,6 @@ const postCheckoutNoFile = async (req, res, next) => {
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
-      region: 'Rotterdam',
       ...req.body,
     },
   });
@@ -77,7 +76,6 @@ const postCheckoutFile = async (req, res, next) => {
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
-      region: 'Rotterdam',
       file: fileLocation ? fileLocation : null,
       ...req.body,
     },
@@ -100,9 +98,8 @@ const postWebhookCheckout = async (req, res, next) => {
   }
 
   if (
-    event.data.object.metadata.region === "Rotterdam" &&
-    (event.type === "checkout.session.async_payment_succeeded" ||
-      event.type === "checkout.session.completed")
+    event.type === "checkout.session.async_payment_succeeded" ||
+      event.type === "checkout.session.completed"
   ) {
     // Handle the event
     const metadata = event.data.object.metadata;
@@ -340,10 +337,8 @@ const postWebhookCheckout = async (req, res, next) => {
       default:
         console.log(`Unhandled event type ${event.type}`);
     }
-  } else {
-    res.status(200).json({ message: 'Not my region' });
-  }
-
+  } 
+  
   res.status(200).json({ received: true });
 };
 
