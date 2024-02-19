@@ -25,9 +25,9 @@ const sendTicketEmail = (
 
   let template_uuid;
   if (type === "member") {
-    template_uuid = "a0f1f0f4-d313-4642-bf0b-1f568cc705dd";
+    template_uuid = "14f21f95-5da5-44b0-ad05-3aa555fceddc";
   } else if (type === "guest") {
-    template_uuid = "17d8d728-4a7b-4c02-a8fb-bc56b32516f2";
+    template_uuid = "744d6b34-98b2-4093-b4ba-6792efc5e628";
   }
 
   client

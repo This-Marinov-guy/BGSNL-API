@@ -1,6 +1,6 @@
 import { MongoClient } from 'mongodb';
 import { google } from 'googleapis';
-import { SPREADSHEETS_ID } from './SPREEDSHEATS';
+import { SPREADSHEETS_ID } from './SPREEDSHEATS.js';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
