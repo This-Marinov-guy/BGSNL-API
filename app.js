@@ -9,10 +9,7 @@ import userRouter from "./routes/users-routes.js";
 import eventRouter from "./routes/events-routes.js";
 import paymentRouter from "./routes/payments-routes.js";
 import contestRouter from "./routes/contest-routes.js";
-import databaseRouter from "./routes/database-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
-import { eventToSpreadsheet } from "./util/searchInDatabase.js";
-import { usersToSpreadsheet } from "./controllers/database-controllers.js";
 
 const app = express();
 
@@ -53,7 +50,6 @@ app.use("/api/user", userRouter);
 app.use("/api/event", eventRouter);
 app.use("/api/payment", paymentRouter);
 app.use("/api/contest", contestRouter);
-app.use("/api/database", databaseRouter);
 app.use("/api/special", specialEventsRouter)
 
 //no page found 
