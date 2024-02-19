@@ -33,7 +33,6 @@ app.use(
 );
 
 app.use((req, res, next) => {
-  // handle OPTIONS method
   if ("OPTIONS" == req.method) {
     return res.sendStatus(200);
   } else {
@@ -43,7 +42,7 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
   if (req.originalUrl === "/api/payment/webhook-checkout") {
-    next();
+    bodyParser.text();
   } else {
     bodyParser.json()(req, res, next);
   }
