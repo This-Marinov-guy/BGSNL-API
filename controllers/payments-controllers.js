@@ -86,7 +86,7 @@ const postCheckoutFile = async (req, res, next) => {
 
 const postWebhookCheckout = async (req, res, next) => {
   const sig = req.headers["stripe-signature"];
-  const endpointSecret = process.env.STRIPE_WEBHOOK_CH_KEY;
+  const endpointSecret = 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq';
 
   let event;
 
@@ -338,7 +338,7 @@ const postWebhookCheckout = async (req, res, next) => {
         console.log(`Unhandled event type ${event.type}`);
     }
   } 
-  
+
   res.status(200).json({ received: true });
 };
 

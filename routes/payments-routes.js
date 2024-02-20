@@ -37,7 +37,7 @@ paymentRouter.post(
 
 paymentRouter.post(
   "/webhook-checkout",
-  express.raw({ type: "application/json" }),
+  express.raw({ type: "*/*" }),
   postWebhookCheckout
 );
 
