@@ -23,11 +23,9 @@ const sendTicketEmail = (
     },
   ];
 
-  let template_uuid;
+  let template_uuid = 'c30fa99f-9fcf-4ef2-ba7a-144c0c98f197';
   if (type === "member") {
-    template_uuid = "14f21f95-5da5-44b0-ad05-3aa555fceddc";
-  } else if (type === "guest") {
-    template_uuid = "744d6b34-98b2-4093-b4ba-6792efc5e628";
+    template_uuid = "277d4a81-d102-4cc3-8a61-9d1854147d55";
   }
 
   client
