@@ -134,7 +134,8 @@ const eventToSpreadsheet = async (eventName, region) => {
       db.collection('events').aggregate([
         {
           $match: {
-            event: eventName
+            event: eventName,
+            region: region
           }
         },
         {
