@@ -78,8 +78,8 @@ const searchInDatabase = (eventName, region) => {
 }
 
 const eventToSpreadsheet = async (eventName, region) => {
-  if (SPREADSHEETS_ID[region]) {
-    const spreadsheetId = SPREADSHEETS_ID[region]
+  if (SPREADSHEETS_ID[region].events) {
+    const spreadsheetId = SPREADSHEETS_ID[region].events
     // Connecting to Google Spreadsheet
     const auth = new google.auth.GoogleAuth({
       keyFile: "credentials.json",
@@ -197,8 +197,8 @@ const eventToSpreadsheet = async (eventName, region) => {
 }
 
 const usersToSpreadsheet = async (region) => {
-  if (SPREADSHEETS_ID[region]) {
-    const spreadsheetId = SPREADSHEETS_ID[region]
+  if (SPREADSHEETS_ID[region].users) {
+    const spreadsheetId = SPREADSHEETS_ID[region].users
 
     const sheetName = 'Members';
 
