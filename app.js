@@ -10,6 +10,7 @@ import eventRouter from "./routes/events-routes.js";
 import paymentRouter from "./routes/payments-routes.js";
 import contestRouter from "./routes/contest-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
+import {eventToSpreadsheet} from './util/searchInDatabase.js'
 
 const app = express();
 

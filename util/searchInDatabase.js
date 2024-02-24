@@ -1,6 +1,7 @@
 import { MongoClient } from 'mongodb';
 import { google } from 'googleapis';
 import { SPREADSHEETS_ID } from './SPREEDSHEATS.js';
+import HttpError from '../models/Http-error.js';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -95,9 +96,8 @@ const eventToSpreadsheet = async (id, eventName, region) => {
       spreadsheetId,
     })
 
-    const sheetName = eventName + '-' + id;
     const sheetsList = metaData.data.sheets;
-    const sheetExists = sheetsList.some((sheet) => sheet.properties.title === sheetName);
+    const sheetExists = sheetsList.some((sheet) => sheet.properties.title === eventName);
 
     if (!sheetExists) {
       // Create the sheet if it doesn't exist
@@ -109,7 +109,7 @@ const eventToSpreadsheet = async (id, eventName, region) => {
             {
               addSheet: {
                 properties: {
-                  title: sheetName,
+                  title: eventName,
                 },
               },
             },
@@ -135,7 +135,7 @@ const eventToSpreadsheet = async (id, eventName, region) => {
       db.collection('events').aggregate([
         {
           $match: {
-            id
+            id: id
           }
         },
         {
@@ -188,8 +188,7 @@ const eventToSpreadsheet = async (id, eventName, region) => {
             }
           })
         } else {
-          const error = new HttpError("Event not found", 404);
-          return next(error);
+          return new HttpError("Event not found", 404);
         }
       });
 
