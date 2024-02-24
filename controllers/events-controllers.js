@@ -92,7 +92,7 @@ const postAddMemberToEvent = async (req, res, next) => {
     req.file.location
   );
 
-  eventToSpreadsheet(eventName, region)
+  eventToSpreadsheet(societyEvent.id, eventName, region)
 
   res.status(201).json({ message: "Success" });
 };
@@ -152,7 +152,7 @@ const postAddGuestToEvent = async (req, res, next) => {
     req.file.location
   );
 
-  eventToSpreadsheet(eventName, region)
+  eventToSpreadsheet(societyEvent.id, eventName, region)
 
   res.status(201).json({ message: "Success" });
 };

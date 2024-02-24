@@ -77,7 +77,7 @@ const searchInDatabase = (eventName, region) => {
   }
 }
 
-const eventToSpreadsheet = async (eventName, region) => {
+const eventToSpreadsheet = async (id, eventName, region) => {
   if (SPREADSHEETS_ID[region].events) {
     const spreadsheetId = SPREADSHEETS_ID[region].events
     // Connecting to Google Spreadsheet
@@ -95,8 +95,9 @@ const eventToSpreadsheet = async (eventName, region) => {
       spreadsheetId,
     })
 
+    const sheetName = eventName + '-' + id;
     const sheetsList = metaData.data.sheets;
-    const sheetExists = sheetsList.some((sheet) => sheet.properties.title === eventName);
+    const sheetExists = sheetsList.some((sheet) => sheet.properties.title === sheetName);
 
     if (!sheetExists) {
       // Create the sheet if it doesn't exist
@@ -108,7 +109,7 @@ const eventToSpreadsheet = async (eventName, region) => {
             {
               addSheet: {
                 properties: {
-                  title: eventName,
+                  title: sheetName,
                 },
               },
             },
@@ -116,7 +117,7 @@ const eventToSpreadsheet = async (eventName, region) => {
         },
       });
 
-      console.log(`Sheet '${eventName}' has been created.`);
+      console.log(`Sheet '${sheetName}' has been created.`);
     }
 
     // Connecting to MongoDb
@@ -134,8 +135,7 @@ const eventToSpreadsheet = async (eventName, region) => {
       db.collection('events').aggregate([
         {
           $match: {
-            event: eventName,
-            region: region
+            id
           }
         },
         {

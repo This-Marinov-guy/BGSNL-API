@@ -1,6 +1,6 @@
 export const SPREADSHEETS_ID = {
     groningen: {
-        events: '1tSV3lF9NTWQrBam_SEt50rM91vdYR68Mx2OCe96OKKI',
+        events: '1kyT9mBkJwl6vj8TBwe8UsFDNmgUF85dhVTihz2LnvM4',
         users: '1tSV3lF9NTWQrBam_SEt50rM91vdYR68Mx2OCe96OKKI'
     },
     rotterdam: {

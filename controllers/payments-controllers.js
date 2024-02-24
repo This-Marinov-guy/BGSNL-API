@@ -227,7 +227,7 @@ const postWebhookCheckout = async (req, res, next) => {
           metadata.file
         );
 
-        eventToSpreadsheet(eventName, region)
+        eventToSpreadsheet(societyEvent.id, eventName, region)
 
         break;
       }
@@ -297,7 +297,7 @@ const postWebhookCheckout = async (req, res, next) => {
           metadata.file
         );
 
-        eventToSpreadsheet(eventName, region)
+        eventToSpreadsheet(societyEvent.id, eventName, region)
 
         break;
       }
