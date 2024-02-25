@@ -1,4 +1,4 @@
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import { google } from 'googleapis';
 import { SPREADSHEETS_ID } from './SPREEDSHEATS.js';
 import HttpError from '../models/Http-error.js';
@@ -81,6 +81,7 @@ const searchInDatabase = (eventName, region) => {
 const eventToSpreadsheet = async (id, eventName, region) => {
   if (SPREADSHEETS_ID[region].events) {
     const spreadsheetId = SPREADSHEETS_ID[region].events
+
     // Connecting to Google Spreadsheet
     const auth = new google.auth.GoogleAuth({
       keyFile: "credentials.json",
@@ -136,7 +137,7 @@ const eventToSpreadsheet = async (id, eventName, region) => {
       db.collection('events').aggregate([
         {
           $match: {
-            _id: id
+            _id: ObjectId(id)
           }
         },
         {
@@ -148,17 +149,15 @@ const eventToSpreadsheet = async (id, eventName, region) => {
                 as: "guest",
                 in: {
                   index: { $add: [{ $indexOfArray: ["$guestList", "$$guest"] }, 1] }, // Get the index + 1
-                  timestamp: "$$guest.timestamp",
                   name: "$$guest.name",
-                  email: "$$guest.email",
-                  type: "$$guest.type",
-                  preferences: "$$guest.preferences"
+                  surname: "$$guest.surname",
+                  type: "$$guest.type"
                 }
               }
             }
           }
         }
-      ]).toArray(async (err, result) => {
+      ]).toArray((err, result) => {
         if (err) {
           console.error("Error:", err);
           return;
@@ -166,33 +165,11 @@ const eventToSpreadsheet = async (id, eventName, region) => {
 
         if (result.length > 0) {
           // Event found
-
-          const values = result[0].guests.map((obj) => Object.values(obj))
-
-          await googleSheets.spreadsheets.values.clear({
-            auth,
-            spreadsheetId,
-            range: eventName,
-          })
-
-          await googleSheets.spreadsheets.values.append({
-            auth,
-            spreadsheetId,
-            range: eventName,
-            valueInputOption: "RAW",
-            resource: {
-              values: [
-                ["Guest List of Event:", eventName],
-                ["Index", "Timestamp", "Name", "Email", "Type", 'Preferences'],
-                ...values
-              ]
-            }
-          })
+          console.log('Event Updated!')
         } else {
-          return new HttpError("Event not found", 404);
+          console.log("Event not found.");
         }
       });
-
     })
   }
 }
