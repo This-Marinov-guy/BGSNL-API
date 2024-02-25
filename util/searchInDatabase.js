@@ -96,8 +96,9 @@ const eventToSpreadsheet = async (id, eventName, region) => {
       spreadsheetId,
     })
 
+    const sheetName = eventName + '-' + id.slice(-5);
     const sheetsList = metaData.data.sheets;
-    const sheetExists = sheetsList.some((sheet) => sheet.properties.title === eventName);
+    const sheetExists = sheetsList.some((sheet) => sheet.properties.title === sheetName);
 
     if (!sheetExists) {
       // Create the sheet if it doesn't exist
@@ -109,7 +110,7 @@ const eventToSpreadsheet = async (id, eventName, region) => {
             {
               addSheet: {
                 properties: {
-                  title: eventName,
+                  title: sheetName,
                 },
               },
             },
@@ -135,7 +136,7 @@ const eventToSpreadsheet = async (id, eventName, region) => {
       db.collection('events').aggregate([
         {
           $match: {
-            id: id
+            _id: id
           }
         },
         {
