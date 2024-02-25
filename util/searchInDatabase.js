@@ -149,15 +149,17 @@ const eventToSpreadsheet = async (id, eventName, region) => {
                 as: "guest",
                 in: {
                   index: { $add: [{ $indexOfArray: ["$guestList", "$$guest"] }, 1] }, // Get the index + 1
+                  timestamp: "$$guest.timestamp",
                   name: "$$guest.name",
-                  surname: "$$guest.surname",
-                  type: "$$guest.type"
+                  email: "$$guest.email",
+                  type: "$$guest.type",
+                  preferences: "$$guest.preferences"
                 }
               }
             }
           }
         }
-      ]).toArray((err, result) => {
+      ]).toArray(async (err, result) => {
         if (err) {
           console.error("Error:", err);
           return;
@@ -165,6 +167,28 @@ const eventToSpreadsheet = async (id, eventName, region) => {
 
         if (result.length > 0) {
           // Event found
+          const values = result[0].guests.map((obj) => Object.values(obj))
+
+          await googleSheets.spreadsheets.values.clear({
+            auth,
+            spreadsheetId,
+            range: sheetName,
+          })
+
+          await googleSheets.spreadsheets.values.append({
+            auth,
+            spreadsheetId,
+            range: sheetName,
+            valueInputOption: "RAW",
+            resource: {
+              values: [
+                ["Guest List of Event:", eventName],
+                ["Index", "Timestamp", "Name", "Email", "Type", 'Preferences'],
+                ...values
+              ]
+            }
+          })
+
           console.log('Event Updated!')
         } else {
           console.log("Event not found.");
@@ -174,7 +198,7 @@ const eventToSpreadsheet = async (id, eventName, region) => {
   }
 }
 
-const usersToSpreadsheet = async (region) => {
+const usersToSpreadsheet = async (region, filterByRegion = false) => {
   if (SPREADSHEETS_ID[region].users) {
     const spreadsheetId = SPREADSHEETS_ID[region].users
 
@@ -226,7 +250,14 @@ const usersToSpreadsheet = async (region) => {
         }
 
         else {
-          const values = users.map((user) => {
+
+          let usersArray = users
+
+          if (filterByRegion) {
+            usersArray = users.filter((user) => { return user.region === region })
+          }
+
+          const values = usersArray.map((user) => {
             const { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, ...rest } = user;
             return {
               ...rest,

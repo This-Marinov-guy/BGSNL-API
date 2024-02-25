@@ -161,7 +161,7 @@ const signup = async (req, res, next) => {
 
   welcomeEmail(email, name)
 
-  usersToSpreadsheet(region)
+  usersToSpreadsheet(region, true)
 
   res.status(201).json({ userId: createdUser.id, token: token });
 };
@@ -388,7 +388,7 @@ const patchUserInfo = async (req, res, next) => {
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  usersToSpreadsheet(user.region)
+  usersToSpreadsheet(user.region, true)
 
   res.status(200).json({ message: "done" });
 };
@@ -417,7 +417,7 @@ const patchUserStatus = async (req, res, next) => {
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  usersToSpreadsheet(user.status)
+  usersToSpreadsheet(user.region, true)
 
   res.status(200).json({ message: "done" });
 };

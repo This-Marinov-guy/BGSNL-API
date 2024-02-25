@@ -172,7 +172,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
         welcomeEmail(email, name)
 
-        usersToSpreadsheet(region);
+        usersToSpreadsheet(region, true);
 
         break;
       }
@@ -330,7 +330,7 @@ const postWebhookCheckout = async (req, res, next) => {
           );
         }
 
-        usersToSpreadsheet(user.status)
+        usersToSpreadsheet(user.status, true)
 
         break;
       }
