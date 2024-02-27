@@ -14,5 +14,9 @@ export const SPREADSHEETS_ID = {
     breda: {
         events: '1JPUNqtCsfINUqAA9jGBUUd-a9DnxmKpqaw9X3z5qKbs',
         users: ''
-    }
+    },
+    maastricht: {
+        events: '1qZ3TFRFyumCr2SYVcWj_X6BGdal5-0yhzqUCxrPVZkc',
+        users: ''
+    },
 }
