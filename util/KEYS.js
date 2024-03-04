@@ -4,5 +4,5 @@ export const MEMBER_KEYS = [
     },
     {
         email: 'nickstoychevbusiness@gmail.com', key: 'bgsg-nick'
-    }
+    },
 ];
