@@ -19,4 +19,8 @@ export const SPREADSHEETS_ID = {
         events: '1qZ3TFRFyumCr2SYVcWj_X6BGdal5-0yhzqUCxrPVZkc',
         users: ''
     },
+    amsterdam: {
+        events: '1OmuK1f1XOrNWmiMyX1kJqvPRsWqZLHBsGthfM4IVQWw',
+        users: ''
+    }
 }
