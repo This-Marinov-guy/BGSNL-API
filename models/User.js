@@ -5,6 +5,7 @@ const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
   status: { type: String, required: true },
+  payment: { type: String },
   region: { type: String },
   purchaseDate: { type: String },
   expireDate: { type: String },

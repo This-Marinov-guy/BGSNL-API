@@ -120,6 +120,7 @@ const signup = async (req, res, next) => {
 
   const createdUser = new User({
     status: "active",
+    payment: 'subscription',
     region,
     purchaseDate: format(new Date(), "dd MMM yyyy"),
     //membership is 1 or 3 year/s

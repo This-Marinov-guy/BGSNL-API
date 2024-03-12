@@ -143,6 +143,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
         const createdUser = new User({
           status: "active",
+          payment: 'subscription',
           region,
           purchaseDate: format(new Date(), "dd MMM yyyy"),
           //membership is 4 months
