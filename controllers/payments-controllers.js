@@ -123,7 +123,7 @@ const postCheckoutFile = async (req, res, next) => {
 
 const postWebhookSubscription = async (req, res, next) => {
   const sig = req.headers["stripe-signature"];
-  const endpointSecret = process.env.STRIPE_WEBHOOK_SB_KEY;
+  const endpointSecret = 'whsec_cBpByEEkmSyVYSjEz3H7UbpJ1X3x8ILT';
 
   let event;
 
@@ -147,7 +147,7 @@ const postWebhookSubscription = async (req, res, next) => {
 
 const postWebhookCheckout = async (req, res, next) => {
   const sig = req.headers["stripe-signature"];
-  const endpointSecret = process.env.STRIPE_WEBHOOK_CH_KEY;
+  const endpointSecret = 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq';
 
   let event;
 
