@@ -102,7 +102,7 @@ const postAddGuestToEvent = async (req, res, next) => {
   if (!errors.isEmpty()) {
     return next(new HttpError("Invalid inputs passed", 422));
   }
-  const { eventName, eventDate, region, guestName, guestEmail, guestPhone, preferences } = req.body;
+  const { eventName, eventDate, region, guestName, guestEmail, guestPhone, preferences, marketing } = req.body;
 
   let societyEvent;
   try {
@@ -127,6 +127,7 @@ const postAddGuestToEvent = async (req, res, next) => {
     email: guestEmail,
     phone: guestPhone,
     preferences,
+    marketing,
     ticket: req.file.location,
   };
 

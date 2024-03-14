@@ -47,6 +47,43 @@ const postDonationIntent = async (req, res) => {
   }
 }
 
+const postSubscriptionNoFile = async (req, res, next) => {
+  const { itemId, origin_url } = req.body;
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    line_items: [{ price: itemId, quantity: 1 }],
+    success_url: `${origin_url}/success`,
+    cancel_url: `${origin_url}/fail`,
+    metadata: {
+      ...req.body,
+    },
+  });
+
+  res.status(200).json({ url: session.url });
+};
+
+const postSubscriptionFile = async (req, res, next) => {
+  const { itemId, origin_url } = req.body;
+
+  let fileLocation
+  if (req.file) {
+    fileLocation = req.file.Location ? req.file.Location : req.file.location
+  }
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    line_items: [{ price: itemId, quantity: 1 }],
+    success_url: `${origin_url}/success`,
+    cancel_url: `${origin_url}/fail`,
+    metadata: {
+      file: fileLocation ? fileLocation : null,
+      ...req.body,
+    },
+  });
+
+  res.status(200).json({ url: session.url });
+}
+
 const postCheckoutNoFile = async (req, res, next) => {
   const { itemId, origin_url } = req.body;
 
@@ -84,9 +121,33 @@ const postCheckoutFile = async (req, res, next) => {
   res.status(200).json({ url: session.url });
 };
 
+const postWebhookSubscription = async (req, res, next) => {
+  const sig = req.headers["stripe-signature"];
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SB_KEY;
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+  } catch (err) {
+    res.status(400).send(`Webhook Error: ${err.message}`);
+    return;
+  }
+
+  const data = event.data;
+  const metadata = event.data.object.metadata;
+  const eventType = event.type;
+
+  switch (eventType) {
+
+  }
+
+  res.status(200).json({ received: true });
+}
+
 const postWebhookCheckout = async (req, res, next) => {
   const sig = req.headers["stripe-signature"];
-  const endpointSecret = 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq';
+  const endpointSecret = process.env.STRIPE_WEBHOOK_CH_KEY;
 
   let event;
 
@@ -99,7 +160,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
   if (
     event.type === "checkout.session.async_payment_succeeded" ||
-      event.type === "checkout.session.completed"
+    event.type === "checkout.session.completed"
   ) {
     // Handle the event
     const metadata = event.data.object.metadata;
@@ -108,7 +169,7 @@ const postWebhookCheckout = async (req, res, next) => {
         const {
           longTerm,
           name,
-          region, 
+          region,
           period,
           surname,
           birth,
@@ -139,15 +200,13 @@ const postWebhookCheckout = async (req, res, next) => {
           image = metadata.file;
         }
 
-        const expireYear = new Date().getFullYear + period
+        const today = new Date()
 
         const createdUser = new User({
           status: "active",
-          payment: 'subscription',
           region,
-          purchaseDate: format(new Date(), "dd MMM yyyy"),
-          //membership is 4 months
-          expireDate: "31 Aug" + expireYear,
+          purchaseDate: format(today, "dd MMM yyyy"),
+          expireDate: format(today.setMonth(today.getMonth() + period), "dd MMM yyyy"),
           image,
           name,
           surname,
@@ -178,7 +237,7 @@ const postWebhookCheckout = async (req, res, next) => {
         break;
       }
       case "buy_guest_ticket": {
-        let { eventName, region, eventDate, guestName, guestEmail, guestPhone, preferences } =
+        let { eventName, region, eventDate, guestName, guestEmail, guestPhone, preferences, marketing } =
           metadata;
 
         let societyEvent;
@@ -202,6 +261,7 @@ const postWebhookCheckout = async (req, res, next) => {
           email: guestEmail,
           phone: guestPhone,
           preferences,
+          marketing,
           ticket: metadata.file,
         };
         try {
@@ -338,7 +398,7 @@ const postWebhookCheckout = async (req, res, next) => {
       default:
         console.log(`Unhandled event type ${event.type}`);
     }
-  } 
+  }
 
   res.status(200).json({ received: true });
 };
@@ -348,5 +408,8 @@ export {
   postDonationIntent,
   postCheckoutNoFile,
   postCheckoutFile,
+  postSubscriptionNoFile,
+  postSubscriptionFile,
+  postWebhookSubscription,
   postWebhookCheckout,
 };

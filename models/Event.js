@@ -18,6 +18,9 @@ const eventSchema = new Schema({
       preferences: {
         type: mongoose.Schema.Types.Mixed
       },
+      marketing: {
+        type: mongoose.Schema.Types.Mixed
+      },
       ticket: { type: String },
     },
   ],

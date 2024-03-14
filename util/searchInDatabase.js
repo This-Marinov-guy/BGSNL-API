@@ -153,7 +153,8 @@ const eventToSpreadsheet = async (id, eventName, region) => {
                   name: "$$guest.name",
                   email: "$$guest.email",
                   type: "$$guest.type",
-                  preferences: "$$guest.preferences"
+                  preferences: "$$guest.preferences",
+                  marketing: "$$guest.marketing"
                 }
               }
             }
@@ -183,7 +184,7 @@ const eventToSpreadsheet = async (id, eventName, region) => {
             resource: {
               values: [
                 ["Guest List of Event:", eventName],
-                ["Index", "Timestamp", "Name", "Email", "Type", 'Preferences'],
+                ["Index", "Timestamp", "Name", "Email", "Type", 'Preferences', 'Marketing'],
                 ...values
               ]
             }
