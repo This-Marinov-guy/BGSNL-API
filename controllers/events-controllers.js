@@ -15,8 +15,8 @@ const postSoldTicketQuantity = async (req, res, next) => {
   }
 
   try {
-    const { eventName, region } = req.body
-    const event = await Event.findOne({ event: eventName, region });
+    const { eventName, region, date } = req.body
+    const event = await Event.findOne({ eventName, region, date });
 
     let ticketsSold;
 
