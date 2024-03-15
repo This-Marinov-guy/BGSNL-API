@@ -5,7 +5,11 @@ const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
   status: { type: String, required: true },
-  payment: { type: String },
+  subscription: {
+    period: { type: Number },
+    id: { type: String },
+    customerId: { type: String }
+  },
   region: { type: String },
   purchaseDate: { type: String },
   expireDate: { type: String },
