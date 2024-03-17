@@ -122,7 +122,7 @@ const signup = async (req, res, next) => {
     status: "active",
     region,
     purchaseDate: format(today, "dd MMM yyyy"),
-    expireDate: format(new Date(today.setMonth(today.getMonth() + period)), "dd MMM yyyy"),
+    expireDate: "Board Member",
     image,
     name,
     surname,
