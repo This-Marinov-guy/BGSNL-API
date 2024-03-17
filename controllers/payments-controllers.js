@@ -446,7 +446,7 @@ const postWebhookCheckout = async (req, res, next) => {
         default: console.log('No case');
       }
       break;
-    case 'invoice.paid' || 'invoice.payment_succeeded': {
+    case 'invoice.paid': {
       let user;
 
       try {
