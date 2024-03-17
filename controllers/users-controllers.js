@@ -178,7 +178,7 @@ const login = async (req, res, next) => {
   }
 
   if (!existingUser) {
-    const error = new HttpError("No such user email", 401);
+    const error = new HttpError("Invalid credentials", 401);
     return next(error);
 
   }
