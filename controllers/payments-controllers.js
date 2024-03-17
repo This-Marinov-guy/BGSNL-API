@@ -15,6 +15,39 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",
 });
 
+const cancelSubscription = async (req, res, next) => {
+  const userId = req.body.userId;
+
+  let user;
+
+  try {
+    user = await User.findById(userId);
+  } catch (err) {
+    return next(
+      new HttpError(
+        "Could not find the current user, please try again",
+        500
+      )
+    );
+  }
+
+  try {
+    await stripe.subscriptions.update(
+      user.subscription.id,
+      {
+        cancel_at_period_end: true,
+      }
+    );
+  } catch (err) {
+    new HttpError(
+      "Something went wrong, please try again!",
+      500
+    )
+  }
+
+  res.status(200).json({ message: 'Membership was canceled - you can still access your account and use discounts until the expiration date!' });
+}
+
 const donationConfig = (req, res) => {
   res.send({
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
@@ -121,7 +154,18 @@ const postCheckoutFile = async (req, res, next) => {
   res.status(200).json({ url: session.url });
 };
 
-const postWebhookSubscription = async (req, res, next) => {
+const postCustomerPortal = async (req, res, next) => {
+  const { customerId, url } = req.body;
+
+  const session = await stripe.billingPortal.sessions.create({
+    customer: customerId,
+    return_url: url,
+  });
+
+  res.status(200).json({ url: session.url });
+};
+
+const postWebhookCheckout = async (req, res, next) => {
   const sig = req.headers["stripe-signature"];
   const endpointSecret = 'whsec_cBpByEEkmSyVYSjEz3H7UbpJ1X3x8ILT';
 
@@ -134,282 +178,353 @@ const postWebhookSubscription = async (req, res, next) => {
     return;
   }
 
-  const data = event.data;
+  const customerId = event.data.object.customer;
+  const subscriptionId = event.data.object.subscription
   const metadata = event.data.object.metadata;
   const eventType = event.type;
 
   switch (eventType) {
+    case "checkout.session.async_payment_succeeded" || 'checkout.session.completed':
+      switch (metadata.method) {
+        case "signup": {
+          const {
+            longTerm,
+            name,
+            region,
+            period,
+            surname,
+            birth,
+            phone,
+            email,
+            university,
+            otherUniversityName,
+            graduationDate,
+            course,
+            studentNumber,
+            password,
+            notificationTypeTerms,
+          } = metadata;
 
+          let hashedPassword;
+          try {
+            hashedPassword = await bcrypt.hash(password, 12);
+          } catch (err) {
+            return next(new HttpError("Could not create a new user", 500));
+          }
+
+          let image;
+          if (!metadata.file) {
+            image = `/assets/images/avatars/bg_other_avatar_${Math.floor(
+              Math.random() * 3 + 1
+            )}.jpeg`;
+          } else {
+            image = metadata.file;
+          }
+
+          const today = new Date()
+
+          const createdUser = new User({
+            status: "active",
+            subscription: {
+              period,
+              id: subscriptionId,
+              customerId
+            },
+            region,
+            purchaseDate: format(today, "dd MMM yyyy"),
+            expireDate: format(today.setMonth(today.getMonth() + period), "dd MMM yyyy"),
+            image,
+            name,
+            surname,
+            birth: formatReverseDate(birth),
+            phone,
+            email,
+            university,
+            otherUniversityName,
+            graduationDate,
+            course,
+            studentNumber,
+            password: hashedPassword,
+            notificationTypeTerms,
+            tickets: [],
+          });
+
+          try {
+            await createdUser.save();
+          } catch (err) {
+            const error = new HttpError("Signing up failed", 500);
+            return next(error);
+          }
+
+          welcomeEmail(email, name)
+
+          usersToSpreadsheet(region, true);
+
+          break;
+        }
+        case "unlock_account": {
+          const userId = metadata.userId;
+          const period = metadata.period;
+
+          let user;
+
+          try {
+            user = await User.findById(userId);
+          } catch (err) {
+            return next(
+              new HttpError(
+                "Could not find the current user, please try again",
+                500
+              )
+            );
+          }
+
+          //cancel old subscription 
+
+          try {
+            await stripe.subscriptions.update(
+              user.subscription.id,
+              {
+                cancel_at_period_end: true,
+              }
+            );
+          } catch (err) {
+            new HttpError(
+              "Something went wrong, please try again!",
+              500
+            )
+          }
+
+          user.status = "active";
+          user.subscription = {
+            period, id: subscriptionId, customerId
+          }
+
+          const today = new Date()
+
+          user.purchaseDate = format(today, "dd MMM yyyy")
+          user.expireDate = format(today.setMonth(today.getMonth() + period), "dd MMM yyyy")
+
+          try {
+            await user.save();
+          } catch (err) {
+            return next(
+              new HttpError("Something went wrong, please try again", 500)
+            );
+          }
+
+          usersToSpreadsheet(user.region, true)
+
+          break;
+        }
+        case "buy_guest_ticket": {
+          let { eventName, region, eventDate, guestName, guestEmail, guestPhone, preferences, marketing } =
+            metadata;
+
+          let societyEvent;
+          try {
+            societyEvent = await Event.findOneOrCreate(
+              { event: eventName, region, date: eventDate },
+              { status: 'open', event: eventName, region, date: eventDate, guestList: [] }
+            );
+          } catch (err) {
+            return next(
+              new HttpError(
+                "Could not add you to the event, please try again!",
+                500
+              )
+            );
+          }
+          let guest = {
+            type: "guest",
+            timestamp: new Date().toString(),
+            name: guestName,
+            email: guestEmail,
+            phone: guestPhone,
+            preferences,
+            marketing,
+            ticket: metadata.file,
+          };
+          try {
+            const sess = await mongoose.startSession();
+            sess.startTransaction();
+            societyEvent.guestList.push(guest);
+            await societyEvent.save();
+            await sess.commitTransaction();
+          } catch (err) {
+            console.log(err);
+            return next(
+              new HttpError(
+                "Adding guest to the event failed, please try again",
+                500
+              )
+            );
+          }
+          sendTicketEmail(
+            "guest",
+            guestEmail,
+            eventName,
+            eventDate,
+            guestName,
+            metadata.file
+          );
+
+          eventToSpreadsheet(societyEvent.id, eventName, region)
+
+          break;
+        }
+        case "buy_member_ticket": {
+          const { eventName, region, eventDate, userId, preferences } = metadata;
+          let societyEvent;
+          try {
+            societyEvent = await Event.findOneOrCreate(
+              { event: eventName, region, date: eventDate },
+              { status: 'open', event: eventName, region, date: eventDate, guestList: [] }
+            );
+          } catch (err) {
+            return next(
+              new HttpError(
+                "Could not add you to the event, please try again!",
+                500
+              )
+            );
+          }
+
+          if (!societyEvent) {
+            return next(new HttpError("Could not find such event", 404));
+          }
+
+          let targetUser;
+          try {
+            targetUser = await User.findById(userId);
+          } catch (err) {
+            new HttpError("Could not find a user with provided id", 404);
+          }
+          try {
+            const sess = await mongoose.startSession();
+            sess.startTransaction();
+            societyEvent.guestList.push({
+              type: "member",
+              timestamp: new Date().toString(),
+              name: targetUser.name + " " + targetUser.surname,
+              email: targetUser.email,
+              phone: targetUser.phone,
+              preferences,
+              ticket: metadata.file,
+            });
+
+            targetUser.tickets.push({
+              event: eventName,
+              purchaseDate: new Date().toString(),
+              image: metadata.file,
+            });
+            await societyEvent.save();
+            await targetUser.save();
+            await sess.commitTransaction();
+          } catch (err) {
+            return next(
+              new HttpError(
+                "Adding user to the event failed, please try again",
+                500
+              )
+            );
+          }
+
+          sendTicketEmail(
+            "member",
+            targetUser.email,
+            eventName,
+            eventDate,
+            targetUser.name,
+            metadata.file
+          );
+
+          eventToSpreadsheet(societyEvent.id, eventName, region)
+
+          break;
+        }
+        default: console.log('No case');
+      }
+      break;
+    case 'invoice.paid' || 'invoice.payment_succeeded': {
+      let user;
+
+      try {
+        user = await User.findOne({ 'subscription.id': subscriptionId, 'subscription.customerId': customerId });
+      } catch (err) {
+        return next(
+          new HttpError(
+            "Could not find the current user, please try again",
+            500
+          )
+        );
+      }
+
+      const today = new Date()
+
+      user.status = 'active'
+      user.purchaseDate = format(today, "dd MMM yyyy")
+      user.expireDate = format(today.setMonth(today.getMonth() + user.subscription.period), "dd MMM yyyy")
+
+      try {
+        await user.save();
+      } catch (err) {
+        return next(
+          new HttpError("Something went wrong, please try again", 500)
+        );
+      }
+
+      usersToSpreadsheet(user.region, true)
+
+      break;
+    }
+    case 'invoice.payment_failed': {
+      let user;
+
+      try {
+        user = await User.findOne({ 'subscription.id': subscriptionId, 'subscription.customerId': customerId });
+      } catch (err) {
+        return next(
+          new HttpError(
+            "Could not find the current user, please try again",
+            500
+          )
+        );
+      }
+
+      const today = new Date()
+
+      user.status = 'locked'
+
+      try {
+        await user.save();
+      } catch (err) {
+        return next(
+          new HttpError("Something went wrong, please try again", 500)
+        );
+      }
+
+      usersToSpreadsheet(user.region, true)
+
+      //send email to update payment method or open account 
+
+      break;
+    }
+    default:
+      console.log('Unhandled event for subscription');
   }
 
   res.status(200).json({ received: true });
 }
 
-const postWebhookCheckout = async (req, res, next) => {
-  const sig = req.headers["stripe-signature"];
-  const endpointSecret = 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq';
-
-  let event;
-
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-  } catch (err) {
-    res.status(400).send(`Webhook Error: ${err.message}`);
-    return;
-  }
-
-  if (
-    event.type === "checkout.session.async_payment_succeeded" ||
-    event.type === "checkout.session.completed"
-  ) {
-    // Handle the event
-    const metadata = event.data.object.metadata;
-    switch (metadata.method) {
-      case "signup": {
-        const {
-          longTerm,
-          name,
-          region,
-          period,
-          surname,
-          birth,
-          phone,
-          email,
-          university,
-          otherUniversityName,
-          graduationDate,
-          course,
-          studentNumber,
-          password,
-          notificationTypeTerms,
-        } = metadata;
-
-        let hashedPassword;
-        try {
-          hashedPassword = await bcrypt.hash(password, 12);
-        } catch (err) {
-          return next(new HttpError("Could not create a new user", 500));
-        }
-
-        let image;
-        if (!metadata.file) {
-          image = `/assets/images/avatars/bg_other_avatar_${Math.floor(
-            Math.random() * 3 + 1
-          )}.jpeg`;
-        } else {
-          image = metadata.file;
-        }
-
-        const today = new Date()
-
-        const createdUser = new User({
-          status: "active",
-          region,
-          purchaseDate: format(today, "dd MMM yyyy"),
-          expireDate: format(today.setMonth(today.getMonth() + period), "dd MMM yyyy"),
-          image,
-          name,
-          surname,
-          birth: formatReverseDate(birth),
-          phone,
-          email,
-          university,
-          otherUniversityName,
-          graduationDate,
-          course,
-          studentNumber,
-          password: hashedPassword,
-          notificationTypeTerms,
-          tickets: [],
-        });
-
-        try {
-          await createdUser.save();
-        } catch (err) {
-          const error = new HttpError("Signing up failed", 500);
-          return next(error);
-        }
-
-        welcomeEmail(email, name)
-
-        usersToSpreadsheet(region, true);
-
-        break;
-      }
-      case "buy_guest_ticket": {
-        let { eventName, region, eventDate, guestName, guestEmail, guestPhone, preferences, marketing } =
-          metadata;
-
-        let societyEvent;
-        try {
-          societyEvent = await Event.findOneOrCreate(
-            { event: eventName, region, date: eventDate },
-            { status: 'open', event: eventName, region, date: eventDate, guestList: [] }
-          );
-        } catch (err) {
-          return next(
-            new HttpError(
-              "Could not add you to the event, please try again!",
-              500
-            )
-          );
-        }
-        let guest = {
-          type: "guest",
-          timestamp: new Date().toString(),
-          name: guestName,
-          email: guestEmail,
-          phone: guestPhone,
-          preferences,
-          marketing,
-          ticket: metadata.file,
-        };
-        try {
-          const sess = await mongoose.startSession();
-          sess.startTransaction();
-          societyEvent.guestList.push(guest);
-          await societyEvent.save();
-          await sess.commitTransaction();
-        } catch (err) {
-          console.log(err);
-          return next(
-            new HttpError(
-              "Adding guest to the event failed, please try again",
-              500
-            )
-          );
-        }
-        sendTicketEmail(
-          "guest",
-          guestEmail,
-          eventName,
-          eventDate,
-          guestName,
-          metadata.file
-        );
-
-        eventToSpreadsheet(societyEvent.id, eventName, region)
-
-        break;
-      }
-      case "buy_member_ticket": {
-        const { eventName, region, eventDate, userId, preferences } = metadata;
-        let societyEvent;
-        try {
-          societyEvent = await Event.findOneOrCreate(
-            { event: eventName, region, date: eventDate },
-            { status: 'open', event: eventName, region, date: eventDate, guestList: [] }
-          );
-        } catch (err) {
-          return next(
-            new HttpError(
-              "Could not add you to the event, please try again!",
-              500
-            )
-          );
-        }
-
-        if (!societyEvent) {
-          return next(new HttpError("Could not find such event", 404));
-        }
-
-        let targetUser;
-        try {
-          targetUser = await User.findById(userId);
-        } catch (err) {
-          new HttpError("Could not find a user with provided id", 404);
-        }
-        try {
-          const sess = await mongoose.startSession();
-          sess.startTransaction();
-          societyEvent.guestList.push({
-            type: "member",
-            timestamp: new Date().toString(),
-            name: targetUser.name + " " + targetUser.surname,
-            email: targetUser.email,
-            phone: targetUser.phone,
-            preferences,
-            ticket: metadata.file,
-          });
-
-          targetUser.tickets.push({
-            event: eventName,
-            purchaseDate: new Date().toString(),
-            image: metadata.file,
-          });
-          await societyEvent.save();
-          await targetUser.save();
-          await sess.commitTransaction();
-        } catch (err) {
-          return next(
-            new HttpError(
-              "Adding user to the event failed, please try again",
-              500
-            )
-          );
-        }
-
-        sendTicketEmail(
-          "member",
-          targetUser.email,
-          eventName,
-          eventDate,
-          targetUser.name,
-          metadata.file
-        );
-
-        eventToSpreadsheet(societyEvent.id, eventName, region)
-
-        break;
-      }
-      case "unlock_account": {
-        const userId = metadata.userId;
-        const longTerm = metadata.longTerm;
-
-        let user;
-
-        try {
-          user = await User.findById(userId);
-        } catch (err) {
-          return next(
-            new HttpError(
-              "Could not find the current user, please try again",
-              500
-            )
-          );
-        }
-
-        user.status = "active";
-        user.purchaseDate = format(new Date(), "dd MMM yyyy");
-        user.expireDate = longTerm === 'true' ? "31 Aug 2027" : "31 Aug 2025";
-
-        try {
-          await user.save();
-        } catch (err) {
-          return next(
-            new HttpError("Something went wrong, please try again", 500)
-          );
-        }
-
-        usersToSpreadsheet(user.status, true)
-
-        break;
-      }
-      default:
-        console.log(`Unhandled event type ${event.type}`);
-    }
-  }
-
-  res.status(200).json({ received: true });
-};
-
 export {
+  cancelSubscription,
   donationConfig,
   postDonationIntent,
   postCheckoutNoFile,
   postCheckoutFile,
   postSubscriptionNoFile,
   postSubscriptionFile,
-  postWebhookSubscription,
+  postCustomerPortal,
   postWebhookCheckout,
 };

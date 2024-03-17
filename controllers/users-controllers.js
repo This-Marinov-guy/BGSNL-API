@@ -116,15 +116,13 @@ const signup = async (req, res, next) => {
     image = req.file.Location;
   }
 
-  const expireYear = new Date().getFullYear() + period
+  const today = new Date()
 
   const createdUser = new User({
     status: "active",
-    payment: 'subscription',
     region,
-    purchaseDate: format(new Date(), "dd MMM yyyy"),
-    //membership is 1 or 3 year/s
-    expireDate: "31 Aug" + expireYear,
+    purchaseDate: format(today, "dd MMM yyyy"),
+    expireDate: format(today.setMonth(today.getMonth() + period), "dd MMM yyyy"),
     image,
     name,
     surname,
@@ -395,7 +393,7 @@ const patchUserInfo = async (req, res, next) => {
 };
 
 const patchUserStatus = async (req, res, next) => {
-  const {userId, itemId} = req.body;
+  const { userId, period } = req.body;
 
   let user;
 
@@ -407,10 +405,11 @@ const patchUserStatus = async (req, res, next) => {
     );
   }
 
+  const today = new Date()
+
   user.status = "active";
-  user.purchaseDate = format(new Date(), "dd MMM yyyy");
-  //membership is 4 months
-  user.expireDate = "31 Aug 2025";
+  user.purchaseDate = format(today, "dd MMM yyyy");
+  user.expireDate = format(today.setMonth(today.getMonth() + period), "dd MMM yyyy");
 
   try {
     await user.save();

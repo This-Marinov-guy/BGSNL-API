@@ -12,6 +12,9 @@ import {
   postCheckMemberKey,
   postActiveMember,
 } from "../controllers/users-controllers.js";
+import {
+  cancelSubscription
+} from "../controllers/payments-controllers.js"
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
@@ -47,6 +50,8 @@ userRouter.post(
   ],
   signup
 );
+
+userRouter.post("/cancel-membership", cancelSubscription)
 
 userRouter.post("/login", login);
 

@@ -3,7 +3,10 @@ import {
   donationConfig,
   postCheckoutFile,
   postCheckoutNoFile,
+  postSubscriptionNoFile,
+  postSubscriptionFile,
   postDonationIntent,
+  postCustomerPortal,
   postWebhookCheckout,
 } from "../controllers/payments-controllers.js";
 import fileUpload from "../middleware/file-upload.js";
@@ -19,6 +22,8 @@ paymentRouter.post("/donation/create-payment-intent", postDonationIntent)
 
 paymentRouter.post("/checkout-no-file", postCheckoutNoFile);
 
+paymentRouter.post("/subscription-no-file", postSubscriptionNoFile);
+
 paymentRouter.post(
   "/checkout/member",
   fileUpload(process.env.BUCKET_MEMBER_TICKETS).single("image"),
@@ -29,11 +34,17 @@ paymentRouter.post(
   fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
   postCheckoutFile
 );
+
 paymentRouter.post(
   "/checkout/signup",
   fileResizedUpload(process.env.BUCKET_USERS).single("image"),
-  postCheckoutFile
+  postSubscriptionFile
 );
+
+paymentRouter.post(
+  '/customer-portal',
+  postCustomerPortal
+)
 
 paymentRouter.post(
   "/webhook-checkout",

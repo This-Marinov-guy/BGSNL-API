@@ -23,6 +23,7 @@ const app = express();
 app.use(
   cors({
     origin: [
+      "http://localhost:3000",
       'https://bulgariansociety.netlify.app',
       "https://bulgariansociety.nl",
       "https://www.bulgariansociety.nl",
@@ -39,7 +40,7 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  if (req.originalUrl === "/api/payment/webhook-checkout") {
+  if (req.originalUrl === "/api/payment/webhook-checkout" || req.originalUrl === "/api/payment/webhook-subscription") {
     next()
   } else {
     bodyParser.json()(req, res, next);
