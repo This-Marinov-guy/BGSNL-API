@@ -39,7 +39,7 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  if (req.originalUrl === "/api/payment/webhook-checkout" || req.originalUrl === "/api/payment/webhook-subscription") {
+  if (req.originalUrl === "/api/payment/webhook-checkout") {
     next()
   } else {
     bodyParser.json()(req, res, next);
