@@ -122,7 +122,7 @@ const signup = async (req, res, next) => {
     status: "active",
     region,
     purchaseDate: format(today, "dd MMM yyyy"),
-    expireDate: format(today.setMonth(today.getMonth() + period), "dd MMM yyyy"),
+    expireDate: format(new Date(today.setMonth(today.getMonth() + period)), "dd MMM yyyy"),
     image,
     name,
     surname,
@@ -409,7 +409,7 @@ const patchUserStatus = async (req, res, next) => {
 
   user.status = "active";
   user.purchaseDate = format(today, "dd MMM yyyy");
-  user.expireDate = format(today.setMonth(today.getMonth() + period), "dd MMM yyyy");
+  user.expireDate = format(new Date(today.setMonth(today.getMonth() + period)), "dd MMM yyyy");
 
   try {
     await user.save();
