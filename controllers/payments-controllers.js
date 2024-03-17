@@ -167,7 +167,7 @@ const postCustomerPortal = async (req, res, next) => {
 
 const postWebhookCheckout = async (req, res, next) => {
   const sig = req.headers["stripe-signature"];
-  const endpointSecret = 'whsec_cBpByEEkmSyVYSjEz3H7UbpJ1X3x8ILT';
+  const endpointSecret = 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq';
 
   let event;
 
