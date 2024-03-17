@@ -303,7 +303,7 @@ const postWebhookCheckout = async (req, res, next) => {
           const today = new Date()
 
           user.purchaseDate = format(today, "dd MMM yyyy")
-          user.expireDate = format(new Date(new Date(today.setMonth(today.getMonth() + period))), "dd MMM yyyy")
+          user.expireDate = format(new Date(today.setMonth(today.getMonth() + period)), "dd MMM yyyy")
 
           try {
             await user.save();
@@ -463,7 +463,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
       user.status = 'active'
       user.purchaseDate = format(today, "dd MMM yyyy")
-      user.expireDate = format(today.setMonth(today.getMonth() + user.subscription.period), "dd MMM yyyy")
+      user.expireDate = format(new Date(today.setMonth(today.getMonth() + period)), "dd MMM yyyy")
 
       try {
         await user.save();
