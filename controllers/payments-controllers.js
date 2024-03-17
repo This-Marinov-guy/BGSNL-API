@@ -452,12 +452,11 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         user = await User.findOne({ 'subscription.id': subscriptionId, 'subscription.customerId': customerId });
       } catch (err) {
-        return next(
-          new HttpError(
-            "Could not find the current user, please try again",
-            500
-          )
-        );
+
+      }
+
+      if (!user) {
+        break;
       }
 
       const today = new Date()
@@ -484,12 +483,11 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         user = await User.findOne({ 'subscription.id': subscriptionId, 'subscription.customerId': customerId });
       } catch (err) {
-        return next(
-          new HttpError(
-            "Could not find the current user, please try again",
-            500
-          )
-        );
+  
+      }
+
+      if (!user) {
+        break;
       }
 
       const today = new Date()
