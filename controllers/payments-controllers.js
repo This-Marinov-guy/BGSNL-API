@@ -178,13 +178,13 @@ const postWebhookCheckout = async (req, res, next) => {
     return;
   }
 
-  const customerId = event.data.object.customer;
-  const subscriptionId = event.data.object.subscription
+  const customerId = event.data.customer;
+  const subscriptionId = event.data.subscription
   const metadata = event.data.object.metadata;
   const eventType = event.type;
 
   switch (eventType) {
-    case "checkout.session.async_payment_succeeded" || 'checkout.session.completed':
+    case 'checkout.session.completed':
       switch (metadata.method) {
         case "signup": {
           const {
