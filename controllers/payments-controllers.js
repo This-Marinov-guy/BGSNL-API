@@ -459,11 +459,27 @@ const postWebhookCheckout = async (req, res, next) => {
         break;
       }
 
+      const subscription = await stripe.subscriptions.retrieve(
+        user.subscription.subscriptionId
+      );
+
+      const price = subscription.items.data.price.id;
+
+      let period
+
+      if (price === 'price_1OuqmtIOw5UGbAo1V4TqMet4') {
+        period = 6
+      }
+
+      if (price === 'price_1Otbd6IOw5UGbAo1rdJ7wXp3') {
+        period = 12
+      }
+
       const today = new Date()
 
       user.status = 'active'
       user.purchaseDate = format(today, "dd MMM yyyy")
-      user.expireDate = format(new Date(today.setMonth(today.getMonth() + user.subscription.period)), "dd MMM yyyy")
+      user.expireDate = format(new Date(today.setMonth(today.getMonth() + period)), "dd MMM yyyy")
 
       try {
         await user.save();
