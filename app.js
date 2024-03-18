@@ -55,7 +55,7 @@ app.use("/api/special", specialEventsRouter)
 
 //no page found 
 app.use((req, res, next) => {
-  const error = new HttpError("Page not found", 404);
+  const error = new HttpError("Action not allowed, please try again later!", 404);
   return next(error);
 });
 

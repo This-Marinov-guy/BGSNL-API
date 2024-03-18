@@ -490,7 +490,7 @@ const postWebhookCheckout = async (req, res, next) => {
         break;
       }
 
-        user.status = 'locked'
+      user.status = 'locked'
 
       try {
         await user.save();
