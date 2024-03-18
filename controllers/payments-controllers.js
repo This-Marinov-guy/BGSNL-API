@@ -290,10 +290,7 @@ const postWebhookCheckout = async (req, res, next) => {
               }
             );
           } catch (err) {
-            new HttpError(
-              "Something went wrong, please try again!",
-              500
-            )
+           
           }
 
           user.status = "active";
