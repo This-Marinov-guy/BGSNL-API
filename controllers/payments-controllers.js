@@ -452,7 +452,7 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         user = await User.findOne({ 'subscription.id': subscriptionId, 'subscription.customerId': customerId });
       } catch (err) {
-
+        break;
       }
 
       if (!user) {
@@ -463,7 +463,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
       user.status = 'active'
       user.purchaseDate = format(today, "dd MMM yyyy")
-      user.expireDate = format(new Date(today.setMonth(today.getMonth() + period)), "dd MMM yyyy")
+      user.expireDate = format(new Date(today.setMonth(today.getMonth() + user.subscription.period)), "dd MMM yyyy")
 
       try {
         await user.save();
@@ -483,16 +483,14 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         user = await User.findOne({ 'subscription.id': subscriptionId, 'subscription.customerId': customerId });
       } catch (err) {
-
+        break;
       }
 
       if (!user) {
         break;
       }
 
-      const today = new Date()
-
-      user.status = 'locked'
+        user.status = 'locked'
 
       try {
         await user.save();
