@@ -459,11 +459,7 @@ const postWebhookCheckout = async (req, res, next) => {
         break;
       }
 
-      const subscription = await stripe.subscriptions.retrieve(
-        user.subscription.subscriptionId
-      );
-
-      const price = subscription.items.data.price.id;
+      const price = event.data.object.lines.data[0].price.id || '';
 
       let period
 
