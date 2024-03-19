@@ -199,11 +199,11 @@ const eventToSpreadsheet = async (id, eventName, region) => {
   }
 }
 
-const usersToSpreadsheet = async (region, filterByRegion = true) => {
+const usersToSpreadsheet = async (region = null, filterByRegion = true) => {
 
   let spreadsheetId = '1iOCDGM2VLn5PNR0wyEUQkD2WMkuFAxnORzGG1iw4e1Q'
 
-  if (SPREADSHEETS_ID[region].users && !filterByRegion) {
+  if (region && SPREADSHEETS_ID[region].users && filterByRegion) {
     spreadsheetId = SPREADSHEETS_ID[region].users
   }
 

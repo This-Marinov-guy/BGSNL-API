@@ -81,6 +81,4 @@ mongoose
   })
   .catch((err) => console.log("Failed to Connect ", err));
 
-
-usersToSpreadsheet('groningen')
-usersToSpreadsheet('rotterdam')
+// usersToSpreadsheet(null, false)
