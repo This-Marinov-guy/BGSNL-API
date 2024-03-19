@@ -404,11 +404,10 @@ const patchUserStatus = async (req, res, next) => {
   }
 
   const today = new Date()
-
-  user.status = "active";
-  user.purchaseDate = format(today, "dd MMM yyyy");
-
   const expire = new Date(today.setMonth(today.getMonth() + period))
+  
+  user.status = "active";
+  user.purchaseDate = format(new Date(), "dd MMM yyyy");
   user.expireDate = format(expire, "dd MMM yyyy");
 
   try {

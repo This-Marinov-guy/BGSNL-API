@@ -222,7 +222,7 @@ const postWebhookCheckout = async (req, res, next) => {
           }
 
           const today = new Date()
-          const expire = new Date(new Date().setMonth(new Date().getMonth() + period))
+          const expire = new Date(today.setMonth(today.getMonth() + period))
 
           const createdUser = new User({
             status: "active",
@@ -232,7 +232,7 @@ const postWebhookCheckout = async (req, res, next) => {
               customerId
             },
             region,
-            purchaseDate: format(today, "dd MMM yyyy"),
+            purchaseDate: format(new Date(), "dd MMM yyyy"),
             expireDate: format(expire, "dd MMM yyyy"),
             image,
             name,
@@ -299,10 +299,9 @@ const postWebhookCheckout = async (req, res, next) => {
           }
 
           const today = new Date()
-
-          user.purchaseDate = format(today, "dd MMM yyyy")
-
           const expire = new Date(today.setMonth(today.getMonth() + period))
+
+          user.purchaseDate = format(new Date(), "dd MMM yyyy")
           user.expireDate = format(expire, "dd MMM yyyy")
 
           try {
@@ -472,11 +471,10 @@ const postWebhookCheckout = async (req, res, next) => {
       }
 
       const today = new Date()
+      const expire = new Date(today.setMonth(today.getMonth() + period))
 
       user.status = 'active'
-      user.purchaseDate = format(today, "dd MMM yyyy")
-
-      const expire = new Date(today.setMonth(today.getMonth() + period))
+      user.purchaseDate = format(new Date(), "dd MMM yyyy")
       user.expireDate = format(expire, "dd MMM yyyy")
 
       try {
