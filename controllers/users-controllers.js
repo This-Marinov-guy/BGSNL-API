@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
-import { sendNewPasswordEmail, welcomeEmail } from "../middleware/email-transporter.js";
+import { sendNewPasswordEmail } from "../middleware/email-transporter.js";
 import { format } from "date-fns";
 import { formatReverseDate } from "../util/dateConvert.js";
 import ActiveMembers from "../models/ActiveMembers.js";
@@ -158,9 +158,7 @@ const signup = async (req, res, next) => {
     return next(error);
   }
 
-  welcomeEmail(email, name)
-
-  usersToSpreadsheet(region, true)
+  usersToSpreadsheet(region)
 
   res.status(201).json({ userId: createdUser.id, token: token, region });
 };

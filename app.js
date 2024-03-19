@@ -10,7 +10,7 @@ import eventRouter from "./routes/events-routes.js";
 import paymentRouter from "./routes/payments-routes.js";
 import contestRouter from "./routes/contest-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
-import { eventToSpreadsheet } from './util/searchInDatabase.js'
+import { eventToSpreadsheet, usersToSpreadsheet } from './util/searchInDatabase.js'
 
 const app = express();
 
@@ -80,3 +80,7 @@ mongoose
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
   .catch((err) => console.log("Failed to Connect ", err));
+
+
+usersToSpreadsheet('groningen')
+usersToSpreadsheet('rotterdam')

@@ -1,5 +1,6 @@
 import { MailtrapClient } from "mailtrap";
 import dotenv from "dotenv";
+import { WHATS_APP } from "../util/LINKS.js";
 dotenv.config();
 
 const client = new MailtrapClient({ endpoint: process.env.MAIL_ENDPOINT, token: process.env.MAIL_TOKEN });
@@ -66,7 +67,7 @@ const sendNewPasswordEmail = async (receiver, resetToken) => {
     .then(console.log, console.error);
 };
 
-const welcomeEmail = async (receiver, name) => {
+const welcomeEmail = async (receiver, name, region) => {
   const recipients = [
     {
       email: receiver,
@@ -81,6 +82,7 @@ const welcomeEmail = async (receiver, name) => {
       template_variables: {
         template_variables: {
           name,
+          link: (region && WHATS_APP[region]) ? WHATS_APP[region] : null
         },
       },
     })

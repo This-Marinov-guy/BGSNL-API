@@ -199,99 +199,89 @@ const eventToSpreadsheet = async (id, eventName, region) => {
   }
 }
 
-const usersToSpreadsheet = async (region, filterByRegion = false) => {
-  if (SPREADSHEETS_ID[region].users) {
-    const spreadsheetId = SPREADSHEETS_ID[region].users
+const usersToSpreadsheet = async (region, filterByRegion = true) => {
 
-    const sheetName = 'Members';
+  let spreadsheetId = '1iOCDGM2VLn5PNR0wyEUQkD2WMkuFAxnORzGG1iw4e1Q'
 
-    // Connecting to Google Spreadsheet
-    const auth = new google.auth.GoogleAuth({
-      keyFile: "credentials.json",
-      scopes: "https://www.googleapis.com/auth/spreadsheets"
-    });
+  if (SPREADSHEETS_ID[region].users && !filterByRegion) {
+    spreadsheetId = SPREADSHEETS_ID[region].users
+  }
 
-    const googleClient = await auth.getClient();
+  const sheetName = 'Members';
 
-    const googleSheets = google.sheets({ version: 'v4', auth: googleClient })
+  // Connecting to Google Spreadsheet
+  const auth = new google.auth.GoogleAuth({
+    keyFile: "credentials.json",
+    scopes: "https://www.googleapis.com/auth/spreadsheets"
+  });
 
+  const googleClient = await auth.getClient();
 
-    const metaData = await googleSheets.spreadsheets.get({
-      auth,
-      spreadsheetId,
-    })
+  const googleSheets = google.sheets({ version: 'v4', auth: googleClient })
 
-    const getRows = await googleSheets.spreadsheets.values.get({
-      auth,
-      spreadsheetId,
-      range: sheetName
-    })
+  // Connecting to MongoDb
+  const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;
+  const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
 
-    const sheetsList = metaData.data.sheets;
+  client.connect(err => {
+    if (err) {
+      console.error('Error connecting to MongoDB:', err);
+      return;
+    }
 
-    // Connecting to MongoDb
-    const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;
-    const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+    const db = client.db();
 
-    client.connect(err => {
+    const collection = db.collection('users');
+
+    // collection.updateMany({}, { $set: { region: 'rotterdam' } });
+
+    collection.find({}).toArray(async (err, users) => {
       if (err) {
-        console.error('Error connecting to MongoDB:', err);
-        return;
+        console.log('Error while writing in db')
       }
 
-      const db = client.db();
+      else {
 
-      const collection = db.collection('users');
+        let usersArray = users
 
-      // collection.updateMany({}, { $set: { region: 'rotterdam' } });
-
-      collection.find({}).toArray(async (err, users) => {
-        if (err) {
-          console.log('Error while writing in db')
+        if (filterByRegion) {
+          usersArray = users.filter((user) => { return user.region === region })
         }
 
-        else {
-
-          let usersArray = users
-
-          if (filterByRegion) {
-            usersArray = users.filter((user) => { return user.region === region })
+        const values = usersArray.map((user) => {
+          const { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, ...rest } = user;
+          return {
+            ...rest,
+            university: university === 'other' ? otherUniversityName : university,
+            course,
+            studentNumber,
+            graduationDate: graduationDate || 'not specified'
           }
+        }).map((obj) => Object.values(obj))
+        await googleSheets.spreadsheets.values.clear({
+          auth,
+          spreadsheetId,
+          range: sheetName,
+        })
 
-          const values = usersArray.map((user) => {
-            const { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, ...rest } = user;
-            return {
-              ...rest,
-              university: university === 'other' ? otherUniversityName : university,
-              course,
-              studentNumber,
-              graduationDate: graduationDate || 'not specified'
-            }
-          }).map((obj) => Object.values(obj))
-          await googleSheets.spreadsheets.values.clear({
-            auth,
-            spreadsheetId,
-            range: sheetName,
-          })
+        await googleSheets.spreadsheets.values.append({
+          auth,
+          spreadsheetId,
+          range: sheetName,
+          valueInputOption: "RAW",
+          resource: {
+            values: [
+              ["Members of:", sheetName],
+              ["Status", "Purchase Date", "Renew Date", "Name", "Surname", "Birth", "Phone", "Email", "University", "Course", "Student Number", "Graduation Date"],
+              ...values
+            ]
+          }
+        })
+      }
+    });
 
-          await googleSheets.spreadsheets.values.append({
-            auth,
-            spreadsheetId,
-            range: sheetName,
-            valueInputOption: "RAW",
-            resource: {
-              values: [
-                ["Members of:", sheetName],
-                ["Status", "Purchase Date", "Expire Date", "Name", "Surname", "Birth", "Phone", "Email", "University", "Course", "Student Number", "Graduation Date"],
-                ...values
-              ]
-            }
-          })
-        }
-      });
+  })
 
-    })
-  }
 }
 
 export { searchInDatabase, eventToSpreadsheet, usersToSpreadsheet };
