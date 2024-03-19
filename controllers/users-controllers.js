@@ -407,7 +407,9 @@ const patchUserStatus = async (req, res, next) => {
 
   user.status = "active";
   user.purchaseDate = format(today, "dd MMM yyyy");
-  user.expireDate = format(new Date(today.setMonth(today.getMonth() + period)), "dd MMM yyyy");
+
+  const expire = new Date(today.setMonth(today.getMonth() + period))
+  user.expireDate = format(expire, "dd MMM yyyy");
 
   try {
     await user.save();
