@@ -9,18 +9,18 @@ export const SPREADSHEETS_ID = {
     },
     leeuwarden: {
         events: '1FHWWtHW1U2na8inuf_xn2w7oK7rsSW568KmebnXTwHY',
-        users: ''
+        users: '1iyZTnHP5jxR78CzDxVBpW8_uBCwb6T7VILmvkyna4C4'
     },
     breda: {
         events: '1JPUNqtCsfINUqAA9jGBUUd-a9DnxmKpqaw9X3z5qKbs',
-        users: ''
+        users: '1qE5BJndzvjyD5U_--xOWS1YTrLVlaKqA6D-raHwxa98'
     },
     maastricht: {
         events: '1qZ3TFRFyumCr2SYVcWj_X6BGdal5-0yhzqUCxrPVZkc',
-        users: ''
+        users: '1YBdhVdEQA_8ulAx_Tkm7z-E_XsVgfJKBO6m5E9iiiXU'
     },
     amsterdam: {
         events: '1OmuK1f1XOrNWmiMyX1kJqvPRsWqZLHBsGthfM4IVQWw',
-        users: ''
+        users: '1Jb_wU-OSzuRA5mL-1LhvfboX2EM6jXzj-F-FMvvY6XI'
     }
 }
