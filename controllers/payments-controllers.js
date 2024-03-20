@@ -7,7 +7,7 @@ import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import User from "../models/User.js";
 import { sendTicketEmail, welcomeEmail } from "../middleware/email-transporter.js";
-import { format } from "date-fns";
+import moment from 'moment'
 import { formatReverseDate } from "../util/dateConvert.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "../util/searchInDatabase.js";
 
@@ -232,8 +232,8 @@ const postWebhookCheckout = async (req, res, next) => {
               customerId
             },
             region,
-            purchaseDate: format(new Date(), "dd MMM yyyy"),
-            expireDate: format(expire, "dd MMM yyyy"),
+            purchaseDate: moment(new Date()).format("D MMM YYYY"),
+            expireDate: moment(new Date()).add(period, 'months').format("D MMM YYYY"),
             image,
             name,
             surname,
@@ -298,11 +298,8 @@ const postWebhookCheckout = async (req, res, next) => {
             period, id: subscriptionId, customerId
           }
 
-          const today = new Date()
-          const expire = new Date(today.setMonth(today.getMonth() + period))
-
-          user.purchaseDate = format(new Date(), "dd MMM yyyy")
-          user.expireDate = format(expire, "dd MMM yyyy")
+          user.purchaseDate = moment(new Date()).format("D MMM YYYY")
+          user.expireDate = moment(new Date()).add(period, 'months').format("D MMM YYYY")
 
           try {
             await user.save();
@@ -470,12 +467,9 @@ const postWebhookCheckout = async (req, res, next) => {
         period = 12
       }
 
-      const today = new Date()
-      const expire = new Date(today.setMonth(today.getMonth() + period))
-
       user.status = 'active'
-      user.purchaseDate = format(new Date(), "dd MMM yyyy")
-      user.expireDate = format(expire, "dd MMM yyyy")
+      user.purchaseDate = moment(new Date()).format("D MMM YYYY")
+      user.expireDate = moment(new Date()).add(period, 'months').format("D MMM YYYY")
 
       try {
         await user.save();

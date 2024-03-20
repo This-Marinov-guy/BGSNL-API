@@ -5,7 +5,7 @@ import User from "../models/User.js";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import { sendTicketEmail } from "../middleware/email-transporter.js";
-import { format } from "date-fns";
+import moment from 'moment'
 import { eventToSpreadsheet } from "../util/searchInDatabase.js";
 
 const postSoldTicketQuantity = async (req, res, next) => {
@@ -62,7 +62,7 @@ const postAddMemberToEvent = async (req, res, next) => {
     sess.startTransaction();
     societyEvent.guestList.push({
       type: "member",
-      timestamp: new Date().toString(),
+      timestamp: moment(new Date()).format("D MMM YYYY"),
       name: targetUser.name + " " + targetUser.surname,
       email: targetUser.email,
       phone: targetUser.phone,
@@ -71,7 +71,7 @@ const postAddMemberToEvent = async (req, res, next) => {
     });
     targetUser.tickets.push({
       event: eventName,
-      purchaseDate: new Date().toString(),
+      purchaseDate: moment(new Date()).format("D MMM YYYY"),
       image: req.file.location,
     });
     await societyEvent.save();
@@ -122,7 +122,7 @@ const postAddGuestToEvent = async (req, res, next) => {
 
   let guest = {
     type: "guest",
-    timestamp: new Date().toString(),
+    timestamp: moment(new Date()).format("D MMM YYYY"),
     name: guestName,
     email: guestEmail,
     phone: guestPhone,
@@ -184,7 +184,7 @@ const postNonSocietyEvent = async (req, res, next) => {
 
   let guest = {
     user,
-    timestamp: format(new Date(), "dd MMM yyyy"),
+    timestamp: moment(new Date()).format("D MMM YYYY"),
     name,
     email,
     phone,

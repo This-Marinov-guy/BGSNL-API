@@ -6,7 +6,7 @@ import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
 import { sendNewPasswordEmail } from "../middleware/email-transporter.js";
-import { format } from "date-fns";
+import moment from 'moment'
 import { formatReverseDate } from "../util/dateConvert.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/KEYS.js";
@@ -121,7 +121,7 @@ const signup = async (req, res, next) => {
   const createdUser = new User({
     status: "active",
     region,
-    purchaseDate: format(today, "dd MMM yyyy"),
+    purchaseDate: moment(new Date()).format("D MMM YYYY"),
     expireDate: "Board Member",
     image,
     name,
