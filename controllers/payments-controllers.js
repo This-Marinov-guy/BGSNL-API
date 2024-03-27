@@ -237,7 +237,7 @@ const postWebhookCheckout = async (req, res, next) => {
             image,
             name,
             surname,
-            birth: formatReverseDate(birth),
+            birth: moment(birth).format("D MMM YYYY"),
             phone,
             email,
             university,
