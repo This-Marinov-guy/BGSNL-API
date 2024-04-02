@@ -260,6 +260,7 @@ const postWebhookCheckout = async (req, res, next) => {
           welcomeEmail(email, name, region)
 
           usersToSpreadsheet(region);
+          usersToSpreadsheet(null, false);
 
           break;
         }
