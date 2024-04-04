@@ -112,6 +112,12 @@ export const MEMBER_KEYS = [
 	},
 	//BGSB
 	{
+		email: 'Blipcho97@gmail.com', key: 'bgsb-blipcho'
+	},
+	{
+		email: 'boris.dzhibov@gmail.com', key: 'bgsb-boris'
+	},
+	{
 		email: 'denitsa.d76@gmail.com', key: 'bgsb-denitsa'
 	},
 	{
