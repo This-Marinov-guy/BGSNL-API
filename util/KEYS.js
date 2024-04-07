@@ -71,7 +71,7 @@ export const MEMBER_KEYS = [
 		email: 'vesi_it@abv.bg', key: 'bgsl-vesi'
 	},
 	{
-		email: 'alex_ivanov2002@gmail.com', key: 'bgsl-alex'
+		email: 'alex.ivanov2002@gmail.com', key: 'bgsl-alex'
 	},
 	//BGSM
 	{
