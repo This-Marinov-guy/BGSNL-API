@@ -32,6 +32,9 @@ export const MEMBER_KEYS = [
 	},
 	// BGSL
 	{
+		email: 'dfawal@gmail.com', key: 'bgsl-fawal'
+	},
+	{
 		email: 'simonatodorova2216@gmail.com', key: 'bgsl-simona'
 	},
 	{
@@ -108,6 +111,12 @@ export const MEMBER_KEYS = [
 		email: 'hfvelidolski@gmail.com', key: 'bgsm-velidolski'
 	},
 	//BGSB
+	{
+		email: 'Blipcho97@gmail.com', key: 'bgsb-blipcho'
+	},
+	{
+		email: 'boris.dzhibov@gmail.com', key: 'bgsb-boris'
+	},
 	{
 		email: 'denitsa.d76@gmail.com', key: 'bgsb-denitsa'
 	},
