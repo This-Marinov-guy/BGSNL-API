@@ -161,7 +161,7 @@ const signup = async (req, res, next) => {
   usersToSpreadsheet(region)
   usersToSpreadsheet(null, false);
 
-  res.status(201).json({ userId: createdUser.id, token: token, region });
+  res.status(201).json({ token: token, region });
 };
 
 const login = async (req, res, next) => {
@@ -221,7 +221,7 @@ const login = async (req, res, next) => {
     return next(error);
   }
 
-  res.status(201).json({ userId: existingUser.id, token: token, region: existingUser.region });
+  res.status(201).json({ token: token, region: existingUser.region });
 };
 
 const postActiveMember = async (req, res, next) => {
