@@ -250,19 +250,43 @@ const usersToSpreadsheet = async (region = null, filterByRegion = true) => {
 
         const values = usersArray.map((user) => {
           const { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, ...rest } = user;
-          return {
-            ...rest,
-            university: university === 'other' ? otherUniversityName : university,
-            course,
-            studentNumber,
-            graduationDate: graduationDate || 'not specified'
+          let dataFields;
+
+          if (filterByRegion) {
+            dataFields = {
+              ...rest,
+              university: university === 'other' ? otherUniversityName : university,
+              course,
+              studentNumber,
+              graduationDate: graduationDate || 'not specified'
+            }
+          } else {
+            dataFields = {
+              region,
+              ...rest,
+              university: university === 'other' ? otherUniversityName : university,
+              course,
+              studentNumber,
+              graduationDate: graduationDate || 'not specified'
+            };
           }
+
+          return dataFields
         }).map((obj) => Object.values(obj))
         await googleSheets.spreadsheets.values.clear({
           auth,
           spreadsheetId,
           range: sheetName,
         })
+
+        let nameOfValues
+
+        if (filterByRegion) {
+          nameOfValues = ["Status", "Purchase Date", "Renew Date", "Name", "Surname", "Birth", "Phone", "Email", "University", "Course", "Student Number", "Graduation Date"];
+        } else {
+          nameOfValues = ["Region", "Status", "Purchase Date", "Renew Date", "Name", "Surname", "Birth", "Phone", "Email", "University", "Course", "Student Number", "Graduation Date"];
+        }
+
 
         await googleSheets.spreadsheets.values.append({
           auth,
@@ -272,7 +296,7 @@ const usersToSpreadsheet = async (region = null, filterByRegion = true) => {
           resource: {
             values: [
               ["Members of:", sheetName],
-              ["Status", "Purchase Date", "Renew Date", "Name", "Surname", "Birth", "Phone", "Email", "University", "Course", "Student Number", "Graduation Date"],
+              nameOfValues,
               ...values
             ]
           }
