@@ -22,6 +22,10 @@ const getCurrentUser = async (req, res, next) => {
     const error = new HttpError("Could not fetch user", 500);
     return next(error);
   }
+
+  delete user.password;
+  user.registrationKey && delete user.registrationKey;
+
   res
     .status(201)
     .json({ status: user.status, user: user.toObject({ getters: true }) });
@@ -406,7 +410,7 @@ const patchUserStatus = async (req, res, next) => {
 
   const today = new Date()
   const expire = new Date(today.setMonth(today.getMonth() + period))
-  
+
   user.status = "active";
   user.purchaseDate = format(new Date(), "dd MMM yyyy");
   user.expireDate = format(expire, "dd MMM yyyy");
