@@ -23,12 +23,14 @@ const getCurrentUser = async (req, res, next) => {
     return next(error);
   }
 
+  user = user.toObject({ getters: true })
+
   delete user.password;
   user.registrationKey && delete user.registrationKey;
 
   res
     .status(201)
-    .json({ status: user.status, user: user.toObject({ getters: true }) });
+    .json({ status: user.status, user });
 };
 
 const postCheckEmail = async (req, res, next) => {
