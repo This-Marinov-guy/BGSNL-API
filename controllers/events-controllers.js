@@ -102,7 +102,7 @@ const postAddGuestToEvent = async (req, res, next) => {
   if (!errors.isEmpty()) {
     return next(new HttpError("Invalid inputs passed", 422));
   }
-  const { eventName, eventDate, region, guestName, guestEmail, guestPhone, preferences, marketing } = req.body;
+  const { quantity, eventName, eventDate, region, guestName, guestEmail, guestPhone, preferences, marketing } = req.body;
 
   let societyEvent;
   try {
@@ -131,17 +131,19 @@ const postAddGuestToEvent = async (req, res, next) => {
     ticket: req.file.location,
   };
 
-  try {
-    const sess = await mongoose.startSession();
-    sess.startTransaction();
-    societyEvent.guestList.push(guest);
-    await societyEvent.save();
-    await sess.commitTransaction();
-  } catch (err) {
-    console.log(err);
-    return next(
-      new HttpError("Adding guest to the event failed, please try again", 500)
-    );
+  for (let i = 0; i < quantity; i++) {
+    try {
+      const sess = await mongoose.startSession();
+      sess.startTransaction();
+      societyEvent.guestList.push(guest);
+      await societyEvent.save();
+      await sess.commitTransaction();
+    } catch (err) {
+      console.log(err);
+      return next(
+        new HttpError("Adding guest to the event failed, please try again", 500)
+      );
+    }
   }
 
   sendTicketEmail(

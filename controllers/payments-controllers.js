@@ -291,7 +291,7 @@ const postWebhookCheckout = async (req, res, next) => {
               }
             );
           } catch (err) {
-           
+
           }
 
           user.status = "active";
@@ -315,7 +315,7 @@ const postWebhookCheckout = async (req, res, next) => {
           break;
         }
         case "buy_guest_ticket": {
-          let { eventName, region, eventDate, guestName, guestEmail, guestPhone, preferences, marketing } =
+          let { quantity, eventName, region, eventDate, guestName, guestEmail, guestPhone, preferences, marketing } =
             metadata;
 
           let societyEvent;
@@ -342,21 +342,25 @@ const postWebhookCheckout = async (req, res, next) => {
             marketing,
             ticket: metadata.file,
           };
-          try {
-            const sess = await mongoose.startSession();
-            sess.startTransaction();
-            societyEvent.guestList.push(guest);
-            await societyEvent.save();
-            await sess.commitTransaction();
-          } catch (err) {
-            console.log(err);
-            return next(
-              new HttpError(
-                "Adding guest to the event failed, please try again",
-                500
-              )
-            );
+
+          for (let i = 0; i < quantity; i++) {
+            try {
+              const sess = await mongoose.startSession();
+              sess.startTransaction();
+              societyEvent.guestList.push(guest);
+              await societyEvent.save();
+              await sess.commitTransaction();
+            } catch (err) {
+              console.log(err);
+              return next(
+                new HttpError(
+                  "Adding guest to the event failed, please try again",
+                  500
+                )
+              );
+            }
           }
+
           sendTicketEmail(
             "guest",
             guestEmail,
