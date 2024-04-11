@@ -122,7 +122,7 @@ const postCheckoutNoFile = async (req, res, next) => {
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
-    line_items: [{ price: itemId, quantity: quantity || 1 }],
+    line_items: [{ price: itemId, quantity: quantity && !isNan(quantity) ? quantity : 1 }],
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
@@ -142,7 +142,7 @@ const postCheckoutFile = async (req, res, next) => {
   }
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
-    line_items: [{ price: itemId, quantity: quantity || 1 }],
+    line_items: [{ price: itemId, quantity: quantity && !isNan(quantity) ? quantity : 1 }],
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
