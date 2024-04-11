@@ -118,11 +118,11 @@ const postSubscriptionFile = async (req, res, next) => {
 }
 
 const postCheckoutNoFile = async (req, res, next) => {
-  const { itemId, origin_url } = req.body;
+  const { itemId, quantity, origin_url } = req.body;
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
-    line_items: [{ price: itemId, quantity: 1 }],
+    line_items: [{ price: itemId, quantity: quantity && !isNan(quantity) ? quantity : 1 }],
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
@@ -134,7 +134,7 @@ const postCheckoutNoFile = async (req, res, next) => {
 };
 
 const postCheckoutFile = async (req, res, next) => {
-  const { itemId, origin_url } = req.body;
+  const { itemId, quantity, origin_url } = req.body;
 
   let fileLocation
   if (req.file) {
@@ -142,7 +142,7 @@ const postCheckoutFile = async (req, res, next) => {
   }
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
-    line_items: [{ price: itemId, quantity: 1 }],
+    line_items: [{ price: itemId, quantity: quantity && !isNan(quantity) ? quantity : 1 }],
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
