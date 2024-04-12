@@ -140,9 +140,9 @@ const postCheckoutNoFile = async (req, res, next) => {
 const postCheckoutFile = async (req, res, next) => {
   const { itemId, quantity, origin_url } = req.body;
 
-  if (!quantity || isNaN(quantity) || quantity < 1) {
-    quantity = 1
-  }
+  // if (!quantity || isNaN(quantity) || quantity < 1) {
+  //   quantity = 1
+  // }
   
   let fileLocation
   if (req.file) {
