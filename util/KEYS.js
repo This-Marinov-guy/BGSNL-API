@@ -1,4 +1,11 @@
 export const MEMBER_KEYS = [
+	//VIP
+	{
+		email: 'vik.v.geo@gmail.com', key: 'tech-vicky',
+	},
+	{
+		email: 'kris.parashkevov17@gmail.com', key: 'tech-kris',
+	},
 	//BGSA
 	{
 		email: 'martinnapetkova16@gmail.com', key: 'bgsa-marti'
