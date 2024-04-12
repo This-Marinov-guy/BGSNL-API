@@ -6,6 +6,9 @@ export const MEMBER_KEYS = [
 	{
 		email: 'kris.parashkevov17@gmail.com', key: 'tech-kris',
 	},
+	{
+		email: 'aly.ivanova@gmail.com', key: 'bgsnl-aly'
+	},
 	//BGSA
 	{
 		email: 'martinnapetkova16@gmail.com', key: 'bgsa-marti'
