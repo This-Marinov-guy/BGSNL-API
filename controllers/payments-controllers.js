@@ -118,7 +118,8 @@ const postSubscriptionFile = async (req, res, next) => {
 }
 
 const postCheckoutNoFile = async (req, res, next) => {
-  const { itemId, quantity, origin_url } = req.body;
+  const { itemId, origin_url } = req.body;
+  let quantity = req.body;
 
   if (!quantity || isNaN(quantity) || quantity < 1) {
     quantity = 1
@@ -138,7 +139,8 @@ const postCheckoutNoFile = async (req, res, next) => {
 };
 
 const postCheckoutFile = async (req, res, next) => {
-  const { itemId, quantity, origin_url } = req.body;
+  const { itemId, origin_url } = req.body;
+  let quantity = req.body;
 
   if (!quantity || isNaN(quantity) || quantity < 1) {
     quantity = 1
