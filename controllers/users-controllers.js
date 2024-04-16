@@ -359,6 +359,7 @@ const patchUserInfo = async (req, res, next) => {
     course,
     studentNumber,
     notificationTypeTerms,
+    password,
   } = req.body;
 
   const userId = req.params.userId;
@@ -375,6 +376,18 @@ const patchUserInfo = async (req, res, next) => {
   if (req.file) {
     user.image = req.file.Location;
   }
+
+  if (password) {
+    let hashedPassword;
+    try {
+      hashedPassword = await bcrypt.hash(password, 12);
+    } catch (err) {
+      return next(new HttpError("Updating user failed, please try again!", 500));
+    }
+
+    user.password = hashedPassword;
+  }
+
   user.name = name;
   user.surname = surname;
   user.phone = phone;
