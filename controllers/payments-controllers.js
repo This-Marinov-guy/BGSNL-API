@@ -54,8 +54,17 @@ const donationConfig = (req, res) => {
   });
 }
 
-const postDonationIntent = async (req, res) => {
+const postDonationIntent = async (req, res, next) => {
   const { amount, name, comments } = req.body;
+
+  if (amount < 2 || amount > 10000) {
+    return next(new HttpError("Amount must be between the range of 2 and 10 000 euro", 500));
+  }
+
+  if (name.length > 10000 || comments.length > 100000) {
+    return next(new HttpError("Something went wrong - please update the details and try again!", 500));
+  }
+
   try {
     const paymentIntent = await stripe.paymentIntents.create({
       currency: "EUR",
@@ -67,7 +76,6 @@ const postDonationIntent = async (req, res) => {
       },
     });
     // Send publishable key and PaymentIntent details to client
-    console.log(paymentIntent.client_secret);
     res.send({
       clientSecret: paymentIntent.client_secret,
     });
