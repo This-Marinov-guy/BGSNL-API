@@ -1,6 +1,9 @@
 export const MEMBER_KEYS = [
 	//VIP
 	{
+		email: 'asd@abv.bg', key: 'tech-simo',
+	},
+	{
 		email: 'vik.v.geo@gmail.com', key: 'tech-vicky',
 	},
 	{
