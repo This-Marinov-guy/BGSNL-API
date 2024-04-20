@@ -61,7 +61,7 @@ const postDonationIntent = async (req, res, next) => {
     return res.status(200).json({ status: false, message: "Amount must be between the range of 2 and 10 000 euro" });
   }
 
-  if (name.length > 10000 || comments.length > 100000) {
+  if (name.length > 50 || comments.length > 100) {
     return res.status(200).json({ status: false, message: "Something went wrong - please update the details and try again!" });
   }
 
