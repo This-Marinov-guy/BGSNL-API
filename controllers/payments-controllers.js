@@ -135,9 +135,7 @@ const postCheckoutNoFile = async (req, res, next) => {
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
-    discounts: [{
-      coupon: 'promo_1PBqU9IOw5UGbAo10JMmyptn',
-    }],
+    allow_promotion_codes: true,
     line_items: [{ price: itemId, quantity: quantity }],
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
