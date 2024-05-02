@@ -161,6 +161,7 @@ const postCheckoutFile = async (req, res, next) => {
   }
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
+    allow_promotion_codes: true,
     line_items: [{ price: itemId, quantity: quantity }],
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
