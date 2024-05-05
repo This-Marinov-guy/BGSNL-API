@@ -8,8 +8,11 @@ import {
 } from "../controllers/events-controllers.js";
 import fileUpload from "../middleware/file-upload.js";
 import dotenv from "dotenv";
+import multer from "multer";
+import { addEvent } from "../controllers/events-action-controller.js";
 dotenv.config();
 
+const upload = multer({ storage: multer.memoryStorage() })
 const eventRouter = express.Router();
 
 eventRouter.post(
@@ -55,6 +58,21 @@ eventRouter.post(
     check("notificationTypeTerms").notEmpty(),
   ],
   postNonSocietyEvent
+);
+
+//event actions
+
+const eventImageUploads = upload.fields([
+  { name: 'images', maxCount: 4 },
+  { name: 'ticket_img', maxCount: 1 },
+  { name: 'bgImageExtra', maxCount: 1 },
+  { name: 'thumbnail', maxCount: 1 }
+])
+
+eventRouter.post(
+  "/actions/add-event",
+  eventImageUploads,
+  addEvent
 );
 
 export default eventRouter;
