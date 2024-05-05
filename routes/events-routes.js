@@ -64,9 +64,9 @@ eventRouter.post(
 
 const eventImageUploads = upload.fields([
   { name: 'images', maxCount: 4 },
-  { name: 'ticket_img', maxCount: 1 },
+  { name: 'ticketImg', maxCount: 1 },
   { name: 'bgImageExtra', maxCount: 1 },
-  { name: 'thumbnail', maxCount: 1 }
+  { name: 'poster', maxCount: 1 }
 ])
 
 eventRouter.post(

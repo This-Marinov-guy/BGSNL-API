@@ -23,6 +23,7 @@ const app = express();
 app.use(
   cors({
     origin: [
+      "http://localhost:3000",
       'https://bulgariansociety.netlify.app',
       "https://bulgariansociety.nl",
       "https://www.bulgariansociety.nl",

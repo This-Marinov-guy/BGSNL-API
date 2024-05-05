@@ -10,7 +10,12 @@ const uploadToCloudinary = async (file, options = {}) => {
     const b64 = Buffer.from(file.buffer).toString('base64');
     const dataURI = `data:${file.mimetype};base64,${b64}`;
 
-    return await cloudinary.uploader.upload(dataURI, options);
+    const response = await cloudinary.uploader.upload(dataURI, {
+        overwrite: true,
+        ...options
+    });
+
+    return response.secure_url
 }
 
 export default uploadToCloudinary
