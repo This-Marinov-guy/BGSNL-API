@@ -5,10 +5,32 @@ import moment from 'moment'
 import { eventToSpreadsheet } from "../util/searchInDatabase.js";
 import uploadToCloudinary from "../util/cloudinary.js";
 
+const fetchEvents = async (req, res, next) => {
+    const region = req.query.region;
+    
+    let events;
+    try {
+        if (region) {
+            //remove hidden once we migrate
+            events = await Event.find({ region, hidden: false })
+        } else {
+            events = await Event.find({ hidden: false })
+        }
+    } catch (err) {
+        return next(new HttpError("Fetching events failed", 500));
+    }
+
+    console.log(region, events);
+
+    res.status(200).json({
+        events: events.map((event) => event.toObject({ getters: true })),
+    });
+}
+
 const addEvent = async (req, res, next) => {
     const {
-        membersOnly,
-        visible,
+        memberOnly,
+        hidden,
         freePass,
         discountPass,
         subEventDescription,
@@ -16,7 +38,7 @@ const addEvent = async (req, res, next) => {
         region,
         title,
         description,
-        where,
+        location,
         ticketTimer,
         ticketLimit,
         isSaleClosed,
@@ -43,7 +65,7 @@ const addEvent = async (req, res, next) => {
 
     //upload images
     try {
-        if (await Event.find({
+        if (await Event.findOne({
             title, region, date, time
         })) {
             const error = new HttpError("Event already exists", 422);
@@ -66,7 +88,13 @@ const addEvent = async (req, res, next) => {
             crop: 'fit',
             format: 'jpg'
         })
-        const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], { folder, public_id: 'background', }) : '';
+        const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], {
+            folder,
+            public_id: 'background',
+            width: 800,
+            crop: 'fit',
+            format: 'jpg'
+        }) : '';
 
         let images = [poster];
         if (req.files['images']) {
@@ -83,8 +111,8 @@ const addEvent = async (req, res, next) => {
 
         //create event 
         const event = new Event({
-            membersOnly,
-            visible,
+            memberOnly,
+            hidden,
             extraInputsForm,
             freePass,
             discountPass,
@@ -95,7 +123,7 @@ const addEvent = async (req, res, next) => {
             description,
             date,
             time,
-            where,
+            location,
             ticketTimer,
             ticketLimit,
             isSaleClosed,
@@ -130,7 +158,7 @@ const addEvent = async (req, res, next) => {
         new HttpError("Operations failed! Please try again or contact support!", 500)
     }
 
-    res.status(201).json({ status: false });
+    res.status(201).json({ status: true });
 }
 
-export { addEvent }
+export { addEvent, fetchEvents }

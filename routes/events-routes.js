@@ -9,7 +9,7 @@ import {
 import fileUpload from "../middleware/file-upload.js";
 import dotenv from "dotenv";
 import multer from "multer";
-import { addEvent } from "../controllers/events-action-controller.js";
+import { addEvent, fetchEvents } from "../controllers/events-action-controller.js";
 dotenv.config();
 
 const upload = multer({ storage: multer.memoryStorage() })
@@ -61,6 +61,8 @@ eventRouter.post(
 );
 
 //event actions
+
+eventRouter.get('/actions/events', fetchEvents)
 
 const eventImageUploads = upload.fields([
   { name: 'images', maxCount: 4 },
