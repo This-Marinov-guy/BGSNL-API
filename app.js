@@ -81,6 +81,7 @@ app.use((req, res, next) => {
   const requestIp = req.ip;
 
   console.log('Request registered: origin: ' + origin + ' | ip: ' + requestIp);
+  console.log(req);
 
   if ([...allowedOrigins, ...stripeUrls].includes(origin) || ipAddresses.includes(requestIp)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
