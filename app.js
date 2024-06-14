@@ -80,6 +80,8 @@ app.use((req, res, next) => {
   const origin = req.headers.origin;
   const requestIp = req.ip;
 
+  console.log('Request registered: origin: ' + origin + ' | ip: ' + requestIp);
+
   if ([...allowedOrigins, ...stripeUrls].includes(origin) || ipAddresses.includes(requestIp)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
