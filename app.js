@@ -28,36 +28,7 @@ const allowedOrigins = [
 ];
 
 const stripeUrls = [
-  "a.stripecdn.com",
-  "api.stripe.com",
-  "atlas.stripe.com",
-  "auth.stripe.com",
-  "b.stripecdn.com",
-  "billing.stripe.com",
-  "buy.stripe.com",
-  "c.stripecdn.com",
-  "checkout.stripe.com",
-  "climate.stripe.com",
-  "connect.stripe.com",
-  "dashboard.stripe.com",
-  "express.stripe.com",
-  "files.stripe.com",
-  "hooks.stripe.com",
-  "invoice.stripe.com",
-  "invoicedata.stripe.com",
-  "js.stripe.com",
-  "m.stripe.com",
-  "m.stripe.network",
-  "manage.stripe.com",
-  "pay.stripe.com",
-  "payments.stripe.com",
-  "q.stripe.com",
-  "qr.stripe.com",
-  "r.stripe.com",
-  "verify.stripe.com",
-  "stripe.com",
-  "terminal.stripe.com",
-  "uploads.stripe.com"
+ "https://dashboard.stripe.com"
 ];
 
 
