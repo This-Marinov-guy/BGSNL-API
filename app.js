@@ -27,9 +27,43 @@ const allowedOrigins = [
   'https://www.bulgariansociety.nl',
 ];
 
+const stripeUrls = [
+  "a.stripecdn.com",
+  "api.stripe.com",
+  "atlas.stripe.com",
+  "auth.stripe.com",
+  "b.stripecdn.com",
+  "billing.stripe.com",
+  "buy.stripe.com",
+  "c.stripecdn.com",
+  "checkout.stripe.com",
+  "climate.stripe.com",
+  "connect.stripe.com",
+  "dashboard.stripe.com",
+  "express.stripe.com",
+  "files.stripe.com",
+  "hooks.stripe.com",
+  "invoice.stripe.com",
+  "invoicedata.stripe.com",
+  "js.stripe.com",
+  "m.stripe.com",
+  "m.stripe.network",
+  "manage.stripe.com",
+  "pay.stripe.com",
+  "payments.stripe.com",
+  "q.stripe.com",
+  "qr.stripe.com",
+  "r.stripe.com",
+  "verify.stripe.com",
+  "stripe.com",
+  "terminal.stripe.com",
+  "uploads.stripe.com"
+];
+
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
+  if ([...allowedOrigins, ...stripeUrls].includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
