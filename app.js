@@ -78,12 +78,12 @@ const ipAddresses = [
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  const requestIp = req.ip;
+  const connectingIp = req.headers['do-connecting-ip'];
 
-  console.log('Request registered: origin: ' + origin + ' | ip: ' + requestIp);
+  console.log('Request registered: origin: ' + origin + ' | connecting ip: ' + connectingIp);
   console.log(req);
 
-  if ([...allowedOrigins, ...stripeUrls].includes(origin) || ipAddresses.includes(requestIp)) {
+  if ([...allowedOrigins, ...stripeUrls].includes(origin) || ipAddresses.includes(connectingIp)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
