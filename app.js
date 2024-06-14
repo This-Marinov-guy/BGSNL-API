@@ -28,8 +28,8 @@ const allowedOrigins = [
 ];
 
 const stripeUrls = [
- "https://dashboard.stripe.com",
- "https://dashboard.stripe.com/"
+"https://checkout.stripe.com/",
+"https://dashboard.stripe.com/"
 ];
 
 app.use((req, res, next) => {
