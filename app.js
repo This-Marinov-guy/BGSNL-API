@@ -61,10 +61,26 @@ const stripeUrls = [
   'https://uploads.stripe.com'
 ];
 
+const ipAddresses = [
+  "3.18.12.63",
+  "3.130.192.231",
+  "13.235.14.237",
+  "13.235.122.149",
+  "18.211.135.69",
+  "35.154.171.200",
+  "52.15.183.38",
+  "54.88.130.119",
+  "54.88.130.237",
+  "54.187.174.169",
+  "54.187.205.235",
+  "54.187.216.72"
+];
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
+  const requestIp = req.ip;
 
-  if ([...allowedOrigins, ...stripeUrls].includes(origin)) {
+  if ([...allowedOrigins, ...stripeUrls].includes(origin) || ipAddresses.includes(requestIp)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
