@@ -25,6 +25,7 @@ const allowedOrigins = [
   'https://bulgariansociety.netlify.app',
   'https://bulgariansociety.nl',
   'https://www.bulgariansociety.nl',
+  'https://starfish-app-tvh24.ondigitalocean.app'
 ];
 
 const stripeUrls = [
@@ -60,18 +61,18 @@ const stripeUrls = [
   'https://uploads.stripe.com'
 ];
 
-// app.use((req, res, next) => {
-//   const origin = req.headers.origin;
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
 
-//   if ([...allowedOrigins, ...stripeUrls].includes(origin)) {
-//     res.setHeader('Access-Control-Allow-Origin', origin);
-//     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-//     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-//     return next();
-//   } else {
-//     res.status(403).json({ message: 'Forbidden: Access is denied' });
-//   }
-// });
+  if ([...allowedOrigins, ...stripeUrls].includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    return next();
+  } else {
+    res.status(403).json({ message: 'Forbidden: Access is denied' });
+  }
+});
 
 app.use(
   cors({
