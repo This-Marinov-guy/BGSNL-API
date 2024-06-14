@@ -28,8 +28,36 @@ const allowedOrigins = [
 ];
 
 const stripeUrls = [
-"https://checkout.stripe.com",
-"https://dashboard.stripe.com"
+  'https://a.stripecdn.com',
+  'https://api.stripe.com',
+  'https://atlas.stripe.com',
+  'https://auth.stripe.com',
+  'https://b.stripecdn.com',
+  'https://billing.stripe.com',
+  'https://buy.stripe.com',
+  'https://c.stripecdn.com',
+  'https://checkout.stripe.com',
+  'https://climate.stripe.com',
+  'https://connect.stripe.com',
+  'https://dashboard.stripe.com',
+  'https://express.stripe.com',
+  'https://files.stripe.com',
+  'https://hooks.stripe.com',
+  'https://invoice.stripe.com',
+  'https://invoicedata.stripe.com',
+  'https://js.stripe.com',
+  'https://m.stripe.com',
+  'https://m.stripe.network',
+  'https://manage.stripe.com',
+  'https://pay.stripe.com',
+  'https://payments.stripe.com',
+  'https://q.stripe.com',
+  'https://qr.stripe.com',
+  'https://r.stripe.com',
+  'https://verify.stripe.com',
+  'https://stripe.com',
+  'https://terminal.stripe.com',
+  'https://uploads.stripe.com'
 ];
 
 app.use((req, res, next) => {
