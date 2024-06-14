@@ -83,7 +83,6 @@ app.use((req, res, next) => {
   console.log('Request registered: origin: ' + origin + ' | connecting ip: ' + connectingIp);
 
   if ([...allowedOrigins, ...stripeUrls].includes(origin) || ipAddresses.includes(connectingIp)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     return next();
