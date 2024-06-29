@@ -335,15 +335,12 @@ const postWebhookCheckout = async (req, res, next) => {
           break;
         }
         case "buy_guest_ticket": {
-          let { quantity, eventName, region, eventDate, guestName, guestEmail, guestPhone, preferences, marketing } =
+          let { quantity, eventId, guestName, guestEmail, guestPhone, preferences, marketing } =
             metadata;
 
           let societyEvent;
           try {
-            societyEvent = await Event.findOneOrCreate(
-              { event: eventName, region, date: eventDate },
-              { status: 'open', event: eventName, region, date: eventDate, guestList: [] }
-            );
+            societyEvent = await Event.findById(eventId);
           } catch (err) {
             return next(
               new HttpError(
@@ -395,13 +392,10 @@ const postWebhookCheckout = async (req, res, next) => {
           break;
         }
         case "buy_member_ticket": {
-          const { eventName, region, eventDate, userId, preferences } = metadata;
+          const { eventId, userId, preferences } = metadata;
           let societyEvent;
           try {
-            societyEvent = await Event.findOneOrCreate(
-              { event: eventName, region, date: eventDate },
-              { status: 'open', event: eventName, region, date: eventDate, guestList: [] }
-            );
+            societyEvent = await Event.findById(eventId);
           } catch (err) {
             return next(
               new HttpError(

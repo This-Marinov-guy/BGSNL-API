@@ -10,79 +10,20 @@ import eventRouter from "./routes/events-routes.js";
 import paymentRouter from "./routes/payments-routes.js";
 import contestRouter from "./routes/contest-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
+import { allowedIps, allowedOrigins } from "./util/access.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from './util/searchInDatabase.js'
 
 const app = express();
 
-// TEST ENVIRONMENT
-// 1st --> put the localhost url in cors list "http://localhost:3000"
-// 2nd --> change the http-hook in React to make  requests to localhost server
-
-//configuration
-
-const allowedOrigins = [
-  // "http://localhost:3000",
-  'https://bulgariansociety.netlify.app',
-  'https://bulgariansociety.nl',
-  'https://www.bulgariansociety.nl',
-  'https://starfish-app-tvh24.ondigitalocean.app'
-];
-
-const stripeUrls = [
-  'https://a.stripecdn.com',
-  'https://api.stripe.com',
-  'https://atlas.stripe.com',
-  'https://auth.stripe.com',
-  'https://b.stripecdn.com',
-  'https://billing.stripe.com',
-  'https://buy.stripe.com',
-  'https://c.stripecdn.com',
-  'https://checkout.stripe.com',
-  'https://climate.stripe.com',
-  'https://connect.stripe.com',
-  'https://dashboard.stripe.com',
-  'https://express.stripe.com',
-  'https://files.stripe.com',
-  'https://hooks.stripe.com',
-  'https://invoice.stripe.com',
-  'https://invoicedata.stripe.com',
-  'https://js.stripe.com',
-  'https://m.stripe.com',
-  'https://m.stripe.network',
-  'https://manage.stripe.com',
-  'https://pay.stripe.com',
-  'https://payments.stripe.com',
-  'https://q.stripe.com',
-  'https://qr.stripe.com',
-  'https://r.stripe.com',
-  'https://verify.stripe.com',
-  'https://stripe.com',
-  'https://terminal.stripe.com',
-  'https://uploads.stripe.com'
-];
-
-const ipAddresses = [
-  "3.18.12.63",
-  "3.130.192.231",
-  "13.235.14.237",
-  "13.235.122.149",
-  "18.211.135.69",
-  "35.154.171.200",
-  "52.15.183.38",
-  "54.88.130.119",
-  "54.88.130.237",
-  "54.187.174.169",
-  "54.187.205.235",
-  "54.187.216.72"
-];
+if ((app.get('env') === 'development')) {
+  allowedOrigins.push('http://localhost:3000');
+}
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const connectingIp = req.headers['do-connecting-ip'];
 
-  console.log('Request registered: origin: ' + origin + ' | connecting ip: ' + connectingIp);
-
-  if ([...allowedOrigins, ...stripeUrls].includes(origin) || ipAddresses.includes(connectingIp)) {
+  if (allowedOrigins.includes(origin) || allowedIps.includes(connectingIp)) {
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     return next();

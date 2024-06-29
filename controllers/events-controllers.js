@@ -7,6 +7,7 @@ import HttpError from "../models/Http-error.js";
 import { sendTicketEmail } from "../middleware/email-transporter.js";
 import moment from 'moment'
 import { eventToSpreadsheet } from "../util/searchInDatabase.js";
+import { updateOriginalArray } from "../util/helpers.js";
 
 const postSoldTicketQuantity = async (req, res, next) => {
   const errors = validationResult(req);
@@ -34,13 +35,11 @@ const postSoldTicketQuantity = async (req, res, next) => {
 }
 
 const postAddMemberToEvent = async (req, res, next) => {
-  const { eventName, region, eventDate, userId, preferences } = req.body;
+  const { userId, eventId, preferences } = req.body;
   let societyEvent;
+
   try {
-    societyEvent = await Event.findOneOrCreate(
-      { event: eventName, region, date: eventDate },
-      { status: 'open', event: eventName, region, date: eventDate, guestList: [] }
-    );
+    societyEvent = await Event.findById(eventId);
   } catch (err) {
     return next(
       new HttpError("Could not add you to the event, please try again!", 500)
@@ -102,14 +101,11 @@ const postAddGuestToEvent = async (req, res, next) => {
   if (!errors.isEmpty()) {
     return next(new HttpError("Invalid inputs passed", 422));
   }
-  const { quantity, eventName, eventDate, region, guestName, guestEmail, guestPhone, preferences, marketing } = req.body;
+  const { quantity, eventId, guestName, guestEmail, guestPhone, preferences, marketing } = req.body;
 
   let societyEvent;
   try {
-    societyEvent = await Event.findOneOrCreate(
-      { event: eventName, region, date: eventDate },
-      { status: 'open', event: eventName, region, date: eventDate, guestList: [] }
-    );
+    societyEvent = await Event.findById(eventId);
   } catch (err) {
     return next(
       new HttpError("Could not add you to the event, please try again!", 500)
@@ -205,4 +201,63 @@ const postNonSocietyEvent = async (req, res, next) => {
   res.status(201).json({ message: "Success" });
 };
 
-export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, postSoldTicketQuantity };
+// status 1 = success
+// status 2 = count is required as more than 1 guest was found
+const updatePresence = async (req, res, next) => {
+  const { eventId, name, email } = req.body;
+  let count = req.body.count;
+  let societyEvent;
+
+  try {
+    societyEvent = await Event.findById(eventId);
+  } catch (err) {
+    return next(
+      new HttpError("Could not add you to the event, please try again!", 500)
+    );
+  }
+
+  if (!societyEvent) {
+    return next(new HttpError("Could not find such event", 404));
+  }
+
+  const targetGuests = societyEvent.guestList.filter((guest) => guest.email === email && guest.name === name);
+
+  if (targetGuests.length = 0) {
+    return next(new HttpError("Guest/s were not found in list - for further help best contact support", 404));
+  }
+
+  if (targetGuests.length > 1 && !count) {
+    // require count 
+    return res.status(200).json({ status: 2 });
+  } else {
+    count = 1;
+  }
+
+  for (j = 0; j < societyEvent.guestList.length; j++) {
+    if (count === 0) {
+      break;
+    }
+
+    const guest = societyEvent.guestList[j];
+
+    if (guest.name !== name && guest.email !== email) {
+      continue;
+    }
+
+    societyEvent.guestList[j].status = 1;
+
+    count--;
+  }
+
+  try {
+    await societyEvent.save();
+  } catch (err) {
+    return next(
+      new HttpError("Updating guest list failed, please try again", 500)
+    );
+  }
+
+  res.status(201).json({ status: 1, message: "Success" });
+};
+
+export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, postSoldTicketQuantity, updatePresence };

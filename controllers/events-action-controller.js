@@ -5,9 +5,24 @@ import moment from 'moment'
 import { eventToSpreadsheet } from "../util/searchInDatabase.js";
 import uploadToCloudinary from "../util/cloudinary.js";
 
+const fetchEvent = async (req, res, next) => {
+    const eventId = req.params.eventId;
+
+    let event;
+    try {
+        event = await Event.findById(eventId)
+    } catch (err) {
+        return next(new HttpError("Fetching events failed", 500));
+    }
+
+    res.status(200).json({
+        event: event.toObject({ getters: true }),
+    });
+}
+
 const fetchEvents = async (req, res, next) => {
     const region = req.query.region;
-    
+
     let events;
     try {
         if (region) {
@@ -19,8 +34,6 @@ const fetchEvents = async (req, res, next) => {
     } catch (err) {
         return next(new HttpError("Fetching events failed", 500));
     }
-
-    console.log(region, events);
 
     res.status(200).json({
         events: events.map((event) => event.toObject({ getters: true })),
@@ -161,4 +174,4 @@ const addEvent = async (req, res, next) => {
     res.status(201).json({ status: true });
 }
 
-export { addEvent, fetchEvents }
+export { addEvent, fetchEvent, fetchEvents }

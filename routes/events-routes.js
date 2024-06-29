@@ -5,11 +5,12 @@ import {
   postAddGuestToEvent,
   postAddMemberToEvent,
   postNonSocietyEvent,
+  updatePresence
 } from "../controllers/events-controllers.js";
 import fileUpload from "../middleware/file-upload.js";
 import dotenv from "dotenv";
 import multer from "multer";
-import { addEvent, fetchEvents } from "../controllers/events-action-controller.js";
+import { addEvent, fetchEvent, fetchEvents } from "../controllers/events-action-controller.js";
 dotenv.config();
 
 const upload = multer({ storage: multer.memoryStorage() })
@@ -60,7 +61,18 @@ eventRouter.post(
   postNonSocietyEvent
 );
 
+eventRouter.patch(
+  '/update-presence',
+  [
+    check("name").notEmpty(),
+    check("email").notEmpty()
+  ],
+  updatePresence
+)
+
 //event actions
+
+eventRouter.get('/actions/event/:eventId', fetchEvent)
 
 eventRouter.get('/actions/events', fetchEvents)
 
