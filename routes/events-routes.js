@@ -62,7 +62,7 @@ eventRouter.post(
 );
 
 eventRouter.patch(
-  '/update-presence',
+  '/check-guest-list',
   [
     check("name").notEmpty(),
     check("email").notEmpty()

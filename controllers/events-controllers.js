@@ -201,15 +201,17 @@ const postNonSocietyEvent = async (req, res, next) => {
   res.status(201).json({ message: "Success" });
 };
 
+// status 0 = noting to update
 // status 1 = success
 // status 2 = count is required as more than 1 guest was found
 const updatePresence = async (req, res, next) => {
-  const { eventId, name, email } = req.body;
+  const { event, name, email } = req.body;
   let count = req.body.count;
+  let initCount = count;
   let societyEvent;
 
   try {
-    societyEvent = await Event.findById(eventId);
+    societyEvent = await Event.findById(event);
   } catch (err) {
     return next(
       new HttpError("Could not add you to the event, please try again!", 500)
@@ -217,23 +219,24 @@ const updatePresence = async (req, res, next) => {
   }
 
   if (!societyEvent) {
-    return next(new HttpError("Could not find such event", 404));
+    return next(new HttpError("Could not find such event - for further help best contact support", 404));
   }
 
   const targetGuests = societyEvent.guestList.filter((guest) => guest.email === email && guest.name === name);
 
-  if (targetGuests.length = 0) {
+  if (targetGuests.length === 0) {
     return next(new HttpError("Guest/s were not found in list - for further help best contact support", 404));
   }
 
   if (targetGuests.length > 1 && !count) {
     // require count 
-    return res.status(200).json({ status: 2 });
+    return res.status(200).json({ status: 2, event: societyEvent.title });
   } else {
     count = 1;
+    initCount = count;
   }
 
-  for (j = 0; j < societyEvent.guestList.length; j++) {
+  for (let j = 0; j < societyEvent.guestList.length; j++) {
     if (count === 0) {
       break;
     }
@@ -244,9 +247,14 @@ const updatePresence = async (req, res, next) => {
       continue;
     }
 
-    societyEvent.guestList[j].status = 1;
+    if (guest.status === 0) {
+      societyEvent.guestList[j].status = 1;
+      count--;
+    }
+  }
 
-    count--;
+  if (initCount === count) {
+    return res.status(200).json({ status: 0, event: societyEvent.title });
   }
 
   try {
@@ -257,7 +265,7 @@ const updatePresence = async (req, res, next) => {
     );
   }
 
-  res.status(201).json({ status: 1, message: "Success" });
+  res.status(201).json({ status: 1, event: societyEvent.title });
 };
 
 export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, postSoldTicketQuantity, updatePresence };
