@@ -1,7 +1,9 @@
 import express from "express";
 import { check } from "express-validator";
 import {
-  postSoldTicketQuantity,
+  getEvent,
+  getEventStatus,
+  getSoldTicketQuantity,
   postAddGuestToEvent,
   postAddMemberToEvent,
   postNonSocietyEvent,
@@ -16,12 +18,19 @@ dotenv.config();
 const upload = multer({ storage: multer.memoryStorage() })
 const eventRouter = express.Router();
 
-eventRouter.post(
+eventRouter.get(
+  "/get-event-status",
+  getEventStatus
+)
+
+eventRouter.get(
+  "/get-event-details",
+  getEvent
+)
+
+eventRouter.get(
   "/sold-ticket-count",
-  [
-    check("eventName").notEmpty()
-  ],
-  postSoldTicketQuantity
+  getSoldTicketQuantity
 )
 
 eventRouter.post(

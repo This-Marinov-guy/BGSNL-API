@@ -12,7 +12,7 @@ const eventSchema = new Schema({
   time: { type: String, required: true },
   location: { type: String, required: true },
   ticketTimer: { type: String, required: true },
-  ticketLimit: { type: String, required: true },
+  ticketLimit: { type: Number, required: true },
   isSaleClosed: { type: Boolean, required: true },
   isFree: { type: Boolean, required: true },
   isMemberFree: { type: Boolean, required: true },

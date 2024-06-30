@@ -7,17 +7,79 @@ import HttpError from "../models/Http-error.js";
 import { sendTicketEmail } from "../middleware/email-transporter.js";
 import moment from 'moment'
 import { eventToSpreadsheet } from "../util/searchInDatabase.js";
-import { updateOriginalArray } from "../util/helpers.js";
+import { calculateTimeRemaining, removeModelProperties } from "../util/helpers.js";
 
-const postSoldTicketQuantity = async (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return next(new HttpError("Invalid inputs passed", 422));
-  }
-
+const getEventStatus = async (req, res, next) => {
   try {
-    const { eventName, region, date } = req.body
-    const event = await Event.findOne({ eventName, region, date });
+    const { eventName, region } = req.query;
+
+    if (!(eventName && region)) {
+      return next(new HttpError("Invalid inputs passed", 422));
+    }
+
+    const event = await Event.findOne({ title: eventName, region, date });
+
+    if (!event) {
+      return next(new HttpError("No event was found", 404));
+    }
+
+    let status = true;
+
+    const ticketsRemaining = event.ticketLimit - event.guestList.length;
+    const ticketTimer = calculateTimeRemaining(event.ticketTimer);
+
+    if (ticketsRemaining <= 0 || ticketTimer <= 0) {
+      status = false;
+    }
+
+    res.status(200).json({ status });
+
+  } catch (error) {
+    return next(new HttpError("Something got wrong, please contact support", 500));
+  }
+}
+
+const getEvent = async (req, res, next) => {
+  try {
+    const { eventName, region } = req.query;
+
+    if (!(eventName && region)) {
+      return next(new HttpError("Invalid inputs passed", 422));
+    }
+
+    let event = await Event.findOne({ title: eventName, region });
+
+    if (!event) {
+      return next(new HttpError("No event was found", 404));
+    }
+
+    let status = true;
+
+    const ticketsRemaining = event.ticketLimit - event.guestList.length;
+    const ticketTimer = calculateTimeRemaining(event.ticketTimer);
+
+    if (ticketsRemaining <= 0 || ticketTimer <= 0) {
+      status = false;
+    }
+
+    event = removeModelProperties(event, ['guestList', 'discountPass', 'freePass']);
+
+    res.status(200).json({ event, status });
+
+  } catch (error) {
+    return next(new HttpError("Something got wrong, please contact support", 500));
+  }
+}
+
+const getSoldTicketQuantity = async (req, res, next) => {
+  try {
+    const { eventName, region, date } = req.query;
+
+    if (!(eventName && region && date)) {
+      return next(new HttpError("Invalid inputs passed", 422));
+    }
+
+    const event = await Event.findOne({ title: eventName, region, date });
 
     let ticketsSold;
 
@@ -26,10 +88,10 @@ const postSoldTicketQuantity = async (req, res, next) => {
     } else {
       ticketsSold = 0;
     }
-    res.status(201).json({ ticketsSold: ticketsSold });
+    res.status(200).json({ ticketsSold: ticketsSold });
 
   } catch (error) {
-    new HttpError("Something got wrong, please contact support", 500);
+    return next(new HttpError("Something got wrong, please contact support", 500));
   }
 
 }
@@ -48,6 +110,12 @@ const postAddMemberToEvent = async (req, res, next) => {
 
   if (!societyEvent) {
     return next(new HttpError("Could not find such event", 404));
+  }
+
+  const ticketsRemaining = societyEvent.ticketLimit - societyEvent.guestList.length;
+
+  if (ticketsRemaining <= 0) {
+    return next(new HttpError("Tickets are sold out", 500));
   }
 
   let targetUser;
@@ -114,6 +182,12 @@ const postAddGuestToEvent = async (req, res, next) => {
 
   if (!societyEvent) {
     return next(new HttpError("Could not find such event", 404));
+  }
+
+  const ticketsRemaining = societyEvent.ticketLimit - societyEvent.guestList.length;
+
+  if (ticketsRemaining <= 0) {
+    return next(new HttpError("Tickets are sold out", 500));
   }
 
   let guest = {
@@ -268,4 +342,4 @@ const updatePresence = async (req, res, next) => {
   res.status(201).json({ status: 1, event: societyEvent.title });
 };
 
-export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, postSoldTicketQuantity, updatePresence };
+export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, getEvent, getEventStatus, getSoldTicketQuantity, updatePresence };
