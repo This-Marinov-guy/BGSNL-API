@@ -14,10 +14,38 @@ import { allowedIps, allowedOrigins } from "./util/access.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from './util/searchInDatabase.js'
 
 const app = express();
+const cache = new NodeCache({ stdTTL: 3600, checkperiod: 3600 });
 
 if ((app.get('env') === 'development')) {
   allowedOrigins.push('http://localhost:3000');
 }
+
+const rateLimiter = (req, res, next) => {
+  if (req.method === 'GET') return next();
+
+  const ip = req.ip;
+  const now = Math.floor(Date.now() / 1000); 
+  const windowStart = now - 3600; // 1 hour ago
+  const maxRequests = 100;
+
+  let entry = cache.get(ip);
+  if (!entry) {
+    cache.set(ip, [now]);
+    return next();
+  }
+
+  entry = entry.filter(timestamp => timestamp > windowStart);
+
+  if (entry.length >= maxRequests) {
+    return res.status(429).json({ error: 'Rate limit exceeded. Try again later.' });
+  }
+
+  entry.push(now);
+  cache.set(ip, entry);
+  next();
+};
+
+app.use(rateLimiter);
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
