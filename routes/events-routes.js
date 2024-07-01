@@ -18,16 +18,19 @@ dotenv.config();
 const upload = multer({ storage: multer.memoryStorage() })
 const eventRouter = express.Router();
 
+// use url params not query
 eventRouter.get(
   "/get-event-status",
   getEventStatus
 )
 
+// use url params not query
 eventRouter.get(
   "/get-event-details",
   getEvent
 )
 
+// use url params not query
 eventRouter.get(
   "/sold-ticket-count",
   getSoldTicketQuantity
@@ -70,6 +73,7 @@ eventRouter.post(
   postNonSocietyEvent
 );
 
+// use encryption data 
 eventRouter.patch(
   '/check-guest-list',
   [
