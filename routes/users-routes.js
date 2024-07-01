@@ -18,6 +18,7 @@ import {
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
+import { adminMiddleware } from "../middleware/authorization.js";
 dotenv.config();
 
 const userRouter = express.Router();

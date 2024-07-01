@@ -12,53 +12,13 @@ import contestRouter from "./routes/contest-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
 import { allowedIps, allowedOrigins } from "./util/access.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from './util/searchInDatabase.js'
+import { firewall, rateLimiter } from "./middleware/firewall.js";
 
 const app = express();
-const cache = new NodeCache({ stdTTL: 3600, checkperiod: 3600 });
 
 if ((app.get('env') === 'development')) {
   allowedOrigins.push('http://localhost:3000');
 }
-
-const rateLimiter = (req, res, next) => {
-  if (req.method === 'GET') return next();
-
-  const ip = req.ip;
-  const now = Math.floor(Date.now() / 1000); 
-  const windowStart = now - 3600; // 1 hour ago
-  const maxRequests = 100;
-
-  let entry = cache.get(ip);
-  if (!entry) {
-    cache.set(ip, [now]);
-    return next();
-  }
-
-  entry = entry.filter(timestamp => timestamp > windowStart);
-
-  if (entry.length >= maxRequests) {
-    return res.status(429).json({ error: 'Rate limit exceeded. Try again later.' });
-  }
-
-  entry.push(now);
-  cache.set(ip, entry);
-  next();
-};
-
-app.use(rateLimiter);
-
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  const connectingIp = req.headers['do-connecting-ip'];
-
-  if (allowedOrigins.includes(origin) || allowedIps.includes(connectingIp)) {
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    return next();
-  } else {
-    res.status(403).json({ message: 'Forbidden: Access is denied' });
-  }
-});
 
 app.use(
   cors({
@@ -71,6 +31,9 @@ app.use(
     },
   })
 );
+
+app.use(rateLimiter);
+app.use(firewall);
 
 app.use((req, res, next) => {
   if ("OPTIONS" == req.method) {
