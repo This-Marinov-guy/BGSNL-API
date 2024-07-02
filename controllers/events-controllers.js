@@ -11,7 +11,7 @@ import { calculateTimeRemaining, removeModelProperties } from "../util/helpers.j
 
 const getEventStatus = async (req, res, next) => {
   try {
-    const { eventName, region } = req.query;
+    const { eventName, region } = req.params;
 
     if (!(eventName && region)) {
       return next(new HttpError("Invalid inputs passed", 422));
@@ -41,7 +41,7 @@ const getEventStatus = async (req, res, next) => {
 
 const getEvent = async (req, res, next) => {
   try {
-    const { eventName, region } = req.query;
+    const { eventName, region } = req.params;
 
     if (!(eventName && region)) {
       return next(new HttpError("Invalid inputs passed", 422));
@@ -73,7 +73,7 @@ const getEvent = async (req, res, next) => {
 
 const getSoldTicketQuantity = async (req, res, next) => {
   try {
-    const { eventName, region, date } = req.query;
+    const { eventName, region, date } = req.params;
 
     if (!(eventName && region && date)) {
       return next(new HttpError("Invalid inputs passed", 422));

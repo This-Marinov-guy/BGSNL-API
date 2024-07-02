@@ -5,6 +5,7 @@ const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
   status: { type: String, required: true },
+  roles: {type: Array, required: true, default: ['member']},
   subscription: {
     period: { type: Number },
     id: { type: String },
