@@ -1,3 +1,7 @@
+import dotenv from "dotenv";
+dotenv.config();
+import jwt from "jsonwebtoken";
+
 // Function to update the original array with the modified subset | needs to have ids
 export const updateOriginalArray = (originalArray, modifiedSubset) => {
     const updatedArray = originalArray.map(originalObject => {
@@ -19,3 +23,11 @@ export const removeModelProperties = (obj, properties) => {
   properties.forEach(prop => delete result[prop]);
   return result;
 }
+
+export const jwtSign = (user) => {
+  return jwt.sign(
+      { userId: user.id, roles: user.roles, email: user.email, region: user.region },
+      process.env.JWT_STRING,
+      { expiresIn: "1h" }
+    );
+} 

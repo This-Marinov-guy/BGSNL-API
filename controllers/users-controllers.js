@@ -11,6 +11,7 @@ import { formatReverseDate } from "../util/functions/dateConvert.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/config/KEYS.js";
 import { usersToSpreadsheet } from "../util/functions/searchInDatabase.js";
+import { jwtSign } from "../util/functions/helpers.js";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
@@ -154,11 +155,7 @@ const signup = async (req, res, next) => {
 
   let token;
   try {
-    token = jwt.sign(
-      { userId: createdUser.id, email: createdUser.email },
-      process.env.JWT_STRING,
-      { expiresIn: "1h" }
-    );
+    token = await jwtSign(createdUser);
   } catch (err) {
     const error = new HttpError("Signing up failed", 500);
     return next(error);
@@ -217,12 +214,9 @@ const login = async (req, res, next) => {
 
   let token;
   try {
-    token = jwt.sign(
-      { userId: existingUser.id, email: existingUser.email },
-      process.env.JWT_STRING,
-      { expiresIn: "1h" }
-    );
+    token = await jwtSign(existingUser);
   } catch (err) {
+    console.log(err);
     const error = new HttpError("Logging in failed", 500);
     return next(error);
   }
