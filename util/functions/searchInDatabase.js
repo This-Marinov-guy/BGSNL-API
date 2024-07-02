@@ -1,7 +1,7 @@
 import { MongoClient, ObjectId } from 'mongodb';
 import { google } from 'googleapis';
-import { SPREADSHEETS_ID } from './SPREEDSHEATS.js';
-import HttpError from '../models/Http-error.js';
+import { SPREADSHEETS_ID } from '../config/SPREEDSHEATS.js';
+import HttpError from '../../models/Http-error.js';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {

@@ -6,8 +6,8 @@ import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import { sendTicketEmail } from "../middleware/email-transporter.js";
 import moment from 'moment'
-import { eventToSpreadsheet } from "../util/searchInDatabase.js";
-import { calculateTimeRemaining, removeModelProperties } from "../util/helpers.js";
+import { eventToSpreadsheet } from "../util/functions/searchInDatabase.js";
+import { calculateTimeRemaining, removeModelProperties } from "../util/functions/helpers.js";
 
 const getEventStatus = async (req, res, next) => {
   try {

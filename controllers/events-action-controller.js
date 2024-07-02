@@ -2,8 +2,8 @@ import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
 import moment from 'moment'
-import { eventToSpreadsheet } from "../util/searchInDatabase.js";
-import uploadToCloudinary from "../util/cloudinary.js";
+import { eventToSpreadsheet } from "../util/functions/searchInDatabase.js";
+import uploadToCloudinary from "../util/functions/cloudinary.js";
 
 const fetchEvent = async (req, res, next) => {
     const eventId = req.params.eventId;

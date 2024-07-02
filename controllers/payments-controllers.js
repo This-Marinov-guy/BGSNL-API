@@ -8,8 +8,8 @@ import Event from "../models/Event.js";
 import User from "../models/User.js";
 import { sendTicketEmail, welcomeEmail } from "../middleware/email-transporter.js";
 import moment from 'moment'
-import { formatReverseDate } from "../util/dateConvert.js";
-import { eventToSpreadsheet, usersToSpreadsheet } from "../util/searchInDatabase.js";
+import { formatReverseDate } from "../util/functions/dateConvert.js";
+import { eventToSpreadsheet, usersToSpreadsheet } from "../util/functions/searchInDatabase.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",

@@ -10,9 +10,10 @@ import eventRouter from "./routes/events-routes.js";
 import paymentRouter from "./routes/payments-routes.js";
 import contestRouter from "./routes/contest-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
-import { allowedIps, allowedOrigins } from "./util/access.js";
-import { eventToSpreadsheet, usersToSpreadsheet } from './util/searchInDatabase.js'
+import { allowedOrigins } from "./util/config/access.js";
+import { eventToSpreadsheet, usersToSpreadsheet } from './util/functions/searchInDatabase.js'
 import { firewall, rateLimiter } from "./middleware/firewall.js";
+import { updateUsers } from "./util/locals/manipulate-db.js";
 
 const app = express();
 
@@ -86,4 +87,3 @@ mongoose
   })
   .catch((err) => console.log("Failed to Connect ", err));
 
-// usersToSpreadsheet(null, false)

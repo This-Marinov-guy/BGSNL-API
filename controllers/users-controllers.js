@@ -7,10 +7,10 @@ import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
 import { sendNewPasswordEmail } from "../middleware/email-transporter.js";
 import moment from 'moment'
-import { formatReverseDate } from "../util/dateConvert.js";
+import { formatReverseDate } from "../util/functions/dateConvert.js";
 import ActiveMembers from "../models/ActiveMembers.js";
-import { MEMBER_KEYS } from "../util/KEYS.js";
-import { usersToSpreadsheet } from "../util/searchInDatabase.js";
+import { MEMBER_KEYS } from "../util/config/KEYS.js";
+import { usersToSpreadsheet } from "../util/functions/searchInDatabase.js";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;

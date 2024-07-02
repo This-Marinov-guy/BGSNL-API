@@ -1,6 +1,6 @@
 import HttpError from "../models/Http-error.js";
 import NodeCache from "node-cache";
-import { allowedIps, allowedOrigins } from "../util/access.js";
+import { allowedIps, allowedOrigins } from "../util/config/access.js";
 
 const cache = new NodeCache({ stdTTL: 3600, checkperiod: 3600 });
 

@@ -1,6 +1,6 @@
 import { MailtrapClient } from "mailtrap";
 import dotenv from "dotenv";
-import { WHATS_APP } from "../util/LINKS.js";
+import { WHATS_APP } from "../util/config/LINKS.js";
 dotenv.config();
 
 const client = new MailtrapClient({ endpoint: process.env.MAIL_ENDPOINT, token: process.env.MAIL_TOKEN });
