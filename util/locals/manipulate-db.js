@@ -19,23 +19,41 @@ export async function updateUsers() {
         // Find all users
         const cursor = users.find({});
 
-        // Iterate over all users
-        for await (const user of cursor) {
-            const updateDoc = {
-                $set: { roles: ["member"] }
-            };
+        // // Iterate over all users
+        // for await (const user of cursor) {
+        //     // Create a new object without the 'roles' property
+        //     const newUserDoc = { ...user };
+        //     delete newUserDoc._id;  // _id is immutable, so we remove it
 
-            // Check and update expireDate if necessary
-            if (user.expireDate === 'Board Member' || user.expireDate === 'Committee Member') {
-                updateDoc.$set.expireDate = '31 Aug 2024';
-            }
+        //     // Find the position of 'status' and insert 'roles' after it
+        //     const keys = Object.keys(newUserDoc);
+        //     const statusIndex = keys.indexOf('status');
 
-            // Update the user
-            const result = await users.updateOne({ _id: user._id }, updateDoc);
-            console.log(`Updated user ${user._id}: ${result.modifiedCount} document(s) modified`);
-        }
+        //     const newObj = {};
+        //     keys.forEach((key, index) => {
+        //         newObj[key] = newUserDoc[key];
+        //         if (index === statusIndex) {
+        //             newObj.roles = ['member'];
+        //         }
+        //     });
 
+        //     // If 'status' doesn't exist, add 'roles' at the end
+        //     if (statusIndex === -1) {
+        //         newObj.roles = ['member'];
+        //     }
+
+        //     // Update expireDate if necessary
+        //     if (user.expireDate === 'Board Member' || user.expireDate === 'Committee Member') {
+        //         newObj.expireDate = '31 Aug 2024';
+        //     }
+
+        //     // Update the user
+        //     const result = await users.replaceOne({ _id: user._id }, newObj);
+        //     console.log(`Updated user ${user._id}: ${result.modifiedCount} document(s) modified`);
+        // }
     } catch (err) {
         console.log(err);
-    } 
+    } finally {
+        console.log('Script executed successfully');
+    }
 }

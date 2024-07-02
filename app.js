@@ -13,7 +13,6 @@ import specialEventsRouter from "./routes/special-events-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from './util/functions/searchInDatabase.js'
 import { firewall, rateLimiter } from "./middleware/firewall.js";
-import { updateUsers } from "./util/locals/manipulate-db.js";
 
 const app = express();
 
