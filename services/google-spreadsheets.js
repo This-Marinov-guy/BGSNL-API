@@ -1,7 +1,7 @@
 import { MongoClient, ObjectId } from 'mongodb';
 import { google } from 'googleapis';
-import { SPREADSHEETS_ID } from '../config/SPREEDSHEATS.js';
-import HttpError from '../../models/Http-error.js';
+import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../util/config/SPREEDSHEATS.js';
+import HttpError from '../models/Http-error.js';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -78,9 +78,17 @@ const searchInDatabase = (eventName, region) => {
   }
 }
 
-const eventToSpreadsheet = async (id, eventName, region) => {
-  if (SPREADSHEETS_ID[region].events) {
-    const spreadsheetId = SPREADSHEETS_ID[region].events
+const eventToSpreadsheet = async (id) => {
+  const event = await Event.findById(id);
+
+  if (!event) {
+    return;
+  }
+
+  const { region, date, title, status, time, location, ticketTimer, ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink } = event;
+
+  if (SPREADSHEETS_ID[region]?.events) {
+    const spreadsheetId = SPREADSHEETS_ID[region].events;
 
     // Connecting to Google Spreadsheet
     const auth = new google.auth.GoogleAuth({
@@ -89,15 +97,14 @@ const eventToSpreadsheet = async (id, eventName, region) => {
     });
 
     const googleClient = await auth.getClient();
-
-    const googleSheets = google.sheets({ version: 'v4', auth: googleClient })
+    const googleSheets = google.sheets({ version: 'v4', auth: googleClient });
 
     const metaData = await googleSheets.spreadsheets.get({
       auth,
       spreadsheetId,
-    })
+    });
 
-    const sheetName = eventName + '-' + id.slice(-5);
+    const sheetName = `${title}|${date}`;
     const sheetsList = metaData.data.sheets;
     const sheetExists = sheetsList.some((sheet) => sheet.properties.title === sheetName);
 
@@ -126,20 +133,15 @@ const eventToSpreadsheet = async (id, eventName, region) => {
     const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;
     const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
 
-    client.connect(err => {
+    client.connect(async (err) => {
       if (err) {
         console.error('Error connecting to MongoDB:', err);
         return;
       }
 
       const db = client.db();
-
-      db.collection('events').aggregate([
-        {
-          $match: {
-            _id: ObjectId(id)
-          }
-        },
+      const result = await db.collection('events').aggregate([
+        { $match: { _id: ObjectId(id) } },
         {
           $project: {
             _id: 0,
@@ -148,60 +150,67 @@ const eventToSpreadsheet = async (id, eventName, region) => {
                 input: "$guestList",
                 as: "guest",
                 in: {
-                  index: { $add: [{ $indexOfArray: ["$guestList", "$$guest"] }, 1] }, // Get the index + 1
+                  status: "$$guest.status",
+                  type: "$$guest.type",
                   timestamp: "$$guest.timestamp",
                   name: "$$guest.name",
                   email: "$$guest.email",
-                  type: "$$guest.type",
+                  phone: "$$guest.phone",
                   preferences: "$$guest.preferences",
-                  marketing: "$$guest.marketing"
+                  ticket: "$$guest.ticket"
                 }
               }
             }
           }
         }
-      ]).toArray(async (err, result) => {
-        if (err) {
-          console.error("Error:", err);
-          return;
-        }
+      ]).toArray();
 
-        if (result.length > 0) {
-          // Event found
-          const values = result[0].guests.map((obj) => Object.values(obj))
+      if (result.length > 0) {
+        const eventDetails = [
+          ["status", "region", "title", "date", "time", "location", "ticketTimer", "ticketLimit", "entry", "memberEntry", "activeMemberEntry", "ticketLink"],
+          [status, region, title, date, time, location, ticketTimer, ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
+        ];
 
-          await googleSheets.spreadsheets.values.clear({
-            auth,
-            spreadsheetId,
-            range: sheetName,
-          })
+        const guestListHeaders = ["status", "type", "timestamp", "name", "email", "phone", "preferences", "ticket"];
+        const guests = result[0].guests.map((obj) => guestListHeaders.map(header => obj[header]));
 
-          await googleSheets.spreadsheets.values.append({
-            auth,
-            spreadsheetId,
-            range: sheetName,
-            valueInputOption: "RAW",
-            resource: {
-              values: [
-                ["Guest List of Event:", eventName],
-                ["Index", "Timestamp", "Name", "Email", "Type", 'Preferences', 'Marketing'],
-                ...values
-              ]
-            }
-          })
+        const values = [
+          ...eventDetails,
+          [],
+          ["Guest List", "Presence", guests.length],
+          guestListHeaders,
+          ...guests
+        ];
 
-          console.log('Event Updated!')
-        } else {
-          console.log("Event not found.");
-        }
-      });
-    })
+        await googleSheets.spreadsheets.values.clear({
+          auth,
+          spreadsheetId,
+          range: sheetName,
+        });
+
+        await googleSheets.spreadsheets.values.append({
+          auth,
+          spreadsheetId,
+          range: sheetName,
+          valueInputOption: "RAW",
+          resource: {
+            values
+          }
+        });
+
+        console.log('Event Updated!');
+      } else {
+        console.log("Event not found.");
+      }
+
+      client.close();
+    });
   }
-}
+};
 
 const usersToSpreadsheet = async (region = null, filterByRegion = true) => {
 
-  let spreadsheetId = '1iOCDGM2VLn5PNR0wyEUQkD2WMkuFAxnORzGG1iw4e1Q'
+  let spreadsheetId = BGSNL_MEMBERS_SPREADSHEETS_ID;
 
   if (region && SPREADSHEETS_ID[region].users && filterByRegion) {
     spreadsheetId = SPREADSHEETS_ID[region].users
@@ -249,7 +258,7 @@ const usersToSpreadsheet = async (region = null, filterByRegion = true) => {
         }
 
         const values = usersArray.map((user) => {
-          const { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, ...rest } = user;
+          const { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, roles, ...rest } = user;
           let dataFields;
 
           if (filterByRegion) {

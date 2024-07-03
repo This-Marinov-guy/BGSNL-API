@@ -1,3 +1,5 @@
+export const BGSNL_MEMBERS_SPREADSHEETS_ID = '1iOCDGM2VLn5PNR0wyEUQkD2WMkuFAxnORzGG1iw4e1Q';
+
 export const SPREADSHEETS_ID = {
     groningen: {
         events: '1kyT9mBkJwl6vj8TBwe8UsFDNmgUF85dhVTihz2LnvM4',

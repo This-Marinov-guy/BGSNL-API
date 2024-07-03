@@ -5,12 +5,12 @@ import jwt from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
-import { sendNewPasswordEmail } from "../middleware/email-transporter.js";
+import { sendNewPasswordEmail } from "../services/email-transporter.js";
 import moment from 'moment'
 import { formatReverseDate } from "../util/functions/dateConvert.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/config/KEYS.js";
-import { usersToSpreadsheet } from "../util/functions/searchInDatabase.js";
+import { usersToSpreadsheet } from "../services/google-spreadsheets.js";
 import { jwtSign } from "../util/functions/helpers.js";
 
 const getCurrentUser = async (req, res, next) => {

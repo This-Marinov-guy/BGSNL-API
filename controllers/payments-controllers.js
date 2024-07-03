@@ -6,10 +6,10 @@ import HttpError from "../models/Http-error.js";
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import User from "../models/User.js";
-import { sendTicketEmail, welcomeEmail } from "../middleware/email-transporter.js";
+import { sendTicketEmail, welcomeEmail } from "../services/email-transporter.js";
 import moment from 'moment'
 import { formatReverseDate } from "../util/functions/dateConvert.js";
-import { eventToSpreadsheet, usersToSpreadsheet } from "../util/functions/searchInDatabase.js";
+import { eventToSpreadsheet, usersToSpreadsheet } from "../services/google-spreadsheets.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",

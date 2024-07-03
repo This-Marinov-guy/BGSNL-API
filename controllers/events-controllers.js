@@ -4,9 +4,9 @@ import NonSocietyEvent from "../models/NonSocietyEvent.js";
 import User from "../models/User.js";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
-import { sendTicketEmail } from "../middleware/email-transporter.js";
+import { sendTicketEmail } from "../services/email-transporter.js";
 import moment from 'moment'
-import { eventToSpreadsheet } from "../util/functions/searchInDatabase.js";
+import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import { calculateTimeRemaining, removeModelProperties } from "../util/functions/helpers.js";
 
 const getEventPurchaseAvailability = async (req, res, next) => {

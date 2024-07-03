@@ -11,7 +11,7 @@ import paymentRouter from "./routes/payments-routes.js";
 import contestRouter from "./routes/contest-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
-import { eventToSpreadsheet, usersToSpreadsheet } from './util/functions/searchInDatabase.js'
+import { eventToSpreadsheet, usersToSpreadsheet } from './services/google-spreadsheets.js'
 import { firewall, rateLimiter } from "./middleware/firewall.js";
 
 const app = express();
