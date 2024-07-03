@@ -1,6 +1,7 @@
 import { MailtrapClient } from "mailtrap";
 import dotenv from "dotenv";
 import { WHATS_APP } from "../util/config/LINKS.js";
+import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE } from "../util/config/defines.js";
 dotenv.config();
 
 const client = new MailtrapClient({ endpoint: process.env.MAIL_ENDPOINT, token: process.env.MAIL_TOKEN });
@@ -24,10 +25,9 @@ const sendTicketEmail = (
     },
   ];
 
-  let template_uuid = 'c30fa99f-9fcf-4ef2-ba7a-144c0c98f197';
-  if (type === "member") {
-    template_uuid = "277d4a81-d102-4cc3-8a61-9d1854147d55";
-  }
+  const template_uuid = type === "member" ?
+    MEMBER_TICKET_TEMPLATE
+    : GUEST_TICKET_TEMPLATE;
 
   client
     .send({
@@ -57,7 +57,7 @@ const sendNewPasswordEmail = async (receiver, resetToken) => {
     .send({
       from: sender,
       to: recipients,
-      template_uuid: "824f447b-0ca1-4dcf-9c10-223d71cf48eb",
+      template_uuid: NEW_PASS_TEMPLATE,
       template_variables: {
         template_variables: {
           resetToken,
@@ -78,7 +78,7 @@ const welcomeEmail = async (receiver, name, region) => {
     .send({
       from: sender,
       to: recipients,
-      template_uuid: "fd5dba3e-221b-4997-b6e8-987a1740bc0e",
+      template_uuid: WELCOME_TEMPLATE,
       template_variables: {
         template_variables: {
           name,
@@ -100,7 +100,7 @@ const sendContestMaterials = async (receiver) => {
     .send({
       from: sender,
       to: recipients,
-      template_uuid: "c130f73a-17f7-4fe8-be84-4acf9d5d2800",
+      template_uuid: CONTEST_MATERIALS_TEMPLATE,
       template_variables: {
         template_variables: {
         },

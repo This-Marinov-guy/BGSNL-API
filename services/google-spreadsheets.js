@@ -85,7 +85,8 @@ const eventToSpreadsheet = async (id) => {
     return;
   }
 
-  const { region, date, title, status, time, location, ticketTimer, ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink } = event;
+  const { region, date, title, status, time, location, ticketTimer, ticketLimit, entry, memberEntry, activeMemberEntry } = event;
+  const ticketLink = event.ticketLink ?? 'none'
 
   if (SPREADSHEETS_ID[region]?.events) {
     const spreadsheetId = SPREADSHEETS_ID[region].events;
@@ -167,11 +168,11 @@ const eventToSpreadsheet = async (id) => {
 
       if (result.length > 0) {
         const eventDetails = [
-          ["status", "region", "title", "date", "time", "location", "ticketTimer", "ticketLimit", "entry", "memberEntry", "activeMemberEntry", "ticketLink"],
+          ["Status", "Region", "Title", "Date", "Time", "Location", "Ticket Timer", "Ticket Limit", "Price", "Member Price", "Active Member Price", "Ticket Link"],
           [status, region, title, date, time, location, ticketTimer, ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
         ];
 
-        const guestListHeaders = ["status", "type", "timestamp", "name", "email", "phone", "preferences", "ticket"];
+        const guestListHeaders = ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "Ticket"];
         const guests = result[0].guests.map((obj) => guestListHeaders.map(header => obj[header]));
 
         const values = [
@@ -202,6 +203,51 @@ const eventToSpreadsheet = async (id) => {
       } else {
         console.log("Event not found.");
       }
+
+      // Apply conditional formatting
+      const startRow = 5; // Row number where guest list starts (1-based index)
+      const endRow = startRow + guests.length; // End row number (1-based index)
+
+      const formattingRequest = {
+        spreadsheetId,
+        resource: {
+          requests: [
+            {
+              addConditionalFormatRule: {
+                rule: {
+                  ranges: [
+                    {
+                      sheetId: sheetsList.find(sheet => sheet.properties.title === sheetName).properties.sheetId,
+                      startRowIndex: startRow,
+                      endRowIndex: endRow,
+                      startColumnIndex: 0,
+                      endColumnIndex: guestListHeaders.length,
+                    },
+                  ],
+                  booleanRule: {
+                    condition: {
+                      type: 'CUSTOM_FORMULA',
+                      values: [
+                        { userEnteredValue: '=INDIRECT("R[0]C1", FALSE) = 1' },
+                      ],
+                    },
+                    format: {
+                      backgroundColor: {
+                        red: 0.0,
+                        green: 1.0,
+                        blue: 0.0,
+                      },
+                    },
+                  },
+                },
+                index: 0,
+              },
+            },
+          ],
+        },
+      };
+
+      await googleSheets.spreadsheets.batchUpdate(formattingRequest);
 
       client.close();
     });
