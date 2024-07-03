@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import uniqueValidator from "mongoose-unique-validator";
-import { MEMBER } from "../util/config/defines";
+import { MEMBER } from "../util/config/defines.js";
 
 const Schema = mongoose.Schema;
 

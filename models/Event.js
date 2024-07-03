@@ -1,6 +1,6 @@
 import moment from "moment";
 import mongoose from "mongoose";
-import { EVENT_OPENED } from "../util/config/defines";
+import { EVENT_OPENED } from "../util/config/defines.js";
 
 const Schema = mongoose.Schema;
 
