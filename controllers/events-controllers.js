@@ -97,7 +97,7 @@ const getSoldTicketQuantity = async (req, res, next) => {
 
 }
 
-checkEligibleMemberForPurchase = async (req, res, next) => {
+const checkEligibleMemberForPurchase = async (req, res, next) => {
   const { userId, eventId } = req.params;
   let status = true;
 
