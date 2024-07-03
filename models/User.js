@@ -1,11 +1,12 @@
 import mongoose from "mongoose";
 import uniqueValidator from "mongoose-unique-validator";
+import { MEMBER } from "../util/config/defines";
 
 const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
   status: { type: String, required: true },
-  roles: {type: Array, required: true, default: ['member']},
+  roles: {type: Array, required: true, default: [MEMBER]},
   subscription: {
     period: { type: Number },
     id: { type: String },

@@ -1,8 +1,9 @@
 import express from "express";
 import { check } from "express-validator";
 import {
+  checkEligibleMemberForPurchase,
   getEvent,
-  getEventStatus,
+  getEventPurchaseAvailability,
   getSoldTicketQuantity,
   postAddGuestToEvent,
   postAddMemberToEvent,
@@ -19,8 +20,8 @@ const upload = multer({ storage: multer.memoryStorage() })
 const eventRouter = express.Router();
 
 eventRouter.get(
-  "/get-event-status/:region/:eventName",
-  getEventStatus
+  "/get-purchase-status/:eventId",
+  getEventPurchaseAvailability
 )
 
 eventRouter.get(
@@ -29,8 +30,13 @@ eventRouter.get(
 )
 
 eventRouter.get(
-  "/sold-ticket-count/:region/:eventName/:date",
+  "/sold-ticket-count/:eventId",
   getSoldTicketQuantity
+)
+
+eventRouter.get(
+  "/check-member/:userId/:eventId",
+  checkEligibleMemberForPurchase
 )
 
 eventRouter.post(

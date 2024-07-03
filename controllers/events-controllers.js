@@ -9,15 +9,15 @@ import moment from 'moment'
 import { eventToSpreadsheet } from "../util/functions/searchInDatabase.js";
 import { calculateTimeRemaining, removeModelProperties } from "../util/functions/helpers.js";
 
-const getEventStatus = async (req, res, next) => {
+const getEventPurchaseAvailability = async (req, res, next) => {
   try {
-    const { eventName, region } = req.params;
+    const { eventId } = req.params;
 
-    if (!(eventName && region)) {
+    if (!eventId) {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    const event = await Event.findOne({ title: eventName, region, date });
+    const event = await Event.findById(eventId);
 
     if (!event) {
       return next(new HttpError("No event was found", 404));
@@ -47,7 +47,8 @@ const getEvent = async (req, res, next) => {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    let event = await Event.findOne({ title: eventName, region });
+    let event = await Event.findOne({
+      title: eventName, region, date: { $gt: moment() }});
 
     if (!event) {
       return next(new HttpError("No event was found", 404));
@@ -73,13 +74,13 @@ const getEvent = async (req, res, next) => {
 
 const getSoldTicketQuantity = async (req, res, next) => {
   try {
-    const { eventName, region, date } = req.params;
+    const { eventId } = req.params;
 
-    if (!(eventName && region && date)) {
+    if (!eventId) {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    const event = await Event.findOne({ title: eventName, region, date });
+    const event = await Event.findById(eventId);
 
     let ticketsSold;
 
@@ -94,6 +95,38 @@ const getSoldTicketQuantity = async (req, res, next) => {
     return next(new HttpError("Something got wrong, please contact support", 500));
   }
 
+}
+
+checkEligibleMemberForPurchase = async (req, res, next) => {
+  const { userId, eventId } = req.params;
+  let status = true;
+
+  if (!eventId) {
+    return next(new HttpError("Invalid inputs passed", 422));
+  }
+
+  let event = await Event.findById(eventId);
+
+  if (!event) {
+    return next(new HttpError("No event was found", 404));
+  }
+
+  let member = await member.findById(userId);
+
+  if (!member) {
+    new HttpError("Could not find a user with provided id", 404);
+  }
+
+  for (const guest of event.guestList) {
+    const memberName = `${member.name} ${member.surname}`;
+
+    if (guest.name === memberName && guest.email === member.email ) {
+      status = false;
+      break;
+    }
+  }
+
+  res.status(200).json({ status });
 }
 
 const postAddMemberToEvent = async (req, res, next) => {
@@ -342,4 +375,4 @@ const updatePresence = async (req, res, next) => {
   res.status(201).json({ status: 1, event: societyEvent.title });
 };
 
-export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, getEvent, getEventStatus, getSoldTicketQuantity, updatePresence };
+export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, getEvent, getEventPurchaseAvailability, getSoldTicketQuantity, checkEligibleMemberForPurchase, updatePresence };
