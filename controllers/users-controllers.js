@@ -29,6 +29,12 @@ const getCurrentUser = async (req, res, next) => {
   delete user.password;
   user.registrationKey && delete user.registrationKey;
 
+  if (new Date(user.birth) === new Date()) {
+    res
+      .status(201)
+      .json({ status: user.status, user, celebrate: true });
+  }
+
   res
     .status(201)
     .json({ status: user.status, user });
@@ -219,6 +225,12 @@ const login = async (req, res, next) => {
     console.log(err);
     const error = new HttpError("Logging in failed", 500);
     return next(error);
+  }
+
+  if (new Date(existingUser.birth) === new Date()) {
+    res
+      .status(201)
+      .json({ token: token, region: existingUser.region, celebrate: true });
   }
 
   res.status(201).json({ token: token, region: existingUser.region });
