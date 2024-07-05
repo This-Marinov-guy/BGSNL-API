@@ -122,6 +122,7 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
 
     if (guest.name === memberName && guest.email === member.email ) {
       status = false;
+      new HttpError("Member has already purchased a ticket for this event", 500);
       break;
     }
   }
