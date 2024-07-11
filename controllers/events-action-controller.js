@@ -4,6 +4,7 @@ import HttpError from "../models/Http-error.js";
 import moment from 'moment'
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import uploadToCloudinary from "../util/functions/cloudinary.js";
+import { eventsCache } from "../util/config/caches.js";
 
 const fetchEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
@@ -24,20 +25,23 @@ const fetchEvents = async (req, res, next) => {
     const region = req.query.region;
 
     let events;
-    try {
-        if (region) {
-            //remove hidden once we migrate
-            events = await Event.find({ region, hidden: false })
-        } else {
-            events = await Event.find({ hidden: false })
-        }
-    } catch (err) {
-        return next(new HttpError("Fetching events failed", 500));
-    }
 
-    res.status(200).json({
-        events: events.map((event) => event.toObject({ getters: true })),
-    });
+    if (!eventsCache.get('events')) {
+        try {
+            if (region) {
+                //remove hidden once we migrate
+                events = await Event.find({ region, hidden: false })
+            } else {
+                events = await Event.find({ hidden: false })
+            }
+
+            eventsCache.set('events', events.map((event) => event.toObject({ getters: true })));
+        } catch (err) {
+            return next(new HttpError("Fetching events failed", 500));
+        }
+    }
+    
+    res.status(200).json({events});
 }
 
 const addEvent = async (req, res, next) => {

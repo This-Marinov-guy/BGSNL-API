@@ -1,8 +1,6 @@
 import HttpError from "../models/Http-error.js";
-import NodeCache from "node-cache";
 import { allowedIps, allowedOrigins } from "../util/config/access.js";
-
-const cache = new NodeCache({ stdTTL: 3600, checkperiod: 3600 });
+import { requestCache } from "../util/config/caches.js";
 
 export const rateLimiter = (req, res, next) => {
     if (req.method === 'GET') return next();
@@ -12,9 +10,9 @@ export const rateLimiter = (req, res, next) => {
     const windowStart = now - 3600; // 1 hour ago
     const maxRequests = 100;
 
-    let entry = cache.get(ip);
+    let entry = requestCache.get(ip);
     if (!entry) {
-        cache.set(ip, [now]);
+        requestCache.set(ip, [now]);
         return next();
     }
 
@@ -25,7 +23,7 @@ export const rateLimiter = (req, res, next) => {
     }
 
     entry.push(now);
-    cache.set(ip, entry);
+    requestCache.set(ip, entry);
     next();
 };
 
