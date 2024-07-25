@@ -8,9 +8,9 @@ const userSchema = new Schema({
   status: { type: String, required: true },
   roles: {type: Array, required: true, default: [MEMBER]},
   subscription: {
-    period: { type: Number, required: true },
-    id: { type: String, required: true },
-    customerId: { type: String, required: true }
+    period: { type: Number },
+    id: { type: String },
+    customerId: { type: String }
   },
   region: { type: String },
   purchaseDate: { type: Date, default: new Date(), required: true },
