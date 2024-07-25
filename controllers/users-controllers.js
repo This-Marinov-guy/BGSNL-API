@@ -29,7 +29,7 @@ const getCurrentUser = async (req, res, next) => {
   delete user.password;
   user.registrationKey && delete user.registrationKey;
 
-  if (new Date(user.birth) === new Date()) {
+  if (moment(user.birth).format('MMM Do') === moment().format('MMM Do')) {
     res
       .status(201)
       .json({ status: user.status, user, celebrate: true });
@@ -228,7 +228,7 @@ const login = async (req, res, next) => {
     return next(error);
   }
 
-  if (new Date(existingUser.birth) === new Date()) {
+  if (moment(existingUser.birth).format('MMM Do') === moment().format('MMM Do')) {
     res
       .status(201)
       .json({ token: token, region: existingUser.region, celebrate: true });
