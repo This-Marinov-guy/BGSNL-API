@@ -11,7 +11,7 @@ import { formatReverseDate } from "../util/functions/dateConvert.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/config/KEYS.js";
 import { usersToSpreadsheet } from "../services/google-spreadsheets.js";
-import { jwtSign } from "../util/functions/helpers.js";
+import { isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
@@ -29,8 +29,8 @@ const getCurrentUser = async (req, res, next) => {
   delete user.password;
   user.registrationKey && delete user.registrationKey;
 
-  if (moment(user.birth).format('MMM Do') === moment().format('MMM Do')) {
-    res
+  if (isBirthdayToday(user.birth)) {
+    return res
       .status(201)
       .json({ status: user.status, user, celebrate: true });
   }
@@ -171,7 +171,13 @@ const signup = async (req, res, next) => {
   usersToSpreadsheet(region)
   usersToSpreadsheet(null, false);
 
-  res.status(201).json({ token: token, region });
+  if (isBirthdayToday(birth)) {
+    return res
+      .status(201)
+      .json({ token, region, celebrate: true });
+  }
+
+  res.status(201).json({ token, region });
 };
 
 const login = async (req, res, next) => {
@@ -228,8 +234,8 @@ const login = async (req, res, next) => {
     return next(error);
   }
 
-  if (moment(existingUser.birth).format('MMM Do') === moment().format('MMM Do')) {
-    res
+  if (isBirthdayToday(existingUser.birth)) {
+    return res
       .status(201)
       .json({ token: token, region: existingUser.region, celebrate: true });
   }

@@ -45,3 +45,18 @@ export const decodeFromURL = (url) => {
 
   return decodeURIComponent(decodedString);
 }
+
+export const isBirthdayToday = (birthdayStr) => {
+  const birthdayDate = new Date(birthdayStr);
+  if (isNaN(birthdayDate.getTime())) {
+    throw new Error('Invalid date format');
+  }
+
+  const today = new Date();
+
+  // Check if today's month and day match the birthday's month and day
+  return (
+    birthdayDate.getDate() === today.getDate() &&
+    birthdayDate.getMonth() === today.getMonth()
+  );
+}
