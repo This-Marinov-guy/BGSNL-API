@@ -6,7 +6,7 @@ const contestSchema = new Schema({
     contestName: { type: String },
     registered: [
         {
-            timestamp: { type: String },
+            timestamp: { type: Date, default: new Date() },
             name: { type: String, required: true },
             surname: { type: String, required: true },
             email: { type: String, required: true },

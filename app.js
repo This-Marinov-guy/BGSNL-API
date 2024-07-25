@@ -13,6 +13,7 @@ import specialEventsRouter from "./routes/special-events-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from './services/google-spreadsheets.js'
 import { firewall, rateLimiter } from "./middleware/firewall.js";
+import { updateUsers } from "./util/locals/manipulate-db.js";
 
 const app = express();
 
@@ -85,4 +86,3 @@ mongoose
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
   .catch((err) => console.log("Failed to Connect ", err));
-

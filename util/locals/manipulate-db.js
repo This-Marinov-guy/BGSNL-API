@@ -1,3 +1,4 @@
+import moment from 'moment';
 import { MongoClient } from 'mongodb';
 
 // Connection URI
@@ -20,37 +21,33 @@ export async function updateUsers() {
         const cursor = users.find({});
 
         // // Iterate over all users
-        // for await (const user of cursor) {
-        //     // Create a new object without the 'roles' property
-        //     const newUserDoc = { ...user };
-        //     delete newUserDoc._id;  // _id is immutable, so we remove it
+        for await (const user of cursor) {
+            // Create a new object without the 'roles' property
+            const newUserDoc = { ...user };
+            delete newUserDoc._id;  // _id is immutable, so we remove it
 
-        //     // Find the position of 'status' and insert 'roles' after it
-        //     const keys = Object.keys(newUserDoc);
-        //     const statusIndex = keys.indexOf('status');
+            // Find the position of 'status' and insert 'roles' after it
+            const keys = Object.keys(newUserDoc);
+            const statusIndex = keys.indexOf('status');
 
-        //     const newObj = {};
-        //     keys.forEach((key, index) => {
-        //         newObj[key] = newUserDoc[key];
-        //         if (index === statusIndex) {
-        //             newObj.roles = ['member'];
-        //         }
-        //     });
+            // Convert fields to Date objects
+            const convertToDate = (dateString) => dateString ? new Date(dateString) : null;
 
-        //     // If 'status' doesn't exist, add 'roles' at the end
-        //     if (statusIndex === -1) {
-        //         newObj.roles = ['member'];
-        //     }
+            const newObj = {};
+            keys.forEach((key, index) => {
+                newObj[key] = newUserDoc[key];
 
-        //     // Update expireDate if necessary
-        //     if (user.expireDate === 'Board Member' || user.expireDate === 'Committee Member') {
-        //         newObj.expireDate = '31 Aug 2024';
-        //     }
+                // newObj.purchaseDate = convertToDate(user.purchaseDate);
+                // newObj.expireDate = convertToDate(user.expireDate);
+                newObj.birth = moment(user.birth).format("D MMM YYYY");
 
-        //     // Update the user
-        //     const result = await users.replaceOne({ _id: user._id }, newObj);
-        //     console.log(`Updated user ${user._id}: ${result.modifiedCount} document(s) modified`);
-        // }
+                
+            });
+
+            // Update the user
+            const result = await users.replaceOne({ _id: user._id }, newObj);
+            console.log(`Updated user ${user._id}: ${result.modifiedCount} document(s) modified`);
+        }
     } catch (err) {
         console.log(err);
     } finally {

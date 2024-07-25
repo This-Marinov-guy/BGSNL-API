@@ -5,9 +5,8 @@ import User from "../models/User.js";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import { sendTicketEmail } from "../services/email-transporter.js";
-import moment from 'moment'
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
-import { calculateTimeRemaining, removeModelProperties } from "../util/functions/helpers.js";
+import { calculateTimeRemaining, decodeFromURL, removeModelProperties } from "../util/functions/helpers.js";
 
 const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -39,16 +38,50 @@ const getEventPurchaseAvailability = async (req, res, next) => {
   }
 }
 
+const getEventById = async (req, res, next) => {
+  const eventId = req.params.eventId;
+
+  let event;
+  try {
+    let event = await Event.findById(eventId);
+
+    if (!event) {
+      return next(new HttpError("No event was found", 404));
+    }
+
+    let status = true;
+
+    const ticketsRemaining = event.ticketLimit - event.guestList.length;
+    const ticketTimer = calculateTimeRemaining(event.ticketTimer);
+
+    if (ticketsRemaining <= 0 || ticketTimer <= 0) {
+      status = false;
+    }
+
+    event = removeModelProperties(event, ['guestList', 'discountPass', 'freePass']);
+
+    res.status(200).json({ event, status });
+
+  } catch (err) {
+    return next(new HttpError("Fetching events failed", 500));
+  }
+}
+
 const getEvent = async (req, res, next) => {
   try {
-    const { eventName, region } = req.params;
+    const eventName = decodeFromURL(req.params.eventName);
+    const region = req.params.region;
+    const today = new Date().toISOString();
 
     if (!(eventName && region)) {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
     let event = await Event.findOne({
-      title: eventName, region, date: { $gt: moment() }});
+      title: eventName,
+      region: region,
+      date: { $gte: today }
+    });
 
     if (!event) {
       return next(new HttpError("No event was found", 404));
@@ -120,7 +153,7 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
   for (const guest of event.guestList) {
     const memberName = `${member.name} ${member.surname}`;
 
-    if (guest.name === memberName && guest.email === member.email ) {
+    if (guest.name === memberName && guest.email === member.email) {
       status = false;
       new HttpError("Member has already purchased a ticket for this event", 500);
       break;
@@ -163,7 +196,6 @@ const postAddMemberToEvent = async (req, res, next) => {
     sess.startTransaction();
     societyEvent.guestList.push({
       type: "member",
-      timestamp: moment(new Date()).format("D MMM YYYY"),
       name: targetUser.name + " " + targetUser.surname,
       email: targetUser.email,
       phone: targetUser.phone,
@@ -172,7 +204,6 @@ const postAddMemberToEvent = async (req, res, next) => {
     });
     targetUser.tickets.push({
       event: eventName,
-      purchaseDate: moment(new Date()).format("D MMM YYYY"),
       image: req.file.location,
     });
     await societyEvent.save();
@@ -226,7 +257,6 @@ const postAddGuestToEvent = async (req, res, next) => {
 
   let guest = {
     type: "guest",
-    timestamp: moment(new Date()).format("D MMM YYYY"),
     name: guestName,
     email: guestEmail,
     phone: guestPhone,
@@ -290,7 +320,6 @@ const postNonSocietyEvent = async (req, res, next) => {
 
   let guest = {
     user,
-    timestamp: moment(new Date()).format("D MMM YYYY"),
     name,
     email,
     phone,
@@ -376,4 +405,4 @@ const updatePresence = async (req, res, next) => {
   res.status(201).json({ status: 1, event: societyEvent.title });
 };
 
-export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, getEvent, getEventPurchaseAvailability, getSoldTicketQuantity, checkEligibleMemberForPurchase, updatePresence };
+export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, getEvent, getEventPurchaseAvailability, getSoldTicketQuantity, getEventById, checkEligibleMemberForPurchase, updatePresence };

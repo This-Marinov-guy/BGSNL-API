@@ -8,13 +8,13 @@ const userSchema = new Schema({
   status: { type: String, required: true },
   roles: {type: Array, required: true, default: [MEMBER]},
   subscription: {
-    period: { type: Number },
-    id: { type: String },
-    customerId: { type: String }
+    period: { type: Number, required: true },
+    id: { type: String, required: true },
+    customerId: { type: String, required: true }
   },
   region: { type: String },
-  purchaseDate: { type: String },
-  expireDate: { type: String },
+  purchaseDate: { type: Date, default: new Date(), required: true },
+  expireDate: { type: Date, required: true },
   image: { type: String, required: true },
   name: { type: String, required: true },
   surname: { type: String, required: true },
@@ -31,7 +31,7 @@ const userSchema = new Schema({
   tickets: [
     {
       event: { type: String, required: true },
-      purchaseDate: { type: String },
+      purchaseDate: { type: Date, default: new Date() },
       image: { type: String, required: true },
     },
   ],

@@ -4,13 +4,13 @@ import jwt from "jsonwebtoken";
 
 // Function to update the original array with the modified subset | needs to have ids
 export const updateOriginalArray = (originalArray, modifiedSubset) => {
-    const updatedArray = originalArray.map(originalObject => {
-      const modifiedObject = modifiedSubset.find(subsetObject => subsetObject.id === originalObject.id);
-      return modifiedObject ? { ...originalObject, ...modifiedObject } : originalObject;
-    });
-    return updatedArray;
-  };
-  
+  const updatedArray = originalArray.map(originalObject => {
+    const modifiedObject = modifiedSubset.find(subsetObject => subsetObject.id === originalObject.id);
+    return modifiedObject ? { ...originalObject, ...modifiedObject } : originalObject;
+  });
+  return updatedArray;
+};
+
 export const calculateTimeRemaining = (timer) => {
   const now = new Date().getTime();
   const targetTime = new Date(timer).getTime();
@@ -26,8 +26,22 @@ export const removeModelProperties = (obj, properties) => {
 
 export const jwtSign = (user) => {
   return jwt.sign(
-      { userId: user.id, roles: user.roles, email: user.email, region: user.region },
-      process.env.JWT_STRING,
-      { expiresIn: "1h" }
-    );
-} 
+    { userId: user.id, roles: user.roles, email: user.email, region: user.region },
+    process.env.JWT_STRING,
+    { expiresIn: "1h" }
+  );
+}
+
+export const encodeForURL = (string) => {
+  let encodedString = string.toLowerCase().replace(/ /g, '_');
+
+  return encodeURIComponent(encodedString);
+}
+
+export const decodeFromURL = (url) => {
+  const decodedString = url.replace(/_/g, ' ').replace(/\b\w/g, function (char) {
+    return char.toUpperCase();
+  });
+
+  return decodeURIComponent(decodedString);
+}

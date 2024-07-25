@@ -242,7 +242,8 @@ const postWebhookCheckout = async (req, res, next) => {
           }
 
           const today = new Date()
-          const expire = new Date(today.setMonth(today.getMonth() + period))
+          const expire = new Date(today)
+          expire.setMonth(expire.getMonth() + period);
 
           const createdUser = new User({
             status: "active",
@@ -252,8 +253,7 @@ const postWebhookCheckout = async (req, res, next) => {
               customerId
             },
             region,
-            purchaseDate: moment(new Date()).format("D MMM YYYY"),
-            expireDate: moment(new Date()).add(period, 'months').format("D MMM YYYY"),
+            expireDat: expire,
             image,
             name,
             surname,
@@ -319,8 +319,12 @@ const postWebhookCheckout = async (req, res, next) => {
             period, id: subscriptionId, customerId
           }
 
-          user.purchaseDate = moment(new Date()).format("D MMM YYYY")
-          user.expireDate = moment(new Date()).add(period, 'months').format("D MMM YYYY")
+          const today = new Date()
+          const expire = new Date(today)
+          expire.setMonth(expire.getMonth() + period);
+
+          user.purchaseDate = today;
+          user.expireDate = expire;
 
           try {
             await user.save();
@@ -351,7 +355,6 @@ const postWebhookCheckout = async (req, res, next) => {
           }
           let guest = {
             type: "guest",
-            timestamp: new Date().toString(),
             name: guestName,
             email: guestEmail,
             phone: guestPhone,
@@ -420,7 +423,6 @@ const postWebhookCheckout = async (req, res, next) => {
             sess.startTransaction();
             societyEvent.guestList.push({
               type: "member",
-              timestamp: new Date().toString(),
               name: targetUser.name + " " + targetUser.surname,
               email: targetUser.email,
               phone: targetUser.phone,
@@ -430,7 +432,6 @@ const postWebhookCheckout = async (req, res, next) => {
 
             targetUser.tickets.push({
               event: eventName,
-              purchaseDate: new Date().toString(),
               image: metadata.file,
             });
             await societyEvent.save();
@@ -486,9 +487,13 @@ const postWebhookCheckout = async (req, res, next) => {
         period = 12
       }
 
+      const today = new Date()
+      const expire = new Date(today)
+      expire.setMonth(expire.getMonth() + period);
+
       user.status = 'active'
-      user.purchaseDate = moment(new Date()).format("D MMM YYYY")
-      user.expireDate = moment(new Date()).add(period, 'months').format("D MMM YYYY")
+      user.purchaseDate = today;
+      user.expireDate = expire;
 
       try {
         await user.save();

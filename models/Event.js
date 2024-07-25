@@ -1,4 +1,3 @@
-import moment from "moment";
 import mongoose from "mongoose";
 import { EVENT_OPENED } from "../util/config/defines.js";
 
@@ -12,7 +11,7 @@ const eventSchema = new Schema({
   date: { type: String, required: true },
   time: { type: String, required: true },
   location: { type: String, required: true },
-  ticketTimer: { type: String, required: true },
+  ticketTimer: { type: Date, required: true },
   ticketLimit: { type: Number, required: true },
   isSaleClosed: { type: Boolean, required: true },
   isFree: { type: Boolean, required: true },
@@ -51,7 +50,7 @@ const eventSchema = new Schema({
       // status 1 - came
       status: {type: Number, default: 0},
       type: { type: String },
-      timestamp: { type: String, default: moment().format('Do MMM, h:mm') },
+      timestamp: { type: Date, default: new Date() },
       name: { type: String, required: true },
       email: { type: String, required: true },
       phone: { type: String, required: true },

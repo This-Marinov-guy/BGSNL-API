@@ -4,7 +4,7 @@ import uniqueValidator from "mongoose-unique-validator";
 const Schema = mongoose.Schema;
 
 const activeMemberSchema = new Schema({
-    timestamp: { type: String },
+    timestamp: { type: Date, default: new Date() },
     positions: { type: Array },
     date: { type: Array },
     email: { type: String, required: true },

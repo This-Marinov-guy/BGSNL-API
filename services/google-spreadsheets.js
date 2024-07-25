@@ -288,8 +288,6 @@ const usersToSpreadsheet = async (region = null, filterByRegion = true) => {
 
     const collection = db.collection('users');
 
-    // collection.updateMany({}, { $set: { region: 'rotterdam' } });
-
     collection.find({}).toArray(async (err, users) => {
       if (err) {
         console.log('Error while writing in db')

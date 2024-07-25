@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
-import moment from 'moment'
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import uploadToCloudinary from "../util/functions/cloudinary.js";
 import { eventsCache } from "../util/config/caches.js";
@@ -26,22 +25,18 @@ const fetchEvents = async (req, res, next) => {
 
     let events;
 
-    if (!eventsCache.get('events')) {
-        try {
-            if (region) {
-                //remove hidden once we migrate
-                events = await Event.find({ region, hidden: false })
-            } else {
-                events = await Event.find({ hidden: false })
-            }
-
-            eventsCache.set('events', events.map((event) => event.toObject({ getters: true })));
-        } catch (err) {
-            return next(new HttpError("Fetching events failed", 500));
+    try {
+        if (region) {
+            events = await Event.find({ region });
+        } else {
+            events = await Event.find();
         }
+
+    } catch (err) {
+        return next(new HttpError("Fetching events failed", 500));
     }
-    
-    res.status(200).json({events});
+
+    res.status(200).json({ events: events.map((event) => event.toObject({ getters: true })) });
 }
 
 const addEvent = async (req, res, next) => {
@@ -77,8 +72,7 @@ const addEvent = async (req, res, next) => {
     } = req.body
 
     const extraInputsForm = JSON.parse(req.body.extraInputsForm);
-    const date = moment(req.body.date, "ddd MMM DD YYYY HH:mm:ss [GMT]ZZ (z)").format("Do MMM YY");
-    const time = moment(req.body.time, "ddd MMM DD YYYY HH:mm:ss [GMT]ZZ (z)").format("h:mm");
+    const {date, time} = req.body;
 
     //upload images
     try {

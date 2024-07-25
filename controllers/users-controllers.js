@@ -129,13 +129,14 @@ const signup = async (req, res, next) => {
     image = req.file.Location;
   }
 
-  const today = new Date()
+  const today = new Date();
+  const expireDate = new Date(today); 
+  expireDate.setMonth(expireDate.getMonth() + period);
 
   const createdUser = new User({
     status: "active",
     region,
-    purchaseDate: moment(new Date()).format("D MMM YYYY"),
-    expireDate: "Board Member",
+    expireDate,
     image,
     name,
     surname,
@@ -208,7 +209,7 @@ const login = async (req, res, next) => {
   //check for expired account and lock it if necessary
   const today = new Date();
 
-  if (today > new Date(existingUser.expireDate)) {
+  if (today > existingUser.expireDate) {
     existingUser.status = "locked";
     try {
       await existingUser.save();
@@ -429,12 +430,13 @@ const patchUserStatus = async (req, res, next) => {
     );
   }
 
-  const today = new Date()
-  const expire = new Date(today.setMonth(today.getMonth() + period))
+  const today = new Date();
+  const expire = new Date(today);
+  expire.setMonth(expire.getMonth() + period);
 
   user.status = "active";
-  user.purchaseDate = format(new Date(), "dd MMM yyyy");
-  user.expireDate = format(expire, "dd MMM yyyy");
+  user.purchaseDate = today;
+  user.expireDate = expire;
 
   try {
     await user.save();

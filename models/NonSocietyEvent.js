@@ -4,11 +4,11 @@ const Schema = mongoose.Schema;
 
 const eventSchema = new Schema({
   event: { type: String, require: true },
-  date: { type: String },
+  date: { type: Date },
   guestList: [
     {
       user: { type: String, required: true },
-      timestamp: { type: String },
+      timestamp: { type: Date, default: new Date() },
       name: { type: String, required: true },
       email: { type: String, required: true },
       phone: { type: String, required: true },
