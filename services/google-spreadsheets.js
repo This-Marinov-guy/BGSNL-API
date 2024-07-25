@@ -2,6 +2,7 @@ import { MongoClient, ObjectId } from 'mongodb';
 import { google } from 'googleapis';
 import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../util/config/SPREEDSHEATS.js';
 import HttpError from '../models/Http-error.js';
+import moment from 'moment';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -169,7 +170,7 @@ const eventToSpreadsheet = async (id) => {
       if (result.length > 0) {
         const eventDetails = [
           ["Status", "Region", "Title", "Date", "Time", "Location", "Ticket Timer", "Ticket Limit", "Price", "Member Price", "Active Member Price", "Ticket Link"],
-          [status, region, title, date, time, location, ticketTimer, ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
+          [status, region, title, moment(date).format("D MMM YYYY"), moment(time).format("h:mm:ss a"), location, moment(ticketTimer).format("D MMM YYYY , h:mm:ss a"), ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
         ];
 
         const guestListHeaders = ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "Ticket"];
@@ -302,7 +303,9 @@ const usersToSpreadsheet = async (region = null, filterByRegion = true) => {
         }
 
         const values = usersArray.map((user) => {
-          const { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, roles, ...rest } = user;
+          let { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, roles, ...rest } = user;
+          rest.purchaseDate = moment(purchaseDate).format("D MMM YYYY");
+          rest.expireDate = moment(expireDate).format("D MMM YYYY");
           let dataFields;
 
           if (filterByRegion) {
