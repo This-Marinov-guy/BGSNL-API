@@ -15,6 +15,7 @@ import fileUpload from "../middleware/file-upload.js";
 import dotenv from "dotenv";
 import multer from "multer";
 import { addEvent, fetchEvent, fetchEvents } from "../controllers/events-action-controller.js";
+import { authMiddleware } from "../middleware/authorization.js";
 dotenv.config();
 
 const upload = multer({ storage: multer.memoryStorage() })
@@ -106,6 +107,7 @@ const eventImageUploads = upload.fields([
 
 eventRouter.post(
   "/actions/add-event",
+  authMiddleware,
   eventImageUploads,
   addEvent
 );

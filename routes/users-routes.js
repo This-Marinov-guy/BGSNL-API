@@ -18,7 +18,7 @@ import {
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
-import { adminMiddleware } from "../middleware/authorization.js";
+import { adminMiddleware, authMiddleware } from "../middleware/authorization.js";
 dotenv.config();
 
 const userRouter = express.Router();
@@ -52,7 +52,7 @@ userRouter.post(
   signup
 );
 
-userRouter.post("/cancel-membership", cancelSubscription)
+userRouter.post("/cancel-membership", authMiddleware, cancelSubscription)
 
 userRouter.post("/login", login);
 
@@ -76,6 +76,7 @@ userRouter.post(
 
 userRouter.patch(
   "/edit-info/:userId",
+  authMiddleware,
   fileResizedUpload(process.env.BUCKET_USERS).single("image"),
   [
     check("name").notEmpty(),
@@ -93,6 +94,6 @@ userRouter.patch(
   patchUserPassword
 );
 
-userRouter.patch("/unlock/:userId", patchUserStatus);
+userRouter.patch("/unlock/:userId", authMiddleware, patchUserStatus);
 
 export default userRouter;

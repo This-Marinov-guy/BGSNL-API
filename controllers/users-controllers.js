@@ -401,16 +401,16 @@ const patchUserInfo = async (req, res, next) => {
     user.password = hashedPassword;
   }
 
-  user.name = name;
-  user.surname = surname;
-  user.phone = phone;
-  user.email = email;
-  user.university = university;
-  user.otherUniversityName = otherUniversityName;
-  user.graduationDate = graduationDate;
-  user.course = course;
-  user.studentNumber = studentNumber;
-  user.notificationTypeTerms = notificationTypeTerms;
+  name && (user.name = name);
+  surname && (user.surname = surname);
+  phone && (user.phone = phone);
+  email && (user.email = email);
+  university && (user.university = university);
+  otherUniversityName && (user.otherUniversityName = otherUniversityName);
+  graduationDate && (user.graduationDate = graduationDate);
+  course && (user.course = course);
+  studentNumber && (user.studentNumber = studentNumber);
+  notificationTypeTerms && (user.notificationTypeTerms = notificationTypeTerms);
 
   try {
     await user.save();

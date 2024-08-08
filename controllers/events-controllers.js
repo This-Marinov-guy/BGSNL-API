@@ -41,7 +41,10 @@ const getEventPurchaseAvailability = async (req, res, next) => {
 const getEventById = async (req, res, next) => {
   const eventId = req.params.eventId;
 
-  let event;
+  if (eventId === undefined || !eventId) {
+    return next(new HttpError("No event was found", 404));
+  }
+
   try {
     let event = await Event.findById(eventId);
 
@@ -63,7 +66,8 @@ const getEventById = async (req, res, next) => {
     res.status(200).json({ event, status });
 
   } catch (err) {
-    return next(new HttpError("Fetching events failed", 500));
+    console.log(err);
+    return next(new HttpError("Fetching event failed", 500));
   }
 }
 
