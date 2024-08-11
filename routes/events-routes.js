@@ -94,7 +94,7 @@ eventRouter.patch(
 
 //event actions
 
-eventRouter.get('/actions/event/:eventId', fetchEvent)
+eventRouter.get('/actions/full-event-details/:eventId', fetchEvent)
 
 eventRouter.get('/actions/events', fetchEvents)
 
@@ -107,7 +107,6 @@ const eventImageUploads = upload.fields([
 
 eventRouter.post(
   "/actions/add-event",
-  authMiddleware,
   eventImageUploads,
   addEvent
 );
