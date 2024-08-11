@@ -458,7 +458,6 @@ const patchUserStatus = async (req, res, next) => {
 };
 
 export {
-  test,
   signup,
   login,
   postSendPasswordResetEmail,
