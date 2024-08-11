@@ -44,6 +44,9 @@ const eventSchema = new Schema({
   subEventLinks: {
     type: mongoose.Schema.Types.Mixed
   },
+  folder: {
+    type: String, required: true
+  },
   guestList: [
     {
       // status 0 - not came

@@ -15,6 +15,10 @@ const fetchEvent = async (req, res, next) => {
         return next(new HttpError("Fetching events failed", 500));
     }
 
+    if (!event) {
+        return next(new HttpError("No such event", 404));
+    }
+
     res.status(200).json({
         event: event.toObject({ getters: true }),
     });
@@ -49,6 +53,8 @@ const addEvent = async (req, res, next) => {
         subEventLinks,
         region,
         title,
+        date, 
+        time,
         description,
         location,
         ticketTimer,
@@ -72,14 +78,13 @@ const addEvent = async (req, res, next) => {
     } = req.body
 
     const extraInputsForm = JSON.parse(req.body.extraInputsForm);
-    const {date, time} = req.body;
 
     //upload images
     try {
         if (await Event.findOne({
             title, region, date, time
         })) {
-            const error = new HttpError("Event already exists", 422);
+            const error = new HttpError("Event already exists - find it in the dashboard and edit it!", 422);
             return next(error);
         }
 
@@ -158,6 +163,7 @@ const addEvent = async (req, res, next) => {
             poster,
             bgImage,
             bgImageExtra,
+            folder
         })
 
         await event.save();
@@ -172,4 +178,160 @@ const addEvent = async (req, res, next) => {
     res.status(201).json({ status: true });
 }
 
-export { addEvent, fetchEvent, fetchEvents }
+const editEvent = async (req, res, next) => {
+    const eventId = req.params.eventId;
+
+    let event;
+    try {
+        event = await Event.findById(eventId)
+    } catch (err) {
+        return next(new HttpError("Fetching events failed", 500));
+    }
+
+    if (!event) {
+        return next(new HttpError("No such event", 404));
+    }
+
+    const folder = event.folder ?? 'spare';
+
+    const {
+        memberOnly,
+        hidden,
+        freePass,
+        discountPass,
+        subEventDescription,
+        subEventLinks,
+        region,
+        title,
+        date,
+        time,
+        description,
+        location,
+        ticketTimer,
+        ticketLimit,
+        isSaleClosed,
+        isFree,
+        isMemberFree,
+        entry,
+        memberEntry,
+        activeMemberEntry,
+        entryIncluding,
+        memberIncluding,
+        including,
+        ticketLink,
+        priceId,
+        memberPriceId,
+        activeMemberPriceId,
+        text,
+        ticketColor,
+        bgImage,
+    } = req.body
+
+    const extraInputsForm = JSON.parse(req.body.extraInputsForm);
+
+    const poster = req.files['poster'] ? await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' }) : '';
+
+    const ticketImg = req.files['ticketImg'] ? await uploadToCloudinary(req.files['ticketImg'][0], {
+            folder,
+            public_id: 'ticket',
+            width: 1500,
+            height: 485,
+            crop: 'fit',
+            format: 'jpg'
+        }) : '';
+
+    const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], {
+        folder,
+        public_id: 'background',
+        width: 800,
+        crop: 'fit',
+        format: 'jpg'
+    }) : '';
+
+    let images = [poster];
+
+    if (req.files['images']) {
+        req.files['images'].forEach(async (img) => {
+            try {
+                const link = await uploadToCloudinary(img, { folder })
+                images.push(link);
+            } catch (err) {
+                console.log(err);
+            }
+        });
+    }
+
+    poster && (event.poster = poster);
+    ticketImg && (event.ticketImg = ticketImg);
+    bgImageExtra && (event.bgImageExtra = bgImageExtra);
+    images && images.length > 0 && (event.images = images);
+    req.body.extraInputsForm.length > 0 && (event.extraInputsForm = extraInputsForm);
+    memberOnly !== undefined && (event.memberOnly = memberOnly);
+    hidden !== undefined && (event.hidden = hidden);
+    freePass !== undefined && (event.freePass = freePass);
+    discountPass !== undefined && (event.discountPass = discountPass);
+    subEventDescription !== undefined && (event.subEventDescription = subEventDescription);
+    subEventLinks !== undefined && (event.subEventLinks = subEventLinks);
+    region !== undefined && (event.region = region);
+    title !== undefined && (event.title = title);
+    date !== undefined && (event.date = date);
+    time !== undefined && (event.time = time);
+    description !== undefined && (event.description = description);
+    location !== undefined && (event.location = location);
+    ticketTimer !== undefined && (event.ticketTimer = ticketTimer);
+    ticketLimit !== undefined && (event.ticketLimit = ticketLimit);
+    isSaleClosed !== undefined && (event.isSaleClosed = isSaleClosed);
+    isFree !== undefined && (event.isFree = isFree);
+    isMemberFree !== undefined && (event.isMemberFree = isMemberFree);
+    entry !== undefined && (event.entry = entry);
+    memberEntry !== undefined && (event.memberEntry = memberEntry);
+    activeMemberEntry !== undefined && (event.activeMemberEntry = activeMemberEntry);
+    entryIncluding !== undefined && (event.entryIncluding = entryIncluding);
+    memberIncluding !== undefined && (event.memberIncluding = memberIncluding);
+    including !== undefined && (event.including = including);
+    ticketLink !== undefined && (event.ticketLink = ticketLink);
+    priceId !== undefined && (event.priceId = priceId);
+    memberPriceId !== undefined && (event.memberPriceId = memberPriceId);
+    activeMemberPriceId !== undefined && (event.activeMemberPriceId = activeMemberPriceId);
+    text !== undefined && (event.text = text);
+    ticketColor !== undefined && (event.ticketColor = ticketColor);
+    bgImage !== undefined && (event.bgImage = bgImage);
+
+    try {
+        await event.save();
+        // eventToSpreadsheet(societyEvent.id, eventName, region)
+
+    } catch (err) {
+        console.log(err);
+        return new HttpError("Operations failed! Please try again or contact support!", 500)
+    }
+
+    res.status(200).json({ status: true });
+}
+
+const deleteEvent = async (req, res, next) => {
+    const eventId = req.params.eventId;
+
+    let event;
+    try {
+        event = await Event.findById(eventId)
+    } catch (err) {
+        return next(new HttpError("Fetching events failed", 500));
+    }
+
+    if (!event) {
+        return next(new HttpError("No such event", 404));
+    }
+
+    try {
+        await event.delete();
+    } catch (err) {
+        console.log(err);
+        return new HttpError("Operations failed! Please try again or contact support!", 500)
+    }
+
+    // delete cloudinary folder
+    res.status(200).json({ status: true });
+}
+
+export { addEvent, editEvent, deleteEvent, fetchEvent, fetchEvents }

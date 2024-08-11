@@ -14,7 +14,7 @@ import {
 import fileUpload from "../middleware/file-upload.js";
 import dotenv from "dotenv";
 import multer from "multer";
-import { addEvent, fetchEvent, fetchEvents } from "../controllers/events-action-controller.js";
+import { addEvent, deleteEvent, editEvent, fetchEvent, fetchEvents } from "../controllers/events-action-controller.js";
 import { authMiddleware } from "../middleware/authorization.js";
 dotenv.config();
 
@@ -109,6 +109,17 @@ eventRouter.post(
   "/actions/add-event",
   eventImageUploads,
   addEvent
+);
+
+eventRouter.patch(
+  "/actions/edit-event/:eventId",
+  eventImageUploads,
+  editEvent
+);
+
+eventRouter.delete(
+  "/actions/delete-event/:eventId",
+  deleteEvent
 );
 
 export default eventRouter;
