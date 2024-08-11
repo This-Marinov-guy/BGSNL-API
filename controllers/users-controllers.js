@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
-import { sendNewPasswordEmail } from "../services/email-transporter.js";
+import { sendNewPasswordEmail, welcomeEmail } from "../services/email-transporter.js";
 import moment from 'moment'
 import { formatReverseDate } from "../util/functions/dateConvert.js";
 import ActiveMembers from "../models/ActiveMembers.js";
@@ -176,6 +176,8 @@ const signup = async (req, res, next) => {
       .status(201)
       .json({ token, region, celebrate: true });
   }
+
+  await welcomeEmail(email, name, region)
 
   res.status(201).json({ token, region });
 };
@@ -456,6 +458,7 @@ const patchUserStatus = async (req, res, next) => {
 };
 
 export {
+  test,
   signup,
   login,
   postSendPasswordResetEmail,

@@ -1,14 +1,14 @@
 import { MailtrapClient } from "mailtrap";
 import dotenv from "dotenv";
 import { WHATS_APP } from "../util/config/LINKS.js";
-import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE } from "../util/config/defines.js";
+import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME } from "../util/config/defines.js";
 dotenv.config();
 
 const client = new MailtrapClient({ endpoint: process.env.MAIL_ENDPOINT, token: process.env.MAIL_TOKEN });
 
 const sender = {
-  email: "notification@bulgariansociety.nl",
-  name: "Bulgarian Society Netherlands",
+  email: NO_REPLY_EMAIL,
+  name: NO_REPLY_EMAIL_NAME,
 };
 
 const sendTicketEmail = (
@@ -67,7 +67,7 @@ const sendNewPasswordEmail = async (receiver, resetToken) => {
     .then(console.log, console.error);
 };
 
-const welcomeEmail = async (receiver, name, region) => {
+const welcomeEmail = async (receiver, name, region = '') => {
   const recipients = [
     {
       email: receiver,
@@ -82,7 +82,7 @@ const welcomeEmail = async (receiver, name, region) => {
       template_variables: {
         template_variables: {
           name,
-          link: (region && WHATS_APP[region]) ? WHATS_APP[region] : null
+          link: (region && WHATS_APP[region]) ?? null
         },
       },
     })
