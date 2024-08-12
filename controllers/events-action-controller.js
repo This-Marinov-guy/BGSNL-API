@@ -172,7 +172,7 @@ const addEvent = async (req, res, next) => {
 
     } catch (err) {
         console.log(err);
-        new HttpError("Operations failed! Please try again or contact support!", 500)
+        return next(new HttpError("Operations failed! Please try again or contact support!", 500));
     }
 
     res.status(201).json({ status: true });
@@ -264,7 +264,7 @@ const editEvent = async (req, res, next) => {
     poster && (event.poster = poster);
     ticketImg && (event.ticketImg = ticketImg);
     bgImageExtra && (event.bgImageExtra = bgImageExtra);
-    images && images.length > 0 && (event.images = images);
+    images && images.length > 1 && (event.images = images);
     req.body.extraInputsForm.length > 0 && (event.extraInputsForm = extraInputsForm);
     memberOnly && (event.memberOnly = memberOnly);
     hidden && (event.hidden = hidden);
@@ -303,7 +303,7 @@ const editEvent = async (req, res, next) => {
 
     } catch (err) {
         console.log(err);
-        return new HttpError("Operations failed! Please try again or contact support!", 500)
+        return next(new HttpError("Operations failed! Please try again or contact support!", 500));
     }
 
     res.status(200).json({ status: true });

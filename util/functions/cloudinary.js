@@ -24,19 +24,19 @@ export const deleteFolder = async (folderName = '') => {
     }
 
     try {
+        const encodedFolderName = encodeURIComponent(folderName);
+
         const { resources } = await cloudinary.search
-            .expression(`folder:${folderName}`)
+            .expression(`folder:${encodedFolderName}`)
             .execute();
 
-        // Delete each asset
         const deletePromises = resources.map(resource =>
             cloudinary.uploader.destroy(resource.public_id)
         );
 
         await Promise.all(deletePromises);
 
-        // Delete the folder placeholder
-        await cloudinary.api.delete_folder(folderName);
+        await cloudinary.api.delete_folder(encodedFolderName);
     } catch (error) {
         console.error('Error deleting folder:', error);
     }
