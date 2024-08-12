@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
-import uploadToCloudinary from "../util/functions/cloudinary.js";
+import { uploadToCloudinary, deleteFolder } from "../util/functions/cloudinary.js";
 import { eventsCache } from "../util/config/caches.js";
 
 const fetchEvent = async (req, res, next) => {
@@ -266,36 +266,36 @@ const editEvent = async (req, res, next) => {
     bgImageExtra && (event.bgImageExtra = bgImageExtra);
     images && images.length > 0 && (event.images = images);
     req.body.extraInputsForm.length > 0 && (event.extraInputsForm = extraInputsForm);
-    memberOnly !== undefined && (event.memberOnly = memberOnly);
-    hidden !== undefined && (event.hidden = hidden);
-    freePass !== undefined && (event.freePass = freePass);
-    discountPass !== undefined && (event.discountPass = discountPass);
-    subEventDescription !== undefined && (event.subEventDescription = subEventDescription);
-    subEventLinks !== undefined && (event.subEventLinks = subEventLinks);
-    region !== undefined && (event.region = region);
-    title !== undefined && (event.title = title);
-    date !== undefined && (event.date = date);
-    time !== undefined && (event.time = time);
-    description !== undefined && (event.description = description);
-    location !== undefined && (event.location = location);
-    ticketTimer !== undefined && (event.ticketTimer = ticketTimer);
-    ticketLimit !== undefined && (event.ticketLimit = ticketLimit);
-    isSaleClosed !== undefined && (event.isSaleClosed = isSaleClosed);
-    isFree !== undefined && (event.isFree = isFree);
-    isMemberFree !== undefined && (event.isMemberFree = isMemberFree);
-    entry !== undefined && (event.entry = entry);
-    memberEntry !== undefined && (event.memberEntry = memberEntry);
-    activeMemberEntry !== undefined && (event.activeMemberEntry = activeMemberEntry);
-    entryIncluding !== undefined && (event.entryIncluding = entryIncluding);
-    memberIncluding !== undefined && (event.memberIncluding = memberIncluding);
-    including !== undefined && (event.including = including);
-    ticketLink !== undefined && (event.ticketLink = ticketLink);
-    priceId !== undefined && (event.priceId = priceId);
-    memberPriceId !== undefined && (event.memberPriceId = memberPriceId);
-    activeMemberPriceId !== undefined && (event.activeMemberPriceId = activeMemberPriceId);
-    text !== undefined && (event.text = text);
-    ticketColor !== undefined && (event.ticketColor = ticketColor);
-    bgImage !== undefined && (event.bgImage = bgImage);
+    memberOnly && (event.memberOnly = memberOnly);
+    hidden && (event.hidden = hidden);
+    freePass && (event.freePass = freePass);
+    discountPass && (event.discountPass = discountPass);
+    subEventDescription && (event.subEventDescription = subEventDescription);
+    subEventLinks && (event.subEventLinks = subEventLinks);
+    region && (event.region = region);
+    title && (event.title = title);
+    date && (event.date = date);
+    time && (event.time = time);
+    description && (event.description = description);
+    location && (event.location = location);
+    ticketTimer && (event.ticketTimer = ticketTimer);
+    ticketLimit && (event.ticketLimit = ticketLimit);
+    isSaleClosed && (event.isSaleClosed = isSaleClosed);
+    isFree && (event.isFree = isFree);
+    isMemberFree && (event.isMemberFree = isMemberFree);
+    entry && (event.entry = entry);
+    memberEntry && (event.memberEntry = memberEntry);
+    activeMemberEntry && (event.activeMemberEntry = activeMemberEntry);
+    entryIncluding && (event.entryIncluding = entryIncluding);
+    memberIncluding && (event.memberIncluding = memberIncluding);
+    including && (event.including = including);
+    ticketLink && (event.ticketLink = ticketLink);
+    priceId && (event.priceId = priceId);
+    memberPriceId && (event.memberPriceId = memberPriceId);
+    activeMemberPriceId && (event.activeMemberPriceId = activeMemberPriceId);
+    text && (event.text = text);
+    ticketColor && (event.ticketColor = ticketColor);
+    bgImage && (event.bgImage = bgImage);
 
     try {
         await event.save();
@@ -323,6 +323,8 @@ const deleteEvent = async (req, res, next) => {
         return next(new HttpError("No such event", 404));
     }
 
+    const folder = event.folder ?? '';
+
     try {
         await event.delete();
     } catch (err) {
@@ -330,7 +332,7 @@ const deleteEvent = async (req, res, next) => {
         return new HttpError("Operations failed! Please try again or contact support!", 500)
     }
 
-    // delete cloudinary folder
+    await deleteFolder(folder);
     res.status(200).json({ status: true });
 }
 

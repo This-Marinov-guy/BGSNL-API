@@ -6,7 +6,7 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET,
 })
 
-const uploadToCloudinary = async (file, options = {}) => {
+export const uploadToCloudinary = async (file, options = {}) => {
     const b64 = Buffer.from(file.buffer).toString('base64');
     const dataURI = `data:${file.mimetype};base64,${b64}`;
 
@@ -18,4 +18,26 @@ const uploadToCloudinary = async (file, options = {}) => {
     return response.secure_url
 }
 
-export default uploadToCloudinary
+export const deleteFolder = async (folderName = '') => {
+    if (!folderName) {
+        return console.log('No folder provided')
+    }
+
+    try {
+        const { resources } = await cloudinary.search
+            .expression(`folder:${folderName}`)
+            .execute();
+
+        // Delete each asset
+        const deletePromises = resources.map(resource =>
+            cloudinary.uploader.destroy(resource.public_id)
+        );
+
+        await Promise.all(deletePromises);
+
+        // Delete the folder placeholder
+        await cloudinary.api.delete_folder(folderName);
+    } catch (error) {
+        console.error('Error deleting folder:', error);
+    }
+}
