@@ -13,9 +13,9 @@ const eventSchema = new Schema({
   location: { type: String, required: true },
   ticketTimer: { type: Date, required: true },
   ticketLimit: { type: Number, required: true },
-  isSaleClosed: { type: Boolean, required: true },
-  isFree: { type: Boolean, required: true },
-  isMemberFree: { type: Boolean, required: true },
+  isSaleClosed: { type: Boolean, required: true, default: false },
+  isFree: { type: Boolean, required: true, default: false },
+  isMemberFree: { type: Boolean, required: true, default: false },
   entry: { type: Number, default: null },
   memberEntry: { type: Number, default: null },
   activeMemberEntry: { type: Number, default: null },
@@ -33,8 +33,8 @@ const eventSchema = new Schema({
   poster: { type: String, required: true },
   bgImage: { type: Number, required: true, default: 1 },
   bgImageExtra: { type: String },
-  memberOnly: { type: Boolean, required: true },
-  hidden: { type: Boolean, required: true },
+  memberOnly: { type: Boolean, required: true, default: false },
+  hidden: { type: Boolean, required: true, default: false },
   extraInputsForm: {
     type: mongoose.Schema.Types.Mixed
   },
