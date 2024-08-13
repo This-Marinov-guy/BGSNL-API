@@ -43,7 +43,7 @@ app.use(
 );
 
 app.use(rateLimiter);
-app.use(firewall);
+// app.use(firewall);
 
 app.use((req, res, next) => {
   if ("OPTIONS" == req.method) {
