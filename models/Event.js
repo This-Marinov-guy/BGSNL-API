@@ -38,12 +38,18 @@ const eventSchema = new Schema({
   extraInputsForm: {
     type: mongoose.Schema.Types.Mixed
   },
+  subEvent: {
+    description: { type: String, default: '' },
+    links: {
+      type: mongoose.Schema.Types.Mixed,
+      default: [{
+        name: '',
+        href: ''
+      }]
+    }
+  },
   freePass: { type: [String] },
   discountPass: { type: [String] },
-  subEventDescription: { type: String },
-  subEventLinks: {
-    type: mongoose.Schema.Types.Mixed
-  },
   folder: {
     type: String, required: true
   },
@@ -51,7 +57,7 @@ const eventSchema = new Schema({
     {
       // status 0 - not came
       // status 1 - came
-      status: {type: Number, default: 0},
+      status: { type: Number, default: 0 },
       type: { type: String },
       timestamp: { type: Date, default: new Date() },
       name: { type: String, required: true },

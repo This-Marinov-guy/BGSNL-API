@@ -49,8 +49,6 @@ const addEvent = async (req, res, next) => {
         hidden,
         freePass,
         discountPass,
-        subEventDescription,
-        subEventLinks,
         region,
         title,
         date, 
@@ -78,6 +76,7 @@ const addEvent = async (req, res, next) => {
     } = req.body
 
     const extraInputsForm = JSON.parse(req.body.extraInputsForm);
+    const subEvent = JSON.parse(req.body.subEvent);
 
     //upload images
     try {
@@ -132,8 +131,7 @@ const addEvent = async (req, res, next) => {
             extraInputsForm,
             freePass,
             discountPass,
-            subEventDescription,
-            subEventLinks,
+            subEvent,
             region,
             title,
             description,
@@ -199,8 +197,6 @@ const editEvent = async (req, res, next) => {
         hidden,
         freePass,
         discountPass,
-        subEventDescription,
-        subEventLinks,
         region,
         title,
         date,
@@ -228,6 +224,7 @@ const editEvent = async (req, res, next) => {
     } = req.body
 
     const extraInputsForm = JSON.parse(req.body.extraInputsForm);
+    const subEvent = JSON.parse(req.body.subEvent);
 
     const poster = req.files['poster'] ? await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' }) : '';
 
@@ -266,12 +263,11 @@ const editEvent = async (req, res, next) => {
     bgImageExtra && (event.bgImageExtra = bgImageExtra);
     images && images.length > 1 && (event.images = images);
     req.body.extraInputsForm.length > 0 && (event.extraInputsForm = extraInputsForm);
+    !!req.body.subEvent && (event.subEvent = subEvent);
     memberOnly && (event.memberOnly = memberOnly);
     hidden && (event.hidden = hidden);
     freePass && (event.freePass = freePass);
     discountPass && (event.discountPass = discountPass);
-    subEventDescription && (event.subEventDescription = subEventDescription);
-    subEventLinks && (event.subEventLinks = subEventLinks);
     region && (event.region = region);
     title && (event.title = title);
     date && (event.date = date);
