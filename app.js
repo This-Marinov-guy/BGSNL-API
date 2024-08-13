@@ -22,17 +22,17 @@ if ((app.get('env') === 'development')) {
   allowedOrigins.push('http://localhost:3000');
 }
 
-// app.use(
-//   cors({
-//     origin: (origin, callback) => {
-//       if (!origin || allowedOrigins.includes(origin)) {
-//         callback(null, true);
-//       } else {
-//         callback(new Error('Not allowed by CORS'));
-//       }
-//     },
-//   })
-// );
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+  })
+);
 
 app.use(
   cors({
@@ -43,7 +43,7 @@ app.use(
 );
 
 app.use(rateLimiter);
-// app.use(firewall);
+app.use(firewall);
 
 app.use((req, res, next) => {
   if ("OPTIONS" == req.method) {
