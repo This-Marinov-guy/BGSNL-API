@@ -34,14 +34,6 @@ app.use(
   })
 );
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-        callback(null, true);
-    },
-  })
-);
-
 app.use(rateLimiter);
 app.use(firewall);
 
