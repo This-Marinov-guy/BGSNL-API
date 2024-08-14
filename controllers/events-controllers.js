@@ -148,7 +148,7 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
     return next(new HttpError("No event was found", 404));
   }
 
-  let member = await member.findById(userId);
+  let member = await User.findById(userId);
 
   if (!member) {
     new HttpError("Could not find a user with provided id", 404);

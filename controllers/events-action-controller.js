@@ -4,6 +4,7 @@ import HttpError from "../models/Http-error.js";
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import { uploadToCloudinary, deleteFolder } from "../util/functions/cloudinary.js";
 import { eventsCache } from "../util/config/caches.js";
+import { calculateTimeRemaining } from "../util/functions/helpers.js";
 
 const fetchEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
@@ -19,8 +20,18 @@ const fetchEvent = async (req, res, next) => {
         return next(new HttpError("No such event", 404));
     }
 
+    let status = true;
+
+    const ticketsRemaining = event.ticketLimit - event.guestList.length;
+    const ticketTimer = calculateTimeRemaining(event.ticketTimer);
+
+    if (ticketsRemaining <= 0 || ticketTimer <= 0) {
+        status = false;
+    }
+
     res.status(200).json({
         event: event.toObject({ getters: true }),
+        status
     });
 }
 
