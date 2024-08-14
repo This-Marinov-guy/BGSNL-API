@@ -253,7 +253,7 @@ const postWebhookCheckout = async (req, res, next) => {
               customerId
             },
             region,
-            expireDat: expire,
+            expireDate: expire,
             image,
             name,
             surname,
