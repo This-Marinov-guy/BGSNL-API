@@ -306,7 +306,7 @@ const usersToSpreadsheet = async (region = null) => {
 
         const values = usersArray.map((user) => {
           let { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, roles, ...rest } = user;
-          birth = moment(birth).format("D MMM YYYY");
+          rest.birth = moment(rest.birth).format("D MMM YYYY");
           rest.purchaseDate = moment(rest.purchaseDate).format("D MMM YYYY");
           rest.expireDate = moment(rest.expireDate).format("D MMM YYYY");
           let dataFields;
