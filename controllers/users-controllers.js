@@ -140,7 +140,7 @@ const signup = async (req, res, next) => {
     image,
     name,
     surname,
-    birth,
+    birth: new Date(birth),
     phone,
     email,
     university,
