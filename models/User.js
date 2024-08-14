@@ -18,7 +18,7 @@ const userSchema = new Schema({
   image: { type: String, required: true },
   name: { type: String, required: true },
   surname: { type: String, required: true },
-  birth: { type: String, required: true },
+  birth: { type: Date, required: true },
   phone: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   university: { type: String, required: true },

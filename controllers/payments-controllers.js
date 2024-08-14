@@ -257,7 +257,7 @@ const postWebhookCheckout = async (req, res, next) => {
             image,
             name,
             surname,
-            birth: moment(new Date(birth)).format("D MMM YYYY"),
+            birth,
             phone,
             email,
             university,
