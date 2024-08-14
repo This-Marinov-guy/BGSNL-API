@@ -168,8 +168,8 @@ const signup = async (req, res, next) => {
     return next(error);
   }
 
-  usersToSpreadsheet(region)
-  usersToSpreadsheet(null, false);
+  usersToSpreadsheet(region, true);
+  usersToSpreadsheet();
 
   if (isBirthdayToday(birth)) {
     return res

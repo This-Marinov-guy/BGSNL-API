@@ -255,12 +255,14 @@ const eventToSpreadsheet = async (id) => {
   }
 };
 
-const usersToSpreadsheet = async (region = null, filterByRegion = true) => {
+const usersToSpreadsheet = async (region = null) => {
 
   let spreadsheetId = BGSNL_MEMBERS_SPREADSHEETS_ID;
+  let filterByRegion = false;
 
-  if (region && SPREADSHEETS_ID[region].users && filterByRegion) {
-    spreadsheetId = SPREADSHEETS_ID[region].users
+  if (region && SPREADSHEETS_ID[region].users) {
+    spreadsheetId = SPREADSHEETS_ID[region].users;
+    filterByRegion = true;
   }
 
   const sheetName = 'Members';
@@ -304,8 +306,8 @@ const usersToSpreadsheet = async (region = null, filterByRegion = true) => {
 
         const values = usersArray.map((user) => {
           let { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, roles, ...rest } = user;
-          rest.purchaseDate = moment(purchaseDate).format("D MMM YYYY");
-          rest.expireDate = moment(expireDate).format("D MMM YYYY");
+          rest.purchaseDate = moment(rest.purchaseDate).format("D MMM YYYY");
+          rest.expireDate = moment(rest.expireDate).format("D MMM YYYY");
           let dataFields;
 
           if (filterByRegion) {
