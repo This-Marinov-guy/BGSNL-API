@@ -3,7 +3,6 @@ import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import { uploadToCloudinary, deleteFolder } from "../util/functions/cloudinary.js";
-import { eventsCache } from "../util/config/caches.js";
 import { calculateTimeRemaining } from "../util/functions/helpers.js";
 
 const fetchEvent = async (req, res, next) => {
