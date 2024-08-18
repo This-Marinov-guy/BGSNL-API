@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 import jwt from "jsonwebtoken";
+import CryptoJS from 'crypto-js';
 
 // Function to update the original array with the modified subset | needs to have ids
 export const updateOriginalArray = (originalArray, modifiedSubset) => {
@@ -60,3 +61,14 @@ export const isBirthdayToday = (birthdayStr) => {
     birthdayDate.getMonth() === today.getMonth()
   );
 }
+
+export const decryptData = (string) => {
+  if (!string) {
+    return {};
+  }
+
+  const decryptedBytes = CryptoJS.AES.decrypt(decodeURIComponent(string), process.env.CRYPTO_ENCRYPTION_KEY);
+  const decryptedData = JSON.parse(decryptedBytes.toString(CryptoJS.enc.Utf8));
+
+  return decryptedData;
+}  

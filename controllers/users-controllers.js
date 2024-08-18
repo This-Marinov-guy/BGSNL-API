@@ -1,17 +1,14 @@
 import dotenv from "dotenv";
 dotenv.config();
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
 import { sendNewPasswordEmail, welcomeEmail } from "../services/email-transporter.js";
-import moment from 'moment'
-import { formatReverseDate } from "../util/functions/dateConvert.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/config/KEYS.js";
 import { usersToSpreadsheet } from "../services/google-spreadsheets.js";
-import { isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
+import { decryptData, isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
@@ -109,10 +106,11 @@ const signup = async (req, res, next) => {
     graduationDate,
     course,
     studentNumber,
-    password,
     notificationTypeTerms,
   } = req.body;
 
+  const password = decryptData(req.body.password);
+  
   let hashedPassword;
   try {
     hashedPassword = await bcrypt.hash(password, 12);

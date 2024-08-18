@@ -7,9 +7,8 @@ import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import User from "../models/User.js";
 import { sendTicketEmail, welcomeEmail } from "../services/email-transporter.js";
-import moment from 'moment'
-import { formatReverseDate } from "../util/functions/dateConvert.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "../services/google-spreadsheets.js";
+import { decryptData } from "../util/functions/helpers.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",
@@ -221,9 +220,10 @@ const postWebhookCheckout = async (req, res, next) => {
             graduationDate,
             course,
             studentNumber,
-            password,
             notificationTypeTerms,
           } = metadata;
+
+          const password = decryptData(metadata.password);
 
           let hashedPassword;
           try {
