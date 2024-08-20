@@ -92,6 +92,7 @@ const postSubscriptionNoFile = async (req, res, next) => {
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
+    allow_promotion_codes: true,
     line_items: [{ price: itemId, quantity: 1 }],
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
@@ -112,6 +113,7 @@ const postSubscriptionFile = async (req, res, next) => {
   }
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
+    allow_promotion_codes: true,
     line_items: [{ price: itemId, quantity: 1 }],
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
