@@ -273,6 +273,9 @@ const editEvent = async (req, res, next) => {
         });
     }
 
+    event.extraInputsForm = extraInputsForm;
+    event.subEvent = subEvent;
+
     poster && (event.poster = poster);
     ticketImg && (event.ticketImg = ticketImg);
     bgImageExtra && (event.bgImageExtra = bgImageExtra);
