@@ -3,7 +3,8 @@ import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import { uploadToCloudinary, deleteFolder } from "../util/functions/cloudinary.js";
-import { calculateTimeRemaining } from "../util/functions/helpers.js";
+import { calculateTimeRemaining, processExtraInputsForm } from "../util/functions/helpers.js";
+import { dateConvertor } from "../util/functions/dateConvert.js";
 
 const fetchEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
@@ -23,8 +24,9 @@ const fetchEvent = async (req, res, next) => {
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
     const ticketTimer = calculateTimeRemaining(event.ticketTimer);
+    const expired = dateConvertor(event.date, event.time, true) < new Date().valueOf;
 
-    if (ticketsRemaining <= 0 || ticketTimer <= 0) {
+    if (ticketsRemaining <= 0 || ticketTimer <= 0 || expired) {
         status = false;
     }
 
@@ -83,9 +85,10 @@ const addEvent = async (req, res, next) => {
         text,
         ticketColor,
         bgImage,
+        bgImageSelection
     } = req.body
 
-    const extraInputsForm = JSON.parse(req.body.extraInputsForm);
+    const extraInputsForm = processExtraInputsForm(JSON.parse(req.body.extraInputsForm));
     const subEvent = JSON.parse(req.body.subEvent);
 
     //upload images
@@ -171,6 +174,7 @@ const addEvent = async (req, res, next) => {
             poster,
             bgImage,
             bgImageExtra,
+            bgImageSelection,
             folder
         })
 
@@ -231,9 +235,10 @@ const editEvent = async (req, res, next) => {
         text,
         ticketColor,
         bgImage,
+        bgImageSelection,
     } = req.body
 
-    const extraInputsForm = JSON.parse(req.body.extraInputsForm);
+    const extraInputsForm = processExtraInputsForm(JSON.parse(req.body.extraInputsForm));
     const subEvent = JSON.parse(req.body.subEvent);
 
     const poster = req.files['poster'] ? await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' }) : '';
@@ -271,9 +276,8 @@ const editEvent = async (req, res, next) => {
     poster && (event.poster = poster);
     ticketImg && (event.ticketImg = ticketImg);
     bgImageExtra && (event.bgImageExtra = bgImageExtra);
+    bgImageSelection && (event.bgImageSelection = bgImageSelection);
     images && images.length > 1 && (event.images = images);
-    req.body.extraInputsForm.length > 0 && (event.extraInputsForm = extraInputsForm);
-    !!req.body.subEvent && (event.subEvent = subEvent);
     memberOnly && (event.memberOnly = memberOnly);
     hidden && (event.hidden = hidden);
     freePass && (event.freePass = freePass);

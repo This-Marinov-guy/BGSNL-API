@@ -9,7 +9,7 @@ const eventSchema = new Schema({
   title: { type: String, required: true },
   description: { type: String, required: true },
   date: { type: Date, required: true },
-  time: { type: Date, required: true },
+  time: { type: String, required: true },
   location: { type: String, required: true },
   ticketTimer: { type: Date, required: true },
   ticketLimit: { type: Number, required: true },
@@ -33,6 +33,7 @@ const eventSchema = new Schema({
   poster: { type: String, required: true },
   bgImage: { type: Number, required: true, default: 1 },
   bgImageExtra: { type: String },
+  bgImageSelection: { type: String },
   memberOnly: { type: Boolean, required: true, default: false },
   hidden: { type: Boolean, required: true, default: false },
   extraInputsForm: {

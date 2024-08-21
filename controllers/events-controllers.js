@@ -7,6 +7,7 @@ import HttpError from "../models/Http-error.js";
 import { sendTicketEmail } from "../services/email-transporter.js";
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import { calculateTimeRemaining, decodeFromURL, removeModelProperties } from "../util/functions/helpers.js";
+import { dateConvertor } from "../util/functions/dateConvert.js";
 
 const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -26,8 +27,9 @@ const getEventPurchaseAvailability = async (req, res, next) => {
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
     const ticketTimer = calculateTimeRemaining(event.ticketTimer);
+    const expired = dateConvertor(event.date, event.time, true) < new Date().valueOf;
 
-    if (ticketsRemaining <= 0 || ticketTimer <= 0) {
+    if (ticketsRemaining <= 0 || ticketTimer <= 0 || expired) {
       status = false;
     }
 
@@ -56,8 +58,9 @@ const getEventById = async (req, res, next) => {
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
     const ticketTimer = calculateTimeRemaining(event.ticketTimer);
+    const expired = dateConvertor(event.date, event.time, true) < new Date().valueOf;
 
-    if (ticketsRemaining <= 0 || ticketTimer <= 0) {
+    if (ticketsRemaining <= 0 || ticketTimer <= 0 || expired) {
       status = false;
     }
 
@@ -95,8 +98,9 @@ const getEvent = async (req, res, next) => {
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
     const ticketTimer = calculateTimeRemaining(event.ticketTimer);
+    const expired = dateConvertor(event.date, event.time, true) < new Date().valueOf;
 
-    if (ticketsRemaining <= 0 || ticketTimer <= 0) {
+    if (ticketsRemaining <= 0 || ticketTimer <= 0 || expired) {
       status = false;
     }
 

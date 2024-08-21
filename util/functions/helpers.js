@@ -13,11 +13,40 @@ export const updateOriginalArray = (originalArray, modifiedSubset) => {
 };
 
 export const calculateTimeRemaining = (timer) => {
-  const now = new Date().getTime();
-  const targetTime = new Date(timer).getTime();
-  const timeDifference = targetTime - now;
+  const netherlandsTimeZone = 'Europe/Amsterdam';
+
+  const now = new Date();
+  const targetTime = new Date(timer);
+
+  const nowInNetherlands = new Intl.DateTimeFormat('en-US', {
+    timeZone: netherlandsTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(now);
+
+  const targetInNetherlands = new Intl.DateTimeFormat('en-US', {
+    timeZone: netherlandsTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(targetTime);
+
+  // Parse the formatted dates back to Date objects
+  const nowDate = new Date(nowInNetherlands);
+  const targetDate = new Date(targetInNetherlands);
+
+  const timeDifference = targetDate.getTime() - nowDate.getTime();
   return Math.max(0, timeDifference);
-}
+};
 
 export const removeModelProperties = (obj, properties) => {
   const result = obj.toObject(); // Convert Mongoose document to plain JavaScript object
@@ -72,3 +101,17 @@ export const decryptData = (string) => {
 
   return decryptedData;
 }  
+
+export const processExtraInputsForm = (extraInputsForm) => {
+  return extraInputsForm.filter(obj => {
+    if (!obj.hasOwnProperty('placeholder')) {
+      return false;
+    }
+
+    if (obj.type === 'select' && (!obj.options || obj.options.length === 0)) {
+      return false;
+    }
+
+    return true;
+  });
+};
