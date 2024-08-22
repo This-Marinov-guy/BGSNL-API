@@ -151,7 +151,7 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
   let member = await User.findById(userId);
 
   if (!member) {
-    new HttpError("Could not find a user with provided id", 404);
+    return next(new HttpError("Could not find a user with provided id", 404));
   }
 
   const memberName = `${member.name} ${member.surname}`;
@@ -182,14 +182,18 @@ const checkEligibleGuestForDiscount = async (req, res, next) => {
   }
 
   if (!event.freePass || !event.freePass.includes(guestName) || !event.freePass.includes(email)) {
-      res.status(200).json({ status });
+      return res.status(200).json({ status });
   }
 
   for (const guest of event.guestList) {
     if (guest.name === guestName || guest.email === email) {
       status = false;
-      return next(new HttpError("Guest has already redeemed their promotion for this event", 500));
+      break;
     }
+  }
+
+  if (!status) {
+    return next(new HttpError("Guest has already redeemed their promotion for this event", 500));
   }
 
   res.status(200).json({ status });
