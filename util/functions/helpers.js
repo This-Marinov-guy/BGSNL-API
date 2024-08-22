@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 import jwt from "jsonwebtoken";
 import CryptoJS from 'crypto-js';
+import moment from 'moment-timezone';
 
 // Function to update the original array with the modified subset | needs to have ids
 export const updateOriginalArray = (originalArray, modifiedSubset) => {
@@ -12,40 +13,11 @@ export const updateOriginalArray = (originalArray, modifiedSubset) => {
   return updatedArray;
 };
 
-export const calculateTimeRemaining = (timer) => {
-  const netherlandsTimeZone = 'Europe/Amsterdam';
+export const isEventTimerFinished = (timer) => {
+  const expireTime = moment(timer).subtract(2, 'hours');
+  const currentNLTime = moment().tz('Europe/Amsterdam');
 
-  const now = new Date();
-  const targetTime = new Date(timer);
-
-  const nowInNetherlands = new Intl.DateTimeFormat('en-US', {
-    timeZone: netherlandsTimeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).format(now);
-
-  const targetInNetherlands = new Intl.DateTimeFormat('en-US', {
-    timeZone: netherlandsTimeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).format(targetTime);
-
-  // Parse the formatted dates back to Date objects
-  const nowDate = new Date(nowInNetherlands);
-  const targetDate = new Date(targetInNetherlands);
-
-  const timeDifference = targetDate.getTime() - nowDate.getTime();
-  return Math.max(0, timeDifference);
+  return expireTime <= currentNLTime;
 };
 
 export const removeModelProperties = (obj, properties) => {

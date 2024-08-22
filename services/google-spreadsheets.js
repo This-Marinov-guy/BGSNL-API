@@ -305,15 +305,20 @@ const usersToSpreadsheet = async (region = null) => {
         }
 
         const values = usersArray.map((user) => {
-          let { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, roles, ...rest } = user;
-          rest.birth = moment(new Date(rest.birth)).format("D MMM YYYY");
+          let { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, status, name, surname, birth, roles, ...rest } = user;
+          birth = moment(new Date(birth)).format("D MMM YYYY");
           rest.purchaseDate = moment(rest.purchaseDate).format("D MMM YYYY");
           rest.expireDate = moment(rest.expireDate).format("D MMM YYYY");
           let dataFields;
 
           if (filterByRegion) {
             dataFields = {
+              status,
+              type: subscription && subscription.id ? 'Subscription' : 'One-time (old)',
+              name,
+              surname,
               ...rest,
+              birth,
               university: university === 'other' ? otherUniversityName : university,
               course,
               studentNumber,
@@ -322,7 +327,12 @@ const usersToSpreadsheet = async (region = null) => {
           } else {
             dataFields = {
               region,
+              status,
+              type: subscription && subscription.id ? 'Subscription' : 'One-time (old)',
+              name, 
+              surname,
               ...rest,
+              birth,
               university: university === 'other' ? otherUniversityName : university,
               course,
               studentNumber,
@@ -341,11 +351,10 @@ const usersToSpreadsheet = async (region = null) => {
         let nameOfValues
 
         if (filterByRegion) {
-          nameOfValues = ["Status", "Purchase Date", "Renew Date", "Name", "Surname", "Birth", "Phone", "Email", "University", "Course", "Student Number", "Graduation Date"];
+          nameOfValues = ["Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date"];
         } else {
-          nameOfValues = ["Region", "Status", "Purchase Date", "Renew Date", "Name", "Surname", "Birth", "Phone", "Email", "University", "Course", "Student Number", "Graduation Date"];
+          nameOfValues = ["Region", "Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date"];
         }
-
 
         await googleSheets.spreadsheets.values.append({
           auth,

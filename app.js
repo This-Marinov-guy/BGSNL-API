@@ -15,7 +15,6 @@ import { eventToSpreadsheet, usersToSpreadsheet } from './services/google-spread
 import { firewall, rateLimiter } from "./middleware/firewall.js";
 import { updateUsers } from "./util/locals/manipulate-db.js";
 
-
 const app = express();
 
 if ((app.get('env') === 'development')) {

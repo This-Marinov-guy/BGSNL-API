@@ -6,7 +6,7 @@ import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import { sendTicketEmail } from "../services/email-transporter.js";
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
-import { calculateTimeRemaining, decodeFromURL, removeModelProperties } from "../util/functions/helpers.js";
+import { decodeFromURL, isEventTimerFinished, removeModelProperties } from "../util/functions/helpers.js";
 import { dateConvertor } from "../util/functions/dateConvert.js";
 
 const getEventPurchaseAvailability = async (req, res, next) => {
@@ -24,12 +24,10 @@ const getEventPurchaseAvailability = async (req, res, next) => {
     }
 
     let status = true;
-
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const ticketTimer = calculateTimeRemaining(event.ticketTimer);
-    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" });
+    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" }) || isEventTimerFinished(event.ticketTimer);
 
-    if (ticketsRemaining <= 0 || ticketTimer <= 0 || expired) {
+    if (ticketsRemaining <= 0 || expired) {
       status = false;
     }
 
@@ -57,10 +55,9 @@ const getEventById = async (req, res, next) => {
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const ticketTimer = calculateTimeRemaining(event.ticketTimer);
-    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" });
+    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" }) || isEventTimerFinished(event.ticketTimer);
 
-    if (ticketsRemaining <= 0 || ticketTimer <= 0 || expired) {
+    if (ticketsRemaining <= 0 || expired) {
       status = false;
     }
 
@@ -97,10 +94,9 @@ const getEvent = async (req, res, next) => {
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const ticketTimer = calculateTimeRemaining(event.ticketTimer);
-    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" });
+    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" }) || isEventTimerFinished(event.ticketTimer);
 
-    if (ticketsRemaining <= 0 || ticketTimer <= 0 || expired) {
+    if (ticketsRemaining <= 0 || expired) {
       status = false;
     }
 

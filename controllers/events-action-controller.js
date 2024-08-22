@@ -3,7 +3,7 @@ import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import { uploadToCloudinary, deleteFolder } from "../util/functions/cloudinary.js";
-import { calculateTimeRemaining, processExtraInputsForm } from "../util/functions/helpers.js";
+import { isEventTimerFinished, processExtraInputsForm } from "../util/functions/helpers.js";
 import { dateConvertor } from "../util/functions/dateConvert.js";
 
 const fetchEvent = async (req, res, next) => {
@@ -23,10 +23,9 @@ const fetchEvent = async (req, res, next) => {
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const ticketTimer = calculateTimeRemaining(event.ticketTimer);
-    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" });
+    const expired = isEventTimerFinished(event.ticketTimer);
 
-    if (ticketsRemaining <= 0 || ticketTimer <= 0 || expired) {
+    if (ticketsRemaining <= 0 || expired) {
         status = false;
     }
 
