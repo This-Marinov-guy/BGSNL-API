@@ -9,6 +9,7 @@ import User from "../models/User.js";
 import { sendTicketEmail, welcomeEmail } from "../services/email-transporter.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "../services/google-spreadsheets.js";
 import { decryptData } from "../util/functions/helpers.js";
+import { dateConvertor } from "../util/functions/dateConvert.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",
@@ -433,7 +434,7 @@ const postWebhookCheckout = async (req, res, next) => {
             });
 
             targetUser.tickets.push({
-              event: eventName,
+              event: societyEvent.title + ' | ' + dateConvertor(societyEvent.date, societyEvent.time),
               image: metadata.file,
             });
             await societyEvent.save();
