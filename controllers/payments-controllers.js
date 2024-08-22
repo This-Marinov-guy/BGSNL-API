@@ -285,7 +285,7 @@ const postWebhookCheckout = async (req, res, next) => {
           usersToSpreadsheet(region, true);
           usersToSpreadsheet();
 
-          break;
+          res.status(200).json({ received: true });
         }
         case "unlock_account": {
           const userId = metadata.userId;
@@ -339,7 +339,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
           usersToSpreadsheet(user.region, true)
 
-          break;
+          res.status(200).json({ received: true });
         }
         case "buy_guest_ticket": {
           let { quantity, eventId, guestName, guestEmail, guestPhone, preferences, marketing } =
@@ -387,15 +387,15 @@ const postWebhookCheckout = async (req, res, next) => {
           sendTicketEmail(
             "guest",
             guestEmail,
-            eventName,
-            eventDate,
+            societyEvent.title,
+            dateConvertor(societyEvent.date, societyEvent.time),
             guestName,
             metadata.file
           );
 
-          eventToSpreadsheet(societyEvent.id, eventName, region)
+          eventToSpreadsheet(societyEvent.id);
 
-          break;
+          res.status(200).json({ received: true });
         }
         case "buy_member_ticket": {
           const { eventId, userId, preferences } = metadata;
@@ -452,19 +452,18 @@ const postWebhookCheckout = async (req, res, next) => {
           sendTicketEmail(
             "member",
             targetUser.email,
-            eventName,
-            eventDate,
+            societyEvent.title,
+            dateConvertor(societyEvent.date, societyEvent.time),
             targetUser.name,
             metadata.file
           );
 
-          eventToSpreadsheet(societyEvent.id, eventName, region)
+          eventToSpreadsheet(societyEvent.id);
 
-          break;
+          res.status(200).json({ received: true });
         }
         default: console.log('No case');
       }
-      break;
     case 'invoice.paid': {
       let user;
 
@@ -508,7 +507,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
       usersToSpreadsheet(user.region, true)
 
-      break;
+      res.status(200).json({ received: true });
     }
     case 'invoice.payment_failed': {
       let user;
@@ -537,7 +536,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
       //send email to update payment method or open account 
 
-      break;
+      res.status(200).json({ received: true });
     }
     default:
       console.log('Unhandled event for subscription');

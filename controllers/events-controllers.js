@@ -163,8 +163,7 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
 
     if (guest.name === memberName && guest.email === member.email) {
       status = false;
-      new HttpError("Member has already purchased a ticket for this event", 500);
-      break;
+      return next(new HttpError("Member has already purchased a ticket for this event", 500));
     }
   }
 
@@ -190,8 +189,7 @@ const checkEligibleGuestForDiscount = async (req, res, next) => {
 
     if (guest.name === guestName || guest.email === email) {
       status = false;
-      new HttpError("Guest has already redeemed their promotion for this event", 500);
-      break;
+      return next(new HttpError("Guest has already redeemed their promotion for this event", 500));
     }
   }
 
@@ -238,7 +236,7 @@ const postAddMemberToEvent = async (req, res, next) => {
       ticket: req.file.location,
     });
     targetUser.tickets.push({
-      event: eventName,
+      event: societyEvent.title + ' | ' + dateConvertor(societyEvent.date, societyEvent.time),
       image: req.file.location,
     });
     await societyEvent.save();
@@ -253,13 +251,13 @@ const postAddMemberToEvent = async (req, res, next) => {
   sendTicketEmail(
     "member",
     targetUser.email,
-    eventName,
-    eventDate,
+    societyEvent.title,
+    dateConvertor(societyEvent.date, societyEvent.time),
     targetUser.name,
     req.file.location
   );
 
-  eventToSpreadsheet(societyEvent.id, eventName, region)
+  eventToSpreadsheet(societyEvent.id);
 
   res.status(201).json({ message: "Success" });
 };
@@ -318,13 +316,13 @@ const postAddGuestToEvent = async (req, res, next) => {
   sendTicketEmail(
     "guest",
     guestEmail,
-    eventName,
-    eventDate,
+    societyEvent.title,
+    dateConvertor(societyEvent.date, societyEvent.time),
     guestName,
     req.file.location
   );
 
-  eventToSpreadsheet(societyEvent.id, eventName, region)
+  eventToSpreadsheet(societyEvent.id);
 
   res.status(201).json({ message: "Success" });
 };
