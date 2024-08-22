@@ -342,7 +342,7 @@ const postWebhookCheckout = async (req, res, next) => {
           res.status(200).json({ received: true });
         }
         case "buy_guest_ticket": {
-          let { quantity, eventId, guestName, guestEmail, guestPhone, preferences, marketing } =
+          let { quantity, eventId, guestName, guestEmail, guestPhone, preferences } =
             metadata;
 
           let societyEvent;
@@ -362,7 +362,6 @@ const postWebhookCheckout = async (req, res, next) => {
             email: guestEmail,
             phone: guestPhone,
             preferences,
-            marketing,
             ticket: metadata.file,
           };
 

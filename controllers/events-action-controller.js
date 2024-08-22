@@ -180,7 +180,7 @@ const addEvent = async (req, res, next) => {
 
         await event.save();
 
-        // eventToSpreadsheet(societyEvent.id, eventName, region)
+        // eventToSpreadsheet(societyEvent.id)
 
     } catch (err) {
         console.log(err);
@@ -312,7 +312,7 @@ const editEvent = async (req, res, next) => {
 
     try {
         await event.save();
-        // eventToSpreadsheet(societyEvent.id, eventName, region)
+        // eventToSpreadsheet(societyEvent.id)
 
     } catch (err) {
         console.log(err);
