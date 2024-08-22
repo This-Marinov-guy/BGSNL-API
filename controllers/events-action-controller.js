@@ -24,7 +24,7 @@ const fetchEvent = async (req, res, next) => {
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
     const ticketTimer = calculateTimeRemaining(event.ticketTimer);
-    const expired = dateConvertor(event.date, event.time, true) < new Date().valueOf;
+    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" });
 
     if (ticketsRemaining <= 0 || ticketTimer <= 0 || expired) {
         status = false;
