@@ -1,6 +1,7 @@
 import express from "express";
 import { check } from "express-validator";
 import {
+  checkEligibleGuestForDiscount,
   checkEligibleMemberForPurchase,
   getEvent,
   getEventById,
@@ -44,6 +45,16 @@ eventRouter.get(
 eventRouter.get(
   "/check-member/:userId/:eventId",
   checkEligibleMemberForPurchase
+)
+
+eventRouter.post(
+  "/check-guest-discount/:eventId",
+  [
+    check("email").notEmpty(),
+    check("name").notEmpty(),
+    check("surname").notEmpty(),
+  ],
+  checkEligibleGuestForDiscount
 )
 
 eventRouter.post(

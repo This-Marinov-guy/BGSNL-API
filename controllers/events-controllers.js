@@ -171,6 +171,33 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
   res.status(200).json({ status });
 }
 
+const checkEligibleGuestForDiscount = async (req, res, next) => {
+  const { email, name, surname, eventId } = req.params;
+  let status = true;
+
+  if (!eventId) {
+    return next(new HttpError("Invalid inputs passed", 422));
+  }
+
+  let event = await Event.findById(eventId);
+
+  if (!event) {
+    return next(new HttpError("No event was found", 404));
+  }
+
+  for (const guest of event.guestList) {
+    const guestName = `${name} ${surname}`;
+
+    if (guest.name === guestName || guest.email === email) {
+      status = false;
+      new HttpError("Guest has already redeemed their promotion for this event", 500);
+      break;
+    }
+  }
+
+  res.status(200).json({ status });
+}
+
 const postAddMemberToEvent = async (req, res, next) => {
   const { userId, eventId, preferences } = req.body;
   let societyEvent;
@@ -413,4 +440,4 @@ const updatePresence = async (req, res, next) => {
   res.status(201).json({ status: 1, event: societyEvent.title });
 };
 
-export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, getEvent, getEventPurchaseAvailability, getSoldTicketQuantity, getEventById, checkEligibleMemberForPurchase, updatePresence };
+export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, getEvent, getEventPurchaseAvailability, getSoldTicketQuantity, getEventById, checkEligibleMemberForPurchase, checkEligibleGuestForDiscount, updatePresence };
