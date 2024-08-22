@@ -158,9 +158,9 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
     new HttpError("Could not find a user with provided id", 404);
   }
 
-  for (const guest of event.guestList) {
-    const memberName = `${member.name} ${member.surname}`;
+  const memberName = `${member.name} ${member.surname}`;
 
+  for (const guest of event.guestList) {
     if (guest.name === memberName && guest.email === member.email) {
       status = false;
       return next(new HttpError("Member has already purchased a ticket for this event", 500));
@@ -172,6 +172,7 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
 
 const checkEligibleGuestForDiscount = async (req, res, next) => {
   const { email, name, surname, eventId } = req.params;
+  const guestName = `${name} ${surname}`;
   let status = true;
 
   if (!eventId) {
@@ -184,9 +185,11 @@ const checkEligibleGuestForDiscount = async (req, res, next) => {
     return next(new HttpError("No event was found", 404));
   }
 
-  for (const guest of event.guestList) {
-    const guestName = `${name} ${surname}`;
+  if (!event.freePass || !event.freePass.includes(guestName) || !event.freePass.includes(email) {
+      res.status(200).json({ status });
+  }
 
+  for (const guest of event.guestList) {
     if (guest.name === guestName || guest.email === email) {
       status = false;
       return next(new HttpError("Guest has already redeemed their promotion for this event", 500));
