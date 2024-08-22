@@ -185,7 +185,7 @@ const checkEligibleGuestForDiscount = async (req, res, next) => {
     return next(new HttpError("No event was found", 404));
   }
 
-  if (!event.freePass || !event.freePass.includes(guestName) || !event.freePass.includes(email) {
+  if (!event.freePass || !event.freePass.includes(guestName) || !event.freePass.includes(email)) {
       res.status(200).json({ status });
   }
 
