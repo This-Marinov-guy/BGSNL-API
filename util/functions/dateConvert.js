@@ -29,5 +29,5 @@ export const dateConvertor = (date, time, getAsValue = false) => {
   const combinedDateTime = new Date(Date.UTC(year, month, day, hours, minutes, seconds, milliseconds));
 
   // Creating Date object
-  return getAsValue ? combinedDateTime.valueOf() : combinedDateTime.toISOString();
+  return getAsValue ? combinedDateTime.valueOf() : combinedDateTime.toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" });
 }
