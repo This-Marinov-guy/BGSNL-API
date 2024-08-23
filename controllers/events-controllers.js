@@ -168,6 +168,7 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
 
 const checkEligibleGuestForDiscount = async (req, res, next) => {
   const { email, name, surname, eventId } = req.params;
+  const {withError} = req.query;
   const guestName = `${name} ${surname}`;
   let status = true;
 
@@ -192,7 +193,7 @@ const checkEligibleGuestForDiscount = async (req, res, next) => {
     }
   }
 
-  if (!status) {
+  if (!status && withError) {
     return next(new HttpError("Guest has already redeemed their promotion for this event", 500));
   }
 
