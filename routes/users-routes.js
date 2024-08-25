@@ -11,6 +11,7 @@ import {
   patchUserStatus,
   postCheckMemberKey,
   postActiveMember,
+  getCurrentUserRoles,
 } from "../controllers/users-controllers.js";
 import {
   cancelSubscription
@@ -19,11 +20,14 @@ import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
 import { adminMiddleware, authMiddleware } from "../middleware/authorization.js";
+import { ACCESS_1 } from "../util/config/defines.js";
 dotenv.config();
 
 const userRouter = express.Router();
 
-userRouter.get("/:userId", getCurrentUser);
+userRouter.get("/:userId", adminMiddleware(ACCESS_1), getCurrentUser);
+
+userRouter.get("/roles/:userId", getCurrentUserRoles);
 
 userRouter.post(
   "/check-email",

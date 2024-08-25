@@ -16,7 +16,8 @@ import fileUpload from "../middleware/file-upload.js";
 import dotenv from "dotenv";
 import multer from "multer";
 import { addEvent, deleteEvent, editEvent, fetchEvent, fetchEvents } from "../controllers/events-action-controller.js";
-import { authMiddleware } from "../middleware/authorization.js";
+import { adminMiddleware, authMiddleware } from "../middleware/authorization.js";
+import { ACCESS_1 } from "../util/config/defines.js";
 dotenv.config();
 
 const upload = multer({ storage: multer.memoryStorage() })
@@ -118,18 +119,21 @@ const eventImageUploads = upload.fields([
 
 eventRouter.post(
   "/actions/add-event",
+  adminMiddleware(ACCESS_1),
   eventImageUploads,
   addEvent
 );
 
 eventRouter.patch(
   "/actions/edit-event/:eventId",
+  adminMiddleware(ACCESS_1),
   eventImageUploads,
   editEvent
 );
 
 eventRouter.delete(
   "/actions/delete-event/:eventId",
+  adminMiddleware(ACCESS_1),
   deleteEvent
 );
 

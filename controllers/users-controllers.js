@@ -9,6 +9,7 @@ import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/config/KEYS.js";
 import { usersToSpreadsheet } from "../services/google-spreadsheets.js";
 import { decryptData, isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
+import { MEMBER } from "../util/config/defines.js";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
@@ -35,6 +36,24 @@ const getCurrentUser = async (req, res, next) => {
   res
     .status(201)
     .json({ status: user.status, user });
+};
+
+const getCurrentUserRoles = async (req, res, next) => {
+  const userId = req.params.userId;
+
+  let user;
+  try {
+    user = await User.findById(userId);
+  } catch (err) {
+    const error = new HttpError("Could not fetch user", 500);
+    return next(error);
+  }
+
+  user = user.toObject({ getters: true })
+
+  res
+    .status(201)
+    .json({ status: user.status, roles: user.roles });
 };
 
 const postCheckEmail = async (req, res, next) => {
@@ -172,12 +191,12 @@ const signup = async (req, res, next) => {
   if (isBirthdayToday(birth)) {
     return res
       .status(201)
-      .json({ token, region, celebrate: true });
+      .json({ token, region, celebrate: true, roles: [MEMBER]});
   }
 
   await welcomeEmail(email, name, region)
 
-  res.status(201).json({ token, region });
+  res.status(201).json({ token, region, roles: [MEMBER] });
 };
 
 const login = async (req, res, next) => {
@@ -237,10 +256,10 @@ const login = async (req, res, next) => {
   if (isBirthdayToday(existingUser.birth)) {
     return res
       .status(201)
-      .json({ token: token, region: existingUser.region, celebrate: true });
+      .json({ token, region: existingUser.region, roles: existingUser.roles, celebrate: true });
   }
 
-  res.status(201).json({ token: token, region: existingUser.region });
+  res.status(201).json({ token: token, region: existingUser.region, roles: existingUser.roles });
 };
 
 const postActiveMember = async (req, res, next) => {
@@ -463,6 +482,7 @@ export {
   postCheckMemberKey,
   postActiveMember,
   getCurrentUser,
+  getCurrentUserRoles,
   patchUserInfo,
   patchUserPassword,
   patchUserStatus,

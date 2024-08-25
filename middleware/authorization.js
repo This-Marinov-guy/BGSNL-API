@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 import jwt from "jsonwebtoken";
 import HttpError from "../models/Http-error.js";
+import { decodeJWT } from "../util/functions/security.js";
 
 export const authMiddleware = (req, res, next) => {
     const authHeader = req.headers['authorization'];
@@ -35,9 +36,9 @@ export const adminMiddleware = (requiredRoles = []) => {
                 return next(new HttpError('No access for such request', 403))
             }
 
-            req.user = user;
+            const userRoles = decodeJWT(token)['roles'];
 
-            if (!requiredRoles.some(role => user.roles.includes(role))) {
+            if (!requiredRoles.some(role => userRoles.includes(role))) {
                 return next(new HttpError('No access for such request', 403))
             }
 
