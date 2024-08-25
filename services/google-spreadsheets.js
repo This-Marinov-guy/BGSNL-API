@@ -174,12 +174,12 @@ const eventToSpreadsheet = async (id) => {
       if (result.length > 0) {
         const eventDetails = [
           ["Status", "Region", "Title", "Date", "Time", "Location", "Ticket Timer", "Ticket Limit", "Price", "Member Price", "Active Member Price", "Ticket Link"],
-          [status, region, title, moment(date).format("D MMM YYYY"), moment(time).format("h:mm:ss a"), location, moment(ticketTimer).format("D MMM YYYY , h:mm:ss a"), ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
+          [status, region, title, moment(date).format("D MMM YYYY"), time, location, moment(ticketTimer).format("D MMM YYYY , h:mm:ss a"), ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
         ];
 
         guestListHeaders = ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "Ticket"];
         guests = result[0].guests.map((obj) => [
-          obj.status,
+          obj.status === 1 ? 'present' : 'missing',
           obj.type,
           moment(obj.timestamp).format("D MMM YYYY, h:mm:ss a"),
           obj.name,
