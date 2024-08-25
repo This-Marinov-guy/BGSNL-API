@@ -98,6 +98,7 @@ eventRouter.post(
 eventRouter.patch(
   '/check-guest-list',
   [
+    check("eventId").notEmpty(),
     check("name").notEmpty(),
     check("email").notEmpty()
   ],
