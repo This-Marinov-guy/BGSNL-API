@@ -383,7 +383,7 @@ const postWebhookCheckout = async (req, res, next) => {
             }
           }
 
-          sendTicketEmail(
+          await sendTicketEmail(
             "guest",
             guestEmail,
             societyEvent.title,

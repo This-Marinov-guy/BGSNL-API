@@ -3,6 +3,7 @@ import { google } from 'googleapis';
 import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../util/config/SPREEDSHEATS.js';
 import HttpError from '../models/Http-error.js';
 import moment from 'moment';
+import Event from '../models/Event.js';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -87,7 +88,7 @@ const eventToSpreadsheet = async (id) => {
   }
 
   const { region, date, title, status, time, location, ticketTimer, ticketLimit, entry, memberEntry, activeMemberEntry } = event;
-  const ticketLink = event.ticketLink ?? 'none'
+  const ticketLink = event.ticketLink ?? 'none';
 
   if (SPREADSHEETS_ID[region]?.events) {
     const spreadsheetId = SPREADSHEETS_ID[region].events;
@@ -106,7 +107,7 @@ const eventToSpreadsheet = async (id) => {
       spreadsheetId,
     });
 
-    const sheetName = `${title}|${date}`;
+    const sheetName = `${title}|${moment(date).format('Do MMMM YYYY, h:mm a')}`;
     const sheetsList = metaData.data.sheets;
     const sheetExists = sheetsList.some((sheet) => sheet.properties.title === sheetName);
 
@@ -167,14 +168,26 @@ const eventToSpreadsheet = async (id) => {
         }
       ]).toArray();
 
+      let guestListHeaders;
+      let guests;
+
       if (result.length > 0) {
         const eventDetails = [
           ["Status", "Region", "Title", "Date", "Time", "Location", "Ticket Timer", "Ticket Limit", "Price", "Member Price", "Active Member Price", "Ticket Link"],
           [status, region, title, moment(date).format("D MMM YYYY"), moment(time).format("h:mm:ss a"), location, moment(ticketTimer).format("D MMM YYYY , h:mm:ss a"), ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
         ];
 
-        const guestListHeaders = ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "Ticket"];
-        const guests = result[0].guests.map((obj) => guestListHeaders.map(header => obj[header]));
+        guestListHeaders = ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "Ticket"];
+        guests = result[0].guests.map((obj) => [
+          obj.status,
+          obj.type,
+          moment(obj.timestamp).format("D MMM YYYY, h:mm:ss a"),
+          obj.name,
+          obj.email,
+          obj.phone,
+          obj.preferences || "N/A",  // Assuming 'preferences' might not exist for all guests
+          obj.ticket
+        ]);
 
         const values = [
           ...eventDetails,
@@ -254,6 +267,7 @@ const eventToSpreadsheet = async (id) => {
     });
   }
 };
+
 
 const usersToSpreadsheet = async (region = null) => {
 

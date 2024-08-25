@@ -12,7 +12,7 @@ const sender = {
   name: NO_REPLY_EMAIL_NAME,
 };
 
-const sendTicketEmail = (
+const sendTicketEmail = async (
   type,
   receiver,
   eventName,
@@ -30,7 +30,7 @@ const sendTicketEmail = (
     MEMBER_TICKET_TEMPLATE
     : GUEST_TICKET_TEMPLATE;
 
-  client
+  await client
     .send({
       from: sender,
       to: recipients,
@@ -44,7 +44,6 @@ const sendTicketEmail = (
         },
       },
     })
-    .then(console.log, console.error);
 };
 
 const sendNewPasswordEmail = async (receiver, resetToken) => {
@@ -54,7 +53,7 @@ const sendNewPasswordEmail = async (receiver, resetToken) => {
     },
   ];
 
-  client
+  await client
     .send({
       from: sender,
       to: recipients,
@@ -65,7 +64,6 @@ const sendNewPasswordEmail = async (receiver, resetToken) => {
         },
       },
     })
-    .then(console.log, console.error);
 };
 
 const welcomeEmail = async (receiver, name, region = '') => {
@@ -75,7 +73,7 @@ const welcomeEmail = async (receiver, name, region = '') => {
     },
   ];
 
-  client
+  await client
     .send({
       from: sender,
       to: recipients,
@@ -87,7 +85,6 @@ const welcomeEmail = async (receiver, name, region = '') => {
         },
       },
     })
-    .then(console.log, console.error);
 };
 
 const sendContestMaterials = async (receiver) => {
@@ -97,7 +94,7 @@ const sendContestMaterials = async (receiver) => {
     },
   ];
 
-  client
+  await client
     .send({
       from: sender,
       to: recipients,
@@ -107,7 +104,6 @@ const sendContestMaterials = async (receiver) => {
         },
       },
     })
-    .then(console.log, console.error);
 };
 
 export { sendTicketEmail, sendNewPasswordEmail, welcomeEmail, sendContestMaterials };
