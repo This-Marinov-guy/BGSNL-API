@@ -159,7 +159,7 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
   for (const guest of event.guestList) {
     if (guest.name === memberName && guest.email === member.email) {
       status = false;
-      return next(new HttpError("Member has already purchased a ticket for this event - you can still buy a ticket on the normal price", 500));
+      break;
     }
   }
 
@@ -191,10 +191,6 @@ const checkEligibleGuestForDiscount = async (req, res, next) => {
       status = false;
       break;
     }
-  }
-
-  if (!status && withError) {
-    return next(new HttpError("Guest has already redeemed their promotion for this event - you can still buy a ticket on the normal price", 500));
   }
 
   res.status(200).json({ status });
