@@ -435,7 +435,7 @@ const updatePresence = async (req, res, next) => {
     return next(new HttpError("Updating guest list failed, please try again", 500));
   }
 
-  eventToSpreadsheet(societyEvent.id);
+  eventToSpreadsheet(eventId);
 
   res.status(201).json({ status: 1, event: societyEvent.title });
 };

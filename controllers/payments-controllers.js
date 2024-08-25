@@ -448,7 +448,7 @@ const postWebhookCheckout = async (req, res, next) => {
             );
           }
 
-          sendTicketEmail(
+          await sendTicketEmail(
             "member",
             targetUser.email,
             societyEvent.title,
