@@ -286,8 +286,8 @@ const editEvent = async (req, res, next) => {
     discountPass && (event.discountPass = discountPass);
     region && (event.region = region);
     title && (event.title = title);
-    date && (event.date = date);
-    time && (event.time = time);
+    date && (event.correctedDate = date);
+    time && (event.correctedTime = time);
     description && (event.description = description);
     location && (event.location = location);
     ticketTimer && (event.ticketTimer = ticketTimer);

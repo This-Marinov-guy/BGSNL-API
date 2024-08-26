@@ -10,6 +10,8 @@ const eventSchema = new Schema({
   description: { type: String, required: true },
   date: { type: Date, required: true },
   time: { type: String, required: true },
+  correctedDate: { type: Date},
+  correctedTime: { type: String },
   location: { type: String, required: true },
   ticketTimer: { type: Date, required: true },
   ticketLimit: { type: Number, required: true },

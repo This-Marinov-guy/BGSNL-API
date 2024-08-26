@@ -86,7 +86,7 @@ const eventToSpreadsheet = async (id) => {
     return;
   }
 
-  const { region, date, title, status, time, location, ticketTimer, ticketLimit, entry, memberEntry, activeMemberEntry } = event;
+  const { region, date, title, correctedDate, correctedTime, status, time, location, ticketTimer, ticketLimit, entry, memberEntry, activeMemberEntry } = event;
   const ticketLink = event.ticketLink ?? 'none';
 
   if (SPREADSHEETS_ID[region]?.events) {
@@ -173,7 +173,7 @@ const eventToSpreadsheet = async (id) => {
       if (result.length > 0) {
         const eventDetails = [
           ["Status", "Region", "Title", "Date", "Time", "Location", "Ticket Timer", "Ticket Limit", "Price", "Member Price", "Active Member Price", "Ticket Link"],
-          [status, region, title, moment(date).format("D MMM YYYY"), time, location, moment(ticketTimer).format("D MMM YYYY , h:mm:ss a"), ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
+          [status, region, title, moment(correctedDate ?? date).format("D MMM YYYY"), correctedTime ?? time, location, moment(ticketTimer).format("D MMM YYYY , h:mm:ss a"), ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
         ];
 
         guestListHeaders = ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "Ticket"];
