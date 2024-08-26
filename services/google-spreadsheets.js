@@ -1,8 +1,7 @@
 import { MongoClient, ObjectId } from 'mongodb';
 import { google } from 'googleapis';
 import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../util/config/SPREEDSHEATS.js';
-import HttpError from '../models/Http-error.js';
-import moment from 'moment';
+import moment from 'moment-timezone';
 import Event from '../models/Event.js';
 
 const searchInDatabase = (eventName, region) => {
@@ -107,7 +106,7 @@ const eventToSpreadsheet = async (id) => {
       spreadsheetId,
     });
 
-    const sheetName = `${title}|${moment(date).format('Do MMMM YYYY, h:mm a')}`;
+    const sheetName = `${title}|${moment(date).format('Do MMMM YYYY')} ${time}`;
     const sheetsList = metaData.data.sheets;
     const sheetExists = sheetsList.some((sheet) => sheet.properties.title === sheetName);
 
