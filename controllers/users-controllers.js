@@ -8,8 +8,10 @@ import { sendNewPasswordEmail, welcomeEmail } from "../services/email-transporte
 import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/config/KEYS.js";
 import { usersToSpreadsheet } from "../services/google-spreadsheets.js";
-import { decryptData, isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
+import { compareStringInputs, decryptData, isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
 import { MEMBER } from "../util/config/defines.js";
+import { forgottenPassTokenCache } from "../util/config/caches.js";
+import moment from "moment";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
@@ -310,24 +312,57 @@ const postActiveMember = async (req, res, next) => {
 const postSendPasswordResetEmail = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return next(new HttpError("Please send an email", 422));
+    return next(new HttpError("Please send a valid email", 422));
   }
-
-  req.app.locals.resetToken = Math.floor(10000000 + Math.random() * 90000000);
 
   const email = req.body.email;
+  const resetToken = Math.floor(100000 + Math.random() * 900000);
 
-  let existingUser;
+  forgottenPassTokenCache.set(email, {resetToken, life: 3});
 
-  try {
-    existingUser = await User.findOne({ email: email });
-  } catch (err) {
-    return next(new HttpError("No such user", 500));
+
+  sendNewPasswordEmail(email, resetToken);
+
+  res.status(201).json({ status: true });
+};
+
+const postVerifyToken = async (req, res, next) => {
+  const errors = validationResult(req);
+
+  if (!errors.isEmpty()) {
+    return next(new HttpError("Please send a valid email", 422));
   }
 
-  sendNewPasswordEmail(email, req.app.locals.resetToken);
+  const {token, email, birth, phone} = req.body;
 
-  res.status(201).json({ email: existingUser.email });
+  const cachedData = forgottenPassTokenCache.get(email) || {};
+  const resetToken = cachedData.resetToken ?? '';
+  let life = cachedData.life ?? 0;
+
+  if(!life || token != resetToken) {
+    if (life < 1) {
+      forgottenPassTokenCache.del(email);
+      return next(new HttpError("You have reached your maximum attempts - please start again", 400));
+    } 
+
+    forgottenPassTokenCache.set(email, { resetToken, life: life - 1 });
+    return next(new HttpError("Invalid code, please try again", 400));
+  }
+
+  let user;
+  try {
+    user = await User.findOne({ email: email });
+  } catch (err) {
+    const error = new HttpError("No such user with the provided data", 500);
+    return next(error);
+  }  
+
+  if (!user || !compareStringInputs(user.phone, phone) || !moment(user.birth).isSame(moment(birth))) {
+    const error = new HttpError("No such user with the provided data", 500);
+    return next(error);
+  }
+
+  res.status(201).json({ status: true });
 };
 
 const patchUserPassword = async (req, res, next) => {
@@ -336,11 +371,14 @@ const patchUserPassword = async (req, res, next) => {
     return next(new HttpError("Please send valid inputs", 422));
   }
 
-  const resetToken = req.app.locals.resetToken;
-  const { email, password, userToken } = req.body;
+  const { email, password, token } = req.body;
 
-  if (userToken !== resetToken) {
-    return next(new HttpError("Invalid Token", 422));
+  const cachedData = forgottenPassTokenCache.get(email) || {};
+  const resetToken = cachedData.resetToken ?? '';
+  let life = cachedData.life ?? 0;
+
+  if (!email || life < 1 || token != resetToken) {
+    return next(new HttpError("Service expired, please start again!", 400));
   }
 
   let existingUser;
@@ -371,7 +409,7 @@ const patchUserPassword = async (req, res, next) => {
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  res.status(200).json({ message: "Password changed!" });
+  res.status(200).json({ status: true });
 };
 
 const patchUserInfo = async (req, res, next) => {
@@ -478,6 +516,7 @@ export {
   signup,
   login,
   postSendPasswordResetEmail,
+  postVerifyToken,
   postCheckEmail,
   postCheckMemberKey,
   postActiveMember,

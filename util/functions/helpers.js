@@ -87,3 +87,7 @@ export const processExtraInputsForm = (extraInputsForm) => {
     return true;
   });
 };
+
+export const compareStringInputs = (str1, str2) => {
+  return str1.replace(/\s+/g, '').toLowerCase() === str2.replace(/\s+/g, '').toLowerCase();
+}

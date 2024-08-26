@@ -12,6 +12,7 @@ import {
   postCheckMemberKey,
   postActiveMember,
   getCurrentUserRoles,
+  postVerifyToken,
 } from "../controllers/users-controllers.js";
 import {
   cancelSubscription
@@ -76,6 +77,18 @@ userRouter.post(
   "/send-password-token",
   [check("email").notEmpty()],
   postSendPasswordResetEmail
+);
+
+userRouter.post(
+  "/verify-token",
+  [
+    check("email").notEmpty(),
+    check("token").notEmpty(),
+    check("birth").notEmpty(),
+    check("phone").notEmpty(),
+
+  ],
+  postVerifyToken
 );
 
 userRouter.patch(
