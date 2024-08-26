@@ -91,3 +91,11 @@ export const processExtraInputsForm = (extraInputsForm) => {
 export const compareStringInputs = (str1, str2) => {
   return str1.replace(/\s+/g, '').toLowerCase() === str2.replace(/\s+/g, '').toLowerCase();
 }
+
+export const hasOverlap = (array1, array2) => {
+  const set = new Set(array2);
+  for (let item of array1) {
+    if (set.has(item)) return true;
+  }
+  return false;
+}

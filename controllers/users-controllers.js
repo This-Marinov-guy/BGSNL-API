@@ -8,8 +8,8 @@ import { sendNewPasswordEmail, welcomeEmail } from "../services/email-transporte
 import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/config/KEYS.js";
 import { usersToSpreadsheet } from "../services/google-spreadsheets.js";
-import { compareStringInputs, decryptData, isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
-import { MEMBER } from "../util/config/defines.js";
+import { compareStringInputs, decryptData, hasOverlap, isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
+import { LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
 
@@ -236,7 +236,7 @@ const login = async (req, res, next) => {
   //check for expired account and lock it if necessary
   const today = new Date();
 
-  if (today > existingUser.expireDate) {
+  if (!hasOverlap(LIMITLESS_ACCOUNT, existingUser.roles) && today > existingUser.expireDate) {
     existingUser.status = "locked";
     try {
       await existingUser.save();
