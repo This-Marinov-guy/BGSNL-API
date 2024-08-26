@@ -25,7 +25,7 @@ dotenv.config();
 
 const userRouter = express.Router();
 
-userRouter.get("/:userId", adminMiddleware(ACCESS_1), getCurrentUser);
+userRouter.get("/:userId", getCurrentUser);
 
 userRouter.get("/roles/:userId", getCurrentUserRoles);
 

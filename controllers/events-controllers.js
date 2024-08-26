@@ -375,11 +375,10 @@ const postNonSocietyEvent = async (req, res, next) => {
 // status 2 = count is required as more than 1 guest was found
 const updatePresence = async (req, res, next) => {
   const { eventId, name, email } = req.body;
-  let { count } = req.body; // Get count from the request
+  let { count } = req.body; 
   let societyEvent;
 
   try {
-    // Find the event by title
     societyEvent = await Event.findById(eventId);
   } catch (err) {
     return next(new HttpError("Could not find such event, please try again!", 500));
@@ -389,7 +388,6 @@ const updatePresence = async (req, res, next) => {
     return next(new HttpError("Could not find such event - for further help best contact support", 404));
   }
 
-  // Filter guestList to find matching guests
   const targetGuests = societyEvent.guestList.filter(
     (guest) => guest.email === email && guest.name === name
   );
@@ -398,7 +396,6 @@ const updatePresence = async (req, res, next) => {
     return next(new HttpError("Guest/s were not found in the list - for further help best contact support", 404));
   }
 
-  // If multiple guests found and count is not provided, prompt for count
   if (targetGuests.length > 1 && !count) {
     return res.status(200).json({ status: 2, event: societyEvent.title });
   }
@@ -408,9 +405,8 @@ const updatePresence = async (req, res, next) => {
     count = 1;
   }
 
-  let updatedCount = 0; // Track how many guests were updated
+  let updatedCount = 0; 
 
-  // Update guest status in the event's guestList
   for (let i = 0; i < societyEvent.guestList.length; i++) {
     const guest = societyEvent.guestList[i];
 
@@ -420,15 +416,13 @@ const updatePresence = async (req, res, next) => {
       updatedCount++;
     }
 
-    if (count === 0) break; // Stop updating if the count is reached
+    if (count === 0) break; 
   }
 
-  // If no guests were updated, return a status 0 (indicating no changes made)
   if (updatedCount === 0) {
     return res.status(200).json({ status: 0, event: societyEvent.title });
   }
 
-  // Save the updated event
   try {
     await societyEvent.save();
   } catch (err) {
