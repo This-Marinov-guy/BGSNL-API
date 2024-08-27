@@ -310,12 +310,13 @@ const postActiveMember = async (req, res, next) => {
 }
 
 const postSendPasswordResetEmail = async (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return next(new HttpError("Please send a valid email", 422));
-  }
-
   const email = req.body.email;
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  
+  if(!regex.test(email)) {
+      return next(new HttpError("Please send a valid email", 422));
+  };
+
   const resetToken = Math.floor(100000 + Math.random() * 900000);
 
   forgottenPassTokenCache.set(email, {resetToken, life: 3});
