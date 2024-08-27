@@ -357,8 +357,7 @@ const postVerifyToken = async (req, res, next) => {
     const error = new HttpError("No such user with the provided data", 500);
     return next(error);
   }  
-
-  if (!user || !compareStringInputs(user.phone, phone) || !moment(user.birth).isSame(moment(birth))) {
+  if (!user || !compareStringInputs(user.phone, phone) || !moment(user.birth).isSame(moment(birth), 'day')) {
     const error = new HttpError("No such user with the provided data", 500);
     return next(error);
   }
