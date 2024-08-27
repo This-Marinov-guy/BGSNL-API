@@ -75,7 +75,6 @@ userRouter.post('/active-member', multiFileUpload(process.env.BUCKET_AM).fields(
 
 userRouter.post(
   "/send-password-token",
-  [check("email").notEmpty()],
   postSendPasswordResetEmail
 );
 
