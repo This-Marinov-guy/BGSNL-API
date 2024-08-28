@@ -28,3 +28,12 @@ export const CONTEST_MATERIALS_TEMPLATE = 'c130f73a-17f7-4fe8-be84-4acf9d5d2800'
 
 export const NO_REPLY_EMAIL = "no-reply@bulgariansociety.nl";
 export const NO_REPLY_EMAIL_NAME = "Bulgarian Society Netherlands"
+
+// periods of subscription
+const MONTHS_6 = 'price_1OuqmtIOw5UGbAo1V4TqMet4';
+const YEAR_1 = 'price_1Otbd6IOw5UGbAo1rdJ7wXp3';
+
+export const SUBSCRIPTION_PERIOD = {
+    [MONTHS_6]: 6,
+    [YEAR_1]: 12
+}

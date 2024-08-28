@@ -10,6 +10,7 @@ import { sendTicketEmail, welcomeEmail } from "../services/email-transporter.js"
 import { eventToSpreadsheet, usersToSpreadsheet } from "../services/google-spreadsheets.js";
 import { decryptData } from "../util/functions/helpers.js";
 import { addMonthsToDate, dateConvertor } from "../util/functions/dateConvert.js";
+import { SUBSCRIPTION_PERIOD } from "../util/config/defines.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",
@@ -322,7 +323,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
           const today = new Date();
           const expire = addMonthsToDate(period);
-          
+
           user.purchaseDate = today;
           user.expireDate = expire;
 
@@ -475,15 +476,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
       const price = event.data.object.lines.data[0].price.id || '';
 
-      let period
-
-      if (price === 'price_1OuqmtIOw5UGbAo1V4TqMet4') {
-        period = 6
-      }
-
-      if (price === 'price_1Otbd6IOw5UGbAo1rdJ7wXp3') {
-        period = 12
-      }
+      period = SUBSCRIPTION_PERIOD[price] ?? 12;
 
       const today = new Date();
       const expire = addMonthsToDate(period);
