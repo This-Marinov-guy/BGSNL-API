@@ -8,10 +8,11 @@ import { sendNewPasswordEmail, welcomeEmail } from "../services/email-transporte
 import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/config/KEYS.js";
 import { usersToSpreadsheet } from "../services/google-spreadsheets.js";
-import { compareStringInputs, decryptData, hasOverlap, isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
+import { compareIntStrings, decryptData, hasOverlap, isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
 import { LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
+import { areDatesEqual } from "../util/functions/dateConvert.js";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
@@ -328,12 +329,6 @@ const postSendPasswordResetEmail = async (req, res, next) => {
 };
 
 const postVerifyToken = async (req, res, next) => {
-  const errors = validationResult(req);
-
-  if (!errors.isEmpty()) {
-    return next(new HttpError("Please send a valid email", 422));
-  }
-
   const {token, email, birth, phone} = req.body;
 
   const cachedData = forgottenPassTokenCache.get(email) || {};
@@ -357,7 +352,8 @@ const postVerifyToken = async (req, res, next) => {
     const error = new HttpError("No such user with the provided data", 500);
     return next(error);
   }  
-  if (!user || !compareStringInputs(user.phone, phone) || !moment(user.birth).isSame(moment(birth), 'day')) {
+
+  if (!user || !compareIntStrings(user.phone, phone) || !areDatesEqual(user.birth, birth)) {
     const error = new HttpError("No such user with the provided data", 500);
     return next(error);
   }

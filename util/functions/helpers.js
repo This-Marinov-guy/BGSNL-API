@@ -72,7 +72,7 @@ export const decryptData = (string) => {
   const decryptedData = JSON.parse(decryptedBytes.toString(CryptoJS.enc.Utf8));
 
   return decryptedData;
-}  
+}
 
 export const processExtraInputsForm = (extraInputsForm) => {
   return extraInputsForm.filter(obj => {
@@ -88,8 +88,8 @@ export const processExtraInputsForm = (extraInputsForm) => {
   });
 };
 
-export const compareStringInputs = (str1, str2) => {
-  return str1.replace(/\s+/g, '').toLowerCase() === str2.replace(/\s+/g, '').toLowerCase();
+export const compareIntStrings = (str1, str2) => {
+  return str1.replace(/\D+/g, '').toLowerCase() === str2.replace(/\D+/g, '').toLowerCase();
 }
 
 export const hasOverlap = (array1, array2) => {
