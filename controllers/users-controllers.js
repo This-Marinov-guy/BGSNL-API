@@ -316,10 +316,19 @@ const postSendPasswordResetEmail = async (req, res, next) => {
       return next(new HttpError("Please send a valid email", 422));
   };
 
+  let user;
+  try {
+    user = await User.findOne({ email: email });
+  } catch (err) {
+  }  
+
+  if (!user) {
+    res.status(201).json({ status: true });
+  }
+
   const resetToken = Math.floor(100000 + Math.random() * 900000);
 
   forgottenPassTokenCache.set(email, {resetToken, life: 3});
-
 
   sendNewPasswordEmail(email, resetToken);
 
