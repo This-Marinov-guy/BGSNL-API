@@ -9,7 +9,7 @@ import User from "../models/User.js";
 import { sendTicketEmail, welcomeEmail } from "../services/email-transporter.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "../services/google-spreadsheets.js";
 import { decryptData } from "../util/functions/helpers.js";
-import { dateConvertor } from "../util/functions/dateConvert.js";
+import { addMonthsToDate, dateConvertor } from "../util/functions/dateConvert.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",
@@ -244,9 +244,7 @@ const postWebhookCheckout = async (req, res, next) => {
             image = metadata.file;
           }
 
-          const today = new Date()
-          const expire = new Date(today)
-          expire.setMonth(expire.getMonth() + period);
+          const expire = addMonthsToDate(period);
 
           const createdUser = new User({
             status: "active",
@@ -322,10 +320,9 @@ const postWebhookCheckout = async (req, res, next) => {
             period, id: subscriptionId, customerId
           }
 
-          const today = new Date()
-          const expire = new Date(today)
-          expire.setMonth(expire.getMonth() + period);
-
+          const today = new Date();
+          const expire = addMonthsToDate(period);
+          
           user.purchaseDate = today;
           user.expireDate = expire;
 
@@ -488,9 +485,8 @@ const postWebhookCheckout = async (req, res, next) => {
         period = 12
       }
 
-      const today = new Date()
-      const expire = new Date(today)
-      expire.setMonth(expire.getMonth() + period);
+      const today = new Date();
+      const expire = addMonthsToDate(period);
 
       user.status = 'active'
       user.purchaseDate = today;

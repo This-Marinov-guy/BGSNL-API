@@ -12,7 +12,7 @@ import { compareIntStrings, decryptData, hasOverlap, isBirthdayToday, jwtSign } 
 import { LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
-import { areDatesEqual } from "../util/functions/dateConvert.js";
+import { addMonthsToDate, areDatesEqual } from "../util/functions/dateConvert.js";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
@@ -149,14 +149,12 @@ const signup = async (req, res, next) => {
     image = req.file.Location;
   }
 
-  const today = new Date();
-  const expireDate = new Date(today); 
-  expireDate.setMonth(expireDate.getMonth() + period);
+  const expire = addMonthsToDate(period);
 
   const createdUser = new User({
     status: "active",
     region,
-    expireDate,
+    expireDate: expire,
     image,
     name,
     surname,
@@ -490,8 +488,7 @@ const patchUserStatus = async (req, res, next) => {
   }
 
   const today = new Date();
-  const expire = new Date(today);
-  expire.setMonth(expire.getMonth() + period);
+  const expire = addMonthsToDate(period);
 
   user.status = "active";
   user.purchaseDate = today;
