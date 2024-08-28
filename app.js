@@ -14,6 +14,7 @@ import { allowedOrigins } from "./util/config/access.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from './services/google-spreadsheets.js'
 import { firewall, rateLimiter } from "./middleware/firewall.js";
 import { updateUsers } from "./util/locals/manipulate-db.js";
+import { isBirthdayToday } from "./util/functions/helpers.js";
 
 const app = express();
 

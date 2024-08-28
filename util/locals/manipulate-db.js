@@ -1,6 +1,7 @@
 import moment from 'moment';
 import { MongoClient } from 'mongodb';
 import { ADMIN, BOARD_MEMBER, COMMITTEE_MEMBER, MEMBER, VIP } from '../config/defines.js';
+import { convertStringToDate } from '../functions/dateConvert.js';
 
 // Connection URI
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;
@@ -24,6 +25,7 @@ export async function updateUsers() {
 
         // Find all users
         const cursor = users.find({ email: { $in: emailsToFind } });
+        // const cursor = users.find();
 
         // // Iterate over all users
         for await (const user of cursor) {
@@ -40,10 +42,14 @@ export async function updateUsers() {
             const newObj = {};
             keys.forEach((key, index) => {
                 newObj[key] = newUserDoc[key];
-
-                newObj.roles = [VIP];
-                
             });
+            
+            try {
+                // newObj.birth = convertStringToDate(user.birth);
+
+            } catch (err) {
+                
+            }
 
             // Update the user
             const result = await users.replaceOne({ _id: user._id }, newObj);
