@@ -469,7 +469,8 @@ const patchUserInfo = async (req, res, next) => {
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  usersToSpreadsheet(user.region, true)
+  usersToSpreadsheet(user.region);
+  usersToSpreadsheet();
 
   res.status(200).json({ message: "done" });
 };
@@ -500,7 +501,8 @@ const patchUserStatus = async (req, res, next) => {
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  usersToSpreadsheet(user.region, true)
+  usersToSpreadsheet(user.region);
+  usersToSpreadsheet();
 
   res.status(200).json({ message: "done" });
 };

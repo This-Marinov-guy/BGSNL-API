@@ -281,7 +281,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
           welcomeEmail(email, name, region)
 
-          usersToSpreadsheet(region, true);
+          usersToSpreadsheet(region);
           usersToSpreadsheet();
 
           res.status(200).json({ received: true });
@@ -335,7 +335,8 @@ const postWebhookCheckout = async (req, res, next) => {
             );
           }
 
-          usersToSpreadsheet(user.region, true)
+          usersToSpreadsheet(user.region);
+          usersToSpreadsheet();
 
           res.status(200).json({ received: true });
         }
@@ -493,7 +494,8 @@ const postWebhookCheckout = async (req, res, next) => {
         );
       }
 
-      usersToSpreadsheet(user.region, true)
+      usersToSpreadsheet(user.region);
+      usersToSpreadsheet();
 
       res.status(200).json({ received: true });
     }
@@ -520,7 +522,8 @@ const postWebhookCheckout = async (req, res, next) => {
         );
       }
 
-      usersToSpreadsheet(user.region, true)
+      usersToSpreadsheet(user.region);
+      usersToSpreadsheet();
 
       //send email to update payment method or open account 
 
