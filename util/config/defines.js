@@ -1,3 +1,7 @@
+export const REGIONS = [
+    'amsterdam', 'breda', 'eindhoven', 'groningen', 'leeuwarden', 'maastricht', 'rotterdam'
+];
+
 // member roles
 export const SUPER_ADMIN = 'super_admin';
 export const ADMIN = 'admin';

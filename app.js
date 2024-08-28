@@ -15,6 +15,7 @@ import { eventToSpreadsheet, usersToSpreadsheet } from './services/google-spread
 import { firewall, rateLimiter } from "./middleware/firewall.js";
 import { updateUsers } from "./util/locals/manipulate-db.js";
 import { isBirthdayToday } from "./util/functions/helpers.js";
+import { REGIONS } from "./util/config/defines.js";
 
 const app = express();
 

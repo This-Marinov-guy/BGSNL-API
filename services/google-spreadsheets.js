@@ -273,7 +273,7 @@ const usersToSpreadsheet = async (region = null) => {
   let spreadsheetId = BGSNL_MEMBERS_SPREADSHEETS_ID;
   let filterByRegion = false;
 
-  if (region && SPREADSHEETS_ID[region].users) {
+  if (region && SPREADSHEETS_ID[region]?.users) {
     spreadsheetId = SPREADSHEETS_ID[region].users;
     filterByRegion = true;
   }
