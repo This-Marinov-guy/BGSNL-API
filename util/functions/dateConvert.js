@@ -82,3 +82,9 @@ export const convertStringToDate = (dateString) => {
 
   return new Date(Date.UTC(numericYear, month, numericDay));
 }
+
+export const formatReactPrimeDate = (date, hours = 3) => {
+  const newDate = new Date(date);  
+  newDate.setHours(newDate.getHours() + hours);  
+  return newDate;  
+}

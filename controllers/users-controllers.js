@@ -12,7 +12,7 @@ import { compareIntStrings, decryptData, hasOverlap, isBirthdayToday, jwtSign } 
 import { LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
-import { addMonthsToDate, areDatesEqual } from "../util/functions/dateConvert.js";
+import { addMonthsToDate, areDatesEqual, formatReactPrimeDate } from "../util/functions/dateConvert.js";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
@@ -360,7 +360,7 @@ const postVerifyToken = async (req, res, next) => {
     return next(error);
   }  
 
-  if (!user || !compareIntStrings(user.phone, phone) || !areDatesEqual(user.birth, birth)) {
+  if (!user || !compareIntStrings(user.phone, phone) || !areDatesEqual(user.birth, formatReactPrimeDate(birth))) {
     const error = new HttpError("No such user with the provided data", 500);
     return next(error);
   }
