@@ -263,10 +263,6 @@ const postAddMemberToEvent = async (req, res, next) => {
 };
 
 const postAddGuestToEvent = async (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return next(new HttpError("Invalid inputs passed", 422));
-  }
   const { quantity, eventId, guestName, guestEmail, guestPhone, preferences } = req.body;
 
   let societyEvent;

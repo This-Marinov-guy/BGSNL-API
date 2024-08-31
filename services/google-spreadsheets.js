@@ -230,7 +230,7 @@ const eventToSpreadsheet = async (id) => {
                 rule: {
                   ranges: [
                     {
-                      sheetId: sheetsList.find(sheet => sheet.properties.title === sheetName).properties.sheetId,
+                      sheetId: spreadsheetId,
                       startRowIndex: startRow,
                       endRowIndex: endRow,
                       startColumnIndex: 0,
