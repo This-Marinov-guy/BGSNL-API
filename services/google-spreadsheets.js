@@ -260,7 +260,11 @@ const eventToSpreadsheet = async (id) => {
         },
       };
 
-      await googleSheets.spreadsheets.batchUpdate(formattingRequest);
+      try {
+        await googleSheets.spreadsheets.batchUpdate(formattingRequest);
+      } catch (err) {
+        console.log(err);
+      }
 
       client.close();
     });
