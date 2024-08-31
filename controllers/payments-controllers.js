@@ -489,9 +489,7 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         await user.save();
       } catch (err) {
-        return next(
-          new HttpError("Something went wrong, please try again", 500)
-        );
+       break;
       }
 
       await usersToSpreadsheet(user.region);
@@ -517,9 +515,7 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         await user.save();
       } catch (err) {
-        return next(
-          new HttpError("Something went wrong, please try again", 500)
-        );
+        break;
       }
 
       await usersToSpreadsheet(user.region);

@@ -384,6 +384,10 @@ const updatePresence = async (req, res, next) => {
     return next(new HttpError("Could not find such event - for further help best contact support", 404));
   }
 
+  if (societyEvent.guestList.length < 1) {
+    return next(new HttpError("This events has no guests!", 404));
+  }
+
   const targetGuests = societyEvent.guestList.filter(
     (guest) => guest.email === email && guest.name === name
   );

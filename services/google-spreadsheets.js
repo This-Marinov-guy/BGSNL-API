@@ -190,11 +190,16 @@ const eventToSpreadsheet = async (id) => {
 
         const values = [
           ...eventDetails,
-          [],
-          ["Guest List", "Presence", guests.length],
-          guestListHeaders,
-          ...guests
         ];
+
+        if (guests.length > 0) {
+          values.push([
+            [],
+            ["Guest List", "Presence", guests.length],
+            guestListHeaders,
+            ...guests
+          ])
+        }
 
         await googleSheets.spreadsheets.values.clear({
           auth,
