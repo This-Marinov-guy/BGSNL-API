@@ -261,6 +261,7 @@ const eventToSpreadsheet = async (id) => {
       };
 
       try {
+        // add check if there is a guest list
         await googleSheets.spreadsheets.batchUpdate(formattingRequest);
       } catch (err) {
         console.log(err);
