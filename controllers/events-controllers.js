@@ -257,7 +257,7 @@ const postAddMemberToEvent = async (req, res, next) => {
     req.file.location
   );
 
-  eventToSpreadsheet(societyEvent.id);
+  await eventToSpreadsheet(societyEvent.id);
 
   res.status(201).json({ message: "Success" });
 };
@@ -321,7 +321,7 @@ const postAddGuestToEvent = async (req, res, next) => {
     req.file.location
   );
 
-  eventToSpreadsheet(societyEvent.id);
+  await eventToSpreadsheet(societyEvent.id);
 
   res.status(201).json({ message: "Success" });
 };
@@ -429,7 +429,7 @@ const updatePresence = async (req, res, next) => {
     return next(new HttpError("Updating guest list failed, please try again", 500));
   }
 
-  eventToSpreadsheet(eventId);
+  await eventToSpreadsheet(eventId);
 
   res.status(201).json({ status: 1, event: societyEvent.title });
 };

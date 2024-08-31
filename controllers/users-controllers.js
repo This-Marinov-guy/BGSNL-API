@@ -186,8 +186,8 @@ const signup = async (req, res, next) => {
     return next(error);
   }
 
-  usersToSpreadsheet(region, true);
-  usersToSpreadsheet();
+  await usersToSpreadsheet(region, true);
+  await usersToSpreadsheet();
 
   if (isBirthdayToday(birth)) {
     return res
@@ -478,8 +478,8 @@ const patchUserInfo = async (req, res, next) => {
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  usersToSpreadsheet(user.region);
-  usersToSpreadsheet();
+  await usersToSpreadsheet(user.region);
+  await usersToSpreadsheet();
 
   res.status(200).json({ message: "done" });
 };
@@ -510,8 +510,8 @@ const patchUserStatus = async (req, res, next) => {
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  usersToSpreadsheet(user.region);
-  usersToSpreadsheet();
+  await usersToSpreadsheet(user.region);
+  await usersToSpreadsheet();
 
   res.status(200).json({ message: "done" });
 };

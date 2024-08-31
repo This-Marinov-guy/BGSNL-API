@@ -281,8 +281,8 @@ const postWebhookCheckout = async (req, res, next) => {
 
           welcomeEmail(email, name, region)
 
-          usersToSpreadsheet(region);
-          usersToSpreadsheet();
+          await usersToSpreadsheet(region);
+          await usersToSpreadsheet();
 
           res.status(200).json({ received: true });
         }
@@ -335,8 +335,8 @@ const postWebhookCheckout = async (req, res, next) => {
             );
           }
 
-          usersToSpreadsheet(user.region);
-          usersToSpreadsheet();
+          await usersToSpreadsheet(user.region);
+          await usersToSpreadsheet();
 
           res.status(200).json({ received: true });
         }
@@ -391,7 +391,7 @@ const postWebhookCheckout = async (req, res, next) => {
             metadata.file
           );
 
-          eventToSpreadsheet(societyEvent.id);
+          await eventToSpreadsheet(societyEvent.id);
 
           res.status(200).json({ received: true });
         }
@@ -456,7 +456,7 @@ const postWebhookCheckout = async (req, res, next) => {
             metadata.file
           );
 
-          eventToSpreadsheet(societyEvent.id);
+          await eventToSpreadsheet(societyEvent.id);
 
           res.status(200).json({ received: true });
         }
@@ -494,8 +494,8 @@ const postWebhookCheckout = async (req, res, next) => {
         );
       }
 
-      usersToSpreadsheet(user.region);
-      usersToSpreadsheet();
+      await usersToSpreadsheet(user.region);
+      await usersToSpreadsheet();
 
       res.status(200).json({ received: true });
     }
@@ -522,8 +522,8 @@ const postWebhookCheckout = async (req, res, next) => {
         );
       }
 
-      usersToSpreadsheet(user.region);
-      usersToSpreadsheet();
+      await usersToSpreadsheet(user.region);
+      await usersToSpreadsheet();
 
       //send email to update payment method or open account 
 

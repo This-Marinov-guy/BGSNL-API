@@ -18,6 +18,21 @@ const eventSchema = new Schema({
   isSaleClosed: { type: Boolean, required: true, default: false },
   isFree: { type: Boolean, required: true, default: false },
   isMemberFree: { type: Boolean, required: true, default: false },
+  // product : {
+  //   id: {type: String, required: true},
+  //   entry : {
+  //     price: { type: Number, required: true },
+  //     priceId: { type: String, required: true }
+  //   },
+  //   memberEntry: {
+  //     price: { type: Number, required: true },
+  //     priceId: { type: String, required: true }
+  //   },
+  //   activeMemberEntry: {
+  //     price: { type: Number, required: true },
+  //     priceId: { type: String, required: true }
+  //   }
+  // },
   entry: { type: Number, default: null },
   memberEntry: { type: Number, default: null },
   activeMemberEntry: { type: Number, default: null },
