@@ -62,7 +62,9 @@ const addEvent = async (req, res, next) => {
         discountPass,
         region,
         title,
-        date, 
+        // check if it works
+        // date: formatReactPrimeDate(date), 
+        date,
         time,
         description,
         location,
