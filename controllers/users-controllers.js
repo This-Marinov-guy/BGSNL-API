@@ -416,11 +416,6 @@ const patchUserPassword = async (req, res, next) => {
 };
 
 const patchUserInfo = async (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return next(new HttpError("Invalid inputs", 422));
-  }
-
   const {
     name,
     surname,
