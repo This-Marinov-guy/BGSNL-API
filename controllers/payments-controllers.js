@@ -294,27 +294,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
           try {
             user = await User.findById(userId);
-          } catch (err) {
-            return next(
-              new HttpError(
-                "Could not find the current user, please try again",
-                500
-              )
-            );
-          }
-
-          //cancel old subscription 
-
-          try {
-            await stripe.subscriptions.update(
-              user.subscription.id,
-              {
-                cancel_at_period_end: true,
-              }
-            );
-          } catch (err) {
-
-          }
+          } catch (err) {}
 
           user.status = "active";
           user.subscription = {
