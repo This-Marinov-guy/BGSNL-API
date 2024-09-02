@@ -443,6 +443,9 @@ const postWebhookCheckout = async (req, res, next) => {
         default: console.log('No case');
       }
     case 'invoice.paid': {
+      // FIX
+      res.status(200).json({ received: true });
+
       let user;
 
       try {
@@ -478,6 +481,8 @@ const postWebhookCheckout = async (req, res, next) => {
       res.status(200).json({ received: true });
     }
     case 'invoice.payment_failed': {
+      // FIX
+      res.status(200).json({ received: true });
       let user;
 
       try {
