@@ -245,9 +245,9 @@ const editEvent = async (req, res, next) => {
     const extraInputsForm = processExtraInputsForm(JSON.parse(req.body.extraInputsForm));
     const subEvent = JSON.parse(req.body.subEvent);
 
-    const poster = await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' })
+    // const poster = await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' })
 
-    const ticketImg = req.files['ticketImg'] ? await uploadToCloudinary(req.files['ticketImg'][0], {
+    const ticketImg = await uploadToCloudinary(req.files['ticketImg'][0], {
             folder,
             public_id: 'ticket',
             width: 1500,
@@ -256,26 +256,26 @@ const editEvent = async (req, res, next) => {
             format: 'jpg'
         }) : '';
 
-    const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], {
-        folder,
-        public_id: 'background',
-        width: 1200,
-        crop: 'fit',
-        format: 'jpg'
-    }) : '';
+    // const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], {
+    //     folder,
+    //     public_id: 'background',
+    //     width: 1200,
+    //     crop: 'fit',
+    //     format: 'jpg'
+    // }) : '';
 
-    let images = [poster];
+    // let images = [poster];
 
-    if (req.files['images']) {
-        req.files['images'].forEach(async (img) => {
-            try {
-                const link = await uploadToCloudinary(img, { folder })
-                images.push(link);
-            } catch (err) {
-                console.log(err);
-            }
-        });
-    }
+    // if (req.files['images']) {
+    //     req.files['images'].forEach(async (img) => {
+    //         try {
+    //             const link = await uploadToCloudinary(img, { folder })
+    //             images.push(link);
+    //         } catch (err) {
+    //             console.log(err);
+    //         }
+    //     });
+    // }
 
     // event.extraInputsForm = extraInputsForm;
     // event.subEvent = subEvent;
