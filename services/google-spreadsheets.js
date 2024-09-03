@@ -172,7 +172,7 @@ const eventToSpreadsheet = async (id) => {
       if (result.length > 0) {
         const eventDetails = [
           ["Status", "Region", "Title", "Date", "Location", "Ticket Timer", "Ticket Limit", "Price", "Member Price", "Active Member Price", "Ticket Link"],
-          [status, region, title, moment(correctedDate ?? date).format("D MMM YYYY hh:mm"), location, moment(ticketTimer).format("D MMM YYYY , hh:mm"), ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
+          [status, region, title, moment(correctedDate ?? date).format("D MMM YYYY hh:mm a"), location, moment(ticketTimer).format("D MMM YYYY , hh:mm a"), ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
         ];
 
         guestListHeaders = ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "Ticket"];
@@ -187,18 +187,14 @@ const eventToSpreadsheet = async (id) => {
           obj.ticket
         ]);
 
+        // fix if no guests
         const values = [
           ...eventDetails,
+          [],
+          ["Guest List", "Presence", guests.length],
+          guestListHeaders,
+          ...guests
         ];
-
-        if (guests.length > 0) {
-          values.push([
-            [],
-            ["Guest List", "Presence", guests.length],
-            guestListHeaders,
-            ...guests
-          ])
-        }
 
         await googleSheets.spreadsheets.values.clear({
           auth,
