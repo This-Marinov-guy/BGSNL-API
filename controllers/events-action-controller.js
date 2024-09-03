@@ -254,7 +254,7 @@ const editEvent = async (req, res, next) => {
             height: 485,
             crop: 'fit',
             format: 'jpg'
-        }) : '';
+        });
 
     // const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], {
     //     folder,
