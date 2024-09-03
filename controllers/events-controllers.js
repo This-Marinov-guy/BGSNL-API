@@ -56,11 +56,12 @@ const getEventById = async (req, res, next) => {
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const expired = isEventTimerFinished(event.ticketTimer);
+    // event here should not expire
+    // const expired = isEventTimerFinished(event.ticketTimer);
 
-    if (ticketsRemaining <= 0 || expired) {
-      status = false;
-    }
+    // if ((ticketsRemaining <= 0) || expired) {
+    //   status = false;
+    // }
 
     event = removeModelProperties(event, ['guestList', 'discountPass', 'freePass']);
 
