@@ -245,7 +245,7 @@ const editEvent = async (req, res, next) => {
     const extraInputsForm = processExtraInputsForm(JSON.parse(req.body.extraInputsForm));
     const subEvent = JSON.parse(req.body.subEvent);
 
-    const poster = req.files['poster'] ? await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' }) : '';
+    const poster = await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' })
 
     const ticketImg = req.files['ticketImg'] ? await uploadToCloudinary(req.files['ticketImg'][0], {
             folder,
@@ -259,7 +259,7 @@ const editEvent = async (req, res, next) => {
     const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], {
         folder,
         public_id: 'background',
-        width: 800,
+        width: 1200,
         crop: 'fit',
         format: 'jpg'
     }) : '';
