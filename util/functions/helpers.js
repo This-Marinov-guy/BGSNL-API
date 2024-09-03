@@ -14,10 +14,7 @@ export const updateOriginalArray = (originalArray, modifiedSubset) => {
 };
 
 export const isEventTimerFinished = (timer) => {
-  const expireTime = moment(timer).subtract(2, 'hours');
-  const currentNLTime = moment().tz('Europe/Amsterdam');
-
-  return expireTime <= currentNLTime;
+  return timer.valueOf() < (new Date()).valueOf()
 };
 
 export const removeModelProperties = (obj, properties) => {

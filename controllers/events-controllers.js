@@ -26,8 +26,7 @@ const getEventPurchaseAvailability = async (req, res, next) => {
 
     let status = true;
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    // const expired = moment(event.date).isAfter(moment()) || isEventTimerFinished(event.ticketTimer);
-    const expired = false;
+    const expired = isEventTimerFinished(event.ticketTimer);
 
     if (ticketsRemaining <= 0 || expired) {
       status = false;
@@ -57,9 +56,8 @@ const getEventById = async (req, res, next) => {
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    // const expired = moment(event.date).isAfter(moment()) || isEventTimerFinished(event.ticketTimer);
-    const expired = false;
-    
+    const expired = isEventTimerFinished(event.ticketTimer);
+
     if (ticketsRemaining <= 0 || expired) {
       status = false;
     }
@@ -97,8 +95,7 @@ const getEvent = async (req, res, next) => {
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    // const expired = moment(event.date).isAfter(moment()) || isEventTimerFinished(event.ticketTimer);
-    const expired = false;
+    const expired = isEventTimerFinished(event.ticketTimer);
 
     if (ticketsRemaining <= 0 || expired) {
       status = false;

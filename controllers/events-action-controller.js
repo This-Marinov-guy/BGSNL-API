@@ -24,8 +24,7 @@ const fetchEvent = async (req, res, next) => {
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    // const expired = isEventTimerFinished(event.ticketTimer);
-    const expired = false;
+    const expired = isEventTimerFinished(event.ticketTimer);
 
     if (ticketsRemaining <= 0 || expired) {
         status = false;
