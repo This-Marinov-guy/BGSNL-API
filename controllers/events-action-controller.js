@@ -281,7 +281,7 @@ const editEvent = async (req, res, next) => {
     // event.subEvent = subEvent;
 
     // poster && (event.poster = poster);
-    // ticketImg && (event.ticketImg = ticketImg);
+     ticketImg && (event.ticketImg = ticketImg);
     // bgImageExtra && (event.bgImageExtra = bgImageExtra);
     // bgImageSelection && (event.bgImageSelection = bgImageSelection);
     // images && images.length > 1 && (event.images = images);
