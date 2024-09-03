@@ -4,7 +4,7 @@ import HttpError from "../models/Http-error.js";
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import { uploadToCloudinary, deleteFolder } from "../util/functions/cloudinary.js";
 import { isEventTimerFinished, processExtraInputsForm } from "../util/functions/helpers.js";
-import { dateConvertor } from "../util/functions/dateConvert.js";
+import { areDatesEqual, dateConvertor } from "../util/functions/dateConvert.js";
 
 const fetchEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
@@ -291,8 +291,8 @@ const editEvent = async (req, res, next) => {
     discountPass && (event.discountPass = discountPass);
     region && (event.region = region);
     title && (event.title = title);
-    date && (event.correctedDate = date);
-    time && (event.correctedTime = time);
+    (date && areDatesEqual(event.date, date)) && (event.correctedDate = date);
+    (time && event.time !== time) && (event.correctedTime = time);
     description && (event.description = description);
     location && (event.location = location);
     ticketTimer && (event.ticketTimer = ticketTimer);
