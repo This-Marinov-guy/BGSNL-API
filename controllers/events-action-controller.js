@@ -264,7 +264,7 @@ const editEvent = async (req, res, next) => {
     //     format: 'jpg'
     // }) : '';
 
-    // let images = [poster];
+    let images = [poster];
 
     // if (req.files['images']) {
     //     req.files['images'].forEach(async (img) => {
