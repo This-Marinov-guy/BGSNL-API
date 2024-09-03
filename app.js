@@ -11,11 +11,7 @@ import paymentRouter from "./routes/payments-routes.js";
 import contestRouter from "./routes/contest-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
-import { eventToSpreadsheet, usersToSpreadsheet } from './services/google-spreadsheets.js'
 import { firewall, rateLimiter } from "./middleware/firewall.js";
-import { updateUsers } from "./util/locals/manipulate-db.js";
-import { isBirthdayToday } from "./util/functions/helpers.js";
-import { REGIONS } from "./util/config/defines.js";
 
 const app = express();
 
