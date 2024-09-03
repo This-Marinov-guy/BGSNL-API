@@ -9,9 +9,7 @@ const eventSchema = new Schema({
   title: { type: String, required: true },
   description: { type: String, required: true },
   date: { type: Date, required: true },
-  time: { type: String, required: true },
   correctedDate: { type: Date},
-  correctedTime: { type: String },
   location: { type: String, required: true },
   ticketTimer: { type: Date, required: true },
   ticketLimit: { type: Number, required: true },
@@ -70,6 +68,9 @@ const eventSchema = new Schema({
   freePass: { type: [String] },
   discountPass: { type: [String] },
   folder: {
+    type: String, required: true
+  },
+  sheetName: {
     type: String, required: true
   },
   guestList: [

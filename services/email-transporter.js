@@ -38,7 +38,7 @@ const sendTicketEmail = async (
       template_variables: {
         template_variables: {
           eventName,
-          eventDate: moment(eventDate).format("D MMM YYYY, h:mm"),
+          eventDate: moment(eventDate).format("D MMM YYYY, hh:mm"),
           guestName,
           ticket,
         },

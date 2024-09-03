@@ -8,6 +8,7 @@ import { sendTicketEmail } from "../services/email-transporter.js";
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import { decodeFromURL, isEventTimerFinished, removeModelProperties } from "../util/functions/helpers.js";
 import { dateConvertor } from "../util/functions/dateConvert.js";
+import moment from "moment";
 
 const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -25,7 +26,8 @@ const getEventPurchaseAvailability = async (req, res, next) => {
 
     let status = true;
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" }) || isEventTimerFinished(event.ticketTimer);
+    // const expired = moment(event.date).isAfter(moment()) || isEventTimerFinished(event.ticketTimer);
+    const expired = false;
 
     if (ticketsRemaining <= 0 || expired) {
       status = false;
@@ -55,8 +57,9 @@ const getEventById = async (req, res, next) => {
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" }) || isEventTimerFinished(event.ticketTimer);
-
+    // const expired = moment(event.date).isAfter(moment()) || isEventTimerFinished(event.ticketTimer);
+    const expired = false;
+    
     if (ticketsRemaining <= 0 || expired) {
       status = false;
     }
@@ -94,7 +97,8 @@ const getEvent = async (req, res, next) => {
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const expired = dateConvertor(event.date, event.time, true) < new Date().toLocaleString("nl-NL", { timeZone: "Europe/Amsterdam" }) || isEventTimerFinished(event.ticketTimer);
+    // const expired = moment(event.date).isAfter(moment()) || isEventTimerFinished(event.ticketTimer);
+    const expired = false;
 
     if (ticketsRemaining <= 0 || expired) {
       status = false;
