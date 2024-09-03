@@ -47,6 +47,7 @@ const eventSchema = new Schema({
   images: { type: [String] },
   ticketImg: { type: String, required: true },
   ticketColor: { type: String, required: true, default: '#faf9f6' },
+  ticketQR: { type: Boolean, required: true, default: true },
   poster: { type: String, required: true },
   bgImage: { type: Number, required: true, default: 1 },
   bgImageExtra: { type: String },

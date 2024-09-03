@@ -16,6 +16,7 @@ import { addMonthsToDate, areDatesEqual, formatReactPrimeDate } from "../util/fu
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
+  const withTickets = req.query.withTickets ?? false;
 
   let user;
   try {
@@ -29,6 +30,7 @@ const getCurrentUser = async (req, res, next) => {
 
   delete user.password;
   user.registrationKey && delete user.registrationKey;
+  !withTickets && delete user.tickets
 
   if (isBirthdayToday(user.birth)) {
     return res

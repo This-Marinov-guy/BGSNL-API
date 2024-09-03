@@ -85,6 +85,7 @@ const addEvent = async (req, res, next) => {
         activeMemberPriceId,
         text,
         ticketColor,
+        ticketQR,
         bgImage,
         bgImageSelection
     } = req.body
@@ -172,6 +173,7 @@ const addEvent = async (req, res, next) => {
             images,
             ticketImg,
             ticketColor,
+            ticketQR: ticketQR === 'true',
             poster,
             bgImage,
             bgImageExtra,
@@ -230,6 +232,7 @@ const editEvent = async (req, res, next) => {
         memberIncluding,
         including,
         ticketLink,
+        ticketQR,
         priceId,
         memberPriceId,
         activeMemberPriceId,
@@ -309,6 +312,7 @@ const editEvent = async (req, res, next) => {
     activeMemberPriceId && (event.activeMemberPriceId = activeMemberPriceId);
     text && (event.text = text);
     ticketColor && (event.ticketColor = ticketColor);
+    event.ticketQR = ticketQR === 'true',
     bgImage && (event.bgImage = bgImage);
 
     try {
