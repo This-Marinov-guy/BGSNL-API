@@ -277,43 +277,43 @@ const editEvent = async (req, res, next) => {
         });
     }
 
-    event.extraInputsForm = extraInputsForm;
-    event.subEvent = subEvent;
+    // event.extraInputsForm = extraInputsForm;
+    // event.subEvent = subEvent;
 
-    poster && (event.poster = poster);
-    ticketImg && (event.ticketImg = ticketImg);
-    bgImageExtra && (event.bgImageExtra = bgImageExtra);
-    bgImageSelection && (event.bgImageSelection = bgImageSelection);
-    images && images.length > 1 && (event.images = images);
-    memberOnly && (event.memberOnly = memberOnly);
-    hidden && (event.hidden = hidden);
-    freePass && (event.freePass = freePass);
-    discountPass && (event.discountPass = discountPass);
-    region && (event.region = region);
-    title && (event.title = title);
-    (date && areDatesEqual(event.date, date)) && (event.correctedDate = date);
-    (time && event.time !== time) && (event.correctedTime = time);
-    description && (event.description = description);
-    location && (event.location = location);
-    ticketTimer && (event.ticketTimer = ticketTimer);
-    ticketLimit && (event.ticketLimit = ticketLimit);
-    isSaleClosed && (event.isSaleClosed = isSaleClosed);
-    isFree && (event.isFree = isFree);
-    isMemberFree && (event.isMemberFree = isMemberFree);
-    entry && (event.entry = entry);
-    memberEntry && (event.memberEntry = memberEntry);
-    activeMemberEntry && (event.activeMemberEntry = activeMemberEntry);
-    entryIncluding && (event.entryIncluding = entryIncluding);
-    memberIncluding && (event.memberIncluding = memberIncluding);
-    including && (event.including = including);
-    ticketLink && (event.ticketLink = ticketLink);
-    priceId && (event.priceId = priceId);
-    memberPriceId && (event.memberPriceId = memberPriceId);
-    activeMemberPriceId && (event.activeMemberPriceId = activeMemberPriceId);
-    text && (event.text = text);
-    ticketColor && (event.ticketColor = ticketColor);
-    event.ticketQR = ticketQR === 'true',
-    bgImage && (event.bgImage = bgImage);
+    // poster && (event.poster = poster);
+    // ticketImg && (event.ticketImg = ticketImg);
+    // bgImageExtra && (event.bgImageExtra = bgImageExtra);
+    // bgImageSelection && (event.bgImageSelection = bgImageSelection);
+    // images && images.length > 1 && (event.images = images);
+    // memberOnly && (event.memberOnly = memberOnly);
+    // hidden && (event.hidden = hidden);
+    // freePass && (event.freePass = freePass);
+    // discountPass && (event.discountPass = discountPass);
+    // region && (event.region = region);
+    // title && (event.title = title);
+    // (date && areDatesEqual(event.date, date)) && (event.correctedDate = date);
+    // (time && event.time !== time) && (event.correctedTime = time);
+    // description && (event.description = description);
+    // location && (event.location = location);
+    // ticketTimer && (event.ticketTimer = ticketTimer);
+    // ticketLimit && (event.ticketLimit = ticketLimit);
+    // isSaleClosed && (event.isSaleClosed = isSaleClosed);
+    // isFree && (event.isFree = isFree);
+    // isMemberFree && (event.isMemberFree = isMemberFree);
+    // entry && (event.entry = entry);
+    // memberEntry && (event.memberEntry = memberEntry);
+    // activeMemberEntry && (event.activeMemberEntry = activeMemberEntry);
+    // entryIncluding && (event.entryIncluding = entryIncluding);
+    // memberIncluding && (event.memberIncluding = memberIncluding);
+    // including && (event.including = including);
+    // ticketLink && (event.ticketLink = ticketLink);
+    // priceId && (event.priceId = priceId);
+    // memberPriceId && (event.memberPriceId = memberPriceId);
+    // activeMemberPriceId && (event.activeMemberPriceId = activeMemberPriceId);
+    // text && (event.text = text);
+    // ticketColor && (event.ticketColor = ticketColor);
+    // event.ticketQR = ticketQR === 'true',
+    // bgImage && (event.bgImage = bgImage);
 
     try {
         await event.save();
