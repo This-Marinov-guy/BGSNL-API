@@ -12,7 +12,7 @@ import { compareIntStrings, decryptData, hasOverlap, isBirthdayToday, jwtSign } 
 import { LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
-import { MOMENT_DATE_YEAR, addMonthsToDate, areDatesEqual, formatReactPrimeDate } from "../util/functions/dateConvert.js";
+import { MOMENT_DATE_YEAR, addMonthsToDate, areDatesEqual, calculatePurchaseAndExpireDates, formatReactPrimeDate } from "../util/functions/dateConvert.js";
 
 const getCurrentUser = async (req, res, next) => {
   const userId = req.params.userId;
@@ -494,12 +494,11 @@ const patchUserStatus = async (req, res, next) => {
     );
   }
 
-  const today = new Date();
-  const expire = addMonthsToDate(period);
+  const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
-  user.status = "active";
-  user.purchaseDate = today;
-  user.expireDate = expire;
+  user.purchaseDate = purchaseDate;
+  user.expireDate = expireDate;
+  user.status = 'active'
 
   try {
     await user.save();

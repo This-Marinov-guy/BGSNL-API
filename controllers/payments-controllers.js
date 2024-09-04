@@ -9,7 +9,7 @@ import User from "../models/User.js";
 import { sendTicketEmail, welcomeEmail } from "../services/email-transporter.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "../services/google-spreadsheets.js";
 import { decryptData } from "../util/functions/helpers.js";
-import { MOMENT_DATE_YEAR, addMonthsToDate } from "../util/functions/dateConvert.js";
+import { MOMENT_DATE_YEAR, addMonthsToDate, calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
 import { SUBSCRIPTION_PERIOD } from "../util/config/defines.js";
 import moment from "moment";
 
@@ -303,11 +303,10 @@ const postWebhookCheckout = async (req, res, next) => {
             period, id: subscriptionId, customerId
           }
 
-          const today = new Date();
-          const expire = addMonthsToDate(period);
+          const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
-          user.purchaseDate = today;
-          user.expireDate = expire;
+          user.purchaseDate = purchaseDate;
+          user.expireDate = expireDate;
 
           try {
             await user.save();
@@ -423,9 +422,6 @@ const postWebhookCheckout = async (req, res, next) => {
         default: console.log('No case');
       }
     case 'invoice.paid': {
-      // FIX
-      res.status(200).json({ received: true });
-
       let user;
 
       try {
@@ -435,7 +431,7 @@ const postWebhookCheckout = async (req, res, next) => {
       }
 
       if (!user) {
-
+        return next(new HttpError('No user found', 500));
         break;
       }
 
@@ -443,12 +439,11 @@ const postWebhookCheckout = async (req, res, next) => {
 
       period = SUBSCRIPTION_PERIOD[price] ?? 12;
 
-      const today = new Date();
-      const expire = addMonthsToDate(period);
+      const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
+      user.purchaseDate = purchaseDate;
+      user.expireDate = expireDate;
       user.status = 'active'
-      user.purchaseDate = today;
-      user.expireDate = expire;
 
       try {
         await user.save();
@@ -462,8 +457,6 @@ const postWebhookCheckout = async (req, res, next) => {
       res.status(200).json({ received: true });
     }
     case 'invoice.payment_failed': {
-      // FIX
-      res.status(200).json({ received: true });
       let user;
 
       try {

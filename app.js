@@ -12,6 +12,7 @@ import contestRouter from "./routes/contest-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
+import { usersToSpreadsheet } from "./services/google-spreadsheets.js";
 
 const app = express();
 

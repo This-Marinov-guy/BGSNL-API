@@ -93,3 +93,10 @@ export const formatReactPrimeDate = (date, hours = 3) => {
   newDate.setHours(newDate.getHours() + hours);  
   return newDate;  
 }
+
+export const calculatePurchaseAndExpireDates = (monthsInFuture) => {
+  const purchaseDate = new Date();
+  const expireDate = new Date(purchaseDate.getTime());
+  expireDate.setMonth(expireDate.getMonth() + monthsInFuture);
+  return { purchaseDate, expireDate };
+};
