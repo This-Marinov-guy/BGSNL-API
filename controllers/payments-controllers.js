@@ -9,7 +9,7 @@ import User from "../models/User.js";
 import { sendTicketEmail, welcomeEmail } from "../services/email-transporter.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "../services/google-spreadsheets.js";
 import { decryptData } from "../util/functions/helpers.js";
-import { MOMENT_DATE_YEAR, addMonthsToDate, dateConvertor } from "../util/functions/dateConvert.js";
+import { MOMENT_DATE_YEAR, addMonthsToDate } from "../util/functions/dateConvert.js";
 import { SUBSCRIPTION_PERIOD } from "../util/config/defines.js";
 import moment from "moment";
 
@@ -234,7 +234,7 @@ const postWebhookCheckout = async (req, res, next) => {
           try {
             hashedPassword = await bcrypt.hash(password, 12);
           } catch (err) {
-            return next(new HttpError("Could not create a new user", 500));
+            return next(new HttpError(err.message,500));
           }
 
           let image;
@@ -276,8 +276,7 @@ const postWebhookCheckout = async (req, res, next) => {
           try {
             await createdUser.save();
           } catch (err) {
-            const error = new HttpError("Signing up failed", 500);
-            return next(error);
+            return next(new HttpError(err.message, 500));
           }
 
           welcomeEmail(email, name, region)
@@ -295,7 +294,9 @@ const postWebhookCheckout = async (req, res, next) => {
 
           try {
             user = await User.findById(userId);
-          } catch (err) {}
+          } catch (err) {
+            return next(new HttpError(err.message, 500));
+          }
 
           user.status = "active";
           user.subscription = {
@@ -311,9 +312,7 @@ const postWebhookCheckout = async (req, res, next) => {
           try {
             await user.save();
           } catch (err) {
-            return next(
-              new HttpError("Something went wrong, please try again", 500)
-            );
+            return next(new HttpError(err.message, 500));
           }
 
           await usersToSpreadsheet(user.region);
@@ -329,12 +328,7 @@ const postWebhookCheckout = async (req, res, next) => {
           try {
             societyEvent = await Event.findById(eventId);
           } catch (err) {
-            return next(
-              new HttpError(
-                "Could not add you to the event, please try again!",
-                500
-              )
-            );
+            return next(new HttpError(err.message, 500));
           }
           let guest = {
             type: "guest",
@@ -354,12 +348,7 @@ const postWebhookCheckout = async (req, res, next) => {
               await sess.commitTransaction();
             } catch (err) {
               console.log(err);
-              return next(
-                new HttpError(
-                  "Adding guest to the event failed, please try again",
-                  500
-                )
-              );
+              return next(new HttpError(err.message, 500));
             }
           }
 
@@ -382,12 +371,7 @@ const postWebhookCheckout = async (req, res, next) => {
           try {
             societyEvent = await Event.findById(eventId);
           } catch (err) {
-            return next(
-              new HttpError(
-                "Could not add you to the event, please try again!",
-                500
-              )
-            );
+            return next(new HttpError(err.message, 500));
           }
 
           if (!societyEvent) {
@@ -398,7 +382,7 @@ const postWebhookCheckout = async (req, res, next) => {
           try {
             targetUser = await User.findById(userId);
           } catch (err) {
-            new HttpError("Could not find a user with provided id", 404);
+            return next(new HttpError(err.message, 500));
           }
           try {
             const sess = await mongoose.startSession();
@@ -420,12 +404,7 @@ const postWebhookCheckout = async (req, res, next) => {
             await targetUser.save();
             await sess.commitTransaction();
           } catch (err) {
-            return next(
-              new HttpError(
-                "Adding user to the event failed, please try again",
-                500
-              )
-            );
+            return next(new HttpError(err.message, 500));
           }
 
           await sendTicketEmail(
@@ -452,10 +431,11 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         user = await User.findOne({ 'subscription.id': subscriptionId, 'subscription.customerId': customerId });
       } catch (err) {
-        break;
+        return next(new HttpError(err.message, 500));
       }
 
       if (!user) {
+
         break;
       }
 
@@ -473,7 +453,7 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         await user.save();
       } catch (err) {
-       break;
+        return next(new HttpError(err.message, 500));
       }
 
       await usersToSpreadsheet(user.region);
@@ -489,11 +469,11 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         user = await User.findOne({ 'subscription.id': subscriptionId, 'subscription.customerId': customerId });
       } catch (err) {
-        break;
+        return next(new HttpError(err.message, 500));
       }
 
       if (!user) {
-        break;
+        return next(new HttpError('No such user', 500));
       }
 
       user.status = 'locked'
@@ -501,7 +481,7 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         await user.save();
       } catch (err) {
-        break;
+        return next(new HttpError(err.message, 500));
       }
 
       await usersToSpreadsheet(user.region);
