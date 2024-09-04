@@ -234,7 +234,7 @@ const postWebhookCheckout = async (req, res, next) => {
           try {
             hashedPassword = await bcrypt.hash(password, 12);
           } catch (err) {
-            return next(new HttpError(err.message,500));
+            return next(new HttpError(err.message, 500));
           }
 
           let image;
