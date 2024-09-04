@@ -246,7 +246,7 @@ const postWebhookCheckout = async (req, res, next) => {
             image = metadata.file;
           }
 
-          const expire = addMonthsToDate(period);
+          const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
           const createdUser = new User({
             status: "active",
@@ -256,7 +256,8 @@ const postWebhookCheckout = async (req, res, next) => {
               customerId
             },
             region,
-            expireDate: expire,
+            purchaseDate,
+            expireDate,
             image,
             name,
             surname,
@@ -432,7 +433,6 @@ const postWebhookCheckout = async (req, res, next) => {
 
       if (!user) {
         return next(new HttpError('No user found', 500));
-        break;
       }
 
       const price = event.data.object.lines.data[0].price.id || '';

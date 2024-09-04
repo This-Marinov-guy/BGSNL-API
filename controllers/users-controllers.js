@@ -151,12 +151,13 @@ const signup = async (req, res, next) => {
     image = req.file.Location;
   }
 
-  const expire = addMonthsToDate(period);
+  const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
   const createdUser = new User({
     status: "active",
     region,
-    expireDate: expire,
+    purchaseDate,
+    expireDate,
     image,
     name,
     surname,
