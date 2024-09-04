@@ -7,7 +7,7 @@ import HttpError from "../models/Http-error.js";
 import { sendTicketEmail } from "../services/email-transporter.js";
 import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
 import { decodeFromURL, isEventTimerFinished, removeModelProperties } from "../util/functions/helpers.js";
-import { dateConvertor } from "../util/functions/dateConvert.js";
+import { MOMENT_DATE_YEAR } from "../util/functions/dateConvert.js";
 import moment from "moment";
 
 const getEventPurchaseAvailability = async (req, res, next) => {
@@ -238,7 +238,7 @@ const postAddMemberToEvent = async (req, res, next) => {
       ticket: req.file.location,
     });
     targetUser.tickets.push({
-      event: societyEvent.title + ' | ' + dateConvertor(societyEvent.date, societyEvent.time),
+      event: societyEvent.title + ' | ' + moment(societyEvent.date).format(MOMENT_DATE_YEAR),
       image: req.file.location,
     });
     await societyEvent.save();
@@ -254,7 +254,7 @@ const postAddMemberToEvent = async (req, res, next) => {
     "member",
     targetUser.email,
     societyEvent.title,
-    dateConvertor(societyEvent.date, societyEvent.time),
+    moment(societyEvent.date).format(MOMENT_DATE_YEAR),
     targetUser.name,
     req.file.location
   );
@@ -314,7 +314,7 @@ const postAddGuestToEvent = async (req, res, next) => {
     "guest",
     guestEmail,
     societyEvent.title,
-    dateConvertor(societyEvent.date, societyEvent.time),
+    moment(societyEvent.date).format(MOMENT_DATE_YEAR),
     guestName,
     req.file.location
   );

@@ -9,8 +9,9 @@ import User from "../models/User.js";
 import { sendTicketEmail, welcomeEmail } from "../services/email-transporter.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "../services/google-spreadsheets.js";
 import { decryptData } from "../util/functions/helpers.js";
-import { addMonthsToDate, dateConvertor } from "../util/functions/dateConvert.js";
+import { MOMENT_DATE_YEAR, addMonthsToDate, dateConvertor } from "../util/functions/dateConvert.js";
 import { SUBSCRIPTION_PERIOD } from "../util/config/defines.js";
+import moment from "moment";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",
@@ -366,7 +367,7 @@ const postWebhookCheckout = async (req, res, next) => {
             "guest",
             guestEmail,
             societyEvent.title,
-            dateConvertor(societyEvent.date, societyEvent.time),
+            moment(societyEvent.date).format(MOMENT_DATE_YEAR),
             guestName,
             metadata.file
           );
@@ -412,7 +413,7 @@ const postWebhookCheckout = async (req, res, next) => {
             });
 
             targetUser.tickets.push({
-              event: societyEvent.title + ' | ' + dateConvertor(societyEvent.date, societyEvent.time),
+              event: societyEvent.title + ' | ' + moment(societyEvent.date).format(MOMENT_DATE_YEAR),
               image: metadata.file,
             });
             await societyEvent.save();
@@ -431,7 +432,7 @@ const postWebhookCheckout = async (req, res, next) => {
             "member",
             targetUser.email,
             societyEvent.title,
-            dateConvertor(societyEvent.date, societyEvent.time),
+            moment(societyEvent.date).format(MOMENT_DATE_YEAR),
             targetUser.name,
             metadata.file
           );
