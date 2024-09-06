@@ -86,7 +86,7 @@ const eventToSpreadsheet = async (id) => {
     return;
   }
 
-  const { region, date, title, correctedDate, correctedTime, status, location, ticketTimer, ticketLimit, entry, memberEntry, activeMemberEntry, sheetName } = event;
+  const { region, date, title, correctedDate, status, location, ticketTimer, ticketLimit, product, sheetName } = event;
   const ticketLink = event.ticketLink ?? 'none';
 
   if (SPREADSHEETS_ID[region]?.events) {
@@ -172,7 +172,7 @@ const eventToSpreadsheet = async (id) => {
       if (result.length > 0) {
         const eventDetails = [
           ["Status", "Region", "Title", "Date", "Location", "Ticket Timer", "Ticket Limit", "Price", "Member Price", "Active Member Price", "Ticket Link"],
-          [status, region, title, moment(correctedDate ?? date).format("D MMM YYYY hh:mm a"), location, moment(ticketTimer).format("D MMM YYYY , hh:mm a"), ticketLimit, entry, memberEntry, activeMemberEntry, ticketLink]
+          [status, region, title, moment(correctedDate ?? date).format("D MMM YYYY hh:mm a"), location, moment(ticketTimer).format("D MMM YYYY , hh:mm a"), ticketLimit, product?.guest.price ?? '-', product?.member.price ?? '-', product?.activeMember.price ?? '-', ticketLink]
         ];
 
         guestListHeaders = ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "Ticket"];
@@ -221,50 +221,52 @@ const eventToSpreadsheet = async (id) => {
       const startRow = 5; // Row number where guest list starts (1-based index)
       const endRow = startRow + guests.length; // End row number (1-based index)
 
-      const formattingRequest = {
-        spreadsheetId,
-        resource: {
-          requests: [
-            {
-              addConditionalFormatRule: {
-                rule: {
-                  ranges: [
-                    {
-                      sheetId: spreadsheetId,
-                      startRowIndex: startRow,
-                      endRowIndex: endRow,
-                      startColumnIndex: 0,
-                      endColumnIndex: guestListHeaders.length,
-                    },
-                  ],
-                  booleanRule: {
-                    condition: {
-                      type: 'CUSTOM_FORMULA',
-                      values: [
-                        { userEnteredValue: '=INDIRECT("R[0]C1", FALSE) = 1' },
-                      ],
-                    },
-                    format: {
-                      backgroundColor: {
-                        red: 0.0,
-                        green: 1.0,
-                        blue: 0.0,
+      if (guests && guests.length) {
+        const formattingRequest = {
+          spreadsheetId,
+          resource: {
+            requests: [
+              {
+                addConditionalFormatRule: {
+                  rule: {
+                    ranges: [
+                      {
+                        sheetId: spreadsheetId,
+                        startRowIndex: startRow,
+                        endRowIndex: endRow,
+                        startColumnIndex: 0,
+                        endColumnIndex: guestListHeaders.length,
+                      },
+                    ],
+                    booleanRule: {
+                      condition: {
+                        type: 'CUSTOM_FORMULA',
+                        values: [
+                          { userEnteredValue: '=INDIRECT("R[0]C1", FALSE) = 1' },
+                        ],
+                      },
+                      format: {
+                        backgroundColor: {
+                          red: 0.0,
+                          green: 1.0,
+                          blue: 0.0,
+                        },
                       },
                     },
                   },
+                  index: 0,
                 },
-                index: 0,
               },
-            },
-          ],
-        },
-      };
+            ],
+          },
+        };
 
-      try {
-        // add check if there is a guest list
-        await googleSheets.spreadsheets.batchUpdate(formattingRequest);
-      } catch (err) {
-        console.log(err);
+        try {
+          // add check if there is a guest list
+          await googleSheets.spreadsheets.batchUpdate(formattingRequest);
+        } catch (err) {
+          console.log(err);
+        }
       }
 
       client.close();
@@ -347,7 +349,7 @@ const usersToSpreadsheet = async (region = null) => {
               region,
               status,
               type: subscription && subscription.id ? 'Subscription' : 'One-time (old)',
-              name, 
+              name,
               surname,
               ...rest,
               birth,
