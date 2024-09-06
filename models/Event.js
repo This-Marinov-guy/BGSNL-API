@@ -16,21 +16,21 @@ const eventSchema = new Schema({
   isSaleClosed: { type: Boolean, required: true, default: false },
   isFree: { type: Boolean, required: true, default: false },
   isMemberFree: { type: Boolean, required: true, default: false },
-  // product : {
-  //   id: {type: String, required: true},
-  //   entry : {
-  //     price: { type: Number, required: true },
-  //     priceId: { type: String, required: true }
-  //   },
-  //   memberEntry: {
-  //     price: { type: Number, required: true },
-  //     priceId: { type: String, required: true }
-  //   },
-  //   activeMemberEntry: {
-  //     price: { type: Number, required: true },
-  //     priceId: { type: String, required: true }
-  //   }
-  // },
+  product : {
+    id: {type: String},
+    guest : {
+      price: { type: Number },
+      priceId: { type: String }
+    },
+    member: {
+      price: { type: Number },
+      priceId: { type: String }
+    },
+    activeMember: {
+      price: { type: Number },
+      priceId: { type: String }
+    }
+  },
   entry: { type: Number, default: null },
   memberEntry: { type: Number, default: null },
   activeMemberEntry: { type: Number, default: null },
@@ -46,6 +46,7 @@ const eventSchema = new Schema({
   ticketImg: { type: String, required: true },
   ticketColor: { type: String, required: true, default: '#faf9f6' },
   ticketQR: { type: Boolean, required: true, default: true },
+  ticketName: { type: Boolean, required: true, default: true },
   poster: { type: String, required: true },
   bgImage: { type: Number, required: true, default: 1 },
   bgImageExtra: { type: String },

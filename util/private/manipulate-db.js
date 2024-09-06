@@ -17,21 +17,20 @@ export async function updateUsers() {
 
         // Get the database and collection
         const database = client.db();
-        const users = database.collection("users");
+        const users = database.collection("events");
 
         const emailsToFind = [
                     
         ];
 
         // Find all users
-        const cursor = users.find({ email: { $in: emailsToFind } });
+        // const cursor = users.find({ email: { $in: emailsToFind } });
         // const cursor = users.find();
 
         // // Iterate over all users
         for await (const user of cursor) {
             // Create a new object without the 'roles' property
             const newUserDoc = { ...user };
-            delete newUserDoc._id;  // _id is immutable, so we remove it
 
             // Find the position of 'status' and insert 'roles' after it
             const keys = Object.keys(newUserDoc);
@@ -45,11 +44,13 @@ export async function updateUsers() {
             });
             
             try {
-                // newObj.birth = convertStringToDate(user.birth);
+                newObj.product = {}
 
             } catch (err) {
                 
             }
+
+            delete newUserDoc._id;  // _id is immutable, so we remove it
 
             // Update the user
             const result = await users.replaceOne({ _id: user._id }, newObj);

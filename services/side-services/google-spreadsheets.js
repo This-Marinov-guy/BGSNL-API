@@ -1,8 +1,8 @@
 import { MongoClient, ObjectId } from 'mongodb';
 import { google } from 'googleapis';
-import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../util/config/SPREEDSHEATS.js';
+import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../../util/config/SPREEDSHEATS.js';
 import moment from 'moment-timezone';
-import Event from '../models/Event.js';
+import Event from '../../models/Event.js';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {

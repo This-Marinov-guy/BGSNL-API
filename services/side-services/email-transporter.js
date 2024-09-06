@@ -1,7 +1,7 @@
 import { MailtrapClient } from "mailtrap";
 import dotenv from "dotenv";
-import { WHATS_APP } from "../util/config/LINKS.js";
-import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME } from "../util/config/defines.js";
+import { WHATS_APP } from "../../util/config/LINKS.js";
+import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME } from "../../util/config/defines.js";
 import moment from "moment";
 dotenv.config();
 

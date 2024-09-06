@@ -11,14 +11,17 @@ export const addProduct = async (data, priceData = []) => {
     try {
         product = await stripe.products.create({
             name: data['name'],
-            description: data['description'],
+            description: data['description'] ?? '',
             images: [data['image']],
-            default_price_data: priceData
         });
 
-        priceData.forEach(async (price) => {
-            await addPrice(product['id'], price);
-        });
+        // priceData.forEach(async (amount) => {
+        //     const priceId = await addPrice(product['id'], amount);
+
+        //     if (priceId) {
+
+        //     }
+        // });
     } catch (err) {
         console.log(err);
         return false
@@ -44,6 +47,10 @@ export const editProduct = async (productId, data) => {
 }
 
 export const deleteProduct = async (productId) => {
+    if (!productId) {
+        return false;
+    }
+
     try {
         await stripe.products.del(productId);
     } catch (err) {
@@ -54,15 +61,19 @@ export const deleteProduct = async (productId) => {
     return true;
 }
 
-export const addPrice = async (productId, data) => {
+export const addPrice = async (productId, amount = 0) => {
+    if (!amount) {
+        return false;
+    }
+
     let price;
 
     try {
         price = await stripe.prices.create({
             currency: 'eur',
-            unit_amount: data['price'] * 100,
+            unit_amount: amount * 100,
             product: productId,
-            nickname: data['devDescription'],
+            // nickname: data['devDescription'] ?? '', 
         });
     } catch (err) {
         console.log(err);

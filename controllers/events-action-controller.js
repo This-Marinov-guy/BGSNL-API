@@ -1,11 +1,13 @@
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
-import { eventToSpreadsheet } from "../services/google-spreadsheets.js";
+import { eventToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
 import { uploadToCloudinary, deleteFolder } from "../util/functions/cloudinary.js";
 import { isEventTimerFinished, processExtraInputsForm } from "../util/functions/helpers.js";
 import { MOMENT_DATE_TIME_YEAR, areDatesEqual, dateConvertor } from "../util/functions/dateConvert.js";
 import moment from "moment/moment.js";
+import { addPrice, addProduct, deleteProduct } from "../services/side-services/stripe.js";
+import { createEventProductWithPrice, updateEventPrices } from "../services/main-services/event-action-service.js";
 
 const fetchEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
@@ -71,19 +73,17 @@ const addEvent = async (req, res, next) => {
         isSaleClosed,
         isFree,
         isMemberFree,
-        entry,
-        memberEntry,
-        activeMemberEntry,
+        guestPrice,
+        memberPrice,
+        activeMemberPrice,
         entryIncluding,
         memberIncluding,
         including,
         ticketLink,
-        priceId,
-        memberPriceId,
-        activeMemberPriceId,
         text,
         ticketColor,
         ticketQR,
+        ticketName,
         bgImage,
         bgImageSelection
     } = req.body
@@ -137,6 +137,16 @@ const addEvent = async (req, res, next) => {
             });
         }
 
+        //create product
+        const product = await createEventProductWithPrice({
+            name: title,
+            images: poster
+        }, guestPrice, memberPrice, activeMemberPrice);
+
+        if (!product) {
+            return next(new HttpError('Stripe Product could not be created, please try again!', 500));
+        }
+
         const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`
 
         //create event 
@@ -157,28 +167,24 @@ const addEvent = async (req, res, next) => {
             isSaleClosed,
             isFree,
             isMemberFree,
-            entry,
-            memberEntry,
-            activeMemberEntry,
             entryIncluding,
             memberIncluding,
             including,
             ticketLink,
-            priceId,
-            memberPriceId,
-            activeMemberPriceId,
             text,
             title,
             images,
             ticketImg,
             ticketColor,
             ticketQR: ticketQR === 'true',
+            ticketName: ticketName === 'true',
             poster,
             bgImage,
             bgImageExtra,
             bgImageSelection,
             folder,
-            sheetName
+            sheetName,
+            product
         })
 
         await event.save();
@@ -224,17 +230,15 @@ const editEvent = async (req, res, next) => {
         isSaleClosed,
         isFree,
         isMemberFree,
-        entry,
-        memberEntry,
-        activeMemberEntry,
+        guestPrice,
+        memberPrice,
+        activeMemberPrice,
         entryIncluding,
         memberIncluding,
         including,
         ticketLink,
         ticketQR,
-        priceId,
-        memberPriceId,
-        activeMemberPriceId,
+        ticketName,
         text,
         ticketColor,
         bgImage,
@@ -286,6 +290,13 @@ const editEvent = async (req, res, next) => {
 
     (date && areDatesEqual(event.date, date)) && (event.correctedDate = date);
 
+    // if no product and prices are passed, we create a product. If we have product we update it
+    if (!event.hasOwnProperty('product') && (guestPrice || memberPrice || activeMemberPrice)) {
+        event.product = await updateEventPrices(event.product, guestPrice, memberPrice, activeMemberPrice);
+    } else if (event.hasOwnProperty('product')) {
+        event.product = await updateEventPrices(event.product, guestPrice, memberPrice, activeMemberPrice);
+    }
+
     event.bgImageSelection = bgImageSelection;
     event.memberOnly = memberOnly;
     event.hidden = hidden;
@@ -300,20 +311,15 @@ const editEvent = async (req, res, next) => {
     event.isSaleClosed = isSaleClosed;
     event.isFree = isFree;
     event.isMemberFree = isMemberFree;
-    event.entry = entry;
-    event.memberEntry = memberEntry;
-    event.activeMemberEntry = activeMemberEntry;
     event.entryIncluding = entryIncluding;
     event.memberIncluding = memberIncluding;
     event.including = including;
     event.ticketLink = ticketLink;
-    event.priceId = priceId;
-    event.memberPriceId = memberPriceId;
-    event.activeMemberPriceId = activeMemberPriceId;
     event.text = text;
     event.ticketColor = ticketColor;
     event.ticketQR = ticketQR === 'true',
-    event.bgImage = bgImage;
+        event.ticketName = ticketName === 'true',
+        event.bgImage = bgImage;
 
     try {
         await event.save();
@@ -342,6 +348,7 @@ const deleteEvent = async (req, res, next) => {
     }
 
     const folder = event.folder ?? '';
+    const productId = event.product.id ?? '';
 
     try {
         await event.delete();
@@ -350,6 +357,7 @@ const deleteEvent = async (req, res, next) => {
         return new HttpError("Operations failed! Please try again or contact support!", 500)
     }
 
+    await deleteProduct(productId);
     await deleteFolder(folder);
     res.status(200).json({ status: true });
 }

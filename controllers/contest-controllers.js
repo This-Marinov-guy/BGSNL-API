@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import Contest from "../models/Contest.js";
-import { sendContestMaterials } from "../services/email-transporter.js";
+import { sendContestMaterials } from "../services/side-services/email-transporter.js";
 
 const postAddParticipant = async (req, res, next) => {
     const errors = validationResult(req);
