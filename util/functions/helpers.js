@@ -96,3 +96,8 @@ export const hasOverlap = (array1, array2) => {
   }
   return false;
 }
+
+export const replaceSpecialSymbolsWithSpaces = (inputString) => {
+  // Use a regular expression to match any non-alphanumeric character
+  return inputString.replace(/[^a-zA-Z0-9\s]/g, ' ');
+}

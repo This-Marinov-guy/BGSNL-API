@@ -8,12 +8,17 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 
 export const addProduct = async (data, priceData = []) => {
     let product;
+    const properties = {
+        name: data['name'],
+        images: [data['image']],
+    }
+
+    if (data.hasOwnProperty('description')) {
+        properties['description'] = data['description']
+    }
+
     try {
-        product = await stripe.products.create({
-            name: data['name'],
-            description: data['description'] ?? '',
-            images: [data['image']],
-        });
+        product = await stripe.products.create(properties);
 
         // priceData.forEach(async (amount) => {
         //     const priceId = await addPrice(product['id'], amount);

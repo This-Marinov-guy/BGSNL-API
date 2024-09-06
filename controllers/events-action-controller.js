@@ -3,10 +3,10 @@ import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
 import { eventToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
 import { uploadToCloudinary, deleteFolder } from "../util/functions/cloudinary.js";
-import { isEventTimerFinished, processExtraInputsForm } from "../util/functions/helpers.js";
-import { MOMENT_DATE_TIME_YEAR, areDatesEqual, dateConvertor } from "../util/functions/dateConvert.js";
+import { isEventTimerFinished, processExtraInputsForm, replaceSpecialSymbolsWithSpaces } from "../util/functions/helpers.js";
+import { MOMENT_DATE_TIME_YEAR, areDatesEqual } from "../util/functions/dateConvert.js";
 import moment from "moment/moment.js";
-import { addPrice, addProduct, deleteProduct } from "../services/side-services/stripe.js";
+import { deleteProduct } from "../services/side-services/stripe.js";
 import { createEventProductWithPrice, updateEventPrices } from "../services/main-services/event-action-service.js";
 
 const fetchEvent = async (req, res, next) => {
@@ -100,7 +100,7 @@ const addEvent = async (req, res, next) => {
             return next(error);
         }
 
-        const folder = `${region}_${title}_${date}`
+        const folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${date}`;
 
         if (!req.files['poster'] || !req.files['ticketImg']) {
             const error = new HttpError("We lack poster or/and ticket", 422);
