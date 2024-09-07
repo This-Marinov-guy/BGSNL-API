@@ -138,13 +138,16 @@ const addEvent = async (req, res, next) => {
         }
 
         //create product
-        const product = await createEventProductWithPrice({
-            name: title,
-            images: req.files['poster'][0]
-        }, guestPrice, memberPrice, activeMemberPrice);
+        if (!isFree) {
+            const product = await createEventProductWithPrice({
+                name: title,
+                images: req.files['poster'][0]
+            }, guestPrice, memberPrice, activeMemberPrice);
 
-        if (!product) {
-            return next(new HttpError('Stripe Product could not be created, please try again!', 500));
+            if (!product) {
+                return next(new HttpError('Stripe Product could not be created, please try again!', 500));
+            }
+
         }
 
         const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`
