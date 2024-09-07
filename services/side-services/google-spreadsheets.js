@@ -107,11 +107,18 @@ const eventToSpreadsheet = async (id) => {
     });
 
     const sheetsList = metaData.data.sheets;
-    const sheetExists = sheetsList.some((sheet) => sheet.properties.title === sheetName);
+    let sheetId;
+    const sheetExists = sheetsList.some((sheet) => {
+      if (sheet.properties.title === sheetName) {
+        sheetId = sheet.properties.sheetId;  // Get the numeric sheetId
+        return true;
+      }
+      return false;
+    });
 
     if (!sheetExists) {
       // Create the sheet if it doesn't exist
-      await googleSheets.spreadsheets.batchUpdate({
+      const newSheet = await googleSheets.spreadsheets.batchUpdate({
         auth,
         spreadsheetId,
         resource: {
@@ -128,6 +135,7 @@ const eventToSpreadsheet = async (id) => {
       });
 
       console.log(`Sheet '${sheetName}' has been created.`);
+      sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;  // Get sheetId of the newly created sheet
     }
 
     // Connecting to MongoDb
@@ -231,8 +239,8 @@ const eventToSpreadsheet = async (id) => {
                   rule: {
                     ranges: [
                       {
-                        sheetId: spreadsheetId,
-                        startRowIndex: startRow,
+                        sheetId: sheetId, 
+                        startRowIndex: startRow ,  
                         endRowIndex: endRow,
                         startColumnIndex: 0,
                         endColumnIndex: guestListHeaders.length,
@@ -262,10 +270,10 @@ const eventToSpreadsheet = async (id) => {
         };
 
         try {
-          // add check if there is a guest list
           await googleSheets.spreadsheets.batchUpdate(formattingRequest);
+          console.log('Conditional formatting applied successfully.');
         } catch (err) {
-          console.log(err);
+          console.error('Error applying conditional formatting:', err);
         }
       }
 
