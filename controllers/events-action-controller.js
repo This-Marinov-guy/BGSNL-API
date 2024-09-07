@@ -138,8 +138,10 @@ const addEvent = async (req, res, next) => {
         }
 
         //create product
+        let product = null;
+        
         if (!isFree) {
-            const product = await createEventProductWithPrice({
+            product = await createEventProductWithPrice({
                 name: title,
                 images: req.files['poster'][0]
             }, guestPrice, memberPrice, activeMemberPrice);
@@ -187,7 +189,7 @@ const addEvent = async (req, res, next) => {
             bgImageSelection,
             folder,
             sheetName,
-            product: product ?? null
+            product
         })
 
         await event.save();
