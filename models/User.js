@@ -5,7 +5,7 @@ import { MEMBER } from "../util/config/defines.js";
 const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
-  status: { type: String, required: true },
+  status: { type: String, required: true, default: 'active' },
   roles: {type: Array, required: true, default: [MEMBER]},
   subscription: {
     period: { type: Number },
@@ -33,6 +33,7 @@ const userSchema = new Schema({
       event: { type: String, required: true },
       purchaseDate: { type: Date, default: new Date() },
       image: { type: String, required: true },
+      // default: []
     },
   ],
   christmas: [
