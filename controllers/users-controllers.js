@@ -190,7 +190,7 @@ const signup = async (req, res, next) => {
     return next(error);
   }
 
-  await usersToSpreadsheet(region, true);
+  await usersToSpreadsheet(region);
   await usersToSpreadsheet();
 
   if (isBirthdayToday(birth)) {
