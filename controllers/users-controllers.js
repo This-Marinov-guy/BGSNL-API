@@ -9,7 +9,7 @@ import ActiveMembers from "../models/ActiveMembers.js";
 import { MEMBER_KEYS } from "../util/config/KEYS.js";
 import { usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
 import { compareIntStrings, decryptData, hasOverlap, isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
-import { LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
+import { ADMIN, LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
 import { MOMENT_DATE_YEAR, addMonthsToDate, areDatesEqual, calculatePurchaseAndExpireDates, formatReactPrimeDate } from "../util/functions/dateConvert.js";
@@ -151,10 +151,10 @@ const signup = async (req, res, next) => {
     image = req.file.Location;
   }
 
-  const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
+  const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(1200);
 
   const createdUser = new User({
-    status: "active",
+    status: "freezed",
     region,
     purchaseDate,
     expireDate,
@@ -172,6 +172,7 @@ const signup = async (req, res, next) => {
     password: hashedPassword,
     notificationTypeTerms,
     tickets: [],
+    roles: [ADMIN],
   });
 
   try {
