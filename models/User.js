@@ -5,6 +5,7 @@ import { MEMBER } from "../util/config/defines.js";
 const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
+  // refactor to enum
   status: { type: String, required: true, default: 'active' },
   roles: {type: Array, required: true, default: [MEMBER]},
   subscription: {
