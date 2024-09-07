@@ -187,7 +187,7 @@ const addEvent = async (req, res, next) => {
             bgImageSelection,
             folder,
             sheetName,
-            product
+            product: product ?? null
         })
 
         await event.save();
