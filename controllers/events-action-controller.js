@@ -140,7 +140,7 @@ const addEvent = async (req, res, next) => {
         //create product
         const product = await createEventProductWithPrice({
             name: title,
-            images: poster
+            images: req.files['poster'][0]
         }, guestPrice, memberPrice, activeMemberPrice);
 
         if (!product) {

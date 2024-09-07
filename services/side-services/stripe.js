@@ -103,3 +103,4 @@ export const editPrice = async (priceId, data) => {
 
     return true;
 }
+
