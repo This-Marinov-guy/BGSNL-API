@@ -3,6 +3,7 @@ import { google } from 'googleapis';
 import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../../util/config/SPREEDSHEATS.js';
 import moment from 'moment-timezone';
 import Event from '../../models/Event.js';
+import { REGIONS } from '../../util/config/defines.js';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -397,6 +398,8 @@ const usersToSpreadsheet = async (region = null) => {
             ]
           }
         })
+
+        console.log(`Member Sheet updated for: ${region ?? 'Netherlands'}`);
       }
     });
 
@@ -405,3 +408,4 @@ const usersToSpreadsheet = async (region = null) => {
 }
 
 export { searchInDatabase, eventToSpreadsheet, usersToSpreadsheet };
+

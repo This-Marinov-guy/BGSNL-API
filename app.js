@@ -12,7 +12,8 @@ import contestRouter from "./routes/contest-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
-import { eventToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
+import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
+import { REGIONS } from "./util/config/defines.js";
 
 const app = express();
 
@@ -86,4 +87,3 @@ mongoose
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
   .catch((err) => console.log("Failed to Connect ", err));
-
