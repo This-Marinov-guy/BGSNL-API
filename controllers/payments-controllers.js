@@ -202,10 +202,10 @@ const postWebhookCheckout = async (req, res, next) => {
     return;
   }
 
-  const customerId = event.data.object.customer;
-  const subscriptionId = event.data.object.subscription
-  const metadata = event.data.object.metadata;
-  const eventType = event.type;
+  const customerId = event.data.object.customer ?? '';
+  const subscriptionId = event.data.object.subscription ?? '';
+  const metadata = event.data.object.metadata ?? '';
+  const eventType = event.type ?? '';
 
   switch (eventType) {
     case 'checkout.session.completed':
@@ -423,11 +423,15 @@ const postWebhookCheckout = async (req, res, next) => {
         default: console.log('No case');
       }
     case 'invoice.paid': {
-      return res.status(200).json({ received: true });
+      // no data meaning customer has just been created
+      if (!subscriptionId) {
+        res.status(200).json({ received: true });
+      }
+
       let user;
 
       try {
-        user = await User.findOne({ 'subscription.id': subscriptionId, 'subscription.customerId': customerId });
+        user = await User.findOne({ 'subscription.id': subscriptionId});
       } catch (err) {
         return next(new HttpError(err.message, 500));
       }
@@ -458,11 +462,10 @@ const postWebhookCheckout = async (req, res, next) => {
       res.status(200).json({ received: true });
     }
     case 'invoice.payment_failed': {
-      return res.status(200).json({ received: true });
       let user;
 
       try {
-        user = await User.findOne({ 'subscription.id': subscriptionId, 'subscription.customerId': customerId });
+        user = await User.findOne({ 'subscription.id': subscriptionId });
       } catch (err) {
         return next(new HttpError(err.message, 500));
       }
