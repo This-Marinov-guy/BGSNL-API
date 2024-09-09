@@ -440,9 +440,8 @@ const postWebhookCheckout = async (req, res, next) => {
         return next(new HttpError('No user found', 500));
       }
 
-      const price = event.data.object.lines.data[0].price.id || '';
-
-      period = SUBSCRIPTION_PERIOD[price] ?? 12;
+      const priceId = event.data.object.lines.data[0].price.id || '';
+      const period = SUBSCRIPTION_PERIOD[priceId] ?? 12;
 
       const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
