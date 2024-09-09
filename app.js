@@ -17,7 +17,7 @@ import { REGIONS } from "./util/config/defines.js";
 
 const app = express();
 
-if ((app.get('env') === 'development')) {
+if (app.get('env') === 'development') {
   allowedOrigins.push('http://localhost:3000');
 }
 
@@ -87,3 +87,12 @@ mongoose
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
   .catch((err) => console.log("Failed to Connect ", err));
+
+// instantly update all user spreadsheets (do not leave uncommented)
+
+// if (app.get('env') === 'development') {
+//   usersToSpreadsheet()
+//   REGIONS.forEach((r) => {
+//     usersToSpreadsheet(r);
+//   })
+// }
