@@ -8,9 +8,9 @@ import Event from "../models/Event.js";
 import User from "../models/User.js";
 import { sendTicketEmail, welcomeEmail } from "../services/side-services/email-transporter.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
-import { decryptData } from "../util/functions/helpers.js";
+import { decryptData, hasOverlap } from "../util/functions/helpers.js";
 import { MOMENT_DATE_YEAR, addMonthsToDate, calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
-import { SUBSCRIPTION_PERIOD } from "../util/config/defines.js";
+import { LIMITLESS_ACCOUNT, SUBSCRIPTION_PERIOD } from "../util/config/defines.js";
 import moment from "moment";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -280,7 +280,7 @@ const postWebhookCheckout = async (req, res, next) => {
             return next(new HttpError(err.message, 500));
           }
 
-          welcomeEmail(email, name, region)
+          await welcomeEmail(email, name, region)
 
           await usersToSpreadsheet(region);
           await usersToSpreadsheet();
@@ -363,7 +363,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
           await eventToSpreadsheet(societyEvent.id);
 
-          res.status(200).json({ received: true });
+          return res.status(200).json({ received: true });
         }
         case "buy_member_ticket": {
           const { eventId, userId, preferences } = metadata;
@@ -400,6 +400,7 @@ const postWebhookCheckout = async (req, res, next) => {
               event: societyEvent.title + ' | ' + moment(societyEvent.date).format(MOMENT_DATE_YEAR),
               image: metadata.file,
             });
+
             await societyEvent.save();
             await targetUser.save();
             await sess.commitTransaction();
@@ -474,19 +475,21 @@ const postWebhookCheckout = async (req, res, next) => {
         return next(new HttpError('No such user', 500));
       }
 
-      user.status = 'locked'
+      if (!hasOverlap(LIMITLESS_ACCOUNT, user.roles) && today > user.expireDate) {
+        user.status = 'locked'
 
-      try {
-        await user.save();
-      } catch (err) {
-        return next(new HttpError(err.message, 500));
+        try {
+          await user.save();
+        } catch (err) {
+          return next(new HttpError(err.message, 500));
+        }
+
+        await usersToSpreadsheet(user.region);
+        await usersToSpreadsheet();
+
+        //send email to update payment method or open account 
       }
-
-      await usersToSpreadsheet(user.region);
-      await usersToSpreadsheet();
-
-      //send email to update payment method or open account 
-
+      
       return res.status(200).json({ received: true });
     }
     default:

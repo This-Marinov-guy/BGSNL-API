@@ -264,7 +264,7 @@ const login = async (req, res, next) => {
       .json({ token, region: existingUser.region, roles: existingUser.roles, celebrate: true });
   }
 
-  res.status(201).json({ token: token, region: existingUser.region, roles: existingUser.roles });
+  return res.status(201).json({ token: token, region: existingUser.region, roles: existingUser.roles });
 };
 
 const postActiveMember = async (req, res, next) => {
