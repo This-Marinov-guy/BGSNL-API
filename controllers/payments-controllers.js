@@ -425,7 +425,7 @@ const postWebhookCheckout = async (req, res, next) => {
     case 'invoice.paid': {
       // no data meaning customer has just been created
       if (!subscriptionId) {
-        res.status(200).json({ received: true });
+        res.status(200).json({ received: true, case: 'No action performed' });
       }
 
       let user;
