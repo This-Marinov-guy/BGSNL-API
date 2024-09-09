@@ -285,7 +285,7 @@ const postWebhookCheckout = async (req, res, next) => {
           await usersToSpreadsheet(region);
           await usersToSpreadsheet();
 
-          res.status(200).json({ received: true });
+          return res.status(200).json({ received: true });
         }
         case "unlock_account": {
           const userId = metadata.userId;
@@ -318,7 +318,7 @@ const postWebhookCheckout = async (req, res, next) => {
           await usersToSpreadsheet(user.region);
           await usersToSpreadsheet();
 
-          res.status(200).json({ received: true });
+          return res.status(200).json({ received: true });
         }
         case "buy_guest_ticket": {
           let { quantity, eventId, guestName, guestEmail, guestPhone, preferences } =
@@ -418,9 +418,10 @@ const postWebhookCheckout = async (req, res, next) => {
 
           await eventToSpreadsheet(societyEvent.id);
 
-          res.status(200).json({ received: true });
+          return res.status(200).json({ received: true });
         }
-        default: console.log('No case');
+        default:
+          return res.status(200).json({ received: true, message: 'Unhandled event for checkout webhook' });
       }
     case 'invoice.paid': {
       // no data meaning customer has just been created
@@ -431,7 +432,7 @@ const postWebhookCheckout = async (req, res, next) => {
       let user;
 
       try {
-        user = await User.findOne({ 'subscription.id': subscriptionId});
+        user = await User.findOne({ 'subscription.id': subscriptionId });
       } catch (err) {
         return next(new HttpError(err.message, 500));
       }
@@ -458,7 +459,7 @@ const postWebhookCheckout = async (req, res, next) => {
       await usersToSpreadsheet(user.region);
       await usersToSpreadsheet();
 
-      res.status(200).json({ received: true });
+      return res.status(200).json({ received: true });
     }
     case 'invoice.payment_failed': {
       let user;
@@ -486,13 +487,12 @@ const postWebhookCheckout = async (req, res, next) => {
 
       //send email to update payment method or open account 
 
-      res.status(200).json({ received: true });
+      return res.status(200).json({ received: true });
     }
     default:
-      console.log('Unhandled event for subscription');
+      return res.status(200).json({ received: true, message: 'Unhandled event for subscription/checkout webhook' });
   }
 
-  res.status(200).json({ received: true });
 }
 
 export {
