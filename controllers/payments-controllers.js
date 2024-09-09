@@ -445,7 +445,7 @@ const postWebhookCheckout = async (req, res, next) => {
 
       const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
-      user.status = 'active'
+      user.status = 'active';
       user.purchaseDate = purchaseDate;
       user.expireDate = expireDate;
 
