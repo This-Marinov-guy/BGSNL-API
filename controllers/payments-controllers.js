@@ -475,7 +475,9 @@ const postWebhookCheckout = async (req, res, next) => {
         return next(new HttpError('No such user', 500));
       }
 
-      if (!hasOverlap(LIMITLESS_ACCOUNT, user.roles) && today > user.expireDate) {
+      conat today = new Date();
+      
+      if (!hasOverlap(LIMITLESS_ACCOUNT, user?.roles) && today > user.expireDate) {
         user.status = 'locked'
 
         try {
