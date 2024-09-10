@@ -81,16 +81,22 @@ const searchInDatabase = (eventName, region) => {
 }
 
 const eventToSpreadsheet = async (id) => {
-  const event = await Event.findById(id);
+  try {
+    const event = await Event.findById(id);
 
-  if (!event) {
-    return;
-  }
+    if (!event) {
+      console.log("Event not found.");
+      return;
+    }
 
-  const { region, date, title, correctedDate, status, location, ticketTimer, ticketLimit, product, sheetName } = event;
-  const ticketLink = event.ticketLink ?? 'none';
+    const { region, date, title, correctedDate, status, location, ticketTimer, ticketLimit, product, sheetName } = event;
+    const ticketLink = event.ticketLink ?? 'none';
 
-  if (SPREADSHEETS_ID[region]?.events) {
+    if (!SPREADSHEETS_ID[region]?.events) {
+      console.log(`No spreadsheet ID found for region: ${region}`);
+      return;
+    }
+
     const spreadsheetId = SPREADSHEETS_ID[region].events;
 
     // Connecting to Google Spreadsheet
@@ -108,304 +114,221 @@ const eventToSpreadsheet = async (id) => {
     });
 
     const sheetsList = metaData.data.sheets;
-    let sheetId;
-    const sheetExists = sheetsList.some((sheet) => {
-      if (sheet.properties.title === sheetName) {
-        sheetId = sheet.properties.sheetId;  // Get the numeric sheetId
-        return true;
-      }
-      return false;
-    });
+    let sheetId = sheetsList.find(sheet => sheet.properties.title === sheetName)?.properties.sheetId;
 
-    if (!sheetExists) {
+    if (!sheetId) {
       // Create the sheet if it doesn't exist
       const newSheet = await googleSheets.spreadsheets.batchUpdate({
         auth,
         spreadsheetId,
         resource: {
-          requests: [
-            {
-              addSheet: {
-                properties: {
-                  title: sheetName,
-                },
-              },
-            },
-          ],
+          requests: [{ addSheet: { properties: { title: sheetName } } }],
         },
       });
 
       console.log(`Sheet '${sheetName}' has been created.`);
-      sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;  // Get sheetId of the newly created sheet
+      sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
     }
 
-    // Connecting to MongoDb
-    const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;
-    const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
-
-    client.connect(async (err) => {
-      if (err) {
-        console.error('Error connecting to MongoDB:', err);
-        return;
-      }
-
-      const db = client.db();
-      const result = await db.collection('events').aggregate([
-        { $match: { _id: ObjectId(id) } },
-        {
-          $project: {
-            _id: 0,
-            guests: {
-              $map: {
-                input: "$guestList",
-                as: "guest",
-                in: {
-                  status: "$$guest.status",
-                  type: "$$guest.type",
-                  timestamp: "$$guest.timestamp",
-                  name: "$$guest.name",
-                  email: "$$guest.email",
-                  phone: "$$guest.phone",
-                  preferences: "$$guest.preferences",
-                  ticket: "$$guest.ticket"
-                }
+    // Use Mongoose to query the database
+    const result = await Event.aggregate([
+      { $match: { _id: mongoose.Types.ObjectId(id) } },
+      {
+        $project: {
+          _id: 0,
+          guests: {
+            $map: {
+              input: "$guestList",
+              as: "guest",
+              in: {
+                status: "$$guest.status",
+                type: "$$guest.type",
+                timestamp: "$$guest.timestamp",
+                name: "$$guest.name",
+                email: "$$guest.email",
+                phone: "$$guest.phone",
+                preferences: "$$guest.preferences",
+                ticket: "$$guest.ticket"
               }
             }
           }
         }
-      ]).toArray();
-
-      let guestListHeaders;
-      let guests;
-
-      if (result.length > 0) {
-        const eventDetails = [
-          ["Status", "Region", "Title", "Date", "Location", "Ticket Timer", "Ticket Limit", "Price", "Member Price", "Active Member Price", "Ticket Link"],
-          [status, region, title, moment(correctedDate ?? date).format("D MMM YYYY hh:mm a"), location, moment(ticketTimer).format("D MMM YYYY , hh:mm a"), ticketLimit, product?.guest.price ?? '-', product?.member.price ?? '-', product?.activeMember.price ?? '-', ticketLink]
-        ];
-
-        guestListHeaders = ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "Ticket"];
-        guests = result[0].guests.map((obj) => [
-          obj.status === 1 ? 'present' : 'missing',
-          obj.type,
-          moment(obj.timestamp).format("D MMM YYYY, hh:mm:ss a"),
-          obj.name,
-          obj.email,
-          obj.phone,
-          obj.preferences || "N/A",  // Assuming 'preferences' might not exist for all guests
-          obj.ticket
-        ]);
-
-        // fix if no guests
-        const values = [
-          ...eventDetails,
-          [],
-          ["Guest List", "Presence", guests.length],
-          guestListHeaders,
-          ...guests
-        ];
-
-        await googleSheets.spreadsheets.values.clear({
-          auth,
-          spreadsheetId,
-          range: sheetName,
-        });
-
-        await googleSheets.spreadsheets.values.append({
-          auth,
-          spreadsheetId,
-          range: sheetName,
-          valueInputOption: "RAW",
-          resource: {
-            values
-          }
-        });
-
-        console.log('Event Updated!');
-      } else {
-        console.log("Event not found.");
       }
+    ]);
 
-      // Apply conditional formatting
+    if (result.length === 0) {
+      console.log("Event not found in database.");
+      return;
+    }
+
+    const eventDetails = [
+      ["Status", "Region", "Title", "Date", "Location", "Ticket Timer", "Ticket Limit", "Price", "Member Price", "Active Member Price", "Ticket Link"],
+      [status, region, title, moment(correctedDate ?? date).format("D MMM YYYY hh:mm a"), location, moment(ticketTimer).format("D MMM YYYY , hh:mm a"), ticketLimit, product?.guest.price ?? '-', product?.member.price ?? '-', product?.activeMember.price ?? '-', ticketLink]
+    ];
+
+    const guestListHeaders = ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "Ticket"];
+    const guests = result[0].guests.map((obj) => [
+      obj.status === 1 ? 'present' : 'missing',
+      obj.type,
+      moment(obj.timestamp).format("D MMM YYYY, hh:mm:ss a"),
+      obj.name,
+      obj.email,
+      obj.phone,
+      obj.preferences || "N/A",
+      obj.ticket
+    ]);
+
+    const values = [
+      ...eventDetails,
+      [],
+      ["Guest List", "Presence", guests.length],
+      guestListHeaders,
+      ...guests
+    ];
+
+    await googleSheets.spreadsheets.values.clear({
+      auth,
+      spreadsheetId,
+      range: sheetName,
+    });
+
+    await googleSheets.spreadsheets.values.append({
+      auth,
+      spreadsheetId,
+      range: sheetName,
+      valueInputOption: "RAW",
+      resource: { values }
+    });
+
+    console.log('Event Updated!');
+
+    // Apply conditional formatting
+    if (guests.length > 0) {
       const startRow = 5; // Row number where guest list starts (1-based index)
       const endRow = startRow + guests.length; // End row number (1-based index)
 
-      if (guests && guests.length) {
-        const formattingRequest = {
-          spreadsheetId,
-          resource: {
-            requests: [
-              {
-                addConditionalFormatRule: {
-                  rule: {
-                    ranges: [
-                      {
-                        sheetId: sheetId, 
-                        startRowIndex: startRow ,  
-                        endRowIndex: endRow,
-                        startColumnIndex: 0,
-                        endColumnIndex: guestListHeaders.length,
-                      },
-                    ],
-                    booleanRule: {
-                      condition: {
-                        type: 'CUSTOM_FORMULA',
-                        values: [
-                          { userEnteredValue: '=INDIRECT("R[0]C1", FALSE) = 1' },
-                        ],
-                      },
-                      format: {
-                        backgroundColor: {
-                          red: 0.0,
-                          green: 1.0,
-                          blue: 0.0,
-                        },
-                      },
-                    },
+      const formattingRequest = {
+        spreadsheetId,
+        resource: {
+          requests: [{
+            addConditionalFormatRule: {
+              rule: {
+                ranges: [{
+                  sheetId: sheetId,
+                  startRowIndex: startRow - 1,
+                  endRowIndex: endRow,
+                  startColumnIndex: 0,
+                  endColumnIndex: guestListHeaders.length,
+                }],
+                booleanRule: {
+                  condition: {
+                    type: 'CUSTOM_FORMULA',
+                    values: [{ userEnteredValue: '=INDIRECT("R[0]C1", FALSE) = 1' }],
                   },
-                  index: 0,
+                  format: {
+                    backgroundColor: { red: 0.0, green: 1.0, blue: 0.0 },
+                  },
                 },
               },
-            ],
-          },
-        };
+              index: 0,
+            },
+          }],
+        },
+      };
 
-        try {
-          await googleSheets.spreadsheets.batchUpdate(formattingRequest);
-          console.log('Conditional formatting applied successfully.');
-        } catch (err) {
-          console.error('Error applying conditional formatting:', err);
-        }
-      }
-
-      client.close();
-    });
+      await googleSheets.spreadsheets.batchUpdate(formattingRequest);
+      console.log('Conditional formatting applied successfully.');
+    }
+  } catch (error) {
+    console.error('Error in eventToSpreadsheet:', error);
   }
 };
 
 
 const usersToSpreadsheet = async (region = null) => {
+  try {
+    let spreadsheetId = BGSNL_MEMBERS_SPREADSHEETS_ID;
+    const filterByRegion = region && SPREADSHEETS_ID[region]?.users;
 
-  let spreadsheetId = BGSNL_MEMBERS_SPREADSHEETS_ID;
-  let filterByRegion = false;
-
-  if (region && SPREADSHEETS_ID[region]?.users) {
-    spreadsheetId = SPREADSHEETS_ID[region].users;
-    filterByRegion = true;
-  }
-
-  const sheetName = 'Members';
-
-  // Connecting to Google Spreadsheet
-  const auth = new google.auth.GoogleAuth({
-    keyFile: "credentials.json",
-    scopes: "https://www.googleapis.com/auth/spreadsheets"
-  });
-
-  const googleClient = await auth.getClient();
-
-  const googleSheets = google.sheets({ version: 'v4', auth: googleClient })
-
-  // Connecting to MongoDb
-  const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;
-  const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
-
-  client.connect(err => {
-    if (err) {
-      console.error('Error connecting to MongoDB:', err);
-      return;
+    if (filterByRegion) {
+      spreadsheetId = SPREADSHEETS_ID[region].users;
     }
 
-    const db = client.db();
+    const sheetName = 'Members';
 
-    const collection = db.collection('users');
+    // Connecting to Google Spreadsheet
+    const auth = new google.auth.GoogleAuth({
+      keyFile: "credentials.json",
+      scopes: "https://www.googleapis.com/auth/spreadsheets"
+    });
 
-    collection.find({}).toArray(async (err, users) => {
-      if (err) {
-        console.log('Error while writing in db')
-      }
+    const googleClient = await auth.getClient();
+    const googleSheets = google.sheets({ version: 'v4', auth: googleClient });
 
-      else {
+    // Fetch users from MongoDB using Mongoose
+    const query = filterByRegion ? { region } : {};
+    const users = await User.find(query).lean();
 
-        let usersArray = users
+    const values = users.map((user) => {
+      const {
+        _id, image, university, otherUniversityName, course, studentNumber,
+        graduationDate, password, notificationTypeTerms, tickets, registrationKey,
+        __v, christmas, region, subscription, status, name, surname, birth, roles,
+        ...rest
+      } = user;
 
-        if (filterByRegion) {
-          usersArray = users.filter((user) => { return user.region === region })
-        }
+      const formattedBirth = moment(new Date(birth)).format("D MMM YYYY");
+      const formattedPurchaseDate = moment(rest.purchaseDate).format("D MMM YYYY");
+      const formattedExpireDate = moment(rest.expireDate).format("D MMM YYYY");
 
-        const values = usersArray.map((user) => {
-          let { _id, image, university, otherUniversityName, course, studentNumber, graduationDate, password, notificationTypeTerms, tickets, registrationKey, __v, christmas, region, subscription, status, name, surname, birth, roles, ...rest } = user;
-          birth = moment(new Date(birth)).format("D MMM YYYY");
-          rest.purchaseDate = moment(rest.purchaseDate).format("D MMM YYYY");
-          rest.expireDate = moment(rest.expireDate).format("D MMM YYYY");
-          let dataFields;
+      const dataFields = {
+        ...(filterByRegion ? {} : { region }),
+        status,
+        type: subscription && subscription.id ? 'Subscription' : 'One-time (old)',
+        name,
+        surname,
+        ...rest,
+        birth: formattedBirth,
+        purchaseDate: formattedPurchaseDate,
+        expireDate: formattedExpireDate,
+        university: university === 'other' ? otherUniversityName : university,
+        course,
+        studentNumber,
+        graduationDate: graduationDate || 'not specified'
+      };
 
-          if (filterByRegion) {
-            dataFields = {
-              status,
-              type: subscription && subscription.id ? 'Subscription' : 'One-time (old)',
-              name,
-              surname,
-              ...rest,
-              birth,
-              university: university === 'other' ? otherUniversityName : university,
-              course,
-              studentNumber,
-              graduationDate: graduationDate || 'not specified'
-            }
-          } else {
-            dataFields = {
-              region,
-              status,
-              type: subscription && subscription.id ? 'Subscription' : 'One-time (old)',
-              name,
-              surname,
-              ...rest,
-              birth,
-              university: university === 'other' ? otherUniversityName : university,
-              course,
-              studentNumber,
-              graduationDate: graduationDate || 'not specified'
-            };
-          }
+      return Object.values(dataFields);
+    });
 
-          return dataFields
-        }).map((obj) => Object.values(obj))
-        await googleSheets.spreadsheets.values.clear({
-          auth,
-          spreadsheetId,
-          range: sheetName,
-        })
+    const nameOfValues = filterByRegion
+      ? ["Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date"]
+      : ["Region", "Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date"];
 
-        let nameOfValues
+    await googleSheets.spreadsheets.values.clear({
+      auth,
+      spreadsheetId,
+      range: sheetName,
+    });
 
-        if (filterByRegion) {
-          nameOfValues = ["Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date"];
-        } else {
-          nameOfValues = ["Region", "Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date"];
-        }
-
-        await googleSheets.spreadsheets.values.append({
-          auth,
-          spreadsheetId,
-          range: sheetName,
-          valueInputOption: "RAW",
-          resource: {
-            values: [
-              ["Members of:", sheetName],
-              nameOfValues,
-              ...values
-            ]
-          }
-        })
-
-        console.log(`Member Sheet updated for: ${region ?? 'Netherlands'}`);
+    await googleSheets.spreadsheets.values.append({
+      auth,
+      spreadsheetId,
+      range: sheetName,
+      valueInputOption: "RAW",
+      resource: {
+        values: [
+          ["Members of:", sheetName],
+          nameOfValues,
+          ...values
+        ]
       }
     });
 
-  })
-
-}
+    console.log(`Member Sheet updated for: ${region ?? 'Netherlands'}`);
+  } catch (error) {
+    console.error('Error in usersToSpreadsheet:', error);
+  }
+};
 
 export { searchInDatabase, eventToSpreadsheet, usersToSpreadsheet };
 
