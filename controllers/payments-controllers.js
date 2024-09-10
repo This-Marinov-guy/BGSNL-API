@@ -6,11 +6,11 @@ import HttpError from "../models/Http-error.js";
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import User from "../models/User.js";
-import { sendTicketEmail, welcomeEmail } from "../services/side-services/email-transporter.js";
+import { paymentFailedEmail, sendTicketEmail, welcomeEmail } from "../services/side-services/email-transporter.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
 import { decryptData, hasOverlap } from "../util/functions/helpers.js";
 import { MOMENT_DATE_YEAR, addMonthsToDate, calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
-import { LIMITLESS_ACCOUNT, SUBSCRIPTION_PERIOD } from "../util/config/defines.js";
+import { HOME_URL, LIMITLESS_ACCOUNT, SUBSCRIPTION_PERIOD } from "../util/config/defines.js";
 import moment from "moment";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -476,7 +476,7 @@ const postWebhookCheckout = async (req, res, next) => {
       }
 
       const today = new Date();
-      
+
       if (!hasOverlap(LIMITLESS_ACCOUNT, user?.roles) && today > user.expireDate) {
         user.status = 'locked'
 
@@ -486,10 +486,22 @@ const postWebhookCheckout = async (req, res, next) => {
           return next(new HttpError(err.message, 500));
         }
 
-        await usersToSpreadsheet(user.region);
-        await usersToSpreadsheet();
-
-        //send email to update payment method or open account 
+        try {
+          await usersToSpreadsheet(user.region);
+          await usersToSpreadsheet();
+  
+          const session = await stripe.billingPortal.sessions.create({
+            customer: user.customerId,
+            return_url: HOME_URL,
+          });
+  
+          await paymentFailedEmail(
+            user.email,
+            session.url
+          );
+        } catch (err) {
+          console.log(err);
+        }
       }
       
       return res.status(200).json({ received: true });
