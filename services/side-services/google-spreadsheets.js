@@ -285,7 +285,7 @@ const usersToSpreadsheet = async (region = null) => {
       const dataFields = {
         ...(filterByRegion ? {} : { region }),
         status,
-        type: subscription && subscription.id ? 'Subscription' : 'One-time (old)',
+        type: subscription && subscription.id ? `Subscription ${subscription.id} | Customer ${subscription.customerId ?? ''}`  : 'One-time (old)',
         name,
         surname,
         ...rest,
