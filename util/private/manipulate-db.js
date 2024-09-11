@@ -17,10 +17,11 @@ export async function updateUsers() {
 
         // Get the database and collection
         const database = client.db();
-        const users = database.collection("events");
+        const users = database.collection("users");
+        const events = database.collection("events");
 
         const emailsToFind = [
-                    
+           
         ];
 
         // Find all users
@@ -43,18 +44,13 @@ export async function updateUsers() {
                 newObj[key] = newUserDoc[key];
             });
             
-            try {
-                newObj.product = {}
-
-            } catch (err) {
-                
-            }
+            newObj.role = [BOARD_MEMBER]
 
             delete newUserDoc._id;  // _id is immutable, so we remove it
 
             // Update the user
             const result = await users.replaceOne({ _id: user._id }, newObj);
-            console.log(`Updated user ${user._id}: ${result.modifiedCount} document(s) modified`);
+            console.log(`Updated user ${user.name} ${user.surname} | ${user._id}: ${result.modifiedCount} document(s) modified`);
         }
     } catch (err) {
         console.log(err);

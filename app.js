@@ -14,6 +14,7 @@ import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
 import { REGIONS } from "./util/config/defines.js";
+import { updateUsers } from "./util/private/manipulate-db.js";
 
 const app = express();
 
