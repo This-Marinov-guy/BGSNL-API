@@ -4,6 +4,7 @@ import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../../util/confi
 import moment from 'moment-timezone';
 import Event from '../../models/Event.js';
 import { REGIONS } from '../../util/config/defines.js';
+import User from '../../models/User.js';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
