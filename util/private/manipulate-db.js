@@ -20,9 +20,7 @@ export async function updateUsers() {
         const users = database.collection("users");
         const events = database.collection("events");
 
-        const emailsToFind = [
-           
-        ];
+        const emailsToFind = []
 
         // Find all users
         // const cursor = users.find({ email: { $in: emailsToFind } });
@@ -44,7 +42,7 @@ export async function updateUsers() {
                 newObj[key] = newUserDoc[key];
             });
             
-            newObj.role = [BOARD_MEMBER]
+            newObj.roles = [BOARD_MEMBER]
 
             delete newUserDoc._id;  // _id is immutable, so we remove it
 
