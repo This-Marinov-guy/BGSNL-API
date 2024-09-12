@@ -206,6 +206,7 @@ const postWebhookCheckout = async (req, res, next) => {
   const subscriptionId = event.data.object.subscription ?? '';
   const metadata = event.data.object.metadata ?? '';
   const eventType = event.type ?? '';
+  let responseMessage = '';
 
   switch (eventType) {
     case 'checkout.session.completed':
@@ -425,9 +426,9 @@ const postWebhookCheckout = async (req, res, next) => {
           return res.status(200).json({ received: true, message: 'Unhandled event for checkout webhook' });
       }
     case 'invoice.paid': {
-      // no data meaning customer has just been created
       if (!subscriptionId) {
-        return res.status(200).json({ received: true, message: 'No action performed' });
+        responseMessage = 'No user to update';
+        break;
       }
 
       let user;
@@ -435,11 +436,13 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         user = await User.findOne({ 'subscription.id': subscriptionId });
       } catch (err) {
-        return next(new HttpError(err.message, 500));
+        responseMessage = 'No user to update';
+        break;
       }
 
       if (!user) {
-        return next(new HttpError('No user found', 500));
+        responseMessage = 'No user to update';
+        break;
       }
 
       const priceId = event.data.object.lines.data[0].price.id || '';
@@ -468,11 +471,13 @@ const postWebhookCheckout = async (req, res, next) => {
       try {
         user = await User.findOne({ 'subscription.id': subscriptionId });
       } catch (err) {
-        return next(new HttpError(err.message, 500));
+        responseMessage = 'No user to update';
+        break
       }
 
       if (!user) {
-        return next(new HttpError('No such user', 500));
+        responseMessage = 'No user to update';
+        break
       }
 
       const today = new Date();
@@ -510,6 +515,7 @@ const postWebhookCheckout = async (req, res, next) => {
       return res.status(200).json({ received: true, message: 'Unhandled event for subscription/checkout webhook' });
   }
 
+  return res.status(200).json({ received: true, message: responseMessage || 'No action performed' });
 }
 
 export {

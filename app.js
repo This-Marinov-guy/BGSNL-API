@@ -92,8 +92,8 @@ mongoose
 // instantly update all user spreadsheets (do not leave uncommented)
 
 // if (app.get('env') === 'development') {
-  // await usersToSpreadsheet()
-  // REGIONS.forEach(async (r) => {
-  //   await usersToSpreadsheet(r);
-  // })
+//   await usersToSpreadsheet()
+//   REGIONS.forEach(async (r) => {
+//     await usersToSpreadsheet(r);
+//   })
 // }
