@@ -96,3 +96,5 @@ mongoose
 //     await usersToSpreadsheet(r);
 //   })
 // }
+
+await eventToSpreadsheet('66dae31a37aafa19cc034105')
