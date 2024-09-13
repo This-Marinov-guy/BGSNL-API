@@ -37,6 +37,5 @@ export const firewall = (req,res,next) => {
         return next();
     } else {
         return next(new HttpError('Forbidden: Access is denied!', 403))
-        res.status(403).json({ message: 'Forbidden: Access is denied' });
     }
 }

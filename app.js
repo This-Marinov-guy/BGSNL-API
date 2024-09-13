@@ -28,8 +28,7 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        const error = new HttpError("There was a problem with your request, please try again later!", 500);
-        return next(error);
+        callback(new HttpError('There was a problem with your request, please try again later!', 403)); 
       }
     },
   })
