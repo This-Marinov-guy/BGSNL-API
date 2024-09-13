@@ -1,6 +1,7 @@
 import { MongoClient, ObjectId } from 'mongodb';
 import { google } from 'googleapis';
 import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../../util/config/SPREEDSHEATS.js';
+import mongoose from "mongoose";
 import moment from 'moment-timezone';
 import Event from '../../models/Event.js';
 import { REGIONS } from '../../util/config/defines.js';
