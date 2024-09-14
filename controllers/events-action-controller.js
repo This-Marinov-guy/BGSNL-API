@@ -302,9 +302,10 @@ const editEvent = async (req, res, next) => {
         event.product = await updateEventPrices(event.product, guestPrice, memberPrice, activeMemberPrice);
     }
 
-    event.bgImageSelection = bgImageSelection;
-    event.memberOnly = memberOnly;
-    event.hidden = hidden;
+    //TODO: fix the conditional checks
+    bgImageSelection && (event.bgImageSelection = bgImageSelection);
+    memberOnly && (event.memberOnly = memberOnly);
+    hidden && (event.hidden = hidden);
     event.freePass = freePass;
     event.discountPass = discountPass;
     event.region = region;
@@ -313,9 +314,9 @@ const editEvent = async (req, res, next) => {
     event.location = location;
     event.ticketTimer = ticketTimer;
     event.ticketLimit = ticketLimit;
-    event.isSaleClosed = isSaleClosed;
-    event.isFree = isFree;
-    event.isMemberFree = isMemberFree;
+    isSaleClosed && (event.isSaleClosed = isSaleClosed);
+    isFree && (event.isFree = isFree);
+    isMemberFree && (event.isMemberFree = isMemberFree);
     event.entryIncluding = entryIncluding;
     event.memberIncluding = memberIncluding;
     event.including = including;
