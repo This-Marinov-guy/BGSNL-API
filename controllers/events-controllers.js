@@ -10,7 +10,7 @@ import { decodeFromURL, isEventTimerFinished, removeModelProperties } from "../u
 import { MOMENT_DATE_YEAR } from "../util/functions/dateConvert.js";
 import moment from "moment";
 
-const getEventPurchaseAvailability = async (req, res, next) => {
+export const getEventPurchaseAvailability = async (req, res, next) => {
   try {
     const { eventId } = req.params;
 
@@ -39,7 +39,7 @@ const getEventPurchaseAvailability = async (req, res, next) => {
   }
 }
 
-const getEventById = async (req, res, next) => {
+export const getEventById = async (req, res, next) => {
   const eventId = req.params.eventId;
 
   if (eventId === undefined || !eventId) {
@@ -73,7 +73,7 @@ const getEventById = async (req, res, next) => {
   }
 }
 
-const getEvent = async (req, res, next) => {
+export const getEvent = async (req, res, next) => {
   try {
     const eventName = decodeFromURL(req.params.eventName);
     const region = req.params.region;
@@ -111,7 +111,7 @@ const getEvent = async (req, res, next) => {
   }
 }
 
-const getSoldTicketQuantity = async (req, res, next) => {
+export const getSoldTicketQuantity = async (req, res, next) => {
   try {
     const { eventId } = req.params;
 
@@ -136,7 +136,7 @@ const getSoldTicketQuantity = async (req, res, next) => {
 
 }
 
-const checkEligibleMemberForPurchase = async (req, res, next) => {
+export const checkEligibleMemberForPurchase = async (req, res, next) => {
   const { userId, eventId } = req.params;
   let status = true;
 
@@ -168,7 +168,7 @@ const checkEligibleMemberForPurchase = async (req, res, next) => {
   res.status(200).json({ status });
 }
 
-const checkEligibleGuestForDiscount = async (req, res, next) => {
+export const checkEligibleGuestForDiscount = async (req, res, next) => {
   const { email, name, surname, eventId } = req.params;
   const {withError} = req.query;
   const guestName = `${name} ${surname}`;
@@ -198,7 +198,7 @@ const checkEligibleGuestForDiscount = async (req, res, next) => {
   res.status(200).json({ status });
 }
 
-const postAddMemberToEvent = async (req, res, next) => {
+export const postAddMemberToEvent = async (req, res, next) => {
   const { userId, eventId, preferences } = req.body;
   let societyEvent;
 
@@ -264,7 +264,7 @@ const postAddMemberToEvent = async (req, res, next) => {
   res.status(201).json({ message: "Success" });
 };
 
-const postAddGuestToEvent = async (req, res, next) => {
+export const postAddGuestToEvent = async (req, res, next) => {
   const { quantity, eventId, guestName, guestEmail, guestPhone, preferences } = req.body;
 
   let societyEvent;
@@ -324,7 +324,7 @@ const postAddGuestToEvent = async (req, res, next) => {
   res.status(201).json({ message: "Success" });
 };
 
-const postNonSocietyEvent = async (req, res, next) => {
+export const postNonSocietyEvent = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return next(new HttpError("Invalid inputs passed", 422));
@@ -371,7 +371,7 @@ const postNonSocietyEvent = async (req, res, next) => {
 // status 0 = noting to update
 // status 1 = success
 // status 2 = count is required as more than 1 guest was found
-const updatePresence = async (req, res, next) => {
+export const updatePresence = async (req, res, next) => {
   const { eventId, name, email } = req.body;
   let { count } = req.body; 
   let societyEvent;
@@ -435,5 +435,3 @@ const updatePresence = async (req, res, next) => {
 
   res.status(201).json({ status: 1, event: societyEvent.title });
 };
-
-export { postAddMemberToEvent, postAddGuestToEvent, postNonSocietyEvent, getEvent, getEventPurchaseAvailability, getSoldTicketQuantity, getEventById, checkEligibleMemberForPurchase, checkEligibleGuestForDiscount, updatePresence };

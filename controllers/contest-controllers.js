@@ -4,7 +4,7 @@ import HttpError from "../models/Http-error.js";
 import Contest from "../models/Contest.js";
 import { sendContestMaterials } from "../services/side-services/email-transporter.js";
 
-const postAddParticipant = async (req, res, next) => {
+export const postAddParticipant = async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return next(new HttpError("Invalid inputs passed", 422));
@@ -52,5 +52,3 @@ const postAddParticipant = async (req, res, next) => {
 
     res.status(201).json({ message: "Success" });
 };
-
-export { postAddParticipant };

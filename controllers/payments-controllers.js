@@ -17,7 +17,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",
 });
 
-const cancelSubscription = async (req, res, next) => {
+export const cancelSubscription = async (req, res, next) => {
   const userId = req.body.userId;
 
   let user;
@@ -50,13 +50,13 @@ const cancelSubscription = async (req, res, next) => {
   res.status(200).json({ message: 'Membership was canceled - you can still access your account and use discounts until the expiration date!' });
 }
 
-const donationConfig = (req, res) => {
+export const donationConfig = (req, res) => {
   res.send({
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
   });
 }
 
-const postDonationIntent = async (req, res, next) => {
+export const postDonationIntent = async (req, res, next) => {
   const { amount, name, comments } = req.body;
 
   if (amount < 2 || amount > 10000) {
@@ -90,7 +90,7 @@ const postDonationIntent = async (req, res, next) => {
   }
 }
 
-const postSubscriptionNoFile = async (req, res, next) => {
+export const postSubscriptionNoFile = async (req, res, next) => {
   const { itemId, origin_url } = req.body;
 
   const session = await stripe.checkout.sessions.create({
@@ -107,7 +107,7 @@ const postSubscriptionNoFile = async (req, res, next) => {
   res.status(200).json({ url: session.url });
 };
 
-const postSubscriptionFile = async (req, res, next) => {
+export const postSubscriptionFile = async (req, res, next) => {
   const { itemId, origin_url } = req.body;
 
   let fileLocation
@@ -129,7 +129,7 @@ const postSubscriptionFile = async (req, res, next) => {
   res.status(200).json({ url: session.url });
 }
 
-const postCheckoutNoFile = async (req, res, next) => {
+export const postCheckoutNoFile = async (req, res, next) => {
   const { itemId, origin_url } = req.body;
   let { quantity } = req.body;
 
@@ -151,7 +151,7 @@ const postCheckoutNoFile = async (req, res, next) => {
   res.status(200).json({ url: session.url });
 };
 
-const postCheckoutFile = async (req, res, next) => {
+export const postCheckoutFile = async (req, res, next) => {
   const { itemId, origin_url } = req.body;
   let { quantity } = req.body;
 
@@ -178,7 +178,7 @@ const postCheckoutFile = async (req, res, next) => {
   res.status(200).json({ url: session.url });
 };
 
-const postCustomerPortal = async (req, res, next) => {
+export const postCustomerPortal = async (req, res, next) => {
   const { customerId, url } = req.body;
 
   const session = await stripe.billingPortal.sessions.create({
@@ -189,7 +189,7 @@ const postCustomerPortal = async (req, res, next) => {
   res.status(200).json({ url: session.url });
 };
 
-const postWebhookCheckout = async (req, res, next) => {
+export const postWebhookCheckout = async (req, res, next) => {
   const sig = req.headers["stripe-signature"];
   const endpointSecret = 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq';
 
@@ -517,15 +517,3 @@ const postWebhookCheckout = async (req, res, next) => {
 
   return res.status(200).json({ received: true, message: responseMessage || 'No action performed' });
 }
-
-export {
-  cancelSubscription,
-  donationConfig,
-  postDonationIntent,
-  postCheckoutNoFile,
-  postCheckoutFile,
-  postSubscriptionNoFile,
-  postSubscriptionFile,
-  postCustomerPortal,
-  postWebhookCheckout,
-};

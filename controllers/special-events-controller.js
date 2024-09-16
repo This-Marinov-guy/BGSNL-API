@@ -2,7 +2,7 @@ import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
 import mongoose from "mongoose";
 
-const postCard = async (req, res, next) => {
+export const postCard = async (req, res, next) => {
     const { text, gif, sender, receiver, randomReceiver, hideSender } = req.body;
 
     if (randomReceiver) {
@@ -66,5 +66,3 @@ const postCard = async (req, res, next) => {
 
     res.status(201).json({ message: "Success" });
 }
-
-export { postCard }

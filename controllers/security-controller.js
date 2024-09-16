@@ -13,7 +13,7 @@ import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
 import { calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
 
-const postCheckEmail = async (req, res, next) => {
+export const postCheckEmail = async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         const error = new HttpError("Invalid inputs passed", 422);
@@ -38,7 +38,7 @@ const postCheckEmail = async (req, res, next) => {
     res.status(200).send({ status: true });
 };
 
-const postCheckMemberKey = (req, res, next) => {
+export const postCheckMemberKey = (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         const error = new HttpError("No key found", 422);
@@ -54,7 +54,7 @@ const postCheckMemberKey = (req, res, next) => {
     res.status(200).send({ status: !!result ?? false });
 };
 
-const signup = async (req, res, next) => {
+export const signup = async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         const error = new HttpError("Invalid inputs passed", 422);
@@ -148,7 +148,7 @@ const signup = async (req, res, next) => {
     res.status(201).json({ token, region, roles: [MEMBER] });
 };
 
-const login = async (req, res, next) => {
+export const login = async (req, res, next) => {
     const { email, password } = req.body;
 
     let existingUser;
@@ -211,7 +211,7 @@ const login = async (req, res, next) => {
     return res.status(201).json({ token: token, region: existingUser.region, roles: existingUser.roles });
 };
 
-const postSendPasswordResetEmail = async (req, res, next) => {
+export const postSendPasswordResetEmail = async (req, res, next) => {
     const email = req.body.email;
     const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -238,7 +238,7 @@ const postSendPasswordResetEmail = async (req, res, next) => {
     res.status(201).json({ status: true });
 };
 
-const postVerifyToken = async (req, res, next) => {
+export const postVerifyToken = async (req, res, next) => {
     const { token, email, birth, phone } = req.body;
 
     const cachedData = forgottenPassTokenCache.get(email) || {};
@@ -271,7 +271,7 @@ const postVerifyToken = async (req, res, next) => {
     res.status(201).json({ status: true });
 };
 
-const patchUserPassword = async (req, res, next) => {
+export const patchUserPassword = async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return next(new HttpError("Please send valid inputs", 422));
@@ -316,14 +316,4 @@ const patchUserPassword = async (req, res, next) => {
     }
 
     res.status(200).json({ status: true });
-};
-
-export {
-    signup,
-    login,
-    postSendPasswordResetEmail,
-    postVerifyToken,
-    postCheckEmail,
-    postCheckMemberKey,
-    patchUserPassword,
 };

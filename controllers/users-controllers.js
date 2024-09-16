@@ -9,7 +9,7 @@ import { usersToSpreadsheet } from "../services/side-services/google-spreadsheet
 import { isBirthdayToday } from "../util/functions/helpers.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
 
-const getCurrentUser = async (req, res, next) => {
+export const getCurrentUser = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
 
   const withTickets = req.query.withTickets ?? false;
@@ -39,7 +39,7 @@ const getCurrentUser = async (req, res, next) => {
     .json({ status: user.status, user });
 };
 
-const getCurrentUserRoles = async (req, res, next) => {
+export const getCurrentUserRoles = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
 
   let user;
@@ -57,7 +57,7 @@ const getCurrentUserRoles = async (req, res, next) => {
     .json({ status: user.status, roles: user.roles });
 };
 
-const postActiveMember = async (req, res, next) => {
+export const postActiveMember = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return next(new HttpError("Имате невалидни данни или неселектирани полета", 422));
@@ -102,7 +102,7 @@ const postActiveMember = async (req, res, next) => {
 
 }
 
-const patchUserInfo = async (req, res, next) => {
+export const patchUserInfo = async (req, res, next) => {
   const {
     name,
     surname,
@@ -164,11 +164,4 @@ const patchUserInfo = async (req, res, next) => {
   await usersToSpreadsheet();
 
   res.status(200).json({ status: true });
-};
-
-export {
-  postActiveMember,
-  getCurrentUser,
-  getCurrentUserRoles,
-  patchUserInfo,
 };

@@ -9,7 +9,7 @@ import moment from "moment/moment.js";
 import { deleteProduct } from "../services/side-services/stripe.js";
 import { createEventProductWithPrice, updateEventPrices } from "../services/main-services/event-action-service.js";
 
-const fetchEvent = async (req, res, next) => {
+export const fetchEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
 
     let event;
@@ -38,7 +38,7 @@ const fetchEvent = async (req, res, next) => {
     });
 }
 
-const fetchEvents = async (req, res, next) => {
+export const fetchEvents = async (req, res, next) => {
     const region = req.query.region;
 
     let events;
@@ -57,7 +57,7 @@ const fetchEvents = async (req, res, next) => {
     res.status(200).json({ events: events.map((event) => event.toObject({ getters: true })) });
 }
 
-const addEvent = async (req, res, next) => {
+export const addEvent = async (req, res, next) => {
     const {
         memberOnly,
         hidden,
@@ -204,7 +204,7 @@ const addEvent = async (req, res, next) => {
     res.status(201).json({ status: true });
 }
 
-const editEvent = async (req, res, next) => {
+export const editEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
 
     let event;
@@ -339,7 +339,7 @@ const editEvent = async (req, res, next) => {
     res.status(200).json({ status: true });
 }
 
-const deleteEvent = async (req, res, next) => {
+export const deleteEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
 
     let event;
@@ -367,5 +367,3 @@ const deleteEvent = async (req, res, next) => {
     await deleteFolder(folder);
     res.status(200).json({ status: true });
 }
-
-export { addEvent, editEvent, deleteEvent, fetchEvent, fetchEvents }
