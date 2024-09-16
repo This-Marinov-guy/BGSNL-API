@@ -1,20 +1,27 @@
 import dotenv from "dotenv";
 dotenv.config();
 import Stripe from "stripe";
+import { capitalizeFirstLetter } from '../../util/functions/helpers.js'
+import moment from "moment";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
     apiVersion: "2022-08-01",
 });
+
+export const stripeProductDescription = (region, title, date) => {
+    if (!date || !title || !region) {
+        return '';
+    }
+
+    return `Event Ticket for ${capitalizeFirstLetter(region)}'s ${title} on ${moment(date).format(MOMENT_DATE_YEAR)}`
+}
 
 export const addProduct = async (data, priceData = []) => {
     let product;
     const properties = {
         name: data['name'],
         images: [data['image']],
-    }
-
-    if (data.hasOwnProperty('description')) {
-        properties['description'] = data['description']
+        description: stripeProductDescription(data['region'], data['title'], data['date'])
     }
 
     try {

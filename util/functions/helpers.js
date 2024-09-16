@@ -108,3 +108,7 @@ export const replaceSpecialSymbolsWithSpaces = (inputString) => {
   // Use a regular expression to match any non-alphanumeric character
   return inputString.replace(/[^a-zA-Z0-9\s]/g, ' ');
 }
+
+export const capitalizeFirstLetter = (string) => {
+  return string.charAt(0).toUpperCase() + string.slice(1);
+}
