@@ -1,7 +1,5 @@
-import mongoose from "mongoose";
 import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
-import { eventToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
 import { uploadToCloudinary, deleteFolder } from "../util/functions/cloudinary.js";
 import { isEventTimerFinished, processExtraInputsForm, replaceSpecialSymbolsWithSpaces } from "../util/functions/helpers.js";
 import { MOMENT_DATE_TIME_YEAR, areDatesEqual } from "../util/functions/dateConvert.js";

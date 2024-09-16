@@ -17,6 +17,7 @@ import { firewall, rateLimiter } from "./middleware/firewall.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
 import { REGIONS } from "./util/config/defines.js";
 import { updateUsers } from "./util/private/manipulate-db.js";
+import futureEventRouter from "./routes/future-events-routes.js";
 
 const app = express();
 
@@ -64,6 +65,7 @@ app.use("/api/common", commonRouter);
 app.use("/api/security", securityRouter);
 app.use("/api/user", userRouter);
 app.use("/api/event", eventRouter);
+app.use("/api/future-event", futureEventRouter);
 app.use("/api/payment", paymentRouter);
 app.use("/api/contest", contestRouter);
 app.use("/api/special", specialEventsRouter);
