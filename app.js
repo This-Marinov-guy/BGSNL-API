@@ -18,24 +18,22 @@ import { updateUsers } from "./util/private/manipulate-db.js";
 
 const app = express();
 
-if (app.get('env') === 'development') {
-  allowedOrigins.push('http://localhost:3000');
+if (app.get('env') !== 'development') {
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new HttpError('There was a problem with your request, please try again later!', 403)); 
+        }
+      },
+    })
+  );
+  
+  app.use(rateLimiter);
+  app.use(firewall);
 }
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new HttpError('There was a problem with your request, please try again later!', 403)); 
-      }
-    },
-  })
-);
-
-app.use(rateLimiter);
-app.use(firewall);
 
 app.use((req, res, next) => {
   if ("OPTIONS" == req.method) {
