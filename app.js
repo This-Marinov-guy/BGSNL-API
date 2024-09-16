@@ -52,7 +52,7 @@ app.use((req, res, next) => {
 });
 
 //routes
-app.use('/', (req,res,next) => res.json({message: 'Welcome to BGSNL Official Server'}));
+app.use('/', (req,res,next) => res.status(200).json({message: 'Welcome to BGSNL Official Server'}));
 
 app.use("/api/user", userRouter);
 app.use("/api/event", eventRouter);
