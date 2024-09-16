@@ -3,9 +3,9 @@ import { check } from "express-validator";
 import {
   checkEligibleGuestForDiscount,
   checkEligibleMemberForPurchase,
-  getEvent,
   getEventById,
   getEventPurchaseAvailability,
+  getEvents,
   getSoldTicketQuantity,
   postAddGuestToEvent,
   postAddMemberToEvent,
@@ -24,13 +24,12 @@ eventRouter.get(
 )
 
 eventRouter.get(
-  "/get-event-details/:region/:eventName",
-  getEvent
-)
-
-eventRouter.get(
-  "/get-event-details-id/:eventId",
+  "/event-details/:eventId",
   getEventById
+)
+eventRouter.get(
+  "/events-list",
+  getEvents
 )
 
 eventRouter.get(

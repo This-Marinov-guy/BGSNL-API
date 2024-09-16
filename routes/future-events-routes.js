@@ -1,15 +1,15 @@
 import express from "express";
 import dotenv from "dotenv";
 import multer from "multer";
-import { addEvent, deleteEvent, editEvent, fetchEvent, fetchEvents } from "../controllers/future-events-action-controller.js";
+import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList } from "../controllers/future-events-action-controller.js";
 dotenv.config();
 
 const upload = multer({ storage: multer.memoryStorage() })
 const futureEventRouter = express.Router();
 
-futureEventRouter.get('/full-event-details/:eventId', fetchEvent)
+futureEventRouter.get('/full-event-details/:eventId', fetchFullDataEvent)
 
-futureEventRouter.get('/events-list', fetchEvents)
+futureEventRouter.get('/full-data-events-list', fetchFullDataEventsList)
 
 const eventImageUploads = upload.fields([
     { name: 'images', maxCount: 4 },

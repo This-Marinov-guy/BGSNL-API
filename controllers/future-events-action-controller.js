@@ -7,7 +7,7 @@ import moment from "moment/moment.js";
 import { deleteProduct } from "../services/side-services/stripe.js";
 import { createEventProductWithPrice, updateEventPrices } from "../services/main-services/event-action-service.js";
 
-export const fetchEvent = async (req, res, next) => {
+export const fetchFullDataEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
 
     let event;
@@ -36,7 +36,7 @@ export const fetchEvent = async (req, res, next) => {
     });
 }
 
-export const fetchEvents = async (req, res, next) => {
+export const fetchFullDataEventsList = async (req, res, next) => {
     const region = req.query.region;
 
     let events;

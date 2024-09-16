@@ -56,12 +56,11 @@ export const getEventById = async (req, res, next) => {
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    // event here should not expire
-    // const expired = isEventTimerFinished(event.ticketTimer);
+    const expired = isEventTimerFinished(event.ticketTimer);
 
-    // if ((ticketsRemaining <= 0) || expired) {
-    //   status = false;
-    // }
+    if ((ticketsRemaining <= 0) || expired) {
+      status = false;
+    }
 
     event = removeModelProperties(event, ['guestList', 'discountPass', 'freePass']);
 
@@ -73,42 +72,30 @@ export const getEventById = async (req, res, next) => {
   }
 }
 
-export const getEvent = async (req, res, next) => {
+export const getEvents = async (req, res, next) => {
+  const region = req.query.region;
+
+  let events;
+
   try {
-    const eventName = decodeFromURL(req.params.eventName);
-    const region = req.params.region;
-    const today = new Date().toISOString();
-
-    if (!(eventName && region)) {
-      return next(new HttpError("Invalid inputs passed", 422));
+    if (region) {
+      events = await Event.find({ region });
+    } else {
+      events = await Event.find();
     }
 
-    let event = await Event.findOne({
-      title: eventName,
-      region: region,
-      date: { $gte: today }
-    });
-
-    if (!event) {
-      return next(new HttpError("No event was found", 404));
-    }
-
-    let status = true;
-
-    const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const expired = isEventTimerFinished(event.ticketTimer);
-
-    if (ticketsRemaining <= 0 || expired) {
-      status = false;
-    }
-
-    event = removeModelProperties(event, ['guestList', 'discountPass', 'freePass']);
-
-    res.status(200).json({ event, status });
-
-  } catch (error) {
-    return next(new HttpError("Something got wrong, please contact support", 500));
+  } catch (err) {
+    return next(new HttpError("Fetching events failed", 500));
   }
+
+  const formattedEvents = events.map((event) => {
+    let formattedEvent = event.toObject({ getters: true });
+    formattedEvent = removeModelProperties(formattedEvent, ['guestList', 'discountPass', 'freePass']);
+
+    return formattedEvent
+  });
+
+  res.status(200).json({ events: formattedEvents });
 }
 
 export const getSoldTicketQuantity = async (req, res, next) => {
@@ -170,7 +157,7 @@ export const checkEligibleMemberForPurchase = async (req, res, next) => {
 
 export const checkEligibleGuestForDiscount = async (req, res, next) => {
   const { email, name, surname, eventId } = req.params;
-  const {withError} = req.query;
+  const { withError } = req.query;
   const guestName = `${name} ${surname}`;
   let status = true;
 
@@ -185,7 +172,7 @@ export const checkEligibleGuestForDiscount = async (req, res, next) => {
   }
 
   if (!event.freePass || !event.freePass.includes(guestName) || !event.freePass.includes(email)) {
-      return res.status(200).json({ status });
+    return res.status(200).json({ status });
   }
 
   for (const guest of event.guestList) {
@@ -373,7 +360,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
 // status 2 = count is required as more than 1 guest was found
 export const updatePresence = async (req, res, next) => {
   const { eventId, name, email } = req.body;
-  let { count } = req.body; 
+  let { count } = req.body;
   let societyEvent;
 
   try {
@@ -407,7 +394,7 @@ export const updatePresence = async (req, res, next) => {
     count = 1;
   }
 
-  let updatedCount = 0; 
+  let updatedCount = 0;
 
   for (let i = 0; i < societyEvent.guestList.length; i++) {
     const guest = societyEvent.guestList[i];
@@ -418,7 +405,7 @@ export const updatePresence = async (req, res, next) => {
       updatedCount++;
     }
 
-    if (count === 0) break; 
+    if (count === 0) break;
   }
 
   if (updatedCount === 0) {

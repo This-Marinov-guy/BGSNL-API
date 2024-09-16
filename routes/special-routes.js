@@ -1,6 +1,6 @@
 import express from "express";
 import { check } from "express-validator";
-import { postCard } from "../controllers/special-events-controller.js";
+import { postCard } from "../controllers/special-controller.js";
 
 const specialEventsRouter = express.Router();
 

@@ -11,7 +11,7 @@ import paymentRouter from "./routes/payments-routes.js";
 import contestRouter from "./routes/contest-routes.js";
 import commonRouter from "./routes/common-routes.js";
 import securityRouter from "./routes/security-routes.js";
-import specialEventsRouter from "./routes/special-events-routes.js";
+import specialEventsRouter from "./routes/special-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
