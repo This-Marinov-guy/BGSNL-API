@@ -20,17 +20,15 @@ paymentRouter.get("/donation/config", donationConfig)
 
 paymentRouter.post("/donation/create-payment-intent", postDonationIntent)
 
-paymentRouter.post("/checkout-no-file", postCheckoutNoFile);
-
-paymentRouter.post("/subscription-no-file", postSubscriptionNoFile);
+paymentRouter.post("/checkout/general", postCheckoutNoFile);
 
 paymentRouter.post(
-  "/checkout/member",
+  "/checkout/member-ticket",
   fileUpload(process.env.BUCKET_MEMBER_TICKETS).single("image"),
   postCheckoutFile
 );
 paymentRouter.post(
-  "/checkout/guest",
+  "/checkout/guest-ticket",
   fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
   postCheckoutFile
 );
@@ -41,13 +39,15 @@ paymentRouter.post(
   postSubscriptionFile
 );
 
+paymentRouter.post("/subscription/general", postSubscriptionNoFile);
+
 paymentRouter.post(
-  '/customer-portal',
+  '/subscription/customer-portal',
   postCustomerPortal
 )
 
 paymentRouter.post(
-  "/webhook-checkout",
+  "/stripe-webhook",
   express.raw({ type: "*/*" }),
   postWebhookCheckout
 );
