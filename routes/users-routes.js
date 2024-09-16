@@ -3,7 +3,6 @@ import { check } from "express-validator";
 import {
   getCurrentUser,
   patchUserInfo,
-  patchUserStatus,
   postActiveMember,
   getCurrentUserRoles,
 } from "../controllers/users-controllers.js";
@@ -20,7 +19,7 @@ const userRouter = express.Router();
 
 userRouter.get("/current", getCurrentUser);
 
-userRouter.get("/roles/:userId", getCurrentUserRoles);
+userRouter.get("/roles", getCurrentUserRoles);
 
 userRouter.post("/cancel-membership", authMiddleware, cancelSubscription)
 
@@ -37,7 +36,7 @@ userRouter.post('/active-member', multiFileUpload(process.env.BUCKET_AM).fields(
 )
 
 userRouter.patch(
-  "/edit-info/:userId",
+  "/edit-info",
   authMiddleware,
   fileResizedUpload(process.env.BUCKET_USERS).single("image"),
   [
@@ -49,7 +48,5 @@ userRouter.patch(
   ],
   patchUserInfo
 );
-
-userRouter.patch("/unlock/:userId", authMiddleware, patchUserStatus);
 
 export default userRouter;

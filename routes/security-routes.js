@@ -8,7 +8,7 @@ import {
     postCheckEmail,
     postCheckMemberKey,
     postVerifyToken,
-} from "../controllers/users-controllers.js";
+} from "../controllers/security-controller.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 dotenv.config();
