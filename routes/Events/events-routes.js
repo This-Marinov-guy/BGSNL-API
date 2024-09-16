@@ -11,8 +11,8 @@ import {
   postAddMemberToEvent,
   postNonSocietyEvent,
   updatePresence
-} from "../controllers/events-controllers.js";
-import fileUpload from "../middleware/file-upload.js";
+} from "../../controllers/Events/events-controllers.js";
+import fileUpload from "../../middleware/file-upload.js";
 import dotenv from "dotenv";
 dotenv.config();
 

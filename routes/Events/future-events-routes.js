@@ -1,7 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import multer from "multer";
-import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList } from "../controllers/future-events-action-controller.js";
+import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList } from "../../controllers/Events/future-events-action-controller.js";
 dotenv.config();
 
 const upload = multer({ storage: multer.memoryStorage() })

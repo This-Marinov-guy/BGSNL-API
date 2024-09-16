@@ -6,7 +6,7 @@ import mongoose from "mongoose";
 import cors from "cors";
 import HttpError from "./models/Http-error.js";
 import userRouter from "./routes/users-routes.js";
-import eventRouter from "./routes/events-routes.js";
+import eventRouter from "./routes/Events/events-routes.js";
 import paymentRouter from "./routes/payments-routes.js";
 import contestRouter from "./routes/contest-routes.js";
 import commonRouter from "./routes/common-routes.js";
@@ -17,7 +17,7 @@ import { firewall, rateLimiter } from "./middleware/firewall.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
 import { REGIONS } from "./util/config/defines.js";
 import { updateUsers } from "./util/private/manipulate-db.js";
-import futureEventRouter from "./routes/future-events-routes.js";
+import futureEventRouter from "./routes/Events/future-events-routes.js";
 
 const app = express();
 

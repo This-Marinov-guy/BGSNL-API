@@ -1,11 +1,11 @@
-import Event from "../models/Event.js";
-import HttpError from "../models/Http-error.js";
-import { uploadToCloudinary, deleteFolder } from "../util/functions/cloudinary.js";
-import { isEventTimerFinished, processExtraInputsForm, replaceSpecialSymbolsWithSpaces } from "../util/functions/helpers.js";
-import { MOMENT_DATE_TIME_YEAR, areDatesEqual } from "../util/functions/dateConvert.js";
+import Event from "../../models/Event.js";
+import HttpError from "../../models/Http-error.js";
+import { uploadToCloudinary, deleteFolder } from "../../util/functions/cloudinary.js";
+import { isEventTimerFinished, processExtraInputsForm, replaceSpecialSymbolsWithSpaces } from "../../util/functions/helpers.js";
+import { MOMENT_DATE_TIME_YEAR, areDatesEqual } from "../../util/functions/dateConvert.js";
 import moment from "moment/moment.js";
-import { deleteProduct } from "../services/side-services/stripe.js";
-import { createEventProductWithPrice, updateEventPrices } from "../services/main-services/event-action-service.js";
+import { deleteProduct } from "../../services/side-services/stripe.js";
+import { createEventProductWithPrice, updateEventPrices } from "../../services/main-services/event-action-service.js";
 
 export const fetchFullDataEvent = async (req, res, next) => {
     const eventId = req.params.eventId;

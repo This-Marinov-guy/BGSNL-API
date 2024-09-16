@@ -1,13 +1,13 @@
 import mongoose from "mongoose";
-import Event from "../models/Event.js";
-import NonSocietyEvent from "../models/NonSocietyEvent.js";
-import User from "../models/User.js";
+import Event from "../../models/Event.js";
+import NonSocietyEvent from "../../models/NonSocietyEvent.js";
+import User from "../../models/User.js";
 import { validationResult } from "express-validator";
-import HttpError from "../models/Http-error.js";
-import { sendTicketEmail } from "../services/side-services/email-transporter.js";
-import { eventToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
-import { decodeFromURL, isEventTimerFinished, removeModelProperties } from "../util/functions/helpers.js";
-import { MOMENT_DATE_YEAR } from "../util/functions/dateConvert.js";
+import HttpError from "../../models/Http-error.js";
+import { sendTicketEmail } from "../../services/side-services/email-transporter.js";
+import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
+import { decodeFromURL, isEventTimerFinished, removeModelProperties } from "../../util/functions/helpers.js";
+import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
 import moment from "moment";
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
