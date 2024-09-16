@@ -89,8 +89,7 @@ export const getEvents = async (req, res, next) => {
   }
 
   const formattedEvents = events.map((event) => {
-    let formattedEvent = event.toObject({ getters: true });
-    formattedEvent = removeModelProperties(formattedEvent, ['guestList', 'discountPass', 'freePass']);
+    const formattedEvent = removeModelProperties(event, ['guestList', 'discountPass', 'freePass']);
 
     return formattedEvent
   });
