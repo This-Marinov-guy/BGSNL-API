@@ -52,11 +52,13 @@ app.use((req, res, next) => {
 });
 
 //routes
+app.use('/', (req,res,next) => res.json({message: 'Welcome to BGSNL Official Server'}));
+
 app.use("/api/user", userRouter);
 app.use("/api/event", eventRouter);
 app.use("/api/payment", paymentRouter);
 app.use("/api/contest", contestRouter);
-app.use("/api/special", specialEventsRouter)
+app.use("/api/special", specialEventsRouter);
 
 //no page found 
 app.use((req, res, next) => {
@@ -64,7 +66,7 @@ app.use((req, res, next) => {
   return next(error);
 });
 
-// error handling
+// error handling (not sure if needed)
 app.use((error, req, res, next) => {
   console.log(error);
   const status = error.statusCode || 500;
