@@ -7,3 +7,13 @@ export const decodeJWT = (token) => {
 
     return decodedPayloadJSON;
 }
+
+export const extractUserFromRequest = (req) => {
+    const authHeader = req.headers['authorization']; 
+    const token = authHeader && authHeader.split(' ')[1]; 
+    if (!token) {
+        return {}
+    }
+
+    return decodeJWT(token);
+}

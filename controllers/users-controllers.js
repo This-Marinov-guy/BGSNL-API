@@ -13,9 +13,10 @@ import { ADMIN, LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
 import { MOMENT_DATE_YEAR, addMonthsToDate, areDatesEqual, calculatePurchaseAndExpireDates, formatReactPrimeDate } from "../util/functions/dateConvert.js";
+import { extractUserFromRequest } from "../util/functions/security.js";
 
 const getCurrentUser = async (req, res, next) => {
-  const userId = req.params.userId;
+  const { userId } = extractUserFromRequest(req);
   const withTickets = req.query.withTickets ?? false;
 
   let user;
