@@ -5,7 +5,7 @@ import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
 import { sendNewPasswordEmail, welcomeEmail } from "../services/side-services/email-transporter.js";
-import { MEMBER_KEYS } from "../util/config/KEYS.js";
+import { ACCOUNT_KEYS } from "../util/config/KEYS.js";
 import { usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
 import { compareIntStrings, decryptData, hasOverlap, isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
 import { ADMIN, LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
@@ -35,7 +35,7 @@ const postCheckEmail = async (req, res, next) => {
         return next(error);
     }
 
-    res.status(200).send({ message: "verified" });
+    res.status(200).send({ status: true });
 };
 
 const postCheckMemberKey = (req, res, next) => {
@@ -45,21 +45,13 @@ const postCheckMemberKey = (req, res, next) => {
         return next(error);
     }
 
-    const { email, key } = req.body;
+    const { email } = req.body;
 
-    const result = MEMBER_KEYS.find(
-        (obj) => obj.email.toLowerCase().replace(/\s/g, "") === email.toLowerCase() && obj.key.toLowerCase().replace(/\s/g, "") === key.toLowerCase()
+    const result = ACCOUNT_KEYS.find(
+        (obj) => obj.email.toLowerCase().replace(/\s/g, "") === email.toLowerCase()
     );
 
-    if (result) {
-        res.status(201).send({ message: "verifiedKey" });
-    } else {
-        const error = new HttpError(
-            "Invalid key! Please check you email and key and try again!",
-            422
-        );
-        return next(error);
-    }
+    res.status(200).send({ status: !!result ?? false });
 };
 
 const signup = async (req, res, next) => {

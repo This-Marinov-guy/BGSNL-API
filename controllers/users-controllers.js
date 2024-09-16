@@ -163,7 +163,7 @@ const patchUserInfo = async (req, res, next) => {
   await usersToSpreadsheet(user.region);
   await usersToSpreadsheet();
 
-  res.status(200).json({ message: "done" });
+  res.status(200).json({ status: true });
 };
 
 export {

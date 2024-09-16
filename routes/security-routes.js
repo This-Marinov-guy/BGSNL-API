@@ -23,7 +23,7 @@ securityRouter.post(
 
 securityRouter.post(
     "/check-member-key",
-    [check("email").notEmpty(), check("key").notEmpty()],
+    [check("email").notEmpty()],
     postCheckMemberKey
 );
 
