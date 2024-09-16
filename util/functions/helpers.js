@@ -20,6 +20,13 @@ export const isEventTimerFinished = (timer) => {
 export const removeModelProperties = (obj, properties) => {
   const result = obj.toObject(); // Convert Mongoose document to plain JavaScript object
   properties.forEach(prop => delete result[prop]);
+
+  if (result.hasOwnProperty('_id')) {
+    result['id'] = result['_id'];
+
+    delete result['_id'];
+  }
+
   return result;
 }
 

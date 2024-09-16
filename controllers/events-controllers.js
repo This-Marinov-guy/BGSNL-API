@@ -88,11 +88,7 @@ export const getEvents = async (req, res, next) => {
     return next(new HttpError("Fetching events failed", 500));
   }
 
-  const formattedEvents = events.map((event) => {
-    const formattedEvent = removeModelProperties(event, ['guestList', 'discountPass', 'freePass']);
-
-    return formattedEvent
-  });
+  const formattedEvents = events.map((event) => removeModelProperties(event, ['guestList', 'discountPass', 'freePass']));
 
   res.status(200).json({ events: formattedEvents });
 }
