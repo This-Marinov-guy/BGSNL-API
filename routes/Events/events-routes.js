@@ -14,6 +14,8 @@ import {
 } from "../../controllers/Events/events-controllers.js";
 import fileUpload from "../../middleware/file-upload.js";
 import dotenv from "dotenv";
+import { adminMiddleware, authMiddleware } from "../../middleware/authorization.js";
+import { ACCESS_3 } from "../../util/config/defines.js";
 dotenv.config();
 
 const eventRouter = express.Router();
@@ -67,6 +69,7 @@ eventRouter.post(
 
 eventRouter.post(
   "/purchase-ticket/member",
+  authMiddleware,
   fileUpload(process.env.BUCKET_MEMBER_TICKETS).single("image"),
   [
     check("userId").notEmpty(),
@@ -91,10 +94,11 @@ eventRouter.post(
 
 eventRouter.patch(
   '/check-guest-list',
+  adminMiddleware(ACCESS_3),
   [
-    check("eventId").notEmpty(),
-    check("name").notEmpty(),
-    check("email").notEmpty()
+  check("eventId").notEmpty(),
+  check("name").notEmpty(),
+  check("email").notEmpty()
   ],
   updatePresence
 )

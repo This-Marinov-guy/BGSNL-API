@@ -17,13 +17,13 @@ dotenv.config();
 
 const userRouter = express.Router();
 
-userRouter.get("/current", getCurrentUser);
+userRouter.get("/current", authMiddleware, getCurrentUser);
 
-userRouter.get("/roles", getCurrentUserRoles);
+userRouter.get("/roles", authMiddleware, getCurrentUserRoles);
 
 userRouter.post("/cancel-membership", authMiddleware, cancelSubscription)
 
-userRouter.post('/active-member', multiFileUpload(process.env.BUCKET_AM).fields([
+userRouter.post('/active-member', authMiddleware, multiFileUpload(process.env.BUCKET_AM).fields([
   { name: 'cv', maxCount: 2 },
   // { name: 'letter', maxCount: 2 },
 ]),

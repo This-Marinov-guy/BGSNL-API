@@ -17,7 +17,6 @@ export const authMiddleware = (req, res, next) => {
             return next(new HttpError('No access for such request', 403))
         }
 
-        req.user = user;    
         next(); 
     });
 };
@@ -36,9 +35,7 @@ export const adminMiddleware = (requiredRoles = []) => {
                 return next(new HttpError('No access for such request', 403))
             }
 
-            const userRoles = decodeJWT(token)['roles'];
-
-            if (!requiredRoles.some(role => userRoles.includes(role))) {
+            if (!requiredRoles.some(role => user['roles'].includes(role))) {
                 return next(new HttpError('No access for such request', 403))
             }
 

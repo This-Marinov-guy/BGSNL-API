@@ -2,6 +2,8 @@ import express from "express";
 import dotenv from "dotenv";
 import multer from "multer";
 import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList } from "../../controllers/Events/future-events-action-controller.js";
+import { adminMiddleware } from "../../middleware/authorization.js";
+import { ACCESS_1, ACCESS_2 } from "../../util/config/defines.js";
 dotenv.config();
 
 const upload = multer({ storage: multer.memoryStorage() })
@@ -20,21 +22,21 @@ const eventImageUploads = upload.fields([
 
 futureEventRouter.post(
     "/add-event",
-    // adminMiddleware(ACCESS_1),
+    adminMiddleware(ACCESS_2),
     eventImageUploads,
     addEvent
 );
 
 futureEventRouter.patch(
     "/edit-event/:eventId",
-    // adminMiddleware(ACCESS_1),
+    adminMiddleware(ACCESS_2),
     eventImageUploads,
     editEvent
 );
 
 futureEventRouter.delete(
     "/delete-event/:eventId",
-    // adminMiddleware(ACCESS_1),
+    adminMiddleware(ACCESS_2),
     deleteEvent
 );
 
