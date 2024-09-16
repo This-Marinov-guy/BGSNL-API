@@ -9,6 +9,8 @@ import userRouter from "./routes/users-routes.js";
 import eventRouter from "./routes/events-routes.js";
 import paymentRouter from "./routes/payments-routes.js";
 import contestRouter from "./routes/contest-routes.js";
+import commonRouter from "./routes/common-routes.js";
+import securityRouter from "./routes/security-routes.js";
 import specialEventsRouter from "./routes/special-events-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
@@ -56,6 +58,8 @@ app.get('/', (req, res) => {
   res.status(200).json({ message: 'Welcome to BGSNL Official Server' });
 });
 
+app.use("/api/common", commonRouter);
+app.use("/api/security", securityRouter);
 app.use("/api/user", userRouter);
 app.use("/api/event", eventRouter);
 app.use("/api/payment", paymentRouter);

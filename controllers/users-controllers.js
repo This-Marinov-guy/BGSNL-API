@@ -17,6 +17,7 @@ import { extractUserFromRequest } from "../util/functions/security.js";
 
 const getCurrentUser = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
+  
   const withTickets = req.query.withTickets ?? false;
 
   let user;
