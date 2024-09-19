@@ -49,7 +49,7 @@ export const postCheckMemberKey = (req, res, next) => {
 
     const result = ACCOUNT_KEYS.includes(email.toLowerCase());
 
-    res.status(200).send({ status: !!result ?? false });
+    res.status(200).send({ status: result });
 };
 
 export const signup = async (req, res, next) => {
