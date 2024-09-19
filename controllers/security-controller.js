@@ -47,9 +47,7 @@ export const postCheckMemberKey = (req, res, next) => {
 
     const { email } = req.body;
 
-    const result = ACCOUNT_KEYS.find(
-        (obj) => obj.email.toLowerCase().replace(/\s/g, "") === email.toLowerCase()
-    );
+    const result = ACCOUNT_KEYS.includes(email.toLowerCase());
 
     res.status(200).send({ status: !!result ?? false });
 };
