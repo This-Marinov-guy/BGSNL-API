@@ -28,14 +28,20 @@ export const getCurrentUser = async (req, res, next) => {
   user.registrationKey && delete user.registrationKey;
   !withTickets && delete user.tickets
 
+  if (user.status !== 'active') {
+    return res
+      .status(200)
+      .json({ status: user.status, user: {id: user._id, status: user.status, subscription: user.subscription} });
+  }
+
   if (isBirthdayToday(user.birth)) {
     return res
-      .status(201)
+      .status(200)
       .json({ status: user.status, user, celebrate: true });
   }
 
-  res
-    .status(201)
+  return res
+    .status(200)
     .json({ status: user.status, user });
 };
 
