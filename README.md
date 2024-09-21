@@ -19,6 +19,7 @@ npm install
 ```
 
 Step 2: Request the .env file as the program will crash without it
+---------------------------------
 
 Step 3: Start the program
 ---------------------------------
@@ -26,6 +27,7 @@ Step 3: Start the program
 ```cli
 npm run dev
 ```
+
 
 Part 2: Key modules
 -------------
