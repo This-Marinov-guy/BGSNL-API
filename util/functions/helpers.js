@@ -3,6 +3,9 @@ dotenv.config();
 import jwt from "jsonwebtoken";
 import CryptoJS from 'crypto-js';
 import moment from 'moment-timezone';
+import { DEV_JWT_TIMEOUT, PROD_JWT_TIMEOUT } from "../config/defines.js";
+
+const JWT_TIMEOUT = process.env.APP_ENV === 'prod' ? PROD_JWT_TIMEOUT : DEV_JWT_TIMEOUT;
 
 // Function to update the original array with the modified subset | needs to have ids
 export const updateOriginalArray = (originalArray, modifiedSubset) => {
@@ -34,7 +37,7 @@ export const jwtSign = (user) => {
   return jwt.sign(
     { userId: user.id, roles: user.roles, email: user.email, region: user.region },
     process.env.JWT_STRING,
-    { expiresIn: "1h" }
+    { expiresIn: JWT_TIMEOUT }
   );
 }
 
@@ -50,7 +53,7 @@ export const jwtRefresh = (token) => {
         region: decoded.region,
       },
       process.env.JWT_STRING,
-      { expiresIn: "1h" }
+      { expiresIn: JWT_TIMEOUT }
     );
 
     return newToken;

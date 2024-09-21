@@ -2,6 +2,10 @@ export const REGIONS = [
     'amsterdam', 'breda', 'eindhoven', 'groningen', 'leeuwarden', 'maastricht', 'rotterdam'
 ];
 
+// authorization
+export const PROD_JWT_TIMEOUT = '15m';
+export const DEV_JWT_TIMEOUT = '1h';
+
 // member roles
 export const SUPER_ADMIN = 'super_admin';
 export const ADMIN = 'admin';
