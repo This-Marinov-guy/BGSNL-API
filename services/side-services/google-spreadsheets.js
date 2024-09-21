@@ -296,7 +296,8 @@ const usersToSpreadsheet = async (region = null) => {
         university: university === 'other' ? otherUniversityName : university,
         course,
         studentNumber,
-        graduationDate: graduationDate || 'not specified'
+        graduationDate: graduationDate || 'not specified',
+        ...(filterByRegion ? {} : {roles: roles.join(', ')})
       };
 
       return Object.values(dataFields);
@@ -304,7 +305,7 @@ const usersToSpreadsheet = async (region = null) => {
 
     const nameOfValues = filterByRegion
       ? ["Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date"]
-      : ["Region", "Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date"];
+      : ["Region", "Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date", "Roles"];
 
     await googleSheets.spreadsheets.values.clear({
       auth,
