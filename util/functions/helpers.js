@@ -38,6 +38,28 @@ export const jwtSign = (user) => {
   );
 }
 
+export const jwtRefresh = (token) => {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+
+    const newToken = jwt.sign(
+      {
+        userId: decoded.userId,
+        roles: decoded.roles,
+        email: decoded.email,
+        region: decoded.region,
+      },
+      process.env.JWT_STRING,
+      { expiresIn: "1h" }
+    );
+
+    return newToken;
+  } catch (error) {
+    console.error("Error refreshing token:", error);
+    return null;
+  }
+}
+
 export const encodeForURL = (string) => {
   let encodedString = string.toLowerCase().replace(/ /g, '_');
 

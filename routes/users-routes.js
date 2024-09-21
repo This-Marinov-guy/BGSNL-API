@@ -5,6 +5,7 @@ import {
   patchUserInfo,
   postActiveMember,
   getCurrentUserRoles,
+  refreshToken,
 } from "../controllers/users-controllers.js";
 import {
   cancelSubscription
@@ -18,6 +19,8 @@ dotenv.config();
 const userRouter = express.Router();
 
 userRouter.get("/current", authMiddleware, getCurrentUser);
+
+userRouter.get("/refresh-token", authMiddleware, refreshToken);
 
 userRouter.get("/roles", authMiddleware, getCurrentUserRoles);
 

@@ -6,8 +6,23 @@ import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
-import { isBirthdayToday } from "../util/functions/helpers.js";
+import { isBirthdayToday, jwtRefresh } from "../util/functions/helpers.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
+import { getTokenFromHeader } from "../util/functions/security.js";
+
+export const refreshToken = async (req, res, next) => {
+  let newToken = null;
+
+  try {
+    const token = getTokenFromHeader(req);
+  
+    newToken = jwtRefresh(token);
+  } catch {
+    newToken = null;
+  }
+
+  return res.status(201).json({ token: newToken });
+}
 
 export const getCurrentUser = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
