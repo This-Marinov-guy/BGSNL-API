@@ -1,4 +1,4 @@
-BGSNL API (Express 4)
+BGSNL API (Express.js 4)
 ==============================
 
 Part 1: Installation
