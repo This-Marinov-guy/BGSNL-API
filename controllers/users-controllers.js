@@ -9,6 +9,7 @@ import { usersToSpreadsheet } from "../services/side-services/google-spreadsheet
 import { isBirthdayToday, jwtRefresh } from "../util/functions/helpers.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
 import { getTokenFromHeader } from "../util/functions/security.js";
+import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 
 export const refreshToken = async (req, res, next) => {
   let newToken = null;
@@ -43,7 +44,7 @@ export const getCurrentUser = async (req, res, next) => {
   user.registrationKey && delete user.registrationKey;
   !withTickets && delete user.tickets
 
-  if (user.status !== 'active') {
+  if (user.status !== USER_STATUSES[ACTIVE]) {
     return res
       .status(200)
       .json({ status: user.status, user: {id: user._id, status: user.status, subscription: user.subscription} });

@@ -12,6 +12,7 @@ import { ADMIN, LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
 import { calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
+import { LOCKED, USER_STATUSES } from "../util/config/enums.js";
 
 export const postCheckEmail = async (req, res, next) => {
     const errors = validationResult(req);
@@ -182,7 +183,7 @@ export const login = async (req, res, next) => {
     const today = new Date();
 
     if (!hasOverlap(LIMITLESS_ACCOUNT, existingUser.roles) && today > existingUser.expireDate) {
-        existingUser.status = "locked";
+        existingUser.status = USER_STATUSES[LOCKED];
         try {
             await existingUser.save();
         } catch (err) {

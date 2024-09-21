@@ -12,6 +12,7 @@ import { decryptData, hasOverlap } from "../util/functions/helpers.js";
 import { MOMENT_DATE_YEAR, addMonthsToDate, calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
 import { HOME_URL, LIMITLESS_ACCOUNT, SUBSCRIPTION_PERIOD } from "../util/config/defines.js";
 import moment from "moment";
+import { ACTIVE, LOCKED, USER_STATUSES } from "../util/config/enums.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",
@@ -250,7 +251,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
           const createdUser = new User({
-            status: "active",
+            status: USER_STATUSES[ACTIVE],
             subscription: {
               period,
               id: subscriptionId,
@@ -300,7 +301,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             return next(new HttpError(err.message, 500));
           }
 
-          user.status = "active";
+          user.status = USER_STATUSES[ACTIVE];
           user.subscription = {
             period, id: subscriptionId, customerId
           }
@@ -450,7 +451,7 @@ export const postWebhookCheckout = async (req, res, next) => {
 
       const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
-      user.status = 'active';
+      user.status = USER_STATUSES[ACTIVE];
       user.purchaseDate = purchaseDate;
       user.expireDate = expireDate;
 
@@ -483,7 +484,7 @@ export const postWebhookCheckout = async (req, res, next) => {
       const today = new Date();
 
       if (!hasOverlap(LIMITLESS_ACCOUNT, user?.roles) && today > user.expireDate) {
-        user.status = 'locked'
+        user.status = USER_STATUSES[LOCKED]
 
         try {
           await user.save();

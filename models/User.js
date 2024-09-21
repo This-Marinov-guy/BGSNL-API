@@ -1,12 +1,13 @@
 import mongoose from "mongoose";
 import uniqueValidator from "mongoose-unique-validator";
 import { MEMBER } from "../util/config/defines.js";
+import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 
 const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
   // refactor to enum
-  status: { type: String, required: true, default: 'active' },
+  status: { type: String, required: true, default: USER_STATUSES[ACTIVE] },
   roles: {type: Array, required: true, default: [MEMBER]},
   subscription: {
     period: { type: Number },
