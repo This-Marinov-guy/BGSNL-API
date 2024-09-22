@@ -6,6 +6,7 @@ import { MOMENT_DATE_TIME_YEAR, areDatesEqual } from "../../util/functions/dateC
 import moment from "moment/moment.js";
 import { deleteProduct } from "../../services/side-services/stripe.js";
 import { createEventProductWithPrice, updateEventPrices } from "../../services/main-services/event-action-service.js";
+import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
 
 export const fetchFullDataEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
@@ -328,7 +329,7 @@ export const editEvent = async (req, res, next) => {
 
     try {
         await event.save();
-        await eventToSpreadsheet(societyEvent.id)
+        await eventToSpreadsheet(event.id)
     } catch (err) {
         console.log(err);
         return next(new HttpError("Operations failed! Please try again or contact support!", 500));

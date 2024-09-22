@@ -50,7 +50,7 @@ const eventSchema = new Schema({
   poster: { type: String, required: true },
   bgImage: { type: Number, required: true, default: 1 },
   bgImageExtra: { type: String },
-  bgImageSelection: { type: Number, required: true, default: 1 },
+  bgImageSelection: { type: Number, default: 1 },
   memberOnly: { type: Boolean, required: true, default: false },
   hidden: { type: Boolean, required: true, default: false },
   extraInputsForm: {
