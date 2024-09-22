@@ -13,13 +13,14 @@ import { MOMENT_DATE_YEAR, addMonthsToDate, calculatePurchaseAndExpireDates } fr
 import { HOME_URL, LIMITLESS_ACCOUNT, SUBSCRIPTION_PERIOD } from "../util/config/defines.js";
 import moment from "moment";
 import { ACTIVE, LOCKED, USER_STATUSES } from "../util/config/enums.js";
+import { extractUserFromRequest } from "../util/functions/security.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2022-08-01",
 });
 
 export const cancelSubscription = async (req, res, next) => {
-  const userId = req.body.userId;
+  const { userId } = extractUserFromRequest(req);
 
   let user;
 
@@ -93,6 +94,7 @@ export const postDonationIntent = async (req, res, next) => {
 
 export const postSubscriptionNoFile = async (req, res, next) => {
   const { itemId, origin_url } = req.body;
+  const { userId } = extractUserFromRequest(req);
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
@@ -102,6 +104,7 @@ export const postSubscriptionNoFile = async (req, res, next) => {
     cancel_url: `${origin_url}/fail`,
     metadata: {
       ...req.body,
+      userId
     },
   });
 
@@ -180,10 +183,33 @@ export const postCheckoutFile = async (req, res, next) => {
 };
 
 export const postCustomerPortal = async (req, res, next) => {
-  const { customerId, url } = req.body;
+  const { url } = req.body;
+  const { userId } = extractUserFromRequest(req);
+
+  let user;
+
+  try {
+    user = await User.findById(userId);
+  } catch (err) {
+    return next(
+      new HttpError(
+        "Could not find the current user, please try again",
+        500
+      )
+    );
+  }
+
+  if (!user || !user.subscription.customerId) {
+    return next(
+      new HttpError(
+        "Operation failed - please contact support!",
+        500
+      )
+    );
+  }
 
   const session = await stripe.billingPortal.sessions.create({
-    customer: customerId,
+    customer: user.subscription.customerId,
     return_url: url,
   });
 

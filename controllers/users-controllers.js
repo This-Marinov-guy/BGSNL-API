@@ -29,6 +29,7 @@ export const getCurrentUser = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
 
   const withTickets = req.query.withTickets ?? false;
+  const withChristmas = req.query.withChristmas ?? false;
 
   let user;
   try {
@@ -43,6 +44,7 @@ export const getCurrentUser = async (req, res, next) => {
   delete user.password;
   user.registrationKey && delete user.registrationKey;
   !withTickets && delete user.tickets
+  !withChristmas && delete user.christmas
 
   if (user.status !== USER_STATUSES[ACTIVE]) {
     return res
@@ -59,6 +61,28 @@ export const getCurrentUser = async (req, res, next) => {
   return res
     .status(200)
     .json({ status: user.status, user });
+};
+
+export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
+  const { userId } = extractUserFromRequest(req);
+
+  let user;
+  try {
+    user = await User.findById(userId);
+  } catch (err) {
+    const error = new HttpError("Could not fetch user", 500);
+    return next(error);
+  }
+
+  user = user.toObject({ getters: true });
+  const isSubscribed = !!user.subscription && user.subscription.hasOwnProperty('id') && user.subscription.hasOwnProperty('customerId');
+
+  return res
+    .status(200)
+    .json({ 
+      status: user.status,
+      isSubscribed
+      });
 };
 
 export const getCurrentUserRoles = async (req, res, next) => {
