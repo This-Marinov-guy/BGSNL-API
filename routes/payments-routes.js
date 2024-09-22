@@ -42,6 +42,7 @@ paymentRouter.post(
   postSubscriptionFile
 );
 
+// TODO: rename as this is only for unlocking account with old payment system
 paymentRouter.post("/subscription/general", authMiddleware, postSubscriptionNoFile);
 
 paymentRouter.post(
