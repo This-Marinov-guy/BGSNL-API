@@ -35,7 +35,7 @@ export const removeModelProperties = (obj, properties) => {
 
 export const jwtSign = (user) => {
   return jwt.sign(
-    { userId: user.id, roles: user.roles, email: user.email, region: user.region },
+    { userId: user.id, status: user.status, roles: user.roles, email: user.email, region: user.region },
     process.env.JWT_STRING,
     { expiresIn: JWT_TIMEOUT }
   );
