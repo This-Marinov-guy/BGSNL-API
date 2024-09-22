@@ -6,7 +6,6 @@ export const createEventProductWithPrice = async (data, guestPrice = 0, memberPr
         images: data['images'],
         region: data['region'],
         date: data['date'],
-        title: data['title']
     })
 
     if (!productId) {

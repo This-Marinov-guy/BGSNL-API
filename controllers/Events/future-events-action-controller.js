@@ -141,7 +141,9 @@ export const addEvent = async (req, res, next) => {
         if (!isFree) {
             product = await createEventProductWithPrice({
                 name: title,
-                images: req.files['poster'][0]
+                images: req.files['poster'][0],
+                region,
+                date
             }, guestPrice, memberPrice, activeMemberPrice);
 
             if (!product) {

@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 import Stripe from "stripe";
+import { MOMENT_DATE_YEAR } from '../../util/functions/dateConvert.js'
 import { capitalizeFirstLetter } from '../../util/functions/helpers.js'
 import moment from "moment";
 
@@ -9,6 +10,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 });
 
 export const stripeProductDescription = (region, title, date) => {
+    console.log(region, title, date);
     if (!date || !title || !region) {
         return '';
     }
@@ -21,7 +23,7 @@ export const addProduct = async (data, priceData = []) => {
     const properties = {
         name: data['name'],
         images: [data['image']],
-        description: stripeProductDescription(data['region'], data['title'], data['date'])
+        description: stripeProductDescription(data['region'], data['name'], data['date'])
     }
 
     try {
