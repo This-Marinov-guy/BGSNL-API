@@ -21,7 +21,7 @@ export const VIP = 'vip'
 
 export const ACCESS_1 = [SUPER_ADMIN];
 export const ACCESS_2 = [...ACCESS_1, ADMIN, SOCIETY_ADMIN];
-export const ACCESS_3 = [...ACCESS_2, BOARD_MEMBER, COMMITTEE_MEMBER ];
+export const ACCESS_3 = [...ACCESS_2, BOARD_MEMBER ];
 
 export const LIMITLESS_ACCOUNT = [SUPER_ADMIN, ADMIN, VIP];
 

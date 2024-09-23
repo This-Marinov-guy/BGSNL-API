@@ -243,7 +243,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
 
   await eventToSpreadsheet(societyEvent.id);
 
-  res.status(201).json({ message: "Success" });
+  res.status(201).json({ status: true, message: "Success" });
 };
 
 export const postAddGuestToEvent = async (req, res, next) => {
@@ -303,7 +303,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
 
   await eventToSpreadsheet(societyEvent.id);
 
-  res.status(201).json({ message: "Success" });
+  res.status(201).json({ status: true, message: "Success" });
 };
 
 export const postNonSocietyEvent = async (req, res, next) => {
