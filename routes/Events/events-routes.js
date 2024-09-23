@@ -10,6 +10,7 @@ import {
   postAddGuestToEvent,
   postAddMemberToEvent,
   postNonSocietyEvent,
+  postSyncEventsCalendar,
   updatePresence
 } from "../../controllers/Events/events-controllers.js";
 import fileUpload from "../../middleware/file-upload.js";
@@ -90,6 +91,12 @@ eventRouter.post(
     check("notificationTypeTerms").notEmpty(),
   ],
   postNonSocietyEvent
+);
+
+eventRouter.post(
+  "/sync-calendar-events",
+  [],
+  postSyncEventsCalendar
 );
 
 eventRouter.patch(

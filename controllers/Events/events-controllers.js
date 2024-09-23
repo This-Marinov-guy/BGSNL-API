@@ -3,6 +3,7 @@ import Event from "../../models/Event.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
 import User from "../../models/User.js";
 import { validationResult } from "express-validator";
+import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
 import HttpError from "../../models/Http-error.js";
 import { sendTicketEmail } from "../../services/side-services/email-transporter.js";
 import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
@@ -416,4 +417,9 @@ export const updatePresence = async (req, res, next) => {
   await eventToSpreadsheet(eventId);
 
   res.status(201).json({ status: 1, event: societyEvent.title });
+};
+
+export const postSyncEventsCalendar = async (req, res, next) => {
+  console.log("Syncing events...");
+  await syncEvents();
 };
