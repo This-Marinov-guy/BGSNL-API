@@ -31,16 +31,10 @@ const eventSchema = new Schema({
       priceId: { type: String }
     }
   },
-  entry: { type: Number, default: null },
-  memberEntry: { type: Number, default: null },
-  activeMemberEntry: { type: Number, default: null },
   entryIncluding: { type: String },
   memberIncluding: { type: String },
   including: { type: String },
   ticketLink: { type: String },
-  priceId: { type: String },
-  memberPriceId: { type: String },
-  activeMemberPriceId: { type: String },
   text: { type: String, required: true },
   images: { type: [String] },
   ticketImg: { type: String, required: true },

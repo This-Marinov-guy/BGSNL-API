@@ -9,13 +9,13 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
     apiVersion: "2022-08-01",
 });
 
-export const stripeProductDescription = (region, title, date) => {
-    console.log(region, title, date);
-    if (!date || !title || !region) {
+export const stripeProductDescription = (region, name, date) => {
+    console.log(region, name, date);
+    if (!date || !name || !region) {
         return '';
     }
 
-    return `Event Ticket for ${capitalizeFirstLetter(region)}'s ${title} on ${moment(date).format(MOMENT_DATE_YEAR)}`
+    return `Event Ticket for ${capitalizeFirstLetter(region)}'s ${name} on ${moment(date).format(MOMENT_DATE_YEAR)}`
 }
 
 export const addProduct = async (data, priceData = []) => {
