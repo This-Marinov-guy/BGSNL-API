@@ -3,7 +3,7 @@ import { addPrice, addProduct } from "../side-services/stripe.js";
 export const createEventProductWithPrice = async (data, guestPrice = 0, memberPrice = 0, activeMemberPrice = 0) => {
     const productId = await addProduct({
         name: data['name'],
-        images: data['images'],
+        image: data['image'],
         region: data['region'],
         date: data['date'],
     })

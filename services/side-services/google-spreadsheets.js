@@ -4,7 +4,7 @@ import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../../util/confi
 import mongoose from "mongoose";
 import moment from 'moment-timezone';
 import Event from '../../models/Event.js';
-import { REGIONS } from '../../util/config/defines.js';
+import { BGSNL_URL, REGIONS } from '../../util/config/defines.js';
 import User from '../../models/User.js';
 
 const searchInDatabase = (eventName, region) => {
@@ -92,7 +92,11 @@ const eventToSpreadsheet = async (id) => {
     }
 
     const { region, date, title, correctedDate, status, location, ticketTimer, ticketLimit, product, sheetName } = event;
-    const ticketLink = event.ticketLink ?? 'none';
+    let ticketLink = event.ticketLink ?? null;
+
+    if (!ticketLink) {
+      ticketLink = BGSNL_URL + region + '/event-details/' + event.id; 
+    }
 
     if (!SPREADSHEETS_ID[region]?.events) {
       console.log(`No spreadsheet ID found for region: ${region}`);

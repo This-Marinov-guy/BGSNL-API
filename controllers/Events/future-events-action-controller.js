@@ -142,7 +142,7 @@ export const addEvent = async (req, res, next) => {
         if (!isFree) {
             product = await createEventProductWithPrice({
                 name: title,
-                images: poster,
+                image: poster,
                 region,
                 date
             }, guestPrice, memberPrice, activeMemberPrice);
@@ -300,7 +300,7 @@ export const editEvent = async (req, res, next) => {
     if (!event.hasOwnProperty('product') && (guestPrice || memberPrice || activeMemberPrice)) {
         event.product =  await createEventProductWithPrice({
             name: event.title,
-            images: event.poster,
+            image: event.poster,
             region: event.region,
             date: event.date
         }, guestPrice, memberPrice, activeMemberPrice);

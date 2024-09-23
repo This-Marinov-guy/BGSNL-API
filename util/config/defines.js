@@ -2,7 +2,8 @@ export const REGIONS = [
     'amsterdam', 'breda', 'eindhoven', 'groningen', 'leeuwarden', 'maastricht', 'rotterdam'
 ];
 
-//important 
+//routes and urls
+export const BGSNL_URL = 'bulgariansociety.nl/' 
 export const STRIPE_WEBHOOK_ROUTE = '/stripe-webhook';
 
 // authorization
