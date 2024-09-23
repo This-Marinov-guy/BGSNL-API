@@ -137,3 +137,16 @@ export const replaceSpecialSymbolsWithSpaces = (inputString) => {
 export const capitalizeFirstLetter = (string) => {
   return string.charAt(0).toUpperCase() + string.slice(1);
 }
+
+export const refactorToKeyValuePairs = (obj) => {
+  obj = JSON.parse(obj)
+  let result = '';
+
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key)) {
+      result += `${key}: ${obj[key]}\n`;
+    }
+  }
+
+  return result.trim(); 
+}

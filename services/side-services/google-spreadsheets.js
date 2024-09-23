@@ -6,6 +6,7 @@ import moment from 'moment-timezone';
 import Event from '../../models/Event.js';
 import { BGSNL_URL, REGIONS } from '../../util/config/defines.js';
 import User from '../../models/User.js';
+import { refactorToKeyValuePairs } from '../../util/functions/helpers.js';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -180,7 +181,7 @@ const eventToSpreadsheet = async (id) => {
       obj.name,
       obj.email,
       obj.phone,
-      obj.preferences || "N/A",
+      obj.preferences ? refactorToKeyValuePairs(obj.preferences) : "N/A",
       obj.ticket
     ]);
 
