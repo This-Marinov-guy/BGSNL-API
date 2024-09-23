@@ -2,6 +2,9 @@ export const REGIONS = [
     'amsterdam', 'breda', 'eindhoven', 'groningen', 'leeuwarden', 'maastricht', 'rotterdam'
 ];
 
+//important 
+export const STRIPE_WEBHOOK_ROUTE = '/stripe-webhook';
+
 // authorization
 export const PROD_JWT_TIMEOUT = '15m';
 export const DEV_JWT_TIMEOUT = '1h';

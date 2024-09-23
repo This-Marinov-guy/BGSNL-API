@@ -13,6 +13,7 @@ import fileUpload from "../middleware/file-upload.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 import { authMiddleware } from "../middleware/authorization.js";
+import { STRIPE_WEBHOOK_ROUTE } from "../util/config/defines.js";
 dotenv.config();
 
 const paymentRouter = express.Router();
@@ -52,7 +53,7 @@ paymentRouter.post(
 )
 
 paymentRouter.post(
-  "/stripe-webhook",
+  STRIPE_WEBHOOK_ROUTE,
   express.raw({ type: "*/*" }),
   postWebhookCheckout
 );

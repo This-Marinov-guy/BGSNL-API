@@ -14,6 +14,7 @@ import securityRouter from "./routes/security-routes.js";
 import specialEventsRouter from "./routes/special-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
+import { STRIPE_WEBHOOK_ROUTE } from "./util/config/defines.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
 import { REGIONS } from "./util/config/defines.js";
 import { updateUsers } from "./util/private/manipulate-db.js";
@@ -49,7 +50,7 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  if (req.originalUrl === "/api/payment/webhook-checkout") {
+  if (req.originalUrl === `/api/payment/${STRIPE_WEBHOOK_ROUTE}`) {
     next()
   } else {
     bodyParser.json()(req, res, next);
