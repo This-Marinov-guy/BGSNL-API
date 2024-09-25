@@ -87,7 +87,6 @@ export const addPrice = async (productId, amount = 0) => {
             currency: 'eur',
             unit_amount: amount * 100,
             product: productId,
-            // nickname: data['devDescription'] ?? '', 
         });
     } catch (err) {
         console.log(err);

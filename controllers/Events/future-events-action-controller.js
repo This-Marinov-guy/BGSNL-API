@@ -32,7 +32,7 @@ export const fetchFullDataEvent = async (req, res, next) => {
     }
 
     res.status(200).json({
-        event: event.toObject({ getters: true }),
+        event,
         status
     });
 }
@@ -53,7 +53,9 @@ export const fetchFullDataEventsList = async (req, res, next) => {
         return next(new HttpError("Fetching events failed", 500));
     }
 
-    res.status(200).json({ events: events.map((event) => event.toObject({ getters: true })) });
+    events = events.map((event) => event.toObject({ getters: true }))
+
+    res.status(200).json({ events });
 }
 
 export const addEvent = async (req, res, next) => {
@@ -89,6 +91,8 @@ export const addEvent = async (req, res, next) => {
 
     const extraInputsForm = processExtraInputsForm(JSON.parse(req.body.extraInputsForm));
     const subEvent = JSON.parse(req.body.subEvent);
+
+    let event;
 
     //upload images
     try {
@@ -138,14 +142,19 @@ export const addEvent = async (req, res, next) => {
 
         //create product
         let product = null;
-        
+
         if (!isFree) {
-            product = await createEventProductWithPrice({
-                name: title,
-                image: poster,
-                region,
-                date
-            }, guestPrice, memberPrice, activeMemberPrice);
+            try {
+                product = await createEventProductWithPrice({
+                    name: title,
+                    image: poster,
+                    region: region,
+                    date: date
+                }, guestPrice, memberPrice, activeMemberPrice);
+            } catch (err) {
+                console.log(err);
+                return next(new HttpError('Stripe Product could not be created, please try again!', 500));
+            }
 
             if (!product) {
                 return next(new HttpError('Stripe Product could not be created, please try again!', 500));
@@ -156,7 +165,7 @@ export const addEvent = async (req, res, next) => {
         const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`
 
         //create event 
-        const event = new Event({
+        event = new Event({
             memberOnly,
             hidden,
             extraInputsForm,
@@ -194,13 +203,14 @@ export const addEvent = async (req, res, next) => {
         })
 
         await event.save();
-
-        // await eventToSpreadsheet(societyEvent.id)
-
     } catch (err) {
         console.log(err);
         return next(new HttpError("Operations failed! Please try again or contact support!", 500));
     }
+
+    try {
+        await eventToSpreadsheet(event.id);
+    } catch { }
 
     res.status(201).json({ status: true });
 }
@@ -294,18 +304,22 @@ export const editEvent = async (req, res, next) => {
     bgImageExtra && (event.bgImageExtra = bgImageExtra);
     images && images.length > 1 && (event.images = images);
 
-    (date && areDatesEqual(event.date, date)) && (event.correctedDate = date);
+    (date && event.date == date) && (event.correctedDate = date);
 
-    // if no product and prices are passed, we create a product. If we have product we update it
-    if (!event.hasOwnProperty('product') && (guestPrice || memberPrice || activeMemberPrice)) {
-        event.product =  await createEventProductWithPrice({
-            name: event.title,
-            image: event.poster,
-            region: event.region,
-            date: event.date
-        }, guestPrice, memberPrice, activeMemberPrice);
-    } else if (event.hasOwnProperty('product')) {
-        event.product = await updateEventPrices(event.product, guestPrice, memberPrice, activeMemberPrice);
+    try {
+        // if no product and prices are passed, we create a product. If we have product we update it
+        if (!isFree && !event?.product && (guestPrice || memberPrice || activeMemberPrice)) {
+            event.product = await createEventProductWithPrice({
+                name: event.title,
+                image: event.poster,
+                region: event.region,
+                date: event.date
+            }, guestPrice, memberPrice, activeMemberPrice);
+        } else if (!isFree && event?.product) {
+            event.product = await updateEventPrices(event.product, guestPrice, memberPrice, activeMemberPrice);
+        }
+    } catch (err) {
+        console.log(err);
     }
 
     event.bgImageSelection = bgImageSelection;
@@ -328,17 +342,20 @@ export const editEvent = async (req, res, next) => {
     event.ticketLink = ticketLink;
     event.text = text;
     event.ticketColor = ticketColor;
-    event.ticketQR = ticketQR === 'true',
-        event.ticketName = ticketName === 'true',
-        event.bgImage = bgImage;
+    event.ticketQR = ticketQR === 'true';
+    event.ticketName = ticketName === 'true';
+    event.bgImage = bgImage;
 
     try {
         await event.save();
-        await eventToSpreadsheet(event.id)
     } catch (err) {
         console.log(err);
         return next(new HttpError("Operations failed! Please try again or contact support!", 500));
     }
+
+    try {
+        // await eventToSpreadsheet(event.id);
+    } catch { }
 
     res.status(200).json({ status: true });
 }
