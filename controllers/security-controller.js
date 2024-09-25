@@ -201,13 +201,22 @@ export const login = async (req, res, next) => {
         return next(error);
     }
 
+    const isSubscribed = !!existingUser.subscription && existingUser.subscription.hasOwnProperty('id') && existingUser.subscription.hasOwnProperty('customerId');
+    const existingUserData = {
+        token,
+        isSubscribed,
+        region: existingUser.region,
+        roles: existingUser.roles,
+        status: existingUser.status,
+    }
+
     if (isBirthdayToday(existingUser.birth)) {
         return res
             .status(201)
-            .json({ token, region: existingUser.region, roles: existingUser.roles, celebrate: true });
+            .json({ ...existingUserData, celebrate: true });
     }
 
-    return res.status(201).json({ token: token, region: existingUser.region, roles: existingUser.roles });
+    return res.status(201).json(existingUserData);
 };
 
 export const postSendPasswordResetEmail = async (req, res, next) => {
