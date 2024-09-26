@@ -354,7 +354,7 @@ export const postWebhookCheckout = async (req, res, next) => {
 
           let societyEvent;
           try {
-            societyEvent = await Event.findById('66f1337cd435689ec6ec0f4c');
+            societyEvent = await Event.findById(eventId);
           } catch (err) {
             return next(new HttpError(err.message, 500));
           }
