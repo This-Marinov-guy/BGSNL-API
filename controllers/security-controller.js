@@ -201,7 +201,7 @@ export const login = async (req, res, next) => {
         return next(error);
     }
 
-    const isSubscribed = !!existingUser.subscription && existingUser.subscription.hasOwnProperty('id') && existingUser.subscription.hasOwnProperty('customerId');
+    const isSubscribed = existingUser.subscription && existingUser.subscription.id && existingUser.subscription.customerId;
     const existingUserData = {
         token,
         isSubscribed,
