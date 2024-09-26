@@ -75,13 +75,13 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
   }
 
   user = user.toObject({ getters: true });
-  const isSubscribed = !!user.subscription && user.subscription.hasOwnProperty('id') && user.subscription.hasOwnProperty('customerId');
-
+  const isSubscribed = !!(user.subscription && user.subscription.id && user.subscription.customerId);
+  
   return res
     .status(200)
-    .json({ 
+    .json({
+      isSubscribed,
       status: user.status,
-      isSubscribed
       });
 };
 
