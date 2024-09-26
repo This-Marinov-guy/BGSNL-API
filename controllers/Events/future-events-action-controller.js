@@ -114,8 +114,8 @@ export const addEvent = async (req, res, next) => {
     const poster = await uploadToCloudinary(req.files['poster'][0], {
         folder,
         public_id: 'poster',
-        width: 1000,
-        height: 1000,
+        width: 800,
+        height: 800,
         crop: 'fit',
         format: 'jpg'
     });
@@ -138,16 +138,27 @@ export const addEvent = async (req, res, next) => {
     }) : '';
 
     let images = [poster];
-    if (req.files['images']) {
-        req.files['images'].forEach(async (img) => {
-            try {
-                const link = await uploadToCloudinary(img, { folder })
-                images.push(link);
-            } catch (err) {
-                console.log(err);
-            }
 
+    if (req.files && req.files['images']) {
+        const uploadPromises = req.files['images'].map(async (img) => {
+            try {
+                const link = await uploadToCloudinary(img, {
+                    folder,
+                    public_id: img.originalname,
+                    width: 800,
+                    height: 800,
+                    crop: 'fit',
+                    format: 'jpg'
+                });
+                return link;
+            } catch (err) {
+                console.error(`Error uploading image ${img.originalname}:`, err);
+                return null; // or handle the error as appropriate for your use case
+            }
         });
+
+        const uploadedImages = await Promise.all(uploadPromises);
+        images = images.concat(uploadedImages.filter(link => link !== null));
     }
 
     //create product
@@ -216,6 +227,8 @@ export const addEvent = async (req, res, next) => {
     try {
         await eventToSpreadsheet(event.id);
     } catch { }
+
+    event = event.toObject({ getters: true });
 
     res.status(201).json({ status: true, event });
 }
@@ -297,15 +310,26 @@ export const editEvent = async (req, res, next) => {
 
     let images = [poster];
 
-    if (req.files['images']) {
-        req.files['images'].forEach(async (img) => {
+    if (req.files && req.files['images']) {
+        const uploadPromises = req.files['images'].map(async (img) => {
             try {
-                const link = await uploadToCloudinary(img, { folder })
-                images.push(link);
+                const link = await uploadToCloudinary(img, {
+                    folder,
+                    public_id: img.originalname,
+                    width: 800,
+                    height: 800,
+                    crop: 'fit',
+                    format: 'jpg'
+                });
+                return link;
             } catch (err) {
-                console.log(err);
+                console.error(`Error uploading image ${img.originalname}:`, err);
+                return null; // or handle the error as appropriate for your use case
             }
         });
+
+        const uploadedImages = await Promise.all(uploadPromises);
+        images = images.concat(uploadedImages.filter(link => link !== null));
     }
 
     event.extraInputsForm = extraInputsForm;
@@ -314,7 +338,6 @@ export const editEvent = async (req, res, next) => {
     poster && (event.poster = poster);
     ticketImg && (event.ticketImg = ticketImg);
     bgImageExtra && (event.bgImageExtra = bgImageExtra);
-    images && images.length > 1 && (event.images = images);
 
     (date && !areDatesEqual(event.date, date)) && (event.correctedDate = date);
 
@@ -336,6 +359,7 @@ export const editEvent = async (req, res, next) => {
         return next(new HttpError("Price update failed!", 500));
     }
 
+    event.images = images;
     event.bgImageSelection = bgImageSelection;
     event.memberOnly = memberOnly;
     event.hidden = hidden;
@@ -370,6 +394,8 @@ export const editEvent = async (req, res, next) => {
     try {
         // await eventToSpreadsheet(event.id);
     } catch { }
+
+    event = event.toObject({ getters: true });
 
     res.status(200).json({ status: true, event });
 }
