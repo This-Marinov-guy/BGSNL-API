@@ -43,7 +43,7 @@ export const jwtSign = (user) => {
 
 export const jwtRefresh = (token) => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+    const decoded = jwt.verify(token, process.env.JWT_STRING, { ignoreExpiration: true });
 
     const newToken = jwt.sign(
       {

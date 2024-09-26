@@ -23,7 +23,7 @@ userRouter.get("/current", authMiddleware, getCurrentUser);
 
 userRouter.get("/get-subscription-status", authMiddleware, getCurrentUserSubscriptionStatus);
 
-userRouter.get("/refresh-token", authMiddleware, refreshToken);
+userRouter.get("/refresh-token", refreshToken);
 
 userRouter.get("/roles", authMiddleware, getCurrentUserRoles);
 

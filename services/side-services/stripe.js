@@ -75,7 +75,7 @@ export const deleteProduct = async (productId) => {
     return true;
 }
 
-export const addPrice = async (productId, amount = 0) => {
+export const addPrice = async (productId, amount = 0, nickname = 'price') => {
     if (!amount) {
         return false;
     }
@@ -87,6 +87,7 @@ export const addPrice = async (productId, amount = 0) => {
             currency: 'eur',
             unit_amount: amount * 100,
             product: productId,
+            nickname
         });
     } catch (err) {
         console.log(err);

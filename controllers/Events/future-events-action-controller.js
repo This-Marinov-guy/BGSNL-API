@@ -95,7 +95,6 @@ export const addEvent = async (req, res, next) => {
     let event;
 
     //upload images
-    try {
         if (await Event.findOne({
             title, region, date
         })) {
@@ -143,23 +142,17 @@ export const addEvent = async (req, res, next) => {
         //create product
         let product = null;
 
-        if (!isFree) {
-            try {
-                product = await createEventProductWithPrice({
-                    name: title,
-                    image: poster,
-                    region: region,
-                    date: date
-                }, guestPrice, memberPrice, activeMemberPrice);
-            } catch (err) {
-                console.log(err);
+        if (isFree !== 'true') {
+            product = await createEventProductWithPrice({
+                name: title,
+                image: poster,
+                region: region,
+                date: date
+            }, guestPrice, memberPrice, activeMemberPrice);
+
+            if (!product.id) {
                 return next(new HttpError('Stripe Product could not be created, please try again!', 500));
             }
-
-            if (!product) {
-                return next(new HttpError('Stripe Product could not be created, please try again!', 500));
-            }
-
         }
 
         const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`
@@ -200,8 +193,9 @@ export const addEvent = async (req, res, next) => {
             folder,
             sheetName,
             product
-        })
+        });
 
+    try {
         await event.save();
     } catch (err) {
         console.log(err);
@@ -212,7 +206,7 @@ export const addEvent = async (req, res, next) => {
         await eventToSpreadsheet(event.id);
     } catch { }
 
-    res.status(201).json({ status: true });
+    res.status(201).json({ status: true, event });
 }
 
 export const editEvent = async (req, res, next) => {
@@ -304,22 +298,24 @@ export const editEvent = async (req, res, next) => {
     bgImageExtra && (event.bgImageExtra = bgImageExtra);
     images && images.length > 1 && (event.images = images);
 
-    (date && event.date == date) && (event.correctedDate = date);
+    (date && !areDatesEqual(event.date, date)) && (event.correctedDate = date);
 
     try {
         // if no product and prices are passed, we create a product. If we have product we update it
-        if (!isFree && !event?.product && (guestPrice || memberPrice || activeMemberPrice)) {
+        if (!event.isFree && !(event.product && event.product.id) && (guestPrice || memberPrice || activeMemberPrice)) {
             event.product = await createEventProductWithPrice({
                 name: event.title,
                 image: event.poster,
                 region: event.region,
                 date: event.date
             }, guestPrice, memberPrice, activeMemberPrice);
-        } else if (!isFree && event?.product) {
+        } else if (!event.isFree && event?.product && event.product.id) {
             event.product = await updateEventPrices(event.product, guestPrice, memberPrice, activeMemberPrice);
         }
+
     } catch (err) {
         console.log(err);
+        return next(new HttpError("Price update failed!", 500));
     }
 
     event.bgImageSelection = bgImageSelection;
@@ -357,7 +353,7 @@ export const editEvent = async (req, res, next) => {
         // await eventToSpreadsheet(event.id);
     } catch { }
 
-    res.status(200).json({ status: true });
+    res.status(200).json({ status: true, event });
 }
 
 export const deleteEvent = async (req, res, next) => {
@@ -386,5 +382,5 @@ export const deleteEvent = async (req, res, next) => {
 
     await deleteProduct(productId);
     await deleteFolder(folder);
-    res.status(200).json({ status: true });
+    res.status(200).json({ status: true, eventId });
 }

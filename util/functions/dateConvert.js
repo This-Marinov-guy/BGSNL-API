@@ -51,41 +51,7 @@ export const addMonthsToDate = (months, date = new Date()) => {
 }
 
 export const areDatesEqual = (date1, date2 = new Date()) => {
-  const d1 = date1 instanceof Date ? date1 : new Date(date1);
-  const d2 = date2 instanceof Date ? date2 : new Date(date2);
-
-  return d1.getUTCFullYear() === d2.getUTCFullYear() &&
-    d1.getUTCMonth() === d2.getUTCMonth() &&
-    d1.getUTCDate() === d2.getUTCDate();
-}
-
-export const convertStringToDate = (dateString) => {
-  const months = {
-    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
-  };
-
-  const parts = dateString.split(' ');
-
-  if (parts.length !== 3) {
-    throw new Error('Invalid date format. Expected "DD MMM YYYY"');
-  }
-
-  const [day, monthStr, year] = parts;
-  const month = months[monthStr.toLowerCase()];
-
-  if (month === undefined) {
-    throw new Error('Invalid month abbreviation');
-  }
-
-  const numericDay = parseInt(day, 10);
-  const numericYear = parseInt(year, 10);
-
-  if (isNaN(numericDay) || isNaN(numericYear)) {
-    throw new Error('Invalid day or year');
-  }
-
-  return new Date(Date.UTC(numericYear, month, numericDay));
+  return moment(date1).isSame(moment(date2));
 }
 
 export const formatReactPrimeDate = (date, hours = 3) => {
