@@ -31,6 +31,8 @@ export const fetchFullDataEvent = async (req, res, next) => {
         status = false;
     }
 
+    event = event.toObject({ getters: true });
+
     res.status(200).json({
         event,
         status
