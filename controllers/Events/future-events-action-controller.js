@@ -97,105 +97,114 @@ export const addEvent = async (req, res, next) => {
     let event;
 
     //upload images
-        if (await Event.findOne({
-            title, region, date
-        })) {
-            const error = new HttpError("Event already exists - find it in the dashboard and edit it!", 422);
-            return next(error);
-        }
+    if (await Event.findOne({
+        title, region, date
+    })) {
+        const error = new HttpError("Event already exists - find it in the dashboard and edit it!", 422);
+        return next(error);
+    }
 
-        const folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${date}`;
+    const folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${date}`;
 
-        if (!req.files['poster'] || !req.files['ticketImg']) {
-            const error = new HttpError("We lack poster or/and ticket", 422);
-            return next(error);
-        }
+    if (!req.files['poster'] || !req.files['ticketImg']) {
+        const error = new HttpError("We lack poster or/and ticket", 422);
+        return next(error);
+    }
 
-        const poster = await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' });
-        const ticketImg = await uploadToCloudinary(req.files['ticketImg'][0], {
-            folder,
-            public_id: 'ticket',
-            width: 1500,
-            height: 485,
-            crop: 'fit',
-            format: 'jpg'
-        })
-        const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], {
-            folder,
-            public_id: 'background',
-            width: 800,
-            crop: 'fit',
-            format: 'jpg'
-        }) : '';
+    const poster = await uploadToCloudinary(req.files['poster'][0], {
+        folder,
+        public_id: 'poster',
+        width: 1000,
+        height: 1000,
+        crop: 'fit',
+        format: 'jpg'
+    });
 
-        let images = [poster];
-        if (req.files['images']) {
-            req.files['images'].forEach(async (img) => {
-                try {
-                    const link = await uploadToCloudinary(img, { folder })
-                    images.push(link);
-                } catch (err) {
-                    console.log(err);
-                }
+    const ticketImg = await uploadToCloudinary(req.files['ticketImg'][0], {
+        folder,
+        public_id: 'ticket',
+        width: 1500,
+        height: 485,
+        crop: 'fit',
+        format: 'jpg'
+    });
 
-            });
-        }
+    const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], {
+        folder,
+        public_id: 'background',
+        width: 1200,
+        crop: 'fit',
+        format: 'jpg'
+    }) : '';
 
-        //create product
-        let product = null;
-
-        if (isFree !== 'true') {
-            product = await createEventProductWithPrice({
-                name: title,
-                image: poster,
-                region: region,
-                date: date
-            }, guestPrice, memberPrice, activeMemberPrice);
-
-            if (!product.id) {
-                return next(new HttpError('Stripe Product could not be created, please try again!', 500));
+    let images = [poster];
+    if (req.files['images']) {
+        req.files['images'].forEach(async (img) => {
+            try {
+                const link = await uploadToCloudinary(img, { folder })
+                images.push(link);
+            } catch (err) {
+                console.log(err);
             }
-        }
 
-        const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`
-
-        //create event 
-        event = new Event({
-            memberOnly,
-            hidden,
-            extraInputsForm,
-            freePass,
-            discountPass,
-            subEvent,
-            region,
-            title,
-            description,
-            date,
-            location,
-            ticketTimer,
-            ticketLimit,
-            isSaleClosed,
-            isFree,
-            isMemberFree,
-            entryIncluding,
-            memberIncluding,
-            including,
-            ticketLink,
-            text,
-            title,
-            images,
-            ticketImg,
-            ticketColor,
-            ticketQR: ticketQR === 'true',
-            ticketName: ticketName === 'true',
-            poster,
-            bgImage,
-            bgImageExtra,
-            bgImageSelection,
-            folder,
-            sheetName,
-            product
         });
+    }
+
+    //create product
+    let product = null;
+
+    if (isFree !== 'true') {
+        product = await createEventProductWithPrice({
+            name: title,
+            image: poster,
+            region: region,
+            date: date
+        }, guestPrice, memberPrice, activeMemberPrice);
+
+        if (!product.id) {
+            return next(new HttpError('Stripe Product could not be created, please try again!', 500));
+        }
+    }
+
+    const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`
+
+    //create event 
+    event = new Event({
+        memberOnly,
+        hidden,
+        extraInputsForm,
+        freePass,
+        discountPass,
+        subEvent,
+        region,
+        title,
+        description,
+        date,
+        location,
+        ticketTimer,
+        ticketLimit,
+        isSaleClosed,
+        isFree,
+        isMemberFree,
+        entryIncluding,
+        memberIncluding,
+        including,
+        ticketLink,
+        text,
+        title,
+        images,
+        ticketImg,
+        ticketColor,
+        ticketQR: ticketQR === 'true',
+        ticketName: ticketName === 'true',
+        poster,
+        bgImage,
+        bgImageExtra,
+        bgImageSelection,
+        folder,
+        sheetName,
+        product
+    });
 
     try {
         await event.save();
@@ -260,7 +269,14 @@ export const editEvent = async (req, res, next) => {
     const extraInputsForm = processExtraInputsForm(JSON.parse(req.body.extraInputsForm));
     const subEvent = JSON.parse(req.body.subEvent);
 
-    const poster = req.files['poster'] ? await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' }) : null;
+    const poster = req.files['poster'] ? await uploadToCloudinary(req.files['poster'][0], {
+        folder,
+        public_id: 'poster',
+        width: 1000,
+        height: 1000,
+        crop: 'fit',
+        format: 'jpg'
+    }) : null;
 
     const ticketImg = req.files['ticketImg'] ? await uploadToCloudinary(req.files['ticketImg'][0], {
         folder,
@@ -279,7 +295,7 @@ export const editEvent = async (req, res, next) => {
         format: 'jpg'
     }) : '';
 
-    let images = [];
+    let images = [poster];
 
     if (req.files['images']) {
         req.files['images'].forEach(async (img) => {
