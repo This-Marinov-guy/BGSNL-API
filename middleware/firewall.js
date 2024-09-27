@@ -36,6 +36,7 @@ export const firewall = (req,res,next) => {
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         return next();
     } else {
+        console.log(origin, connectingIp);
         return next(new HttpError('Forbidden: Access is denied!', 403))
     }
 }
