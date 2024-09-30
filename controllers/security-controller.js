@@ -12,6 +12,7 @@ import { ADMIN, LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
 import { calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
+import { LOCKED, USER_STATUSES } from "../util/config/enums.js";
 
 export const postCheckEmail = async (req, res, next) => {
     const errors = validationResult(req);
@@ -189,7 +190,7 @@ export const login = async (req, res, next) => {
     const today = new Date();
 
     if (!hasOverlap(LIMITLESS_ACCOUNT, existingUser.roles) && today > existingUser.expireDate) {
-        existingUser.status = "locked";
+        existingUser.status = USER_STATUSES[LOCKED];
         try {
             await existingUser.save();
         } catch (err) {
@@ -207,13 +208,22 @@ export const login = async (req, res, next) => {
         return next(error);
     }
 
+    const isSubscribed = !!(existingUser.subscription && existingUser.subscription.id && existingUser.subscription.customerId);
+    const existingUserData = {
+        token,
+        isSubscribed,
+        region: existingUser.region,
+        roles: existingUser.roles,
+        status: existingUser.status,
+    }
+
     if (isBirthdayToday(existingUser.birth)) {
         return res
             .status(201)
-            .json({ token, region: existingUser.region, roles: existingUser.roles, celebrate: true });
+            .json({ ...existingUserData, celebrate: true });
     }
 
-    return res.status(201).json({ token: token, region: existingUser.region, roles: existingUser.roles });
+    return res.status(201).json(existingUserData);
 };
 
 export const postSendPasswordResetEmail = async (req, res, next) => {

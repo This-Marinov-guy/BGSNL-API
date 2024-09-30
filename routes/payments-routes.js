@@ -12,6 +12,8 @@ import {
 import fileUpload from "../middleware/file-upload.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
+import { authMiddleware } from "../middleware/authorization.js";
+import { STRIPE_WEBHOOK_ROUTE } from "../util/config/defines.js";
 dotenv.config();
 
 const paymentRouter = express.Router();
@@ -24,9 +26,11 @@ paymentRouter.post("/checkout/general", postCheckoutNoFile);
 
 paymentRouter.post(
   "/checkout/member-ticket",
+  authMiddleware,
   fileUpload(process.env.BUCKET_MEMBER_TICKETS).single("image"),
   postCheckoutFile
 );
+
 paymentRouter.post(
   "/checkout/guest-ticket",
   fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
@@ -39,15 +43,18 @@ paymentRouter.post(
   postSubscriptionFile
 );
 
-paymentRouter.post("/subscription/general", postSubscriptionNoFile);
+// TODO: rename as this is only for unlocking account with old payment system
+paymentRouter.post("/subscription/general", authMiddleware, postSubscriptionNoFile);
 
 paymentRouter.post(
   '/subscription/customer-portal',
+  authMiddleware,
   postCustomerPortal
 )
 
+// DO not touch
 paymentRouter.post(
-  "/stripe-webhook",
+  STRIPE_WEBHOOK_ROUTE,
   express.raw({ type: "*/*" }),
   postWebhookCheckout
 );

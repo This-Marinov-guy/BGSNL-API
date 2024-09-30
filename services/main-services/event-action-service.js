@@ -3,19 +3,18 @@ import { addPrice, addProduct } from "../side-services/stripe.js";
 export const createEventProductWithPrice = async (data, guestPrice = 0, memberPrice = 0, activeMemberPrice = 0) => {
     const productId = await addProduct({
         name: data['name'],
-        images: data['images'],
+        image: data['image'],
         region: data['region'],
         date: data['date'],
-        title: data['title']
-    })
+    });
 
     if (!productId) {
         return false;
     }
 
-    const guestPriceId = await addPrice(productId, guestPrice);
-    const memberPriceId = await addPrice(productId, memberPrice);
-    const activeMemberPriceId = await addPrice(productId, activeMemberPrice);
+    const guestPriceId = await addPrice(productId, guestPrice, 'guest');
+    const memberPriceId = await addPrice(productId, memberPrice, 'member');
+    const activeMemberPriceId = await addPrice(productId, activeMemberPrice, 'active member');
 
     const product = {
         id: productId,
@@ -53,7 +52,7 @@ export const createEventProductWithPrice = async (data, guestPrice = 0, memberPr
 
 export const updateEventPrices = async (product, guestPrice = 0, memberPrice = 0, activeMemberPrice = 0) => {
     if (guestPrice && (!product.guest || product.guest?.price !== guestPrice)) {
-        const guestPriceId = await addPrice(product.id, guestPrice);
+        const guestPriceId = await addPrice(product.id, guestPrice, 'guest');
 
         if (guestPriceId) {
             product.guest = {
@@ -64,7 +63,7 @@ export const updateEventPrices = async (product, guestPrice = 0, memberPrice = 0
     }
 
     if (memberPrice && (!product.member || product.member?.price !== memberPrice)) {
-        const memberPriceId = await addPrice(product.id, memberPrice);
+        const memberPriceId = await addPrice(product.id, memberPrice, 'member');
 
         if (memberPriceId) {
             product.member = {
@@ -75,7 +74,7 @@ export const updateEventPrices = async (product, guestPrice = 0, memberPrice = 0
     }
 
     if (activeMemberPrice && (!product.activeMember || product.activeMember?.price !== activeMemberPrice)) {
-        const activeMemberPriceId = await addPrice(product.id, activeMemberPrice);
+        const activeMemberPriceId = await addPrice(product.id, activeMemberPrice, 'active member');
 
         if (activeMemberPriceId) {
             product.activeMember = {

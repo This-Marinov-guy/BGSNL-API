@@ -3,6 +3,9 @@ dotenv.config();
 import jwt from "jsonwebtoken";
 import CryptoJS from 'crypto-js';
 import moment from 'moment-timezone';
+import { DEV_JWT_TIMEOUT, PROD_JWT_TIMEOUT } from "../config/defines.js";
+
+const JWT_TIMEOUT = process.env.APP_ENV === 'prod' ? PROD_JWT_TIMEOUT : DEV_JWT_TIMEOUT;
 
 // Function to update the original array with the modified subset | needs to have ids
 export const updateOriginalArray = (originalArray, modifiedSubset) => {
@@ -32,10 +35,32 @@ export const removeModelProperties = (obj, properties) => {
 
 export const jwtSign = (user) => {
   return jwt.sign(
-    { userId: user.id, roles: user.roles, email: user.email, region: user.region },
+    { userId: user.id, status: user.status, roles: user.roles, email: user.email, region: user.region },
     process.env.JWT_STRING,
-    { expiresIn: "1h" }
+    { expiresIn: JWT_TIMEOUT }
   );
+}
+
+export const jwtRefresh = (token) => {
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_STRING, { ignoreExpiration: true });
+
+    const newToken = jwt.sign(
+      {
+        userId: decoded.userId,
+        roles: decoded.roles,
+        email: decoded.email,
+        region: decoded.region,
+      },
+      process.env.JWT_STRING,
+      { expiresIn: JWT_TIMEOUT }
+    );
+
+    return newToken;
+  } catch (error) {
+    console.error("Error refreshing token:", error);
+    return null;
+  }
 }
 
 export const encodeForURL = (string) => {
@@ -111,4 +136,17 @@ export const replaceSpecialSymbolsWithSpaces = (inputString) => {
 
 export const capitalizeFirstLetter = (string) => {
   return string.charAt(0).toUpperCase() + string.slice(1);
+}
+
+export const refactorToKeyValuePairs = (obj) => {
+  obj = JSON.parse(obj)
+  let result = '';
+
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key)) {
+      result += `${key}: ${obj[key]}\n`;
+    }
+  }
+
+  return result.trim(); 
 }

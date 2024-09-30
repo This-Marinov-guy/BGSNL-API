@@ -1,7 +1,6 @@
 import moment from 'moment';
 import { MongoClient } from 'mongodb';
 import { ADMIN, BOARD_MEMBER, COMMITTEE_MEMBER, MEMBER, VIP } from '../config/defines.js';
-import { convertStringToDate } from '../functions/dateConvert.js';
 
 // Connection URI
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;

@@ -6,6 +6,7 @@ import { MOMENT_DATE_TIME_YEAR, areDatesEqual } from "../../util/functions/dateC
 import moment from "moment/moment.js";
 import { deleteProduct } from "../../services/side-services/stripe.js";
 import { createEventProductWithPrice, updateEventPrices } from "../../services/main-services/event-action-service.js";
+import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
 
 export const fetchFullDataEvent = async (req, res, next) => {
     const eventId = req.params.eventId;
@@ -30,8 +31,10 @@ export const fetchFullDataEvent = async (req, res, next) => {
         status = false;
     }
 
+    event = event.toObject({ getters: true });
+
     res.status(200).json({
-        event: event.toObject({ getters: true }),
+        event,
         status
     });
 }
@@ -52,7 +55,9 @@ export const fetchFullDataEventsList = async (req, res, next) => {
         return next(new HttpError("Fetching events failed", 500));
     }
 
-    res.status(200).json({ events: events.map((event) => event.toObject({ getters: true })) });
+    events = events.map((event) => event.toObject({ getters: true }))
+
+    res.status(200).json({ events });
 }
 
 export const addEvent = async (req, res, next) => {
@@ -89,117 +94,143 @@ export const addEvent = async (req, res, next) => {
     const extraInputsForm = processExtraInputsForm(JSON.parse(req.body.extraInputsForm));
     const subEvent = JSON.parse(req.body.subEvent);
 
+    let event;
+
     //upload images
-    try {
-        if (await Event.findOne({
-            title, region, date
-        })) {
-            const error = new HttpError("Event already exists - find it in the dashboard and edit it!", 422);
-            return next(error);
-        }
+    if (await Event.findOne({
+        title, region, date
+    })) {
+        const error = new HttpError("Event already exists - find it in the dashboard and edit it!", 422);
+        return next(error);
+    }
 
-        const folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${date}`;
+    const folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${date}`;
 
-        if (!req.files['poster'] || !req.files['ticketImg']) {
-            const error = new HttpError("We lack poster or/and ticket", 422);
-            return next(error);
-        }
+    if (!req.files['poster'] || !req.files['ticketImg']) {
+        const error = new HttpError("We lack poster or/and ticket", 422);
+        return next(error);
+    }
 
-        const poster = await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' });
-        const ticketImg = await uploadToCloudinary(req.files['ticketImg'][0], {
-            folder,
-            public_id: 'ticket',
-            width: 1500,
-            height: 485,
-            crop: 'fit',
-            format: 'jpg'
-        })
-        const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], {
-            folder,
-            public_id: 'background',
-            width: 800,
-            crop: 'fit',
-            format: 'jpg'
-        }) : '';
+    const poster = await uploadToCloudinary(req.files['poster'][0], {
+        folder,
+        public_id: 'poster',
+        width: 800,
+        height: 800,
+        crop: 'fit',
+        format: 'jpg'
+    });
 
-        let images = [poster];
-        if (req.files['images']) {
-            req.files['images'].forEach(async (img) => {
-                try {
-                    const link = await uploadToCloudinary(img, { folder })
-                    images.push(link);
-                } catch (err) {
-                    console.log(err);
-                }
+    const ticketImg = await uploadToCloudinary(req.files['ticketImg'][0], {
+        folder,
+        public_id: 'ticket',
+        width: 1500,
+        height: 485,
+        crop: 'fit',
+        format: 'jpg'
+    });
 
-            });
-        }
+    const bgImageExtra = req.files['bgImageExtra'] ? await uploadToCloudinary(req.files['bgImageExtra'][0], {
+        folder,
+        public_id: 'background',
+        width: 1200,
+        crop: 'fit',
+        format: 'jpg'
+    }) : '';
 
-        //create product
-        let product = null;
-        
-        if (!isFree) {
-            product = await createEventProductWithPrice({
-                name: title,
-                images: req.files['poster'][0]
-            }, guestPrice, memberPrice, activeMemberPrice);
+    let images = [poster];
 
-            if (!product) {
-                return next(new HttpError('Stripe Product could not be created, please try again!', 500));
+    if (req.files && req.files['images']) {
+        const uploadPromises = req.files['images'].map(async (img) => {
+            try {
+                const link = await uploadToCloudinary(img, {
+                    folder,
+                    public_id: img.originalname,
+                    width: 800,
+                    height: 800,
+                    crop: 'fit',
+                    format: 'jpg'
+                });
+                return link;
+            } catch (err) {
+                console.error(`Error uploading image ${img.originalname}:`, err);
+                return null; // or handle the error as appropriate for your use case
             }
+        });
 
+        const uploadedImages = await Promise.all(uploadPromises);
+        images = images.concat(uploadedImages.filter(link => link !== null));
+    }
+
+    //create product
+    let product = null;
+
+    if (isFree !== 'true') {
+        product = await createEventProductWithPrice({
+            name: title,
+            image: poster,
+            region: region,
+            date: date
+        }, guestPrice, memberPrice, activeMemberPrice);
+
+        if (!product.id) {
+            return next(new HttpError('Stripe Product could not be created, please try again!', 500));
         }
+    }
 
-        const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`
+    const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`
 
-        //create event 
-        const event = new Event({
-            memberOnly,
-            hidden,
-            extraInputsForm,
-            freePass,
-            discountPass,
-            subEvent,
-            region,
-            title,
-            description,
-            date,
-            location,
-            ticketTimer,
-            ticketLimit,
-            isSaleClosed,
-            isFree,
-            isMemberFree,
-            entryIncluding,
-            memberIncluding,
-            including,
-            ticketLink,
-            text,
-            title,
-            images,
-            ticketImg,
-            ticketColor,
-            ticketQR: ticketQR === 'true',
-            ticketName: ticketName === 'true',
-            poster,
-            bgImage,
-            bgImageExtra,
-            bgImageSelection,
-            folder,
-            sheetName,
-            product
-        })
+    //create event 
+    event = new Event({
+        memberOnly,
+        hidden,
+        extraInputsForm,
+        freePass,
+        discountPass,
+        subEvent,
+        region,
+        title,
+        description,
+        date,
+        location,
+        ticketTimer,
+        ticketLimit,
+        isSaleClosed,
+        isFree,
+        isMemberFree,
+        entryIncluding,
+        memberIncluding,
+        including,
+        ticketLink,
+        text,
+        title,
+        images,
+        ticketImg,
+        ticketColor,
+        ticketQR: ticketQR === 'true',
+        ticketName: ticketName === 'true',
+        poster,
+        bgImage,
+        bgImageExtra,
+        bgImageSelection,
+        folder,
+        sheetName,
+        product
+    });
 
+    try {
         await event.save();
-
-        // await eventToSpreadsheet(societyEvent.id)
-
     } catch (err) {
         console.log(err);
         return next(new HttpError("Operations failed! Please try again or contact support!", 500));
     }
 
-    res.status(201).json({ status: true });
+    try {
+        await eventToSpreadsheet(event.id);
+    } catch { }
+
+    event = event.toObject({ getters: true });
+
+    res.status(201).json({ status: true, event });
 }
 
 export const editEvent = async (req, res, next) => {
@@ -251,7 +282,14 @@ export const editEvent = async (req, res, next) => {
     const extraInputsForm = processExtraInputsForm(JSON.parse(req.body.extraInputsForm));
     const subEvent = JSON.parse(req.body.subEvent);
 
-    const poster = req.files['poster'] ? await uploadToCloudinary(req.files['poster'][0], { folder, public_id: 'poster' }) : null;
+    const poster = req.files['poster'] ? await uploadToCloudinary(req.files['poster'][0], {
+        folder,
+        public_id: 'poster',
+        width: 1000,
+        height: 1000,
+        crop: 'fit',
+        format: 'jpg'
+    }) : null;
 
     const ticketImg = req.files['ticketImg'] ? await uploadToCloudinary(req.files['ticketImg'][0], {
         folder,
@@ -270,17 +308,28 @@ export const editEvent = async (req, res, next) => {
         format: 'jpg'
     }) : '';
 
-    let images = [];
+    let images = [poster];
 
-    if (req.files['images']) {
-        req.files['images'].forEach(async (img) => {
+    if (req.files && req.files['images']) {
+        const uploadPromises = req.files['images'].map(async (img) => {
             try {
-                const link = await uploadToCloudinary(img, { folder })
-                images.push(link);
+                const link = await uploadToCloudinary(img, {
+                    folder,
+                    public_id: img.originalname,
+                    width: 800,
+                    height: 800,
+                    crop: 'fit',
+                    format: 'jpg'
+                });
+                return link;
             } catch (err) {
-                console.log(err);
+                console.error(`Error uploading image ${img.originalname}:`, err);
+                return null; // or handle the error as appropriate for your use case
             }
         });
+
+        const uploadedImages = await Promise.all(uploadPromises);
+        images = images.concat(uploadedImages.filter(link => link !== null));
     }
 
     event.extraInputsForm = extraInputsForm;
@@ -289,21 +338,31 @@ export const editEvent = async (req, res, next) => {
     poster && (event.poster = poster);
     ticketImg && (event.ticketImg = ticketImg);
     bgImageExtra && (event.bgImageExtra = bgImageExtra);
-    images && images.length > 1 && (event.images = images);
 
-    (date && areDatesEqual(event.date, date)) && (event.correctedDate = date);
+    (date && !areDatesEqual(event.date, date)) && (event.correctedDate = date);
 
-    // if no product and prices are passed, we create a product. If we have product we update it
-    if (!event.hasOwnProperty('product') && (guestPrice || memberPrice || activeMemberPrice)) {
-        event.product = await updateEventPrices(event.product, guestPrice, memberPrice, activeMemberPrice);
-    } else if (event.hasOwnProperty('product')) {
-        event.product = await updateEventPrices(event.product, guestPrice, memberPrice, activeMemberPrice);
+    try {
+        // if no product and prices are passed, we create a product. If we have product we update it
+        if (!event.isFree && !(event.product && event.product.id) && (guestPrice || memberPrice || activeMemberPrice)) {
+            event.product = await createEventProductWithPrice({
+                name: event.title,
+                image: event.poster,
+                region: event.region,
+                date: event.date
+            }, guestPrice, memberPrice, activeMemberPrice);
+        } else if (!event.isFree && event?.product && event.product.id) {
+            event.product = await updateEventPrices(event.product, guestPrice, memberPrice, activeMemberPrice);
+        }
+
+    } catch (err) {
+        console.log(err);
+        return next(new HttpError("Price update failed!", 500));
     }
 
-    //TODO: fix the conditional checks
-    bgImageSelection && (event.bgImageSelection = bgImageSelection);
-    memberOnly && (event.memberOnly = memberOnly);
-    hidden && (event.hidden = hidden);
+    event.images = images;
+    event.bgImageSelection = bgImageSelection;
+    event.memberOnly = memberOnly;
+    event.hidden = hidden;
     event.freePass = freePass;
     event.discountPass = discountPass;
     event.region = region;
@@ -312,29 +371,33 @@ export const editEvent = async (req, res, next) => {
     event.location = location;
     event.ticketTimer = ticketTimer;
     event.ticketLimit = ticketLimit;
-    isSaleClosed && (event.isSaleClosed = isSaleClosed);
-    isFree && (event.isFree = isFree);
-    isMemberFree && (event.isMemberFree = isMemberFree);
+    event.isSaleClosed = isSaleClosed;
+    event.isFree = isFree;
+    event.isMemberFree = isMemberFree;
     event.entryIncluding = entryIncluding;
     event.memberIncluding = memberIncluding;
     event.including = including;
     event.ticketLink = ticketLink;
     event.text = text;
     event.ticketColor = ticketColor;
-    event.ticketQR = ticketQR === 'true',
-        event.ticketName = ticketName === 'true',
-        event.bgImage = bgImage;
+    event.ticketQR = ticketQR === 'true';
+    event.ticketName = ticketName === 'true';
+    event.bgImage = bgImage;
 
     try {
         await event.save();
-        // await eventToSpreadsheet(societyEvent.id)
-
     } catch (err) {
         console.log(err);
         return next(new HttpError("Operations failed! Please try again or contact support!", 500));
     }
 
-    res.status(200).json({ status: true });
+    try {
+        // await eventToSpreadsheet(event.id);
+    } catch { }
+
+    event = event.toObject({ getters: true });
+
+    res.status(200).json({ status: true, event });
 }
 
 export const deleteEvent = async (req, res, next) => {
@@ -363,5 +426,5 @@ export const deleteEvent = async (req, res, next) => {
 
     await deleteProduct(productId);
     await deleteFolder(folder);
-    res.status(200).json({ status: true });
+    res.status(200).json({ status: true, eventId });
 }

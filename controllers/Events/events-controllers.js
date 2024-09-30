@@ -80,9 +80,9 @@ export const getEvents = async (req, res, next) => {
 
   try {
     if (region) {
-      events = await Event.find({ region });
+      events = await Event.find({ region, hidden: false });
     } else {
-      events = await Event.find();
+      events = await Event.find({hidden: false});
     }
 
   } catch (err) {
@@ -244,7 +244,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
 
   await eventToSpreadsheet(societyEvent.id);
 
-  res.status(201).json({ message: "Success" });
+  res.status(201).json({ status: true, message: "Success" });
 };
 
 export const postAddGuestToEvent = async (req, res, next) => {
@@ -304,7 +304,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
 
   await eventToSpreadsheet(societyEvent.id);
 
-  res.status(201).json({ message: "Success" });
+  res.status(201).json({ status: true, message: "Success" });
 };
 
 export const postNonSocietyEvent = async (req, res, next) => {

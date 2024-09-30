@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 import Stripe from "stripe";
+import { MOMENT_DATE_YEAR } from '../../util/functions/dateConvert.js'
 import { capitalizeFirstLetter } from '../../util/functions/helpers.js'
 import moment from "moment";
 
@@ -8,12 +9,13 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
     apiVersion: "2022-08-01",
 });
 
-export const stripeProductDescription = (region, title, date) => {
-    if (!date || !title || !region) {
+export const stripeProductDescription = (region, name, date) => {
+    console.log(region, name, date);
+    if (!date || !name || !region) {
         return '';
     }
 
-    return `Event Ticket for ${capitalizeFirstLetter(region)}'s ${title} on ${moment(date).format(MOMENT_DATE_YEAR)}`
+    return `Event Ticket for ${capitalizeFirstLetter(region)}'s ${name} on ${moment(date).format(MOMENT_DATE_YEAR)}`
 }
 
 export const addProduct = async (data, priceData = []) => {
@@ -21,7 +23,7 @@ export const addProduct = async (data, priceData = []) => {
     const properties = {
         name: data['name'],
         images: [data['image']],
-        description: stripeProductDescription(data['region'], data['title'], data['date'])
+        description: stripeProductDescription(data['region'], data['name'], data['date'])
     }
 
     try {
@@ -73,7 +75,7 @@ export const deleteProduct = async (productId) => {
     return true;
 }
 
-export const addPrice = async (productId, amount = 0) => {
+export const addPrice = async (productId, amount = 0, nickname = 'price') => {
     if (!amount) {
         return false;
     }
@@ -85,7 +87,7 @@ export const addPrice = async (productId, amount = 0) => {
             currency: 'eur',
             unit_amount: amount * 100,
             product: productId,
-            // nickname: data['devDescription'] ?? '', 
+            nickname
         });
     } catch (err) {
         console.log(err);

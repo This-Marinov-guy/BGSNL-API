@@ -5,6 +5,8 @@ import {
   patchUserInfo,
   postActiveMember,
   getCurrentUserRoles,
+  refreshToken,
+  getCurrentUserSubscriptionStatus,
 } from "../controllers/users-controllers.js";
 import {
   cancelSubscription
@@ -19,20 +21,22 @@ const userRouter = express.Router();
 
 userRouter.get("/current", authMiddleware, getCurrentUser);
 
-userRouter.get("/roles", authMiddleware, getCurrentUserRoles);
+userRouter.get("/get-subscription-status", authMiddleware, getCurrentUserSubscriptionStatus);
 
-userRouter.post("/cancel-membership", authMiddleware, cancelSubscription)
+userRouter.get("/refresh-token", refreshToken);
+
+userRouter.get("/roles", authMiddleware, getCurrentUserRoles);
 
 userRouter.post('/active-member', authMiddleware, multiFileUpload(process.env.BUCKET_AM).fields([
   { name: 'cv', maxCount: 2 },
   // { name: 'letter', maxCount: 2 },
 ]),
-  [
-    check("email").notEmpty(),
-    check("phone").notEmpty(),
-    check("questions").notEmpty(),
-  ],
-  postActiveMember
+[
+  check("email").notEmpty(),
+  check("phone").notEmpty(),
+  check("questions").notEmpty(),
+],
+postActiveMember
 )
 
 userRouter.patch(
@@ -48,5 +52,7 @@ userRouter.patch(
   ],
   patchUserInfo
 );
+
+userRouter.delete("/cancel-membership", authMiddleware, cancelSubscription)
 
 export default userRouter;

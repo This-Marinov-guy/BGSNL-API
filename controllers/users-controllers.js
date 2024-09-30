@@ -6,13 +6,30 @@ import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
-import { isBirthdayToday } from "../util/functions/helpers.js";
+import { isBirthdayToday, jwtRefresh } from "../util/functions/helpers.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
+import { getTokenFromHeader } from "../util/functions/security.js";
+import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
+
+export const refreshToken = async (req, res, next) => {
+  let newToken = null;
+
+  try {
+    const token = getTokenFromHeader(req);
+  
+    newToken = jwtRefresh(token);
+  } catch {
+    newToken = null;
+  }
+
+  return res.status(201).json({ token: newToken });
+}
 
 export const getCurrentUser = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
 
   const withTickets = req.query.withTickets ?? false;
+  const withChristmas = req.query.withChristmas ?? false;
 
   let user;
   try {
@@ -27,16 +44,45 @@ export const getCurrentUser = async (req, res, next) => {
   delete user.password;
   user.registrationKey && delete user.registrationKey;
   !withTickets && delete user.tickets
+  !withChristmas && delete user.christmas
+
+  if (user.status !== USER_STATUSES[ACTIVE]) {
+    return res
+      .status(200)
+      .json({ status: user.status, user: {id: user._id, status: user.status, subscription: user.subscription} });
+  }
 
   if (isBirthdayToday(user.birth)) {
     return res
-      .status(201)
+      .status(200)
       .json({ status: user.status, user, celebrate: true });
   }
 
-  res
-    .status(201)
+  return res
+    .status(200)
     .json({ status: user.status, user });
+};
+
+export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
+  const { userId } = extractUserFromRequest(req);
+
+  let user;
+  try {
+    user = await User.findById(userId);
+  } catch (err) {
+    const error = new HttpError("Could not fetch user", 500);
+    return next(error);
+  }
+
+  user = user.toObject({ getters: true });
+  const isSubscribed = !!(user.subscription && user.subscription.id && user.subscription.customerId);
+  
+  return res
+    .status(200)
+    .json({
+      isSubscribed,
+      status: user.status,
+      });
 };
 
 export const getCurrentUserRoles = async (req, res, next) => {

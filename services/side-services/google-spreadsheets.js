@@ -4,8 +4,9 @@ import { BGSNL_MEMBERS_SPREADSHEETS_ID, SPREADSHEETS_ID } from '../../util/confi
 import mongoose from "mongoose";
 import moment from 'moment-timezone';
 import Event from '../../models/Event.js';
-import { REGIONS } from '../../util/config/defines.js';
+import { BGSNL_URL, REGIONS } from '../../util/config/defines.js';
 import User from '../../models/User.js';
+import { refactorToKeyValuePairs } from '../../util/functions/helpers.js';
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -92,7 +93,11 @@ const eventToSpreadsheet = async (id) => {
     }
 
     const { region, date, title, correctedDate, status, location, ticketTimer, ticketLimit, product, sheetName } = event;
-    const ticketLink = event.ticketLink ?? 'none';
+    let ticketLink = event.ticketLink ?? null;
+
+    if (!ticketLink) {
+      ticketLink = BGSNL_URL + region + '/event-details/' + event.id; 
+    }
 
     if (!SPREADSHEETS_ID[region]?.events) {
       console.log(`No spreadsheet ID found for region: ${region}`);
@@ -176,7 +181,7 @@ const eventToSpreadsheet = async (id) => {
       obj.name,
       obj.email,
       obj.phone,
-      obj.preferences || "N/A",
+      obj.preferences ? refactorToKeyValuePairs(obj.preferences) : "N/A",
       obj.ticket
     ]);
 
@@ -296,7 +301,8 @@ const usersToSpreadsheet = async (region = null) => {
         university: university === 'other' ? otherUniversityName : university,
         course,
         studentNumber,
-        graduationDate: graduationDate || 'not specified'
+        graduationDate: graduationDate || 'not specified',
+        ...(filterByRegion ? {} : {roles: roles.join(', ')})
       };
 
       return Object.values(dataFields);
@@ -304,7 +310,7 @@ const usersToSpreadsheet = async (region = null) => {
 
     const nameOfValues = filterByRegion
       ? ["Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date"]
-      : ["Region", "Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date"];
+      : ["Region", "Status", "Type", "Name", "Surname", "Purchase Date", "Expire/Renew Date", "Phone", "Email", "Birth", "University", "Course", "Student Number", "Graduation Date", "Roles"];
 
     await googleSheets.spreadsheets.values.clear({
       auth,
