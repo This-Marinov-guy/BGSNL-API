@@ -14,7 +14,7 @@ export async function fetchEventsFromDB() {
     console.log('Connected to MongoDB');
     const db = client.db(dbName);
     const collection = db.collection(collectionName);
-    return await collection.find({}).toArray();
+    return await collection.find({ hidden: false }).toArray();
   } catch (err) {
     console.error('Error fetching events from MongoDB:', err);
     return [];

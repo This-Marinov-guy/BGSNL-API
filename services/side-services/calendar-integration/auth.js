@@ -6,10 +6,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Path to the service account key JSON file
 const SERVICE_ACCOUNT_KEY_FILE = path.join(__dirname, 'service-account-key.json');
 
-// Initialize JWT client for Google Calendar API using service account
+// JWT initialization for Google Calendar API
 export function initializeServiceAccountClient() {
   const credentials = JSON.parse(fs.readFileSync(SERVICE_ACCOUNT_KEY_FILE));
 
@@ -24,5 +23,4 @@ export function initializeServiceAccountClient() {
   return jwtClient;
 }
 
-// Export the initialized Google Calendar client
 export const calendar = google.calendar({ version: 'v3', auth: initializeServiceAccountClient() });

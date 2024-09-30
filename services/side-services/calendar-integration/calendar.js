@@ -6,11 +6,15 @@ dotenv.config();
 const calendarId = process.env.CALENDAR_ID;
 
 export async function fetchExistingEvents() {
-  const now = new Date().toISOString();
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const timeMin = yesterday.toISOString();
+  
   try {
     const response = await calendar.events.list({
       calendarId: calendarId,
-      timeMin: now,  // Fetch future events starting from now
+      timeMin: timeMin,  // fetching only future events, starting from yesterday
       singleEvents: true,
       orderBy: 'startTime',
     });
