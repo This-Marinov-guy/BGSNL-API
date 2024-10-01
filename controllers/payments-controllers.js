@@ -1,7 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config();
 import bcrypt from "bcryptjs";
-import Stripe from "stripe";
 import HttpError from "../models/Http-error.js";
 import mongoose from "mongoose";
 import Event from "../models/Event.js";
@@ -14,10 +13,7 @@ import { HOME_URL, LIMITLESS_ACCOUNT, SUBSCRIPTION_PERIOD } from "../util/config
 import moment from "moment";
 import { ACTIVE, LOCKED, USER_STATUSES } from "../util/config/enums.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2022-08-01",
-});
+import { STRIPE_KEYS, createStripeClient, getStripeKey } from "../util/config/stripe.js";
 
 export const cancelSubscription = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
@@ -35,8 +31,10 @@ export const cancelSubscription = async (req, res, next) => {
     );
   }
 
+  const stripeClient = createStripeClient(user.region);
+
   try {
-    await stripe.subscriptions.update(
+    await stripeClient.subscriptions.update(
       user.subscription.id,
       {
         cancel_at_period_end: true,
@@ -54,7 +52,7 @@ export const cancelSubscription = async (req, res, next) => {
 
 export const donationConfig = (req, res) => {
   res.send({
-    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+    publishableKey: getStripeKey('publishableKey'),
   });
 }
 
@@ -69,8 +67,10 @@ export const postDonationIntent = async (req, res, next) => {
     return res.status(200).json({ status: false, message: "Something went wrong - please update the details and try again!" });
   }
 
+  const stripeClient = createStripeClient();
+
   try {
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntent = await stripeClient.paymentIntents.create({
       currency: "EUR",
       amount: amount * 100,
       automatic_payment_methods: { enabled: true },
@@ -93,10 +93,12 @@ export const postDonationIntent = async (req, res, next) => {
 }
 
 export const postSubscriptionNoFile = async (req, res, next) => {
-  const { itemId, origin_url } = req.body;
+  const { itemId, origin_url, region } = req.body;
   const { userId } = extractUserFromRequest(req);
 
-  const session = await stripe.checkout.sessions.create({
+  const stripeClient = createStripeClient(region);
+
+  const session = await stripeClient.checkout.sessions.create({
     mode: "subscription",
     allow_promotion_codes: true,
     line_items: [{ price: itemId, quantity: 1 }],
@@ -112,13 +114,15 @@ export const postSubscriptionNoFile = async (req, res, next) => {
 };
 
 export const postSubscriptionFile = async (req, res, next) => {
-  const { itemId, origin_url } = req.body;
+  const { itemId, origin_url, region } = req.body;
+
+  const stripeClient = createStripeClient(region);
 
   let fileLocation
   if (req.file) {
     fileLocation = req.file.Location ? req.file.Location : req.file.location
   }
-  const session = await stripe.checkout.sessions.create({
+  const session = await stripeClient.checkout.sessions.create({
     mode: "subscription",
     allow_promotion_codes: true,
     line_items: [{ price: itemId, quantity: 1 }],
@@ -134,14 +138,16 @@ export const postSubscriptionFile = async (req, res, next) => {
 }
 
 export const postCheckoutNoFile = async (req, res, next) => {
-  const { itemId, origin_url } = req.body;
+  const { itemId, origin_url, region } = req.body;
   let { quantity } = req.body;
+
+  const stripeClient = createStripeClient(region);
 
   if (!quantity || isNaN(quantity) || quantity < 1) {
     quantity = 1
   }
 
-  const session = await stripe.checkout.sessions.create({
+  const session = await stripeClient.checkout.sessions.create({
     mode: "payment",
     allow_promotion_codes: true,
     line_items: [{ price: itemId, quantity: quantity }],
@@ -156,8 +162,10 @@ export const postCheckoutNoFile = async (req, res, next) => {
 };
 
 export const postCheckoutFile = async (req, res, next) => {
-  const { itemId, origin_url } = req.body;
+  const { itemId, origin_url, region } = req.body;
   let { quantity } = req.body;
+
+  const stripeClient = createStripeClient(region);
 
   if (!quantity || isNaN(quantity) || quantity < 1) {
     quantity = 1
@@ -167,7 +175,7 @@ export const postCheckoutFile = async (req, res, next) => {
   if (req.file) {
     fileLocation = req.file.Location ? req.file.Location : req.file.location
   }
-  const session = await stripe.checkout.sessions.create({
+  const session = await stripeClient.checkout.sessions.create({
     mode: "payment",
     allow_promotion_codes: true,
     line_items: [{ price: itemId, quantity: quantity }],
@@ -208,7 +216,9 @@ export const postCustomerPortal = async (req, res, next) => {
     );
   }
 
-  const session = await stripe.billingPortal.sessions.create({
+  const stripeClient = createStripeClient(user.region);
+
+  const session = await stripeClient.billingPortal.sessions.create({
     customer: user.subscription.customerId,
     return_url: url,
   });
@@ -217,13 +227,15 @@ export const postCustomerPortal = async (req, res, next) => {
 };
 
 export const postWebhookCheckout = async (req, res, next) => {
+  const userRegion = event.data.object.metadata.region;
   const sig = req.headers["stripe-signature"];
-  const endpointSecret = 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq';
+  const endpointSecret = getStripeKey('webhookSecretKey', userRegion);
+  const stripeClient = createStripeClient(userRegion);
 
   let event;
 
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+    event = stripeClient.webhooks.constructEvent(req.body, sig, endpointSecret);
   } catch (err) {
     res.status(400).send(`Webhook Error: ${err.message}`);
     return;
@@ -492,7 +504,8 @@ export const postWebhookCheckout = async (req, res, next) => {
 
       return res.status(200).json({ received: true });
     }
-    case 'invoice.payment_failed': {
+    case 'invoice.payment_failed':
+    case 'invoice.payment_action_required': {
       let user;
 
       try {
@@ -521,12 +534,14 @@ export const postWebhookCheckout = async (req, res, next) => {
         try {
           await usersToSpreadsheet(user.region);
           await usersToSpreadsheet();
-  
-          const session = await stripe.billingPortal.sessions.create({
+
+          const stripeClient = createStripeClient(user.region);
+
+          const session = await stripeClient.billingPortal.sessions.create({
             customer: user.customerId,
             return_url: HOME_URL,
           });
-  
+
           await paymentFailedEmail(
             user.email,
             session.url
@@ -535,7 +550,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           console.log(err);
         }
       }
-      
+
       return res.status(200).json({ received: true });
     }
     default:

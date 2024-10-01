@@ -12,9 +12,9 @@ export const createEventProductWithPrice = async (data, guestPrice = 0, memberPr
         return false;
     }
 
-    const guestPriceId = await addPrice(productId, guestPrice, 'guest');
-    const memberPriceId = await addPrice(productId, memberPrice, 'member');
-    const activeMemberPriceId = await addPrice(productId, activeMemberPrice, 'active member');
+    const guestPriceId = await addPrice(data['region'], productId, guestPrice, 'guest');
+    const memberPriceId = await addPrice(data['region'], productId, memberPrice, 'member');
+    const activeMemberPriceId = await addPrice(data['region'], productId, activeMemberPrice, 'active member');
 
     const product = {
         id: productId,
@@ -50,9 +50,9 @@ export const createEventProductWithPrice = async (data, guestPrice = 0, memberPr
 }
 
 
-export const updateEventPrices = async (product, guestPrice = 0, memberPrice = 0, activeMemberPrice = 0) => {
+export const updateEventPrices = async (region, product, guestPrice = 0, memberPrice = 0, activeMemberPrice = 0) => {
     if (guestPrice && (!product.guest || product.guest?.price !== guestPrice)) {
-        const guestPriceId = await addPrice(product.id, guestPrice, 'guest');
+        const guestPriceId = await addPrice(region, product.id, guestPrice, 'guest');
 
         if (guestPriceId) {
             product.guest = {
@@ -63,7 +63,7 @@ export const updateEventPrices = async (product, guestPrice = 0, memberPrice = 0
     }
 
     if (memberPrice && (!product.member || product.member?.price !== memberPrice)) {
-        const memberPriceId = await addPrice(product.id, memberPrice, 'member');
+        const memberPriceId = await addPrice(region, product.id, memberPrice, 'member');
 
         if (memberPriceId) {
             product.member = {
@@ -74,7 +74,7 @@ export const updateEventPrices = async (product, guestPrice = 0, memberPrice = 0
     }
 
     if (activeMemberPrice && (!product.activeMember || product.activeMember?.price !== activeMemberPrice)) {
-        const activeMemberPriceId = await addPrice(product.id, activeMemberPrice, 'active member');
+        const activeMemberPriceId = await addPrice(region, product.id, activeMemberPrice, 'active member');
 
         if (activeMemberPriceId) {
             product.activeMember = {

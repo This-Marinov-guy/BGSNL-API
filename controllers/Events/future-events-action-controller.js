@@ -351,7 +351,7 @@ export const editEvent = async (req, res, next) => {
                 date: event.date
             }, guestPrice, memberPrice, activeMemberPrice);
         } else if (!event.isFree && event?.product && event.product.id) {
-            event.product = await updateEventPrices(event.product, guestPrice, memberPrice, activeMemberPrice);
+            event.product = await updateEventPrices(event.region, event.product, guestPrice, memberPrice, activeMemberPrice);
         }
 
     } catch (err) {
@@ -415,6 +415,7 @@ export const deleteEvent = async (req, res, next) => {
     }
 
     const folder = event.folder ?? '';
+    const region = event.region ?? '';
     const productId = event.product.id ?? '';
 
     try {
@@ -424,7 +425,7 @@ export const deleteEvent = async (req, res, next) => {
         return new HttpError("Operations failed! Please try again or contact support!", 500)
     }
 
-    await deleteProduct(productId);
+    await deleteProduct(region, productId);
     await deleteFolder(folder);
     res.status(200).json({ status: true, eventId });
 }

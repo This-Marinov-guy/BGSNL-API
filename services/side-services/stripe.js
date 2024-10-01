@@ -1,13 +1,9 @@
 import dotenv from "dotenv";
 dotenv.config();
-import Stripe from "stripe";
 import { MOMENT_DATE_YEAR } from '../../util/functions/dateConvert.js'
 import { capitalizeFirstLetter } from '../../util/functions/helpers.js'
 import moment from "moment";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: "2022-08-01",
-});
+import { createStripeClient } from "../../util/config/stripe.js";
 
 export const stripeProductDescription = (region, name, date) => {
     console.log(region, name, date);
@@ -26,11 +22,13 @@ export const addProduct = async (data, priceData = []) => {
         description: stripeProductDescription(data['region'], data['name'], data['date'])
     }
 
+    const stripeClient = createStripeClient(data['region']);
+
     try {
-        product = await stripe.products.create(properties);
+        product = await stripeClient.products.create(properties);
 
         // priceData.forEach(async (amount) => {
-        //     const priceId = await addPrice(product['id'], amount);
+        //     const priceId = await addPrice(data['region'], product['id'], amount);
 
         //     if (priceId) {
 
@@ -44,9 +42,11 @@ export const addProduct = async (data, priceData = []) => {
     return product['id'];
 }
 
-export const editProduct = async (productId, data) => {
+export const editProduct = async (region, productId, data) => {
+    const stripeClient = createStripeClient(region);
+
     try {
-        await stripe.products.update(
+        await stripeClient.products.update(
             productId,
             {
                 ...data,
@@ -60,13 +60,15 @@ export const editProduct = async (productId, data) => {
     return true;
 }
 
-export const deleteProduct = async (productId) => {
+export const deleteProduct = async (region, productId) => {
     if (!productId) {
         return false;
     }
 
+    const stripeClient = createStripeClient(region);
+
     try {
-        await stripe.products.del(productId);
+        await stripeClient.products.del(productId);
     } catch (err) {
         console.log(err);
         return false
@@ -75,15 +77,17 @@ export const deleteProduct = async (productId) => {
     return true;
 }
 
-export const addPrice = async (productId, amount = 0, nickname = 'price') => {
+export const addPrice = async (region, productId, amount = 0, nickname = 'price') => {
     if (!amount) {
         return false;
     }
 
+    const stripeClient = createStripeClient(region);
+
     let price;
 
     try {
-        price = await stripe.prices.create({
+        price = await stripeClient.prices.create({
             currency: 'eur',
             unit_amount: amount * 100,
             product: productId,
@@ -97,9 +101,11 @@ export const addPrice = async (productId, amount = 0, nickname = 'price') => {
     return price['id'];
 }
 
-export const editPrice = async (priceId, data) => {
+export const editPrice = async (region, priceId, data) => {
+    const stripeClient = createStripeClient(region);
+
     try {
-        await stripe.prices.update(
+        await stripeClient.prices.update(
             priceId,
             {
                 ...data
