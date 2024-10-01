@@ -241,9 +241,8 @@ export const postCustomerPortal = async (req, res, next) => {
 };
 
 export const postWebhookCheckout = async (req, res, next) => {
-  const userRegion = req.query.region ?? "netherlands";
+  const userRegion = req.query.region ?? "test";
   console.log(userRegion);
-  //TODO: fix region
   const sig = req.headers["stripe-signature"];
   const endpointSecret = getStripeKey("webhookSecretKey", userRegion);
   const stripeClient = createStripeClient(userRegion);
