@@ -1,15 +1,15 @@
-import dotenv from "dotenv";
+import dotenv from 'dotenv';
 dotenv.config();
-import bcrypt from "bcryptjs";
-import { validationResult } from "express-validator";
-import HttpError from "../models/Http-error.js";
-import User from "../models/User.js";
-import ActiveMembers from "../models/ActiveMembers.js";
-import { usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
-import { isBirthdayToday, jwtRefresh } from "../util/functions/helpers.js";
-import { extractUserFromRequest } from "../util/functions/security.js";
-import { getTokenFromHeader } from "../util/functions/security.js";
-import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
+import bcrypt from 'bcryptjs';
+import { validationResult } from 'express-validator';
+import HttpError from '../models/Http-error.js';
+import User from '../models/User.js';
+import ActiveMembers from '../models/ActiveMembers.js';
+import { usersToSpreadsheet } from '../services/side-services/google-spreadsheets.js';
+import { isBirthdayToday, jwtRefresh } from '../util/functions/helpers.js';
+import { extractUserFromRequest } from '../util/functions/security.js';
+import { getTokenFromHeader } from '../util/functions/security.js';
+import { ACTIVE, USER_STATUSES } from '../util/config/enums.js';
 
 export const refreshToken = async (req, res, next) => {
   let newToken = null;
@@ -23,7 +23,7 @@ export const refreshToken = async (req, res, next) => {
   }
 
   return res.status(201).json({ token: newToken });
-}
+};
 
 export const getCurrentUser = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
@@ -35,16 +35,16 @@ export const getCurrentUser = async (req, res, next) => {
   try {
     user = await User.findById(userId);
   } catch (err) {
-    const error = new HttpError("Could not fetch user", 500);
+    const error = new HttpError('Could not fetch user', 500);
     return next(error);
   }
 
-  user = user.toObject({ getters: true })
+  user = user.toObject({ getters: true });
 
   delete user.password;
   user.registrationKey && delete user.registrationKey;
-  !withTickets && delete user.tickets
-  !withChristmas && delete user.christmas
+  !withTickets && delete user.tickets;
+  !withChristmas && delete user.christmas;
 
   if (user.status !== USER_STATUSES[ACTIVE]) {
     return res
@@ -70,7 +70,7 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
   try {
     user = await User.findById(userId);
   } catch (err) {
-    const error = new HttpError("Could not fetch user", 500);
+    const error = new HttpError('Could not fetch user', 500);
     return next(error);
   }
 
@@ -82,7 +82,7 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
     .json({
       isSubscribed,
       status: user.status,
-      });
+    });
 };
 
 export const getCurrentUserRoles = async (req, res, next) => {
@@ -92,11 +92,11 @@ export const getCurrentUserRoles = async (req, res, next) => {
   try {
     user = await User.findById(userId);
   } catch (err) {
-    const error = new HttpError("Could not fetch user", 500);
+    const error = new HttpError('Could not fetch user', 500);
     return next(error);
   }
 
-  user = user.toObject({ getters: true })
+  user = user.toObject({ getters: true });
 
   res
     .status(201)
@@ -106,7 +106,7 @@ export const getCurrentUserRoles = async (req, res, next) => {
 export const postActiveMember = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return next(new HttpError("Имате невалидни данни или неселектирани полета", 422));
+    return next(new HttpError('Имате невалидни данни или неселектирани полета', 422));
   }
 
   const { positions, date, email, phone, questions } = req.body;
@@ -138,7 +138,7 @@ export const postActiveMember = async (req, res, next) => {
   try {
     await newActiveMember.save();
   } catch (err) {
-    const error = new HttpError("Грешка при записването, моля опитайте пак", 500);
+    const error = new HttpError('Грешка при записването, моля опитайте пак', 500);
     return next(error);
   }
 
@@ -146,7 +146,7 @@ export const postActiveMember = async (req, res, next) => {
 
   res.status(201).json({ message: 'Done' });
 
-}
+};
 
 export const patchUserInfo = async (req, res, next) => {
   const {
@@ -171,7 +171,7 @@ export const patchUserInfo = async (req, res, next) => {
     user = await User.findById(userId);
   } catch (err) {
     return next(
-      new HttpError("Could not find the current user, please try again", 500)
+      new HttpError('Could not find the current user, please try again', 500)
     );
   }
   if (req.file) {
@@ -183,7 +183,7 @@ export const patchUserInfo = async (req, res, next) => {
     try {
       hashedPassword = await bcrypt.hash(password, 12);
     } catch (err) {
-      return next(new HttpError("Updating user failed, please try again!", 500));
+      return next(new HttpError('Updating user failed, please try again!', 500));
     }
 
     user.password = hashedPassword;
@@ -203,7 +203,7 @@ export const patchUserInfo = async (req, res, next) => {
   try {
     await user.save();
   } catch (err) {
-    return next(new HttpError("Something went wrong, please try again", 500));
+    return next(new HttpError('Something went wrong, please try again', 500));
   }
 
   await usersToSpreadsheet(user.region);
