@@ -421,7 +421,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             "guest",
             guestEmail,
             societyEvent.title,
-            moment(societyEvent.date).format(MOMENT_DATE_YEAR),
+            societyEvent.date,
             guestName,
             metadata.file
           );
@@ -480,7 +480,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             "member",
             targetUser.email,
             societyEvent.title,
-            moment(societyEvent.date).format(MOMENT_DATE_YEAR),
+            societyEvent.date,
             targetUser.name,
             metadata.file
           );

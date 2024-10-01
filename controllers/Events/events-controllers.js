@@ -237,7 +237,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
     "member",
     targetUser.email,
     societyEvent.title,
-    moment(societyEvent.date).format(MOMENT_DATE_YEAR),
+    societyEvent.date,
     targetUser.name,
     req.file.location
   );
@@ -297,7 +297,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
     "guest",
     guestEmail,
     societyEvent.title,
-    moment(societyEvent.date).format(MOMENT_DATE_YEAR),
+    societyEvent.date,
     guestName,
     req.file.location
   );

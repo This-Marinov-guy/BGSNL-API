@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import { WHATS_APP } from "../../util/config/LINKS.js";
 import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE } from "../../util/config/defines.js";
 import moment from "moment";
+import { MOMENT_DATE_TIME } from "../../util/functions/dateConvert.js";
 dotenv.config();
 
 const client = new MailtrapClient({ endpoint: process.env.MAIL_ENDPOINT, token: process.env.MAIL_TOKEN });
@@ -38,7 +39,7 @@ const sendTicketEmail = async (
       template_variables: {
         template_variables: {
           eventName,
-          eventDate: moment(eventDate).format("D MMM YYYY, hh:mm"),
+          eventDate: moment(eventDate).format(MOMENT_DATE_TIME),
           guestName,
           ticket,
         },
