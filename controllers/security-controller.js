@@ -150,10 +150,7 @@ export const signup = async (req, res, next) => {
 export const login = async (req, res, next) => {
   const { email, password } = req.body;
     
-  console.log(email);
-
   let existingUser;
-  console.log(existingUser);
 
   try {
     existingUser = await User.findOne({ email: email });
@@ -162,11 +159,7 @@ export const login = async (req, res, next) => {
     return next(error);
   }
 
-  console.log(existingUser);
-  console.log('is existing ' + !existingUser);
-
   if (!existingUser) {
-    console.log('no user');
     const error = new HttpError('Invalid credentials', 401);
     return next(error);
   }
@@ -180,7 +173,6 @@ export const login = async (req, res, next) => {
     );
   }
     
-  console.log('isValidPassword ' + isValidPassword);
   if (!isValidPassword) {
     const error = new HttpError('Invalid credentials', 401);
     return next(error);
