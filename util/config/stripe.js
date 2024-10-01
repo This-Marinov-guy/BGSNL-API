@@ -51,8 +51,11 @@ export const STRIPE_KEYS = {
 };
 
 export const createStripeClient = (region = '') => {
-  if (!region || !(region in obj)) {
-    console.log('createStripeClient: Warning region was either not passed or not valid | region: ' + region || '-');
+  if (!region || !(region in STRIPE_KEYS)) {
+    console.log(
+      'createStripeClient: Warning region was either not passed or not valid | region: ' +
+        region || '-'
+    );
     region = 'netherlands';
   }
 
@@ -62,8 +65,11 @@ export const createStripeClient = (region = '') => {
 };
 
 export const getStripeKey = (key, region = '') => {
-  if (!region || !(region in obj)) {
-    console.log('getStripeKey: Warning region was either not passed or not valid | region: ' + region || '-');
+  if (!region || !(region in STRIPE_KEYS)) {
+    console.log(
+      'getStripeKey: Warning region was either not passed or not valid | region: ' +
+        region || '-'
+    );
     region = 'netherlands';
   }
 
