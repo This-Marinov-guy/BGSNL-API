@@ -51,7 +51,7 @@ app.use((req, res, next) => {
 
 // TODO: fix this as it is risky (one change in path will break the payments)
 app.use((req, res, next) => {
-  if (req.originalUrl === `/api/payment${STRIPE_WEBHOOK_ROUTE}`) {
+  if (req.path === `/api/payment${STRIPE_WEBHOOK_ROUTE}`) {
     next()
   } else {
     bodyParser.json()(req, res, next);
