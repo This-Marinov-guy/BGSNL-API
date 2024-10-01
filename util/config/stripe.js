@@ -6,42 +6,42 @@ export const STRIPE_KEYS = {
   groningen: {
     publishableKey: process.env.STRIPE_GRO_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_GRO_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_GRO_WEBHOOK_CH_KEY,
+    webhookSecretKey: 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq',
   },
   amsterdam: {
     publishableKey: process.env.STRIPE_AMS_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_AMS_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_AMS_WEBHOOK_CH_KEY,
+    webhookSecretKey: 'whsec_bvI31HIjqsatK5IhptzC1n7qXSg5tZrJ',
   },
   rotterdam: {
     publishableKey: process.env.STRIPE_GRO_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_GRO_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_GRO_WEBHOOK_CH_KEY,
+    webhookSecretKey: 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq',
   },
   leeuwarden: {
     publishableKey: process.env.STRIPE_GRO_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_GRO_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_GRO_WEBHOOK_CH_KEY,
+    webhookSecretKey: 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq',
   },
   breda: {
     publishableKey: process.env.STRIPE_GRO_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_GRO_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_GRO_WEBHOOK_CH_KEY,
+    webhookSecretKey: 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq',
   },
   eindhoven: {
     publishableKey: process.env.STRIPE_GRO_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_GRO_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_GRO_WEBHOOK_CH_KEY,
+    webhookSecretKey: 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq',
   },
   maastricht: {
     publishableKey: process.env.STRIPE_GRO_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_GRO_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_GRO_WEBHOOK_CH_KEY,
+    webhookSecretKey: 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq',
   },
   netherlands: {
     publishableKey: process.env.STRIPE_GRO_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_GRO_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_GRO_WEBHOOK_CH_KEY,
+    webhookSecretKey: 'whsec_ngneD8G5SlOB1rE3an9VttnRu3LFXHSq',
   },
   test: {
     publishableKey: process.env.STRIPE_PUBLISHABLE_KEY_TEST,
