@@ -402,13 +402,13 @@ export const updatePresence = async (req, res, next) => {
   }
 
   const targetGuests = societyEvent.guestList.filter(
-    (guest) => guest.code === code
+    (guest) => guest.code && guest.code == code
   );
 
   let guestName, guestEmail;
 
   if (targetGuests.length > 0) {
-    guestName = targetGuests[0].name + ' ' + targetGuests[0].surname;
+    guestName = targetGuests[0].name;
     guestEmail = targetGuests[0].email;
   }
 
@@ -443,8 +443,8 @@ export const updatePresence = async (req, res, next) => {
     const guest = societyEvent.guestList[i];
 
     if (
-      guest.name === name &&
-      guest.email === email &&
+      guest.name === guestName &&
+      guest.email === guestEmail &&
       guest.status === 0 &&
       count > 0
     ) {
@@ -473,7 +473,7 @@ export const updatePresence = async (req, res, next) => {
     );
   }
 
-  await eventToSpreadsheet(eventId);
+  await eventToSpreadsheet(societyEvent.id);
 
   res.status(201).json({
     status: 1,
