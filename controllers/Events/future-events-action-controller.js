@@ -163,16 +163,16 @@ export const addEvent = async (req, res, next) => {
 
   let images = [poster];
 
-  if (req.files && req.files['images']) {
-    const uploadPromises = req.files['images'].map(async (img) => {
+  if (req.files && req.files["images"] && req.files["images"]?.length > 0) {
+    const uploadPromises = req.files["images"].map(async (img) => {
       try {
         const link = await uploadToCloudinary(img, {
           folder,
           public_id: img.originalname,
           width: 800,
           height: 800,
-          crop: 'fit',
-          format: 'jpg',
+          crop: "fit",
+          format: "jpg",
         });
         return link;
       } catch (err) {
@@ -240,12 +240,12 @@ export const addEvent = async (req, res, next) => {
     images,
     ticketImg,
     ticketColor,
-    ticketQR: ticketQR === 'true',
-    ticketName: ticketName === 'true',
+    ticketQR: ticketQR === "true",
+    ticketName: ticketName === "true",
     poster,
     bgImage,
     bgImageExtra,
-    bgImageSelection,
+    bgImageSelection: bgImageSelection === "true",
     folder,
     sheetName,
     product,
@@ -357,16 +357,16 @@ export const editEvent = async (req, res, next) => {
 
   let images = [poster];
 
-  if (req.files && req.files['images']) {
-    const uploadPromises = req.files['images'].map(async (img) => {
+  if (req.files && req.files["images"] && req.files["images"]?.length > 0) {
+    const uploadPromises = req.files["images"].map(async (img) => {
       try {
         const link = await uploadToCloudinary(img, {
           folder,
           public_id: img.originalname,
           width: 800,
           height: 800,
-          crop: 'fit',
-          format: 'jpg',
+          crop: "fit",
+          format: "jpg",
         });
         return link;
       } catch (err) {
@@ -421,7 +421,7 @@ export const editEvent = async (req, res, next) => {
   }
 
   event.images = images;
-  event.bgImageSelection = bgImageSelection;
+  event.bgImageSelection = bgImageSelection === 'true';
   event.memberOnly = memberOnly;
   event.hidden = hidden;
   event.freePass = freePass;
