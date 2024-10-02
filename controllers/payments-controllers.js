@@ -382,6 +382,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           let {
             quantity,
             eventId,
+            code,
             guestName,
             guestEmail,
             guestPhone,
@@ -396,6 +397,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           }
           let guest = {
             type: "guest",
+            code,
             name: guestName,
             email: guestEmail,
             phone: guestPhone,
@@ -430,7 +432,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           return res.status(200).json({ received: true });
         }
         case "buy_member_ticket": {
-          const { eventId, userId, preferences } = metadata;
+          const { eventId, userId, code, preferences } = metadata;
           let societyEvent;
           try {
             societyEvent = await Event.findById(eventId);
@@ -453,6 +455,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             sess.startTransaction();
             societyEvent.guestList.push({
               type: "member",
+              code,
               name: targetUser.name + " " + targetUser.surname,
               email: targetUser.email,
               phone: targetUser.phone,

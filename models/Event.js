@@ -9,27 +9,27 @@ const eventSchema = new Schema({
   title: { type: String, required: true },
   description: { type: String, required: true },
   date: { type: Date, required: true },
-  correctedDate: { type: Date},
+  correctedDate: { type: Date },
   location: { type: String, required: true },
   ticketTimer: { type: Date, required: true },
   ticketLimit: { type: Number, required: true },
   isSaleClosed: { type: Boolean, required: true, default: false },
   isFree: { type: Boolean, required: true, default: false },
   isMemberFree: { type: Boolean, required: true, default: false },
-  product : {
-    id: {type: String},
-    guest : {
+  product: {
+    id: { type: String },
+    guest: {
       price: { type: Number },
-      priceId: { type: String }
+      priceId: { type: String },
     },
     member: {
       price: { type: Number },
-      priceId: { type: String }
+      priceId: { type: String },
     },
     activeMember: {
       price: { type: Number },
-      priceId: { type: String }
-    }
+      priceId: { type: String },
+    },
   },
   entryIncluding: { type: String },
   memberIncluding: { type: String },
@@ -38,7 +38,7 @@ const eventSchema = new Schema({
   text: { type: String, required: true },
   images: { type: [String] },
   ticketImg: { type: String, required: true },
-  ticketColor: { type: String, required: true, default: '#faf9f6' },
+  ticketColor: { type: String, required: true, default: "#faf9f6" },
   ticketQR: { type: Boolean, required: true, default: true },
   ticketName: { type: Boolean, required: true, default: true },
   poster: { type: String, required: true },
@@ -48,38 +48,43 @@ const eventSchema = new Schema({
   memberOnly: { type: Boolean, required: true, default: false },
   hidden: { type: Boolean, required: true, default: false },
   extraInputsForm: {
-    type: mongoose.Schema.Types.Mixed
+    type: mongoose.Schema.Types.Mixed,
   },
   subEvent: {
-    description: { type: String, default: '' },
+    description: { type: String, default: "" },
     links: {
       type: mongoose.Schema.Types.Mixed,
-      default: [{
-        name: '',
-        href: ''
-      }]
-    }
+      default: [
+        {
+          name: "",
+          href: "",
+        },
+      ],
+    },
   },
   freePass: { type: [String] },
   discountPass: { type: [String] },
   folder: {
-    type: String, required: true
+    type: String,
+    required: true,
   },
   sheetName: {
-    type: String, required: true
+    type: String,
+    required: true,
   },
   guestList: [
     {
       // status 0 - not came
       // status 1 - came
       status: { type: Number, default: 0 },
+      code: { type: Number },
       type: { type: String },
       timestamp: { type: Date, default: new Date() },
       name: { type: String, required: true },
       email: { type: String, required: true },
       phone: { type: String, required: true },
       preferences: {
-        type: mongoose.Schema.Types.Mixed
+        type: mongoose.Schema.Types.Mixed,
       },
       ticket: { type: String },
     },
