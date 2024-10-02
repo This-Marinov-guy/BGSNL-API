@@ -415,7 +415,7 @@ export const updatePresence = async (req, res, next) => {
   if (targetGuests.length === 0) {
     return next(
       new HttpError(
-        'Guest/s were not found in the list - for further help best contact support',
+        'Guest/s were not found in the list',
         404
       )
     );
