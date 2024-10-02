@@ -217,29 +217,31 @@ const eventToSpreadsheet = async (id) => {
       const formattingRequest = {
         spreadsheetId,
         resource: {
-          requests: [{
-            addConditionalFormatRule: {
-              rule: {
-                ranges: [{
-                  sheetId: sheetId,
-                  startRowIndex: startRow - 1,
-                  endRowIndex: endRow,
-                  startColumnIndex: 0,
-                  endColumnIndex: guestListHeaders.length,
-                }],
-                booleanRule: {
-                  condition: {
-                    type: 'CUSTOM_FORMULA',
-                    values: [{ userEnteredValue: '=INDIRECT("R[0]C1", FALSE) = 1' }],
-                  },
-                  format: {
-                    backgroundColor: { red: 0.0, green: 1.0, blue: 0.0 },
+          requests: [
+            {
+              addConditionalFormatRule: {
+                rule: {
+                  ranges: [
+                    {
+                      sheetId: sheetId,
+                      startRowIndex: startRow - 1,
+                      endRowIndex: endRow,
+                    },
+                  ],
+                  booleanRule: {
+                    condition: {
+                      type: "CUSTOM_FORMULA",
+                      values: [{ userEnteredValue: '=$A$5:$A="present"' }],
+                    },
+                    format: {
+                      backgroundColor: { red: 0.0, green: 1.0, blue: 0.0 },
+                    },
                   },
                 },
+                index: 0,
               },
-              index: 0,
             },
-          }],
+          ],
         },
       };
 
