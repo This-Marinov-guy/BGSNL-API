@@ -240,7 +240,6 @@ export const addEvent = async (req, res, next) => {
     including,
     ticketLink,
     text,
-    title,
     images,
     ticketImg,
     ticketColor,
@@ -383,7 +382,7 @@ export const editEvent = async (req, res, next) => {
     images = images.concat(uploadedImages.filter((link) => link !== null));
   }
 
-  images.unshift(poster);
+  images.unshift(poster || event.poster);
 
   event.extraInputsForm = extraInputsForm;
   event.subEvent = subEvent;
