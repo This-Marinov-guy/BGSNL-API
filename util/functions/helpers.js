@@ -1,49 +1,62 @@
 import dotenv from "dotenv";
 dotenv.config();
 import jwt from "jsonwebtoken";
-import CryptoJS from 'crypto-js';
-import moment from 'moment-timezone';
+import CryptoJS from "crypto-js";
+import moment from "moment-timezone";
 import { DEV_JWT_TIMEOUT, PROD_JWT_TIMEOUT } from "../config/defines.js";
 
-const JWT_TIMEOUT = process.env.APP_ENV === 'prod' ? PROD_JWT_TIMEOUT : DEV_JWT_TIMEOUT;
+const JWT_TIMEOUT =
+  process.env.APP_ENV === "prod" ? PROD_JWT_TIMEOUT : DEV_JWT_TIMEOUT;
 
 // Function to update the original array with the modified subset | needs to have ids
 export const updateOriginalArray = (originalArray, modifiedSubset) => {
-  const updatedArray = originalArray.map(originalObject => {
-    const modifiedObject = modifiedSubset.find(subsetObject => subsetObject.id === originalObject.id);
-    return modifiedObject ? { ...originalObject, ...modifiedObject } : originalObject;
+  const updatedArray = originalArray.map((originalObject) => {
+    const modifiedObject = modifiedSubset.find(
+      (subsetObject) => subsetObject.id === originalObject.id
+    );
+    return modifiedObject
+      ? { ...originalObject, ...modifiedObject }
+      : originalObject;
   });
   return updatedArray;
 };
 
 export const isEventTimerFinished = (timer) => {
-  return timer.valueOf() < (new Date()).valueOf()
+  return timer.valueOf() < new Date().valueOf();
 };
 
 export const removeModelProperties = (obj, properties) => {
   const result = obj.toObject(); // Convert Mongoose document to plain JavaScript object
-  properties.forEach(prop => delete result[prop]);
+  properties.forEach((prop) => delete result[prop]);
 
-  if (result.hasOwnProperty('_id')) {
-    result['id'] = result['_id'];
+  if (result.hasOwnProperty("_id")) {
+    result["id"] = result["_id"];
 
-    delete result['_id'];
+    delete result["_id"];
   }
 
   return result;
-}
+};
 
 export const jwtSign = (user) => {
   return jwt.sign(
-    { userId: user.id, status: user.status, roles: user.roles, email: user.email, region: user.region },
+    {
+      userId: user.id,
+      status: user.status,
+      roles: user.roles,
+      email: user.email,
+      region: user.region,
+    },
     process.env.JWT_STRING,
     { expiresIn: JWT_TIMEOUT }
   );
-}
+};
 
 export const jwtRefresh = (token) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_STRING, { ignoreExpiration: true });
+    const decoded = jwt.verify(token, process.env.JWT_STRING, {
+      ignoreExpiration: true,
+    });
 
     const newToken = jwt.sign(
       {
@@ -61,26 +74,28 @@ export const jwtRefresh = (token) => {
     console.error("Error refreshing token:", error);
     return null;
   }
-}
+};
 
 export const encodeForURL = (string) => {
-  let encodedString = string.toLowerCase().replace(/ /g, '_');
+  let encodedString = string.toLowerCase().replace(/ /g, "_");
 
   return encodeURIComponent(encodedString);
-}
+};
 
 export const decodeFromURL = (url) => {
-  const decodedString = url.replace(/_/g, ' ').replace(/\b\w/g, function (char) {
-    return char.toUpperCase();
-  });
+  const decodedString = url
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, function (char) {
+      return char.toUpperCase();
+    });
 
   return decodeURIComponent(decodedString);
-}
+};
 
 export const isBirthdayToday = (birthdayStr) => {
   const birthdayDate = new Date(birthdayStr);
   if (isNaN(birthdayDate.getTime())) {
-    throw new Error('Invalid date format');
+    throw new Error("Invalid date format");
   }
 
   const today = new Date();
@@ -90,26 +105,29 @@ export const isBirthdayToday = (birthdayStr) => {
     birthdayDate.getDate() === today.getDate() &&
     birthdayDate.getMonth() === today.getMonth()
   );
-}
+};
 
 export const decryptData = (string) => {
   if (!string) {
     return {};
   }
 
-  const decryptedBytes = CryptoJS.AES.decrypt(decodeURIComponent(string), process.env.CRYPTO_ENCRYPTION_KEY);
+  const decryptedBytes = CryptoJS.AES.decrypt(
+    decodeURIComponent(string),
+    process.env.CRYPTO_ENCRYPTION_KEY
+  );
   const decryptedData = JSON.parse(decryptedBytes.toString(CryptoJS.enc.Utf8));
 
   return decryptedData;
-}
+};
 
 export const processExtraInputsForm = (extraInputsForm) => {
-  return extraInputsForm.filter(obj => {
-    if (!obj.hasOwnProperty('placeholder')) {
+  return extraInputsForm.filter((obj) => {
+    if (!obj.hasOwnProperty("placeholder")) {
       return false;
     }
 
-    if (obj.type === 'select' && (!obj.options || obj.options.length === 0)) {
+    if (obj.type === "select" && (!obj.options || obj.options.length === 0)) {
       return false;
     }
 
@@ -118,8 +136,11 @@ export const processExtraInputsForm = (extraInputsForm) => {
 };
 
 export const compareIntStrings = (str1, str2) => {
-  return str1.replace(/\D+/g, '').toLowerCase() === str2.replace(/\D+/g, '').toLowerCase();
-}
+  return (
+    str1.replace(/\D+/g, "").toLowerCase() ===
+    str2.replace(/\D+/g, "").toLowerCase()
+  );
+};
 
 export const hasOverlap = (array1, array2) => {
   const set = new Set(array2);
@@ -127,20 +148,20 @@ export const hasOverlap = (array1, array2) => {
     if (set.has(item)) return true;
   }
   return false;
-}
+};
 
 export const replaceSpecialSymbolsWithSpaces = (inputString) => {
   // Use a regular expression to match any non-alphanumeric character
-  return inputString.replace(/[^a-zA-Z0-9\s]/g, ' ');
-}
+  return inputString.replace(/[^a-zA-Z0-9\s]/g, " ");
+};
 
 export const capitalizeFirstLetter = (string) => {
   return string.charAt(0).toUpperCase() + string.slice(1);
-}
+};
 
 export const refactorToKeyValuePairs = (obj) => {
-  obj = JSON.parse(obj)
-  let result = '';
+  obj = JSON.parse(obj);
+  let result = "";
 
   for (const key in obj) {
     if (obj.hasOwnProperty(key)) {
@@ -148,5 +169,25 @@ export const refactorToKeyValuePairs = (obj) => {
     }
   }
 
-  return result.trim(); 
-}
+  return result.trim();
+};
+
+export const parseStingData = (arr, fromJson = true) => {
+  if (fromJson) {
+    arr = JSON.parse(arr);
+  }
+
+  return arr.map((obj) => {
+    let newObj = { ...obj }; // Copy the object to avoid mutating the original
+
+    Object.keys(newObj).forEach((key) => {
+      if (newObj[key] === "true") {
+        newObj[key] = true; // Convert string "true" to boolean true
+      } else if (newObj[key] === "false") {
+        newObj[key] = false; // Convert string "false" to boolean false
+      }
+    });
+
+    return newObj;
+  });
+};

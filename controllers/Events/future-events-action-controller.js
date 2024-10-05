@@ -6,6 +6,7 @@ import {
 } from '../../util/functions/cloudinary.js';
 import {
   isEventTimerFinished,
+  parseStingData,
   processExtraInputsForm,
   removeModelProperties,
   replaceSpecialSymbolsWithSpaces,
@@ -105,8 +106,9 @@ export const addEvent = async (req, res, next) => {
   } = req.body;
 
   const extraInputsForm = processExtraInputsForm(
-    JSON.parse(req.body.extraInputsForm)
+    parseStingData(req.body.extraInputsForm)
   );
+
   const subEvent = JSON.parse(req.body.subEvent);
 
   let event;
@@ -161,18 +163,18 @@ export const addEvent = async (req, res, next) => {
     })
     : '';
 
-  let images = [poster];
+  let images = [];
 
-  if (req.files && req.files["images"] && req.files["images"]?.length > 0) {
-    const uploadPromises = req.files["images"].map(async (img) => {
+  if (req.files && req.files['images'] && req.files['images']?.length > 0) {
+    const uploadPromises = req.files['images'].map(async (img) => {
       try {
         const link = await uploadToCloudinary(img, {
           folder,
           public_id: img.originalname,
           width: 800,
           height: 800,
-          crop: "fit",
-          format: "jpg",
+          crop: 'fit',
+          format: 'jpg',
         });
         return link;
       } catch (err) {
@@ -184,6 +186,8 @@ export const addEvent = async (req, res, next) => {
     const uploadedImages = await Promise.all(uploadPromises);
     images = images.concat(uploadedImages.filter((link) => link !== null));
   }
+
+  images.unshift(poster);
 
   //create product
   let product = null;
@@ -240,12 +244,12 @@ export const addEvent = async (req, res, next) => {
     images,
     ticketImg,
     ticketColor,
-    ticketQR: ticketQR === "true",
-    ticketName: ticketName === "true",
+    ticketQR: ticketQR === 'true',
+    ticketName: ticketName === 'true',
     poster,
     bgImage,
     bgImageExtra,
-    bgImageSelection: bgImageSelection === "true",
+    bgImageSelection,
     folder,
     sheetName,
     product,
@@ -319,7 +323,7 @@ export const editEvent = async (req, res, next) => {
   } = req.body;
 
   const extraInputsForm = processExtraInputsForm(
-    JSON.parse(req.body.extraInputsForm)
+    parseStingData(req.body.extraInputsForm)
   );
   const subEvent = JSON.parse(req.body.subEvent);
 
@@ -355,18 +359,18 @@ export const editEvent = async (req, res, next) => {
     })
     : '';
 
-  let images = [poster];
+  let images = [];
 
-  if (req.files && req.files["images"] && req.files["images"]?.length > 0) {
-    const uploadPromises = req.files["images"].map(async (img) => {
+  if (req.files && req.files['images'] && req.files['images']?.length > 0) {
+    const uploadPromises = req.files['images'].map(async (img) => {
       try {
         const link = await uploadToCloudinary(img, {
           folder,
           public_id: img.originalname,
           width: 800,
           height: 800,
-          crop: "fit",
-          format: "jpg",
+          crop: 'fit',
+          format: 'jpg',
         });
         return link;
       } catch (err) {
@@ -378,6 +382,8 @@ export const editEvent = async (req, res, next) => {
     const uploadedImages = await Promise.all(uploadPromises);
     images = images.concat(uploadedImages.filter((link) => link !== null));
   }
+
+  images.unshift(poster);
 
   event.extraInputsForm = extraInputsForm;
   event.subEvent = subEvent;
@@ -421,7 +427,7 @@ export const editEvent = async (req, res, next) => {
   }
 
   event.images = images;
-  event.bgImageSelection = bgImageSelection === 'true';
+  event.bgImageSelection = bgImageSelection;
   event.memberOnly = memberOnly;
   event.hidden = hidden;
   event.freePass = freePass;
