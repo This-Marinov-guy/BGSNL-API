@@ -19,6 +19,7 @@ import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services
 import { REGIONS } from "./util/config/defines.js";
 import { updateUsers } from "./util/private/manipulate-db.js";
 import futureEventRouter from "./routes/Events/future-events-routes.js";
+import wordpressRouter from "./routes/Integration/wordpress-routes.js";
 
 const app = express();
 
@@ -71,6 +72,7 @@ app.use("/api/future-event", futureEventRouter);
 app.use("/api/payment", paymentRouter);
 app.use("/api/contest", contestRouter);
 app.use("/api/special", specialEventsRouter);
+app.use("/api/wordpress", wordpressRouter);
 
 //no page found 
 app.use((req, res, next) => {

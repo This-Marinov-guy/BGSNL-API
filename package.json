@@ -20,6 +20,7 @@
     "@aws-sdk/client-s3": "^3.290.0",
     "@stripe/stripe-js": "^1.52.0",
     "aws-sdk": "^2.1357.0",
+    "axios": "^1.7.7",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
     "cloudinary": "^2.2.0",
