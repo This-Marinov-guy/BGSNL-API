@@ -5,7 +5,7 @@ import { PROTOCOL } from "../../util/config/access.js";
 import { DEFAULT_WP_TITLES } from "../../util/config/defines.js";
 dotenv.config();
 
-const ENDPOINT = 'public-api.wordpress.com/wp/v2/sites/';
+const ENDPOINT = "public-api.wordpress.com/wp/v2/sites/";
 
 export const getWordpressPosts = async (req, res, next) => {
   let response = null;
@@ -40,16 +40,20 @@ export const getWordpressPostDetails = async (req, res, next) => {
     response = await axios.get(
       `${PROTOCOL}${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts/${postId}?_embed`
     );
-
-    responseStyles = await axios.get(
-      `${PROTOCOL}www.${process.env.WORDPRESS_BLOG_ID}/wp-includes/css/dist/block-library/style.min.css`
-    );
   } catch (err) {
     console.log(err.message);
 
     return res.status(200).json({
       status: false,
     });
+  }
+
+  try {
+    responseStyles = await axios.get(
+      `${PROTOCOL}www.${process.env.WORDPRESS_BLOG_ID}/wp-includes/css/dist/block-library/style.min.css`
+    );
+  } catch (err) {
+    console.log(err.message);
   }
 
   const post = response.data;
