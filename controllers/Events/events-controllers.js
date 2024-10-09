@@ -1,32 +1,32 @@
-import mongoose from 'mongoose';
-import Event from '../../models/Event.js';
-import NonSocietyEvent from '../../models/NonSocietyEvent.js';
-import User from '../../models/User.js';
-import { validationResult } from 'express-validator';
-import { syncEvents } from '../../services/side-services/calendar-integration/sync.js';
-import HttpError from '../../models/Http-error.js';
-import { sendTicketEmail } from '../../services/side-services/email-transporter.js';
-import { eventToSpreadsheet } from '../../services/side-services/google-spreadsheets.js';
+import mongoose from "mongoose";
+import Event from "../../models/Event.js";
+import NonSocietyEvent from "../../models/NonSocietyEvent.js";
+import User from "../../models/User.js";
+import { validationResult } from "express-validator";
+import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
+import HttpError from "../../models/Http-error.js";
+import { sendTicketEmail } from "../../services/side-services/email-transporter.js";
+import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
 import {
   decodeFromURL,
   isEventTimerFinished,
   removeModelProperties,
-} from '../../util/functions/helpers.js';
-import { MOMENT_DATE_YEAR } from '../../util/functions/dateConvert.js';
-import moment from 'moment';
+} from "../../util/functions/helpers.js";
+import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
+import moment from "moment";
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
   try {
     const { eventId } = req.params;
 
     if (!eventId) {
-      return next(new HttpError('Invalid inputs passed', 422));
+      return next(new HttpError("Invalid inputs passed", 422));
     }
 
     const event = await Event.findById(eventId);
 
     if (!event) {
-      return next(new HttpError('No event was found', 404));
+      return next(new HttpError("No event was found", 404));
     }
 
     let status = true;
@@ -40,7 +40,7 @@ export const getEventPurchaseAvailability = async (req, res, next) => {
     res.status(200).json({ status });
   } catch (error) {
     return next(
-      new HttpError('Something got wrong, please contact support', 500)
+      new HttpError("Something got wrong, please contact support", 500)
     );
   }
 };
@@ -49,14 +49,18 @@ export const getEventById = async (req, res, next) => {
   const eventId = req.params.eventId;
 
   if (eventId === undefined || !eventId) {
-    return next(new HttpError('No event was found', 404));
+    return res.status(200).json({
+      status: false,
+    });
   }
 
   try {
     let event = await Event.findById(eventId);
 
     if (!event) {
-      return next(new HttpError('No event was found', 404));
+      return res.status(200).json({
+        status: false,
+      });
     }
 
     let status = true;
@@ -69,15 +73,15 @@ export const getEventById = async (req, res, next) => {
     }
 
     event = removeModelProperties(event, [
-      'guestList',
-      'discountPass',
-      'freePass',
+      "guestList",
+      "discountPass",
+      "freePass",
     ]);
 
     res.status(200).json({ event, status });
   } catch (err) {
     console.log(err);
-    return next(new HttpError('Fetching event failed', 500));
+    return next(new HttpError("Fetching event failed", 500));
   }
 };
 
@@ -93,11 +97,11 @@ export const getEvents = async (req, res, next) => {
       events = await Event.find({ hidden: false });
     }
   } catch (err) {
-    return next(new HttpError('Fetching events failed', 500));
+    return next(new HttpError("Fetching events failed", 500));
   }
 
   const formattedEvents = events.map((event) =>
-    removeModelProperties(event, ['guestList', 'discountPass', 'freePass'])
+    removeModelProperties(event, ["guestList", "discountPass", "freePass"])
   );
 
   res.status(200).json({ events: formattedEvents });
@@ -108,7 +112,7 @@ export const getSoldTicketQuantity = async (req, res, next) => {
     const { eventId } = req.params;
 
     if (!eventId) {
-      return next(new HttpError('Invalid inputs passed', 422));
+      return next(new HttpError("Invalid inputs passed", 422));
     }
 
     const event = await Event.findById(eventId);
@@ -123,7 +127,7 @@ export const getSoldTicketQuantity = async (req, res, next) => {
     res.status(200).json({ ticketsSold: ticketsSold });
   } catch (error) {
     return next(
-      new HttpError('Something got wrong, please contact support', 500)
+      new HttpError("Something got wrong, please contact support", 500)
     );
   }
 };
@@ -133,19 +137,19 @@ export const checkEligibleMemberForPurchase = async (req, res, next) => {
   let status = true;
 
   if (!eventId) {
-    return next(new HttpError('Invalid inputs passed', 422));
+    return next(new HttpError("Invalid inputs passed", 422));
   }
 
   let event = await Event.findById(eventId);
 
   if (!event) {
-    return next(new HttpError('No event was found', 404));
+    return next(new HttpError("No event was found", 404));
   }
 
   let member = await User.findById(userId);
 
   if (!member) {
-    return next(new HttpError('Could not find a user with provided id', 404));
+    return next(new HttpError("Could not find a user with provided id", 404));
   }
 
   const memberName = `${member.name} ${member.surname}`;
@@ -167,13 +171,13 @@ export const checkEligibleGuestForDiscount = async (req, res, next) => {
   let status = true;
 
   if (!eventId) {
-    return next(new HttpError('Invalid inputs passed', 422));
+    return next(new HttpError("Invalid inputs passed", 422));
   }
 
   let event = await Event.findById(eventId);
 
   if (!event) {
-    return next(new HttpError('No event was found', 404));
+    return next(new HttpError("No event was found", 404));
   }
 
   if (
@@ -202,34 +206,34 @@ export const postAddMemberToEvent = async (req, res, next) => {
     societyEvent = await Event.findById(eventId);
   } catch (err) {
     return next(
-      new HttpError('Could not add you to the event, please try again!', 500)
+      new HttpError("Could not add you to the event, please try again!", 500)
     );
   }
 
   if (!societyEvent) {
-    return next(new HttpError('Could not find such event', 404));
+    return next(new HttpError("Could not find such event", 404));
   }
 
   const ticketsRemaining =
     societyEvent.ticketLimit - societyEvent.guestList.length;
 
   if (ticketsRemaining <= 0) {
-    return next(new HttpError('Tickets are sold out', 500));
+    return next(new HttpError("Tickets are sold out", 500));
   }
 
   let targetUser;
   try {
     targetUser = await User.findById(userId);
   } catch (err) {
-    new HttpError('Could not find a user with provided id', 404);
+    new HttpError("Could not find a user with provided id", 404);
   }
   try {
     const sess = await mongoose.startSession();
     sess.startTransaction();
     societyEvent.guestList.push({
-      type: 'member',
+      type: "member",
       code,
-      name: targetUser.name + ' ' + targetUser.surname,
+      name: targetUser.name + " " + targetUser.surname,
       email: targetUser.email,
       phone: targetUser.phone,
       preferences,
@@ -238,7 +242,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
     targetUser.tickets.push({
       event:
         societyEvent.title +
-        ' | ' +
+        " | " +
         moment(societyEvent.date).format(MOMENT_DATE_YEAR),
       image: req.file.location,
     });
@@ -247,12 +251,12 @@ export const postAddMemberToEvent = async (req, res, next) => {
     await sess.commitTransaction();
   } catch (err) {
     return next(
-      new HttpError('Adding user to the event failed, please try again', 500)
+      new HttpError("Adding user to the event failed, please try again", 500)
     );
   }
 
   sendTicketEmail(
-    'member',
+    "member",
     targetUser.email,
     societyEvent.title,
     societyEvent.date,
@@ -262,35 +266,42 @@ export const postAddMemberToEvent = async (req, res, next) => {
 
   await eventToSpreadsheet(societyEvent.id);
 
-  res.status(201).json({ status: true, message: 'Success' });
+  res.status(201).json({ status: true, message: "Success" });
 };
 
 export const postAddGuestToEvent = async (req, res, next) => {
-  const { quantity, eventId, guestName, code, guestEmail, guestPhone, preferences } =
-    req.body;
+  const {
+    quantity,
+    eventId,
+    guestName,
+    code,
+    guestEmail,
+    guestPhone,
+    preferences,
+  } = req.body;
 
   let societyEvent;
   try {
     societyEvent = await Event.findById(eventId);
   } catch (err) {
     return next(
-      new HttpError('Could not add you to the event, please try again!', 500)
+      new HttpError("Could not add you to the event, please try again!", 500)
     );
   }
 
   if (!societyEvent) {
-    return next(new HttpError('Could not find such event', 404));
+    return next(new HttpError("Could not find such event", 404));
   }
 
   const ticketsRemaining =
     societyEvent.ticketLimit - societyEvent.guestList.length;
 
   if (ticketsRemaining <= 0) {
-    return next(new HttpError('Tickets are sold out', 500));
+    return next(new HttpError("Tickets are sold out", 500));
   }
 
   let guest = {
-    type: 'guest',
+    type: "guest",
     code,
     name: guestName,
     email: guestEmail,
@@ -309,13 +320,13 @@ export const postAddGuestToEvent = async (req, res, next) => {
     } catch (err) {
       console.log(err);
       return next(
-        new HttpError('Adding guest to the event failed, please try again', 500)
+        new HttpError("Adding guest to the event failed, please try again", 500)
       );
     }
   }
 
   sendTicketEmail(
-    'guest',
+    "guest",
     guestEmail,
     societyEvent.title,
     societyEvent.date,
@@ -325,13 +336,13 @@ export const postAddGuestToEvent = async (req, res, next) => {
 
   await eventToSpreadsheet(societyEvent.id);
 
-  res.status(201).json({ status: true, message: 'Success' });
+  res.status(201).json({ status: true, message: "Success" });
 };
 
 export const postNonSocietyEvent = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return next(new HttpError('Invalid inputs passed', 422));
+    return next(new HttpError("Invalid inputs passed", 422));
   }
   const { event, date, user, name, email, phone, notificationTypeTerms } =
     req.body;
@@ -340,16 +351,16 @@ export const postNonSocietyEvent = async (req, res, next) => {
   try {
     nonSocietyEvent = await NonSocietyEvent.findOneOrCreate(
       { event: event },
-      { status: 'open', event: event, date: date, guestList: [] }
+      { status: "open", event: event, date: date, guestList: [] }
     );
   } catch (err) {
     return next(
-      new HttpError('Could not add you to the event, please try again!', 500)
+      new HttpError("Could not add you to the event, please try again!", 500)
     );
   }
 
   if (!nonSocietyEvent) {
-    return next(new HttpError('Could not find such event', 404));
+    return next(new HttpError("Could not find such event", 404));
   }
 
   let guest = {
@@ -365,11 +376,11 @@ export const postNonSocietyEvent = async (req, res, next) => {
     await nonSocietyEvent.save();
   } catch (err) {
     return next(
-      new HttpError('Adding user to the event failed, please try again', 500)
+      new HttpError("Adding user to the event failed, please try again", 500)
     );
   }
 
-  res.status(201).json({ message: 'Success' });
+  res.status(201).json({ message: "Success" });
 };
 
 // status 0 = noting to update
@@ -384,21 +395,21 @@ export const updatePresence = async (req, res, next) => {
     societyEvent = await Event.findById(eventId);
   } catch (err) {
     return next(
-      new HttpError('Could not find such event, please try again!', 500)
+      new HttpError("Could not find such event, please try again!", 500)
     );
   }
 
   if (!societyEvent) {
     return next(
       new HttpError(
-        'Could not find such event - for further help best contact support',
+        "Could not find such event - for further help best contact support",
         404
       )
     );
   }
 
   if (societyEvent.guestList.length < 1) {
-    return next(new HttpError('This events has no guests!', 404));
+    return next(new HttpError("This events has no guests!", 404));
   }
 
   const targetGuests = societyEvent.guestList.filter(
@@ -413,23 +424,16 @@ export const updatePresence = async (req, res, next) => {
   }
 
   if (targetGuests.length === 0) {
-    return next(
-      new HttpError(
-        'Guest/s were not found in the list',
-        404
-      )
-    );
+    return next(new HttpError("Guest/s were not found in the list", 404));
   }
 
   if (targetGuests.length > 1 && !count) {
-    return res
-      .status(200)
-      .json({
-        status: 2,
-        event: societyEvent.title,
-        name: guestName,
-        email: guestEmail,
-      });
+    return res.status(200).json({
+      status: 2,
+      event: societyEvent.title,
+      name: guestName,
+      email: guestEmail,
+    });
   }
 
   // If count is not provided but there is only one guest, set count to 1
@@ -469,7 +473,7 @@ export const updatePresence = async (req, res, next) => {
     await societyEvent.save();
   } catch (err) {
     return next(
-      new HttpError('Updating guest list failed, please try again', 500)
+      new HttpError("Updating guest list failed, please try again", 500)
     );
   }
 
@@ -484,6 +488,6 @@ export const updatePresence = async (req, res, next) => {
 };
 
 export const postSyncEventsCalendar = async (req, res, next) => {
-  console.log('Syncing events...');
+  console.log("Syncing events...");
   await syncEvents();
 };

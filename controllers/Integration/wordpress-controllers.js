@@ -23,11 +23,9 @@ export const getWordpressPosts = async (req, res, next) => {
   const posts = response.data.map((p) => {
     return {
       id: p.id,
-      title: p.title.rendered
-    }
-  }).filter((p) => {
-    return !DEFAULT_WP_TITLES.includes(p.title);
-  })
+      title: p.title.rendered,
+    };
+  });
 
   return res.status(200).json({ status: true, posts });
 };
@@ -41,7 +39,11 @@ export const getWordpressPostDetails = async (req, res, next) => {
       `${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts/${postId}?_embed`
     );
   } catch (err) {
-    return next(new HttpError(err, 500));
+    console.log(err.message);
+
+    return res.status(200).json({
+      status: false,
+    });
   }
 
   const post = response.data;
