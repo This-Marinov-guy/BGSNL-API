@@ -19,7 +19,14 @@ export const getWordpressPosts = async (req, res, next) => {
     return next(new HttpError("Failed to load posts", 500));
   }
 
-  return res.status(200).json({ status: true, data: response.data });
+  const posts = response.data.map((p) => {
+    return {
+      id: p.id,
+      title: p.title.rendered
+    }
+  })
+
+  return res.status(200).json({ status: true, posts });
 };
 
 export const getWordpressPostDetails = async (req, res, next) => {
@@ -41,7 +48,10 @@ export const getWordpressPostDetails = async (req, res, next) => {
   }
 
   // Replace http with https
-  let processedContent = post.content.rendered.replace(/http:\/\//g, "https://");
+  let processedContent = post.content.rendered.replace(
+    /http:\/\//g,
+    "https://"
+  );
 
   // Fix relative image paths
   processedContent = processedContent.replace(
@@ -51,7 +61,9 @@ export const getWordpressPostDetails = async (req, res, next) => {
 
   return res.status(200).json({
     status: true,
-    title: post.title.rendered,
-    content: processedContent,
+    data: {
+      title: post.title.rendered,
+      content: processedContent,
+    },
   });
 };
