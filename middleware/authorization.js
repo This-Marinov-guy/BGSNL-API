@@ -1,7 +1,7 @@
-import dotenv from "dotenv";
-dotenv.config();
 import jwt from "jsonwebtoken";
 import HttpError from "../models/Http-error.js";
+import dotenv from "dotenv";
+dotenv.config();
 
 export const authMiddleware = (req, res, next) => {
   const authHeader = req.headers["authorization"];
