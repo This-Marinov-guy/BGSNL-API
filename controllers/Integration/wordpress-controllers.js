@@ -50,7 +50,7 @@ export const getWordpressPostDetails = async (req, res, next) => {
 
   try {
     responseStyles = await axios.get(
-      `${PROTOCOL}www.${process.env.WORDPRESS_BLOG_ID}/wp-includes/css/dist/block-library/style.min.css`
+      `${PROTOCOL}${process.env.WORDPRESS_BLOG_ID}/wp-includes/css/dist/block-library/style.min.css`
     );
   } catch (err) {
     console.log(err.message);
@@ -77,9 +77,9 @@ export const getWordpressPostDetails = async (req, res, next) => {
   return res.status(200).json({
     status: true,
     data: {
-      title: post.title.rendered.replace(/&nbsp;/g, " "),
-      content: processedContent,
-      styles: responseStyles.data,
+      title: post.title.rendered.replace(/&nbsp;/g, " ") ?? null,
+      content: processedContent ?? null,
+      styles: responseStyles.data ?? null,
     },
   });
 };
