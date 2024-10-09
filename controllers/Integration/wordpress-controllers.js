@@ -24,7 +24,7 @@ export const getWordpressPosts = async (req, res, next) => {
   const posts = response.data.map((p) => {
     return {
       id: p.id,
-      title: p.title.rendered,
+      title: p.title.rendered.replace(/&nbsp;/g, " "),
     };
   });
 
@@ -73,7 +73,7 @@ export const getWordpressPostDetails = async (req, res, next) => {
   return res.status(200).json({
     status: true,
     data: {
-      title: post.title.rendered,
+      title: post.title.rendered.replace(/&nbsp;/g, " "),
       content: processedContent,
       styles: responseStyles.data,
     },

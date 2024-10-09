@@ -1,6 +1,6 @@
 import express from "express";
-import dotenv from "dotenv";
 import { getWordpressPostDetails, getWordpressPosts } from "../../controllers/Integration/wordpress-controllers.js";
+import dotenv from "dotenv";
 dotenv.config();
 
 const wordpressRouter = express.Router();
