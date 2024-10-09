@@ -52,3 +52,10 @@ export const SUBSCRIPTION_PERIOD = {
 };
 
 export const HOME_URL = 'bulgariansociety.nl';
+
+export const DEFAULT_WP_TITLES = [
+  "The Art of&nbsp;Connection",
+  "Beyond the Obstacle",
+  "Growth Unlocked",
+   "Collaboration Magic"
+];

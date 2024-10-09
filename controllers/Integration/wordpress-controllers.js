@@ -1,6 +1,7 @@
 import HttpError from "../../models/Http-error.js";
 import axios from "axios";
 import dotenv from "dotenv";
+import { DEFAULT_WP_TITLES } from "../../util/config/defines.js";
 dotenv.config();
 
 const ENDPOINT = "https://public-api.wordpress.com/wp/v2/sites/";
@@ -24,6 +25,8 @@ export const getWordpressPosts = async (req, res, next) => {
       id: p.id,
       title: p.title.rendered
     }
+  }).filter((p) => {
+    return !DEFAULT_WP_TITLES.includes(p.title);
   })
 
   return res.status(200).json({ status: true, posts });
