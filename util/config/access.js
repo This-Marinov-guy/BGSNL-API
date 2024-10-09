@@ -55,3 +55,5 @@ const stripeIp = [
 
 export const allowedOrigins = [...webOrigins, ...stripeUrls];
 export const allowedIps = [...stripeIp];
+
+export const PROTOCOL = process.env.APP_ENV === 'dev' ? 'http://' : 'https://';

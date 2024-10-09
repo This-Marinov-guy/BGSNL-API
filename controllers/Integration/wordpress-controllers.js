@@ -1,16 +1,17 @@
 import HttpError from "../../models/Http-error.js";
 import axios from "axios";
 import dotenv from "dotenv";
+import { PROTOCOL } from "../../util/config/access.js";
 import { DEFAULT_WP_TITLES } from "../../util/config/defines.js";
 dotenv.config();
 
-const ENDPOINT = "https://public-api.wordpress.com/wp/v2/sites/";
+const ENDPOINT = 'public-api.wordpress.com/wp/v2/sites/';
 
 export const getWordpressPosts = async (req, res, next) => {
   let response = null;
   try {
     response = await axios.get(
-      `${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts`
+      `${PROTOCOL}${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts`
     );
   } catch (err) {
     return next(new HttpError(err, 500));
@@ -33,10 +34,15 @@ export const getWordpressPosts = async (req, res, next) => {
 export const getWordpressPostDetails = async (req, res, next) => {
   const postId = req.params.postId;
   let response = null;
+  let responseStyles = null;
 
   try {
     response = await axios.get(
-      `${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts/${postId}?_embed`
+      `${PROTOCOL}${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts/${postId}?_embed`
+    );
+
+    responseStyles = await axios.get(
+      `${PROTOCOL}www.${process.env.WORDPRESS_BLOG_ID}/wp-includes/css/dist/block-library/style.min.css`
     );
   } catch (err) {
     console.log(err.message);
@@ -69,6 +75,7 @@ export const getWordpressPostDetails = async (req, res, next) => {
     data: {
       title: post.title.rendered,
       content: processedContent,
+      styles: responseStyles.data,
     },
   });
 };
