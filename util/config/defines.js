@@ -2,6 +2,8 @@ export const REGIONS = [
   'amsterdam', 'breda', 'eindhoven', 'groningen', 'leeuwarden', 'maastricht', 'rotterdam'
 ];
 
+export const DEFAULT_REGION = 'netherlands';
+
 //routes and urls
 export const BGSNL_URL = 'bulgariansociety.nl/';
 export const STRIPE_WEBHOOK_ROUTE = '/stripe-webhook';

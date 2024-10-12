@@ -21,6 +21,7 @@ import {
   calculatePurchaseAndExpireDates,
 } from "../util/functions/dateConvert.js";
 import {
+  DEFAULT_REGION,
   HOME_URL,
   LIMITLESS_ACCOUNT,
   SUBSCRIPTION_PERIOD,
@@ -116,7 +117,7 @@ export const postSubscriptionNoFile = async (req, res, next) => {
   const { itemId, origin_url, region } = req.body;
   const { userId } = extractUserFromRequest(req);
 
-  const stripeClient = createStripeClient(region);
+  const stripeClient = createStripeClient(DEFAULT_REGION);
 
   const session = await stripeClient.checkout.sessions.create({
     mode: "subscription",
@@ -136,7 +137,7 @@ export const postSubscriptionNoFile = async (req, res, next) => {
 export const postSubscriptionFile = async (req, res, next) => {
   const { itemId, origin_url, region } = req.body;
 
-  const stripeClient = createStripeClient(region);
+  const stripeClient = createStripeClient(DEFAULT_REGION);
 
   let fileLocation;
   if (req.file) {
