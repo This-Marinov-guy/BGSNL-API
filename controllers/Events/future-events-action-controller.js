@@ -13,6 +13,7 @@ import {
 } from "../../util/functions/helpers.js";
 import {
   MOMENT_DATE_TIME_YEAR,
+  MOMENT_DATE_TIME,
   areDatesEqual,
 } from "../../util/functions/dateConvert.js";
 import moment from "moment/moment.js";
@@ -132,7 +133,9 @@ export const addEvent = async (req, res, next) => {
     return next(error);
   }
 
-  const folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${date}`;
+  const folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${moment(
+    date
+  ).format(MOMENT_DATE_TIME)}`;
 
   if (!req.files["poster"] || !req.files["ticketImg"]) {
     const error = new HttpError("We lack poster or/and ticket", 422);
