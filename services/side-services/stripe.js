@@ -68,10 +68,17 @@ export const deleteProduct = async (region, productId) => {
     const stripeClient = createStripeClient(region);
 
     try {
+        const prices = await stripeClient.prices.list({ product: productId });
+
+        for (const price of prices.data) {
+          await stripeClient.prices.update(price.id, { active: false });
+          console.log(`Archived price: ${price.id}`);
+        }
+
         await stripeClient.products.del(productId);
     } catch (err) {
         console.log(err);
-        return false
+        return false;
     }
 
     return true;
