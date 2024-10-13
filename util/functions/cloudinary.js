@@ -29,10 +29,19 @@ export const deleteFolder = async (folderName = "") => {
       .then(() => {
         cloudinary.api.delete_folder(folderName);
       })
-      .catch((err) => console.log(err));
+      .catch((err) => console.log(err.message));
 
     console.log(`Deleted ${folderName}`);
   } catch (error) {
-    console.error("Error deleting folder:", error);
+    console.error("Error deleting folder:", error.message);
   }
+};
+
+export const getFolders = async (exclude = []) => {
+  const result = await cloudinary.api.root_folders();
+  const folders = result.folders.map((f) => f.name);
+
+  console.log(folders);
+
+  return folders;
 };

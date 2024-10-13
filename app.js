@@ -20,6 +20,7 @@ import { REGIONS } from "./util/config/defines.js";
 import { updateUsers } from "./util/private/manipulate-db.js";
 import futureEventRouter from "./routes/Events/future-events-routes.js";
 import wordpressRouter from "./routes/Integration/wordpress-routes.js";
+import { deleteFolder, getFolders } from "./util/functions/cloudinary.js";
 
 const app = express();
 
