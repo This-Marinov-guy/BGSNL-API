@@ -14,7 +14,7 @@ export default [
     },
     rules: {
       // Basic rules
-      "quotes": ["error", "single"],
+      // "quotes": ["error", "single"],
       "semi": ["error", "always"],
 
       // Node.js and Express specific rules
