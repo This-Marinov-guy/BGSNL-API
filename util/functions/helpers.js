@@ -122,6 +122,10 @@ export const decryptData = (string) => {
 };
 
 export const processExtraInputsForm = (extraInputsForm) => {
+  if (!extraInputsForm) {
+    return extraInputsForm;
+  }
+  
   return extraInputsForm.filter((obj) => {
     if (!obj.hasOwnProperty("placeholder")) {
       return false;
@@ -173,6 +177,10 @@ export const refactorToKeyValuePairs = (obj) => {
 };
 
 export const parseStingData = (arr, fromJson = true) => {
+  if (!arr || arr?.length === 0) {
+    return null;
+  }
+
   if (fromJson) {
     arr = JSON.parse(arr);
   }

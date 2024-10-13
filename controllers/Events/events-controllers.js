@@ -14,6 +14,7 @@ import {
 } from "../../util/functions/helpers.js";
 import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
 import moment from "moment";
+import { checkDiscountsOnEvents } from "../../services/main-services/event-action-service.js";
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -72,10 +73,13 @@ export const getEventById = async (req, res, next) => {
       status = false;
     }
 
+    event = checkDiscountsOnEvents(event);
     event = removeModelProperties(event, [
       "guestList",
       "discountPass",
       "freePass",
+      "earlyBird",
+      "lateBird",
     ]);
 
     res.status(200).json({ event, status });
@@ -101,7 +105,13 @@ export const getEvents = async (req, res, next) => {
   }
 
   const formattedEvents = events.map((event) =>
-    removeModelProperties(event, ["guestList", "discountPass", "freePass"])
+    removeModelProperties(event, [
+      "guestList",
+      "discountPass",
+      "freePass",
+      "earlyBird",
+      "lateBird",
+    ])
   );
 
   res.status(200).json({ events: formattedEvents });

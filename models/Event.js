@@ -18,6 +18,8 @@ const eventSchema = new Schema({
   isMemberFree: { type: Boolean, required: true, default: false },
   product: {
     id: { type: String },
+    earlyBird: { type: Boolean, default: false },
+    lateBird: { type: Boolean, default: false },
     guest: {
       price: { type: Number },
       priceId: { type: String },
@@ -48,6 +50,12 @@ const eventSchema = new Schema({
   memberOnly: { type: Boolean, required: true, default: false },
   hidden: { type: Boolean, required: true, default: false },
   extraInputsForm: {
+    type: mongoose.Schema.Types.Mixed,
+  },
+  earlyBird: {
+    type: mongoose.Schema.Types.Mixed,
+  },
+  lateBird: {
     type: mongoose.Schema.Types.Mixed,
   },
   subEvent: {

@@ -17,8 +17,12 @@ import {
   areDatesEqual,
 } from "../../util/functions/dateConvert.js";
 import moment from "moment/moment.js";
-import { deleteProduct } from "../../services/side-services/stripe.js";
 import {
+  addPrice,
+  deleteProduct,
+} from "../../services/side-services/stripe.js";
+import {
+  checkDiscountsOnEvents,
   createEventProductWithPrice,
   updateEventPrices,
 } from "../../services/main-services/event-action-service.js";
@@ -51,7 +55,8 @@ export const fetchFullDataEvent = async (req, res, next) => {
     status = false;
   }
 
-  event = removeModelProperties(event, ["guestList"]);
+  event = checkDiscountsOnEvents(event);
+  event = removeModelProperties(event, ["guestList", "earlyBird", "lateBird"]);
 
   res.status(200).json({
     event,
@@ -74,7 +79,9 @@ export const fetchFullDataEventsList = async (req, res, next) => {
     return next(new HttpError("Fetching events failed", 500));
   }
 
-  events = events.map((event) => removeModelProperties(event, ["guestList"]));
+  events = events.map((event) =>
+    removeModelProperties(event, ["guestList", "earlyBird", "lateBird"])
+  );
 
   res.status(200).json({ events });
 };
@@ -108,12 +115,14 @@ export const addEvent = async (req, res, next) => {
     ticketName,
     bgImage,
     bgImageSelection,
-  } = req.body;
+  } = req.body;  
 
   const extraInputsForm = processExtraInputsForm(
     parseStingData(req.body.extraInputsForm)
   );
 
+  const earlyBird = JSON.parse(req.body.earlyBird);
+  const lateBird = JSON.parse(req.body.lateBird);
   const subEvent = JSON.parse(req.body.subEvent);
 
   let event;
@@ -220,6 +229,46 @@ export const addEvent = async (req, res, next) => {
         )
       );
     }
+
+    if (earlyBird.isEnabled) {
+      try {
+        earlyBird["priceId"] = await addPrice(
+          region,
+          product.id,
+          earlyBird["price"],
+          "early bird guest"
+        );
+
+        earlyBird["memberPriceId"] = await addPrice(
+          region,
+          product.id,
+          earlyBird["memberPrice"],
+          "early bird member"
+        );
+      } catch (err) {
+        console.log(err.message);
+      }
+    }
+
+    if (lateBird.isEnabled) {
+      try {
+        lateBird["priceId"] = await addPrice(
+          region,
+          product.id,
+          lateBird["price"],
+          "late bird guest"
+        );
+
+        lateBird["memberPriceId"] = await addPrice(
+          region,
+          product.id,
+          lateBird["memberPrice"],
+          "late bird member"
+        );
+      } catch (err) {
+        console.log(err.message);
+      }
+    }
   }
 
   const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`;
@@ -259,6 +308,8 @@ export const addEvent = async (req, res, next) => {
     folder,
     sheetName,
     product,
+    earlyBird,
+    lateBird,
   });
 
   try {
