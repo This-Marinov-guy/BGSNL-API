@@ -15,13 +15,11 @@ export default [
     rules: {
       // Basic rules
       "indent": ["error", 2],
-      "linebreak-style": ["error", "unix"],
       "quotes": ["error", "single"],
       "semi": ["error", "always"],
 
       // Node.js and Express specific rules
       "no-unused-vars": ["warn"],
-      "no-console": "warn",
       "no-process-env": "warn",
       "no-sync": "warn",
       "consistent-return": "error",
