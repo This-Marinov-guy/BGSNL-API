@@ -139,7 +139,7 @@ export const checkDiscountsOnEvents = (event) => {
     return event;
   }
 
-  const guestCount = event?.guestList?.length ?? 0;
+  let guestCount = event?.guestList?.length ?? 0;
   event.product["earlyBird"] = false;
   event.product["lateBird"] = false;
 
@@ -149,6 +149,10 @@ export const checkDiscountsOnEvents = (event) => {
       limit: !Object.prototype.hasOwnProperty.call(earlyBird, "ticketLimit"),
       timer: !Object.prototype.hasOwnProperty.call(earlyBird, "ticketTimer"),
     };
+
+    if (guestCount > 0 && earlyBird.excludeMembers) {
+      guestCount = event.guestList.filter((g) => g.type !== "member").length;
+    }
 
     if (
       Object.prototype.hasOwnProperty.call(earlyBird, "ticketLimit") &&
@@ -186,6 +190,10 @@ export const checkDiscountsOnEvents = (event) => {
       limit: !Object.prototype.hasOwnProperty.call(lateBird, "ticketLimit"),
       timer: !Object.prototype.hasOwnProperty.call(lateBird, "ticketTimer"),
     };
+
+    if (guestCount > 0 && lateBird.excludeMembers) {
+      guestCount = event.guestList.filter((g) => g.type !== "member").length;
+    }
 
     if (
       Object.prototype.hasOwnProperty.call(lateBird, "ticketLimit") &&
