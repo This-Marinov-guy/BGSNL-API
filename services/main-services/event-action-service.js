@@ -147,7 +147,9 @@ export const checkDiscountsOnEvents = (event) => {
     const earlyBird = event.earlyBird;
     const isEarlyBird = {
       limit: !Object.prototype.hasOwnProperty.call(earlyBird, "ticketLimit"),
-      timer: !Object.prototype.hasOwnProperty.call(earlyBird, "ticketTimer"),
+      timer:
+        !Object.prototype.hasOwnProperty.call(earlyBird, "ticketTimer") &&
+        !Object.prototype.hasOwnProperty.call(earlyBird, "startTimer"),
     };
 
     if (guestCount > 0 && earlyBird.excludeMembers) {
@@ -164,6 +166,13 @@ export const checkDiscountsOnEvents = (event) => {
     if (
       Object.prototype.hasOwnProperty.call(earlyBird, "ticketTimer") &&
       moment(earlyBird.ticketTimer).isAfter(moment())
+    ) {
+      isEarlyBird["timer"] = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(earlyBird, "startTimer") &&
+      moment(earlyBird.ticketTimer).isBefore(moment())
     ) {
       isEarlyBird["timer"] = true;
     }
@@ -205,6 +214,13 @@ export const checkDiscountsOnEvents = (event) => {
     if (
       Object.prototype.hasOwnProperty.call(lateBird, "ticketTimer") &&
       moment(lateBird.ticketTimer).isAfter(moment())
+    ) {
+      isLateBird["timer"] = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(lateBird, "startTimer") &&
+      moment(lateBird.ticketTimer).isBefore(moment())
     ) {
       isLateBird["timer"] = true;
     }

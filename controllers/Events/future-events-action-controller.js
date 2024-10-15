@@ -115,7 +115,7 @@ export const addEvent = async (req, res, next) => {
     ticketName,
     bgImage,
     bgImageSelection,
-  } = req.body;  
+  } = req.body;
 
   const extraInputsForm = processExtraInputsForm(
     parseStingData(req.body.extraInputsForm)
@@ -382,6 +382,9 @@ export const editEvent = async (req, res, next) => {
   const extraInputsForm = processExtraInputsForm(
     parseStingData(req.body.extraInputsForm)
   );
+
+  const earlyBird = JSON.parse(req.body.earlyBird);
+  const lateBird = JSON.parse(req.body.lateBird);
   const subEvent = JSON.parse(req.body.subEvent);
 
   const poster = req.files["poster"]
@@ -483,6 +486,54 @@ export const editEvent = async (req, res, next) => {
     return next(new HttpError("Price update failed!", 500));
   }
 
+  if (earlyBird.isEnabled && event?.product) {
+    try {
+      if (earlyBird["price"] != event?.earlyBird?.price) {
+        earlyBird["priceId"] = await addPrice(
+          region,
+          event.product.id,
+          earlyBird["price"],
+          "early bird guest"
+        );
+      }
+
+      if (earlyBird["memberPrice"] != event?.earlyBird?.memberPrice) {
+        earlyBird["memberPriceId"] = await addPrice(
+          region,
+          event.product.id,
+          earlyBird["memberPrice"],
+          "early bird member"
+        );
+      }
+    } catch (err) {
+      console.log(err.message);
+    }
+  }
+
+  if (lateBird.isEnabled && event?.product) {
+    try {
+      if (lateBird["price"] != event?.lateBird?.price) {
+        lateBird["priceId"] = await addPrice(
+          region,
+          event.product.id,
+          lateBird["price"],
+          "late bird guest"
+        );
+      }
+
+      if (lateBird["memberPrice"] != event?.lateBird?.memberPrice) {
+        lateBird["memberPriceId"] = await addPrice(
+          region,
+          event.product.id,
+          lateBird["memberPrice"],
+          "late bird member"
+        );
+      }
+    } catch (err) {
+      console.log(err.message);
+    }
+  }
+
   event.images = images;
   event.bgImageSelection = bgImageSelection;
   event.memberOnly = memberOnly;
@@ -507,6 +558,8 @@ export const editEvent = async (req, res, next) => {
   event.ticketQR = ticketQR === "true";
   event.ticketName = ticketName === "true";
   event.bgImage = bgImage;
+  event.earlyBird = earlyBird;
+  event.lateBird = lateBird;
 
   try {
     await event.save();
