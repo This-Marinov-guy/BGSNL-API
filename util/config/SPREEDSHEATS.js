@@ -25,4 +25,9 @@ export const SPREADSHEETS_ID = {
         events: '1OmuK1f1XOrNWmiMyX1kJqvPRsWqZLHBsGthfM4IVQWw',
         users: '1Jb_wU-OSzuRA5mL-1LhvfboX2EM6jXzj-F-FMvvY6XI'
     }
-}
+};
+
+export const CLONE_SHEETS = {
+    //amsterdam
+    ["67081406ed33752545c5ee62"]: "12hG3IQJq9A7SdWBL4n2aKBq6ddg16iQ9T2um68iBFy4"
+};
