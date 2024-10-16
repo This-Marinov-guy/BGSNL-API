@@ -77,7 +77,7 @@ export const updateEventPrices = async (
   memberPrice = 0,
   activeMemberPrice = 0
 ) => {
-  if (guestPrice && (!product.guest || product.guest?.price !== guestPrice)) {
+  if (guestPrice && (!product.guest || product.guest?.price != guestPrice)) {
     const guestPriceId = await addPrice(
       region,
       product.id,
@@ -94,8 +94,8 @@ export const updateEventPrices = async (
   }
 
   if (
-    memberPrice &&
-    (!product.member || product.member?.price !== memberPrice)
+    memberPrice > 0 &&
+    (!product.member || product.member.price != memberPrice)
   ) {
     const memberPriceId = await addPrice(
       region,
@@ -113,8 +113,8 @@ export const updateEventPrices = async (
   }
 
   if (
-    activeMemberPrice &&
-    (!product.activeMember || product.activeMember?.price !== activeMemberPrice)
+    activeMemberPrice > 0 &&
+    (!product.activeMember || product.activeMember.price != activeMemberPrice)
   ) {
     const activeMemberPriceId = await addPrice(
       region,

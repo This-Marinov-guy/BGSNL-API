@@ -125,7 +125,7 @@ export const processExtraInputsForm = (extraInputsForm) => {
   if (!extraInputsForm) {
     return extraInputsForm;
   }
-  
+
   return extraInputsForm.filter((obj) => {
     if (!obj.hasOwnProperty("placeholder")) {
       return false;
@@ -177,25 +177,29 @@ export const refactorToKeyValuePairs = (obj) => {
 };
 
 export const parseStingData = (arr, fromJson = true) => {
-  if (!arr || arr?.length === 0) {
-    return null;
-  }
+  try {
+    if (!arr || arr?.length === 0) {
+      return null;
+    }
 
-  if (fromJson) {
-    arr = JSON.parse(arr);
-  }
+    if (fromJson) {
+      arr = JSON.parse(arr);
+    }
 
-  return arr.map((obj) => {
-    let newObj = { ...obj }; // Copy the object to avoid mutating the original
+    return arr.map((obj) => {
+      let newObj = { ...obj }; // Copy the object to avoid mutating the original
 
-    Object.keys(newObj).forEach((key) => {
-      if (newObj[key] === "true") {
-        newObj[key] = true; // Convert string "true" to boolean true
-      } else if (newObj[key] === "false") {
-        newObj[key] = false; // Convert string "false" to boolean false
-      }
+      Object.keys(newObj).forEach((key) => {
+        if (newObj[key] === "true") {
+          newObj[key] = true; // Convert string "true" to boolean true
+        } else if (newObj[key] === "false") {
+          newObj[key] = false; // Convert string "false" to boolean false
+        }
+      });
+
+      return newObj;
     });
-
-    return newObj;
-  });
+  } catch (err) {
+    return arr;
+  }
 };

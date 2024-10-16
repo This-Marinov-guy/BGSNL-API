@@ -457,9 +457,9 @@ export const editEvent = async (req, res, next) => {
   try {
     // if no product and prices are passed, we create a product. If we have product we update it
     if (
-      !event.isFree &&
+      isFree !== "true" &&
       !(event.product && event.product.id) &&
-      (guestPrice || memberPrice || activeMemberPrice)
+      !!(guestPrice || memberPrice || activeMemberPrice)
     ) {
       event.product = await createEventProductWithPrice(
         {
@@ -472,7 +472,7 @@ export const editEvent = async (req, res, next) => {
         memberPrice,
         activeMemberPrice
       );
-    } else if (!event.isFree && event?.product && event.product.id) {
+    } else if (isFree !== "true" && !!event?.product && !!event.product?.id) {
       event.product = await updateEventPrices(
         event.region,
         event.product,
