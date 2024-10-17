@@ -27,6 +27,7 @@ import {
   updateEventPrices,
 } from "../../services/main-services/event-action-service.js";
 import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
+import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
 
 export const fetchFullDataEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
@@ -327,6 +328,12 @@ export const addEvent = async (req, res, next) => {
   try {
     await eventToSpreadsheet(event.id);
   } catch {}
+
+  try{
+    await syncEvents();
+  } catch(error) {
+    console.error("Error syncing events:", error.message);
+  }
 
   event = event.toObject({ getters: true });
 

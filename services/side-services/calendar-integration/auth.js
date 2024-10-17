@@ -8,7 +8,6 @@ const __dirname = path.dirname(__filename);
 
 const SERVICE_ACCOUNT_KEY_FILE = path.join(__dirname, 'service-account-key.json');
 
-// JWT initialization for Google Calendar API
 export function initializeServiceAccountClient() {
   const credentials = JSON.parse(fs.readFileSync(SERVICE_ACCOUNT_KEY_FILE));
 

@@ -46,6 +46,12 @@ eventRouter.get(
 )
 
 eventRouter.post(
+  "/sync-calendar-events",
+  [],
+  postSyncEventsCalendar
+);
+
+eventRouter.post(
   "/check-guest-discount/:eventId",
   [
     check("email").notEmpty(),
@@ -93,11 +99,11 @@ eventRouter.post(
   postNonSocietyEvent
 );
 
-eventRouter.post(
-  "/sync-calendar-events",
-  [],
-  postSyncEventsCalendar
-);
+// eventRouter.post(
+//   "/sync-calendar-events",
+//   [],
+//   postSyncEventsCalendar
+// );
 
 eventRouter.patch(
   '/check-guest-list',

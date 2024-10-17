@@ -1,10 +1,12 @@
-import { fetchExistingEvents, insertOrUpdateEvent, deleteEvent } from './calendar.js';
-import { fetchEventsFromDB } from './mongodb.js';
+import Event from '../../../models/Event.js';
+import { fetchExistingEvents, insertOrUpdateEvent, deleteEvent, deletePastEvents } from './calendar.js';
 
 export async function syncEvents() {
   try {
+    await deletePastEvents(); 
+
     const googleEvents = await fetchExistingEvents();
-    const mongoEvents = await fetchEventsFromDB();
+    const mongoEvents = await Event.find({ hidden: false }).exec();
 
     const googleEventsMap = {};
     googleEvents.forEach(event => {
@@ -19,7 +21,6 @@ export async function syncEvents() {
       mongoEventsMap[key] = event;
     });
 
-    // Update or delete events in Google Calendar based on MongoDB
     for (const [key, googleEvent] of Object.entries(googleEventsMap)) {
       if (mongoEventsMap[key]) {
         const mongoEvent = mongoEventsMap[key];
@@ -30,7 +31,6 @@ export async function syncEvents() {
       }
     }
 
-    // Insert remaining MongoDB events that don't exist in Google Calendar
     for (const [key, mongoEvent] of Object.entries(mongoEventsMap)) {
       await insertOrUpdateEvent(mongoEvent);
     }
