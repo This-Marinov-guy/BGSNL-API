@@ -288,7 +288,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
     guestEmail,
     guestPhone,
     preferences,
-  } = req.body;
+  } = req.body;  
 
   let societyEvent;
   try {
@@ -346,7 +346,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
 
   await eventToSpreadsheet(societyEvent.id);
 
-  res.status(201).json({ status: true, message: "Success" });
+  return res.status(201).json({ status: true, message: "Success" });
 };
 
 export const postNonSocietyEvent = async (req, res, next) => {
