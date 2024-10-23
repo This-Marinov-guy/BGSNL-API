@@ -56,7 +56,8 @@ export const fetchFullDataEvent = async (req, res, next) => {
   }
 
   event = checkDiscountsOnEvents(event);
-  event = removeModelProperties(event, ["guestList", "earlyBird", "lateBird"]);
+  // TODO: remove early, lateBird and add them to a new
+  event = removeModelProperties(event, ["guestList"]);
 
   res.status(200).json({
     event,
@@ -79,9 +80,8 @@ export const fetchFullDataEventsList = async (req, res, next) => {
     return next(new HttpError("Fetching events failed", 500));
   }
 
-  events = events.map((event) =>
-    removeModelProperties(event, ["guestList", "earlyBird", "lateBird"])
-  );
+  // TODO: remove early, lateBird and add them to a new
+  events = events.map((event) => removeModelProperties(event, ["guestList"]));
 
   res.status(200).json({ events });
 };
