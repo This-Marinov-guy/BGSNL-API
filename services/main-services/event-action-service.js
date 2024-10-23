@@ -143,6 +143,56 @@ export const checkDiscountsOnEvents = (event) => {
   event.product["earlyBird"] = false;
   event.product["lateBird"] = false;
 
+  if (event?.lateBird && event.lateBird.isEnabled) {
+    const lateBird = event.lateBird;
+    const isLateBird = {
+      limit: !Object.prototype.hasOwnProperty.call(lateBird, "ticketLimit"),
+      timer:
+        !Object.prototype.hasOwnProperty.call(lateBird, "ticketTimer") ||
+        !Object.prototype.hasOwnProperty.call(lateBird, "startTimer"),
+    };
+
+    if (guestCount > 0 && lateBird.excludeMembers) {
+      guestCount = event.guestList.filter((g) => g.type !== "member").length;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(lateBird, "ticketLimit") &&
+      lateBird.ticketLimit > guestCount
+    ) {
+      isLateBird["limit"] = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(lateBird, "ticketTimer") &&
+      moment(lateBird.ticketTimer).isAfter(moment())
+    ) {
+      isLateBird["timer"] = true;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(lateBird, "startTimer") &&
+      moment(lateBird.startTimer).isBefore(moment())
+    ) {
+      isLateBird["timer"] = true;
+    }    
+
+    if (isLateBird.limit && isLateBird.timer) {
+      event.product["lateBird"] = true;
+
+      event.product["guest"] = {
+        price: lateBird.price,
+        priceId: lateBird.priceId,
+      };
+      event.product["member"] = {
+        price: lateBird.memberPrice,
+        priceId: lateBird.memberPriceId,
+      };
+
+      return event;
+    }
+  }
+
   if (event?.earlyBird && event.earlyBird.isEnabled) {
     const earlyBird = event.earlyBird;
     const isEarlyBird = {
@@ -172,7 +222,7 @@ export const checkDiscountsOnEvents = (event) => {
 
     if (
       Object.prototype.hasOwnProperty.call(earlyBird, "startTimer") &&
-      moment(earlyBird.ticketTimer).isBefore(moment())
+      moment(earlyBird.startTimer).isBefore(moment())
     ) {
       isEarlyBird["timer"] = true;
     }
@@ -187,54 +237,6 @@ export const checkDiscountsOnEvents = (event) => {
       event.product["member"] = {
         price: earlyBird.memberPrice,
         priceId: earlyBird.memberPriceId,
-      };
-
-      return event;
-    }
-  }
-
-  if (event?.lateBird && event.lateBird.isEnabled) {
-    const lateBird = event.lateBird;
-    const isLateBird = {
-      limit: !Object.prototype.hasOwnProperty.call(lateBird, "ticketLimit"),
-      timer: !Object.prototype.hasOwnProperty.call(lateBird, "ticketTimer"),
-    };
-
-    if (guestCount > 0 && lateBird.excludeMembers) {
-      guestCount = event.guestList.filter((g) => g.type !== "member").length;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(lateBird, "ticketLimit") &&
-      lateBird.ticketLimit > guestCount
-    ) {
-      isLateBird["limit"] = true;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(lateBird, "ticketTimer") &&
-      moment(lateBird.ticketTimer).isAfter(moment())
-    ) {
-      isLateBird["timer"] = true;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(lateBird, "startTimer") &&
-      moment(lateBird.ticketTimer).isBefore(moment())
-    ) {
-      isLateBird["timer"] = true;
-    }
-
-    if (isLateBird.limit && isLateBird.timer) {
-      event.product["lateBird"] = true;
-
-      event.product["guest"] = {
-        price: lateBird.price,
-        priceId: lateBird.priceId,
-      };
-      event.product["member"] = {
-        price: lateBird.memberPrice,
-        priceId: lateBird.memberPriceId,
       };
 
       return event;
