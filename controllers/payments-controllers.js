@@ -388,6 +388,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             guestEmail,
             guestPhone,
             preferences,
+            type
           } = metadata;
 
           let societyEvent;
@@ -397,7 +398,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             return next(new HttpError(err.message, 500));
           }
           let guest = {
-            type: "guest",
+            type: type ?? "guest",
             code,
             name: guestName,
             email: guestEmail,
@@ -433,7 +434,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           return res.status(200).json({ received: true });
         }
         case "buy_member_ticket": {
-          const { eventId, userId, code, preferences } = metadata;
+          const { eventId, userId, code, preferences, type } = metadata;
           let societyEvent;
           try {
             societyEvent = await Event.findById(eventId);
@@ -455,7 +456,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             const sess = await mongoose.startSession();
             sess.startTransaction();
             societyEvent.guestList.push({
-              type: "member",
+              type: type ?? "member",
               code,
               name: targetUser.name + " " + targetUser.surname,
               email: targetUser.email,

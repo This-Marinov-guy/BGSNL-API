@@ -209,7 +209,7 @@ export const checkEligibleGuestForDiscount = async (req, res, next) => {
 };
 
 export const postAddMemberToEvent = async (req, res, next) => {
-  const { userId, eventId, code, preferences } = req.body;
+  const { userId, eventId, code, type, preferences } = req.body;
   let societyEvent;
 
   try {
@@ -241,7 +241,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
     const sess = await mongoose.startSession();
     sess.startTransaction();
     societyEvent.guestList.push({
-      type: "member",
+      type: type ?? "member",
       code,
       name: targetUser.name + " " + targetUser.surname,
       email: targetUser.email,
@@ -288,6 +288,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
     guestEmail,
     guestPhone,
     preferences,
+    type,
   } = req.body;  
 
   let societyEvent;
@@ -311,7 +312,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
   }
 
   let guest = {
-    type: "guest",
+    type: type ?? "guest",
     code,
     name: guestName,
     email: guestEmail,
