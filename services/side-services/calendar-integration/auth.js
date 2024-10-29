@@ -1,23 +1,17 @@
 import { google } from "googleapis";
 import dotenv from "dotenv";
-
-// Load environment variables
 dotenv.config();
 
-// JWT initialization for Google Calendar API
 export function initializeServiceAccountClient() {
   try {
-    // Verify credentials exist
-    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    if (!process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS) {
       throw new Error(
-        "Missing GOOGLE_APPLICATION_CREDENTIALS in environment variables"
+        "Missing GOOGLE_APPLICATION_ADMIN_CREDENTIALS in environment variables"
       );
     }
 
-    // Parse credentials with error handling
-    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS);
+    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS);
 
-    // Verify required credential fields
     if (!credentials.client_email || !credentials.private_key) {
       throw new Error(
         "Invalid credentials format: missing client_email or private_key"
@@ -30,7 +24,7 @@ export function initializeServiceAccountClient() {
       null,
       credentials.private_key,
       ["https://www.googleapis.com/auth/calendar"],
-      credentials.project_id // Added project_id
+      credentials.project_id 
     );
 
     return jwtClient;
