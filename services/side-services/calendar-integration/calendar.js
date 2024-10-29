@@ -1,26 +1,45 @@
-import { calendar } from './auth.js';
-import dotenv from 'dotenv';
-
+import { google } from "googleapis";
+import dotenv from "dotenv";
 dotenv.config();
 
 const calendarId = process.env.CALENDAR_ID;
+
+// Connecting to Google Calendar
+const getCalendarClient = async () => {
+  const credentials = JSON.parse(
+    process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
+  );
+  const auth = new google.auth.GoogleAuth({
+    credentials: credentials,
+    scopes: "https://www.googleapis.com/auth/calendar",
+  });
+
+  const googleClient = await auth.getClient();
+
+  return google.sheets({ version: "v3", auth: googleClient });
+};
 
 export async function fetchExistingEvents() {
   const now = new Date();
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   const timeMin = yesterday.toISOString();
-  
+
+  const calendar = await getCalendarClient();
+
   try {
     const response = await calendar.events.list({
       calendarId: calendarId,
-      timeMin: timeMin,  // fetching only future events, starting from yesterday
+      timeMin: timeMin, // fetching only future events, starting from yesterday
       singleEvents: true,
-      orderBy: 'startTime',
+      orderBy: "startTime",
     });
     return response.data.items;
   } catch (error) {
-    console.error('Error fetching existing events from Google Calendar:', error);
+    console.error(
+      "Error fetching existing events from Google Calendar:",
+      error
+    );
     return [];
   }
 }
@@ -28,21 +47,32 @@ export async function fetchExistingEvents() {
 export async function insertOrUpdateEvent(eventData) {
   const startDate = new Date(eventData.date);
   if (isNaN(startDate.getTime())) {
-    console.error('Invalid event date:', eventData.date);
+    console.error("Invalid event date:", eventData.date);
     return;
   }
 
   const event = {
-    summary: eventData.title || 'No Title',
-    location: eventData.location || '',
-    description: eventData.description || '',
-    start: { dateTime: startDate.toISOString(), timeZone: 'Europe/Amsterdam' },
-    end: { dateTime: new Date(startDate.getTime() + 2 * 60 * 60 * 1000).toISOString(), timeZone: 'Europe/Amsterdam' },
+    summary: eventData.title || "No Title",
+    location: eventData.location || "",
+    description: eventData.description || "",
+    start: { dateTime: startDate.toISOString(), timeZone: "Europe/Amsterdam" },
+    end: {
+      dateTime: new Date(
+        startDate.getTime() + 2 * 60 * 60 * 1000
+      ).toISOString(),
+      timeZone: "Europe/Amsterdam",
+    },
   };
+
+  const calendar = await getCalendarClient();
 
   try {
     const existingEvents = await fetchExistingEvents();
-    const existingEvent = existingEvents.find(e => e.summary === eventData.title && new Date(e.start.dateTime).getTime() === startDate.getTime());
+    const existingEvent = existingEvents.find(
+      (e) =>
+        e.summary === eventData.title &&
+        new Date(e.start.dateTime).getTime() === startDate.getTime()
+    );
 
     if (existingEvent) {
       await calendar.events.update({
@@ -50,21 +80,32 @@ export async function insertOrUpdateEvent(eventData) {
         eventId: existingEvent.id,
         resource: event,
       });
-      console.log('Event updated:', existingEvent.htmlLink);
+      console.log("Event updated:", existingEvent.htmlLink);
     } else {
-      const response = await calendar.events.insert({ calendarId: calendarId, resource: event });
-      console.log('Event created:', response.data.htmlLink);
+      const response = await calendar.events.insert({
+        calendarId: calendarId,
+        resource: event,
+      });
+      console.log("Event created:", response.data.htmlLink);
     }
   } catch (error) {
-    console.error('Error inserting or updating event:', error.response ? error.response.data : error);
+    console.error(
+      "Error inserting or updating event:",
+      error.response ? error.response.data : error
+    );
   }
 }
 
 export async function deleteEvent(eventId) {
+  const calendar = await getCalendarClient();
+
   try {
     await calendar.events.delete({ calendarId: calendarId, eventId });
     console.log(`Event deleted from Google Calendar: ${eventId}`);
   } catch (error) {
-    console.error(`Error deleting event ${eventId}:`, error.response ? error.response.data : error);
+    console.error(
+      `Error deleting event ${eventId}:`,
+      error.response ? error.response.data : error
+    );
   }
 }
