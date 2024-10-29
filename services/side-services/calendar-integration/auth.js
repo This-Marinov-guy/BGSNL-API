@@ -1,13 +1,6 @@
 import { google } from 'googleapis';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import dotenv from "dotenv";
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const SERVICE_ACCOUNT_KEY_FILE = path.join(__dirname, 'service-account-key.json');
 
 // JWT initialization for Google Calendar API
 export function initializeServiceAccountClient() {
