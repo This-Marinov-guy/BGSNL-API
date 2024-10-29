@@ -22,16 +22,19 @@ const eventSchema = new Schema({
     lateBird: { type: Boolean, default: false },
     guest: {
       discount: { type: Number },
+      originalPrice: { type: Number },
       price: { type: Number },
       priceId: { type: String },
     },
     member: {
       discount: { type: Number },
+      originalPrice: { type: Number },
       price: { type: Number },
       priceId: { type: String },
     },
     activeMember: {
       discount: { type: Number },
+      originalPrice: { type: Number },
       price: { type: Number },
       priceId: { type: String },
     },

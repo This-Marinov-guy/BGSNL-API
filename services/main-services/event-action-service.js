@@ -157,6 +157,7 @@ export const checkDiscountsOnEvents = (event) => {
 
     event.product["guest"] = {
       discount: event.promotion.guest.discount,
+      originalPrice: event.product.guest.price,
       price: discountedPrice,
       priceId: event.promotion.guest.priceId,
     };
@@ -177,6 +178,7 @@ export const checkDiscountsOnEvents = (event) => {
 
     event.product["member"] = {
       discount: event.promotion.member.discount,
+      originalPrice: event.product.member.price,
       price: discountedPrice,
       priceId: event.promotion.member.priceId,
     };
