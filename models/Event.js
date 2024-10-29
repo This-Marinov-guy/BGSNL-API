@@ -33,6 +33,22 @@ const eventSchema = new Schema({
       priceId: { type: String },
     },
   },
+  promotion: {
+    guest: {
+      isEnabled: { type: Boolean, required: true, default: false },
+      discount: { type: Number, default: 0 },
+      priceId: { type: String },
+      startTimer: { type: Date },
+      endTimer: { type: Date },
+    },
+    member: {
+      isEnabled: { type: Boolean, required: true, default: 0 },
+      discount: { type: Number },
+      priceId: { type: String },
+      startTimer: { type: Date },
+      endTimer: { type: Date },
+    },
+  },
   entryIncluding: { type: String },
   memberIncluding: { type: String },
   including: { type: String },

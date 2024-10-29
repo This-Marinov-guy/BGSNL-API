@@ -123,6 +123,9 @@ export const addEvent = async (req, res, next) => {
 
   const earlyBird = JSON.parse(req.body.earlyBird);
   const lateBird = JSON.parse(req.body.lateBird);
+  const guestPromotion = JSON.parse(req.body.guestPromotion);
+  const memberPromotion = JSON.parse(req.body.memberPromotion);
+
   const subEvent = JSON.parse(req.body.subEvent);
 
   let event;
@@ -269,6 +272,38 @@ export const addEvent = async (req, res, next) => {
         console.log(err.message);
       }
     }
+
+    if (guestPromotion.isEnabled) {
+      const discountedPrice =
+        Math.round(product.guest.price * (100 - guestPromotion.discount)) / 100;
+
+      try {
+        guestPromotion["priceId"] = await addPrice(
+          region,
+          product.id,
+          discountedPrice,
+          "guest promotion"
+        );
+      } catch (err) {
+        console.log(err.message);
+      }
+    }
+
+    if (memberPromotion.isEnabled) {
+      const discountedPrice =
+        Math.round(product.member.price * (100 - memberPromotion.discount)) / 100;
+
+      try {
+        memberPromotion["priceId"] = await addPrice(
+          region,
+          product.id,
+          discountedPrice,
+          "member promotion"
+        );
+      } catch (err) {
+        console.log(err.message);
+      }
+    }
   }
 
   const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`;
@@ -308,6 +343,10 @@ export const addEvent = async (req, res, next) => {
     folder,
     sheetName,
     product,
+    promotion: {
+      guest: guestPromotion,
+      member: memberPromotion,
+    },
     earlyBird,
     lateBird,
   });
@@ -385,6 +424,8 @@ export const editEvent = async (req, res, next) => {
 
   const earlyBird = JSON.parse(req.body.earlyBird);
   const lateBird = JSON.parse(req.body.lateBird);
+  const guestPromotion = JSON.parse(req.body.guestPromotion);
+  const memberPromotion = JSON.parse(req.body.memberPromotion);
   const subEvent = JSON.parse(req.body.subEvent);
 
   const poster = req.files["poster"]
@@ -534,6 +575,46 @@ export const editEvent = async (req, res, next) => {
     }
   }
 
+  if (
+    guestPromotion.isEnabled &&
+    event?.product &&
+    guestPromotion.discount !== event?.promotion?.guest?.discount
+  ) {
+    const discountedPrice =
+      Math.round(event.product.guest.price * (100 - guestPromotion.discount)) / 100;
+
+    try {
+      guestPromotion["priceId"] = await addPrice(
+        region,
+        event.product.id,
+        discountedPrice,
+        "guest promotion"
+      );
+    } catch (err) {
+      console.log(err.message);
+    }
+  }
+
+  if (
+    memberPromotion.isEnabled &&
+    event?.product &&
+    memberPromotion.discount !== event?.promotion?.member?.discount
+  ) {
+    const discountedPrice =
+      Math.round(event.product.member.price * (100 - memberPromotion.discount)) / 100;
+
+    try {
+      memberPromotion["priceId"] = await addPrice(
+        region,
+        event.product.id,
+        discountedPrice,
+        "member promotion"
+      );
+    } catch (err) {
+      console.log(err.message);
+    }
+  }
+
   event.images = images;
   event.bgImageSelection = bgImageSelection;
   event.memberOnly = memberOnly;
@@ -560,6 +641,10 @@ export const editEvent = async (req, res, next) => {
   event.bgImage = bgImage;
   event.earlyBird = earlyBird;
   event.lateBird = lateBird;
+  event.promotion = {
+    guest: guestPromotion,
+    member: memberPromotion,
+  };
 
   try {
     await event.save();
