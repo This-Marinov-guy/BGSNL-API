@@ -135,7 +135,54 @@ export const updateEventPrices = async (
 };
 
 export const checkDiscountsOnEvents = (event) => {
-  if (event.hasOwnProperty("product")) {
+  if (!event.product) {
+    return event;
+  }
+
+  let guestDiscounted = false;
+  let memberDiscounted = false;
+
+  if (
+    event?.promotion &&
+    event?.promotion?.guest?.isEnabled &&
+    event?.promotion?.guest?.startTimer < new Date() &&
+    event?.promotion?.guest?.endTimer > new Date()
+  ) {
+    guestDiscounted = true;
+
+    const discountedPrice =
+      Math.round(
+        event.product.guest.price * (100 - event.promotion.guest.discount)
+      ) / 100;
+
+    event.product["guest"] = {
+      discount: event.promotion.guest.discount,
+      price: discountedPrice,
+      priceId: event.promotion.guest.priceId,
+    };
+  }
+
+  if (
+    event?.promotion &&
+    event?.promotion?.member?.isEnabled &&
+    event?.promotion?.member?.startTimer < new Date() &&
+    event?.promotion?.member?.endTimer > new Date()
+  ) {
+    memberDiscounted = true;
+
+    const discountedPrice =
+      Math.round(
+        event.product.member.price * (100 - event.promotion.member.discount)
+      ) / 100;
+
+    event.product["member"] = {
+      discount: event.promotion.member.discount,
+      price: discountedPrice,
+      priceId: event.promotion.member.priceId,
+    };
+  }
+
+  if (guestDiscounted && memberDiscounted) {
     return event;
   }
 
@@ -175,7 +222,7 @@ export const checkDiscountsOnEvents = (event) => {
       moment(lateBird.startTimer).isBefore(moment())
     ) {
       isLateBird["timer"] = true;
-    }    
+    }
 
     if (isLateBird.limit && isLateBird.timer) {
       event.product["lateBird"] = true;

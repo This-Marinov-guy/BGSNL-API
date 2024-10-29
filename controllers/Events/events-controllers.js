@@ -80,6 +80,7 @@ export const getEventById = async (req, res, next) => {
       "freePass",
       "earlyBird",
       "lateBird",
+      "promotion",
     ]);
 
     res.status(200).json({ event, status });
@@ -111,6 +112,7 @@ export const getEvents = async (req, res, next) => {
       "freePass",
       "earlyBird",
       "lateBird",
+      "promotion",
     ])
   );
 
@@ -289,7 +291,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
     guestPhone,
     preferences,
     type,
-  } = req.body;  
+  } = req.body;
 
   let societyEvent;
   try {

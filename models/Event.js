@@ -21,14 +21,17 @@ const eventSchema = new Schema({
     earlyBird: { type: Boolean, default: false },
     lateBird: { type: Boolean, default: false },
     guest: {
+      discount: { type: Number },
       price: { type: Number },
       priceId: { type: String },
     },
     member: {
+      discount: { type: Number },
       price: { type: Number },
       priceId: { type: String },
     },
     activeMember: {
+      discount: { type: Number },
       price: { type: Number },
       priceId: { type: String },
     },
