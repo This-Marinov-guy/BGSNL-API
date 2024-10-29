@@ -5,6 +5,8 @@ import {
   CLONE_SHEETS,
   SPREADSHEETS_ID,
 } from "../../util/config/SPREEDSHEATS.js";
+import dotenv from "dotenv";
+dotenv.config();
 import mongoose from "mongoose";
 import moment from "moment-timezone";
 import Event from "../../models/Event.js";
@@ -141,8 +143,9 @@ const eventToSpreadsheet = async (id) => {
     }
 
     // Connecting to Google Sheets
+    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS);
     const auth = new google.auth.GoogleAuth({
-      keyFile: "credentials.json",
+      credentials: credentials,
       scopes: "https://www.googleapis.com/auth/spreadsheets",
     });
 
@@ -344,8 +347,9 @@ const usersToSpreadsheet = async (region = null) => {
     const sheetName = "Members";
 
     // Connecting to Google Spreadsheet
+    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS);
     const auth = new google.auth.GoogleAuth({
-      keyFile: "credentials.json",
+      credentials: credentials,
       scopes: "https://www.googleapis.com/auth/spreadsheets",
     });
 
