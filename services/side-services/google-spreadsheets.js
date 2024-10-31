@@ -1,4 +1,4 @@
-import { MongoClient, ObjectId } from "mongodb";
+import { MongoClient } from "mongodb";
 import { google } from "googleapis";
 import {
   BGSNL_MEMBERS_SPREADSHEETS_ID,
@@ -10,7 +10,7 @@ dotenv.config();
 import mongoose from "mongoose";
 import moment from "moment-timezone";
 import Event from "../../models/Event.js";
-import { BGSNL_URL, REGIONS } from "../../util/config/defines.js";
+import { BGSNL_URL } from "../../util/config/defines.js";
 import User from "../../models/User.js";
 import { refactorToKeyValuePairs } from "../../util/functions/helpers.js";
 import { MOMENT_DATE_TIME_YEAR } from "../../util/functions/dateConvert.js";
@@ -116,7 +116,7 @@ const eventToSpreadsheet = async (id) => {
       ticketLimit,
       product,
       sheetName,
-      createdAt = '-',
+      createdAt = "-",
     } = event;
     let ticketLink = event.ticketLink ?? null;
 
@@ -145,7 +145,9 @@ const eventToSpreadsheet = async (id) => {
     }
 
     // Connecting to Google Sheets
-    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS);
+    const credentials = JSON.parse(
+      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
+    );
     const auth = new google.auth.GoogleAuth({
       credentials: credentials,
       scopes: "https://www.googleapis.com/auth/spreadsheets",
@@ -213,7 +215,9 @@ const eventToSpreadsheet = async (id) => {
         product?.member.price ?? "-",
         product?.activeMember.price ?? "-",
         ticketLink,
-        createdAt != '-' ? moment(createdAt).format(MOMENT_DATE_TIME_YEAR) : '-',
+        createdAt != "-"
+          ? moment(createdAt).format(MOMENT_DATE_TIME_YEAR)
+          : "-",
       ],
     ];
 
@@ -351,7 +355,9 @@ const usersToSpreadsheet = async (region = null) => {
     const sheetName = "Members";
 
     // Connecting to Google Spreadsheet
-    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS);
+    const credentials = JSON.parse(
+      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
+    );
     const auth = new google.auth.GoogleAuth({
       credentials: credentials,
       scopes: "https://www.googleapis.com/auth/spreadsheets",
@@ -473,6 +479,50 @@ const usersToSpreadsheet = async (region = null) => {
     console.log(`Member Sheet updated for: ${region ?? "Netherlands"}`);
   } catch (error) {
     console.error("Error in usersToSpreadsheet:", error);
+  }
+};
+
+/**
+ * Reads rows from a Google Spreadsheet
+ * @param {Object} auth - Authorized Google client
+ * @param {string} spreadsheetId - ID of the spreadsheet
+ * @param {string} sheetName - Name of the sheet
+ * @param {number} startRow - Starting row number (1-based)
+ * @param {number} endRow - Ending row number (1-based)
+ * @returns {Promise<Array>} Array of row values
+ */
+export const readSpreadsheetRows = async (
+  spreadsheetId,
+  sheetName,
+  startRow,
+  endRow
+) => {
+  try {
+    // Connecting to Google Spreadsheet
+    const credentials = JSON.parse(
+      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
+    );
+    const auth = new google.auth.GoogleAuth({
+      credentials: credentials,
+      scopes: "https://www.googleapis.com/auth/spreadsheets",
+    });
+
+    const sheets = google.sheets({ version: "v4", auth });
+
+    // Construct range (e.g., 'Sheet1!A2:Z5')
+    const range = `${sheetName}!${startRow}:${endRow}`;
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range,
+    });
+
+    return (response.data.values || [])
+      .flat()
+      .filter((value) => value !== null && value !== "");
+  } catch (error) {
+    console.error("Error reading spreadsheet:", error);
+    throw error;
   }
 };
 

@@ -31,6 +31,8 @@ export const SPREADSHEETS_ID = {
   },
 };
 
+export const STATISTICS_ABOUT_US = "170XOaxJ-aVYNiXRplyx6R8vezDxGOR8nMCJB3O3AaRs";
+
 export const CLONE_SHEETS = {
     //amsterdam
     ["67081406ed33752545c5ee62"]: "12hG3IQJq9A7SdWBL4n2aKBq6ddg16iQ9T2um68iBFy4"
