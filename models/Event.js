@@ -4,6 +4,11 @@ import { EVENT_OPENED } from "../util/config/defines.js";
 const Schema = mongoose.Schema;
 
 const eventSchema = new Schema({
+  createdAt: { type: Date, immutable: true, default: Date.now },
+  lastUpdate: {
+    timestamp: { type: Date },
+    id: { type: String },
+  },
   status: { type: String, required: true, default: EVENT_OPENED },
   region: { type: String, required: true },
   title: { type: String, required: true },

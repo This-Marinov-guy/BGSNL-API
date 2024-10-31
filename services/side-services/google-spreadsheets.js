@@ -13,6 +13,7 @@ import Event from "../../models/Event.js";
 import { BGSNL_URL, REGIONS } from "../../util/config/defines.js";
 import User from "../../models/User.js";
 import { refactorToKeyValuePairs } from "../../util/functions/helpers.js";
+import { MOMENT_DATE_TIME_YEAR } from "../../util/functions/dateConvert.js";
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -115,6 +116,7 @@ const eventToSpreadsheet = async (id) => {
       ticketLimit,
       product,
       sheetName,
+      createdAt = '-',
     } = event;
     let ticketLink = event.ticketLink ?? null;
 
@@ -197,19 +199,21 @@ const eventToSpreadsheet = async (id) => {
         "Member Price",
         "Active Member Price",
         "Ticket Link",
+        "Created At",
       ],
       [
         status,
         region,
         title,
-        moment(correctedDate ?? date).format("D MMM YYYY hh:mm a"),
+        moment(correctedDate ?? date).format(MOMENT_DATE_TIME_YEAR),
         location,
-        moment(ticketTimer).format("D MMM YYYY , hh:mm a"),
+        moment(ticketTimer).format(MOMENT_DATE_TIME_YEAR),
         ticketLimit,
         product?.guest.price ?? "-",
         product?.member.price ?? "-",
         product?.activeMember.price ?? "-",
         ticketLink,
+        createdAt != '-' ? moment(createdAt).format(MOMENT_DATE_TIME_YEAR) : '-',
       ],
     ];
 

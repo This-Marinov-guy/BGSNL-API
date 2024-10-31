@@ -27,6 +27,7 @@ import {
   updateEventPrices,
 } from "../../services/main-services/event-action-service.js";
 import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
+import { getFingerprintLite } from "../../services/main-services/user-service.js";
 
 export const fetchFullDataEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
@@ -291,7 +292,8 @@ export const addEvent = async (req, res, next) => {
 
     if (memberPromotion.isEnabled) {
       const discountedPrice =
-        Math.round(product.member.price * (100 - memberPromotion.discount)) / 100;
+        Math.round(product.member.price * (100 - memberPromotion.discount)) /
+        100;
 
       try {
         memberPromotion["priceId"] = await addPrice(
@@ -310,6 +312,7 @@ export const addEvent = async (req, res, next) => {
 
   //create event
   event = new Event({
+    lastUpdate: getFingerprintLite(req),
     memberOnly,
     hidden,
     extraInputsForm,
@@ -486,6 +489,7 @@ export const editEvent = async (req, res, next) => {
 
   images.unshift(poster || event.poster);
 
+  event.lastUpdate = getFingerprintLite(req);
   event.extraInputsForm = extraInputsForm;
   event.subEvent = subEvent;
 
@@ -581,7 +585,8 @@ export const editEvent = async (req, res, next) => {
     guestPromotion.discount !== event?.promotion?.guest?.discount
   ) {
     const discountedPrice =
-      Math.round(event.product.guest.price * (100 - guestPromotion.discount)) / 100;
+      Math.round(event.product.guest.price * (100 - guestPromotion.discount)) /
+      100;
 
     try {
       guestPromotion["priceId"] = await addPrice(
@@ -601,7 +606,9 @@ export const editEvent = async (req, res, next) => {
     memberPromotion.discount !== event?.promotion?.member?.discount
   ) {
     const discountedPrice =
-      Math.round(event.product.member.price * (100 - memberPromotion.discount)) / 100;
+      Math.round(
+        event.product.member.price * (100 - memberPromotion.discount)
+      ) / 100;
 
     try {
       memberPromotion["priceId"] = await addPrice(
