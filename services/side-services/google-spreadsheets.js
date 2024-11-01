@@ -234,7 +234,7 @@ const eventToSpreadsheet = async (id) => {
     const guests = result[0].guests.map((obj) => [
       obj.status === 1 ? "present" : "missing",
       obj.type,
-      moment(obj.timestamp).format("D MMM YYYY, hh:mm:ss a"),
+      moment(obj.timestamp).format(MOMENT_DATE_TIME_YEAR),
       obj.name,
       obj.email,
       obj.phone,
@@ -395,11 +395,11 @@ const usersToSpreadsheet = async (region = null) => {
         ...rest
       } = user;
 
-      const formattedBirth = moment(new Date(birth)).format("D MMM YYYY");
+      const formattedBirth = moment(new Date(birth)).format("MOMENT_DATE_YEAR");
       const formattedPurchaseDate = moment(rest.purchaseDate).format(
-        "D MMM YYYY"
+        "MOMENT_DATE_YEAR"
       );
-      const formattedExpireDate = moment(rest.expireDate).format("D MMM YYYY");
+      const formattedExpireDate = moment(rest.expireDate).format("MOMENT_DATE_YEAR");
 
       const dataFields = {
         ...(filterByRegion ? {} : { region }),

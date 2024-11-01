@@ -1,4 +1,4 @@
-import moment from 'moment'
+import moment from 'moment';
 
 export const MOMENT_DATE_TIME_YEAR = 'Do MMM YYYY h:mm a';
 export const MOMENT_DATE_TIME = 'Do MMM h:mm a';
@@ -8,7 +8,7 @@ export const MOMENT_DATE = 'Do MMM';
 export const formatReverseDate = (dateString) => {
   const [year, month, day] = dateString.split("-");
   const date = new Date(year, parseInt(month, 10) - 1, day);
-  return moment(date).format("D MMM YYYY");
+  return moment(date).format(MOMENT_DATE_YEAR);
 };
 
 export const dateConvertor = (date, time, getAsValue = false) => {
