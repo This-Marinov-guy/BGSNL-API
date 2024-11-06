@@ -1,8 +1,8 @@
-export default {
+module.exports = {
   apps: [
     {
       name: "BGSNL-API",
-      script: "./app.js",
+      script: "./app.js", // Your entry file
       env: {
         NODE_ENV: "production",
       },
