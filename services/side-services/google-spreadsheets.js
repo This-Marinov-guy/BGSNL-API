@@ -13,7 +13,7 @@ import Event from "../../models/Event.js";
 import { BGSNL_URL } from "../../util/config/defines.js";
 import User from "../../models/User.js";
 import { refactorToKeyValuePairs } from "../../util/functions/helpers.js";
-import { MOMENT_DATE_TIME_YEAR } from "../../util/functions/dateConvert.js";
+import { MOMENT_DATE_TIME_YEAR, MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -395,11 +395,11 @@ const usersToSpreadsheet = async (region = null) => {
         ...rest
       } = user;
 
-      const formattedBirth = moment(new Date(birth)).format("MOMENT_DATE_YEAR");
+      const formattedBirth = moment(new Date(birth)).format(MOMENT_DATE_YEAR);
       const formattedPurchaseDate = moment(rest.purchaseDate).format(
-        "MOMENT_DATE_YEAR"
+        MOMENT_DATE_YEAR
       );
-      const formattedExpireDate = moment(rest.expireDate).format("MOMENT_DATE_YEAR");
+      const formattedExpireDate = moment(rest.expireDate).format(MOMENT_DATE_YEAR);
 
       const dataFields = {
         ...(filterByRegion ? {} : { region }),

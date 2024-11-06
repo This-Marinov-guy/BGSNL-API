@@ -1,9 +1,15 @@
 import moment from 'moment';
 
-export const MOMENT_DATE_TIME_YEAR = 'Do MMM YYYY h:mm a';
-export const MOMENT_DATE_TIME = 'Do MMM h:mm a';
-export const MOMENT_DATE_YEAR = 'Do MMM YYYY';
-export const MOMENT_DATE = 'Do MMM';
+export const MOMENT_DATE_TIME_YEAR = "DD MMM YYYY h:mm a";
+export const MOMENT_DATE_TIME = "DD MMM h:mm a";
+export const MOMENT_DATE_YEAR = "DD MMM YYYY";
+export const MOMENT_DATE = "DD MMM";
+
+// TODO: switch to these once we fetch data from server and not from spreadsheets
+// export const MOMENT_DATE_TIME_YEAR = 'Do MMM YYYY h:mm a';
+// export const MOMENT_DATE_TIME = 'Do MMM h:mm a';
+// export const MOMENT_DATE_YEAR = 'Do MMM YYYY';
+// export const MOMENT_DATE = 'Do MMM';
 
 export const formatReverseDate = (dateString) => {
   const [year, month, day] = dateString.split("-");
