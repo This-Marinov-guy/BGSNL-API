@@ -61,6 +61,8 @@ export const readDatabaseCollection = async (req, res, next) => {
       case "users":
         documents = await User.find();
         break;
+      default:
+        throw new Error();
     }
 
     return res.status(200).json({
