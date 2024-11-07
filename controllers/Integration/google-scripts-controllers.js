@@ -24,15 +24,16 @@ export const readDatabaseCollection = async (req, res, next) => {
     const documents = await items.find({}).toArray();
 
     mongoose.disconnect();
-    console.log(documents);
 
     return res.status(200).json({
       status: true,
       data: documents,
     });
   } catch (err) {
-    mongoose.disconnect();
     console.log(err);
+
+    mongoose.disconnect();
+
     return res.status(500).json({
       status: false,
       message: "Error while fetching collection, please make sure it exists!",
