@@ -4,14 +4,16 @@ dotenv.config();
 
 export const readDatabaseCollection = async (req, res, next) => {
   const uri = `mongodb+srv://${process.env.DB_LAZAR_USERNAME}:${process.env.DB_LAZAR_PASS}@${process.env.DB_CLEAN}`;
-  const collection = req.params.collection;  
+  const collection = req.params.collection;
 
   try {
     await mongoose.connect(uri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
-    console.log("Connected to DB Read only");
+    console.log(
+      `Connected to DB Read-only from: ${req.ip} | ${req.headers.origin}`
+    );
   } catch (err) {
     console.log(err);
   }
