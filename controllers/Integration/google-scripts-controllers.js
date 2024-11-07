@@ -7,6 +7,8 @@ export const readDatabaseCollection = async (req, res, next) => {
   const collection = req.params.collection;
 
   try {
+    mongoose.disconnect();
+
     await mongoose.connect(uri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
