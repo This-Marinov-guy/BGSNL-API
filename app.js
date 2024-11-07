@@ -21,9 +21,14 @@ import { updateUsers } from "./util/private/manipulate-db.js";
 import futureEventRouter from "./routes/Events/future-events-routes.js";
 import wordpressRouter from "./routes/Integration/wordpress-routes.js";
 import { deleteFolder, getFolders } from "./util/functions/cloudinary.js";
+import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 
 const app = express();
 
+// Pass secured routes
+app.use("/api/google-scripts", googleScriptsRouter);
+
+// Firewall
 if (app.get('env') !== 'development') {  
   app.use(rateLimiter);
   app.use(firewall);
@@ -65,6 +70,7 @@ app.get('/', (req, res) => {
   res.status(200).json({ message: 'Welcome to BGSNL Official Server' });
 });
 
+// Protected routes
 app.use("/api/common", commonRouter);
 app.use("/api/security", securityRouter);
 app.use("/api/user", userRouter);
