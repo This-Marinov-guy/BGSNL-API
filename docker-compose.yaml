@@ -4,7 +4,6 @@ services:
   bgsnl-api:
     build: .
     container_name: bgsnl-api
-    dockerfile: Dockerfile
     ports:
       - "3000:3000"
     deploy:
