@@ -4,6 +4,8 @@ import dotenv from "dotenv";
 dotenv.config();
 import mongoose from "mongoose";
 import cors from "cors";
+import https from "https";
+import fs from "fs";
 import HttpError from "./models/Http-error.js";
 import userRouter from "./routes/users-routes.js";
 import eventRouter from "./routes/Events/events-routes.js";
@@ -24,6 +26,13 @@ import { deleteFolder, getFolders } from "./util/functions/cloudinary.js";
 import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 
 const app = express();
+
+// SSL configuration
+const sslOptions = {
+  key: fs.readFileSync('/etc/letsencrypt/live/kanatitsa.bulgariansociety.nl/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/kanatitsa.bulgariansociety.nl/fullchain.pem')
+};
+const httpsServer = https.createServer(sslOptions, app);
 
 // Pass secured routes
 app.use("/api/google-scripts", googleScriptsRouter);
@@ -104,7 +113,7 @@ mongoose
   )
   .then(() => {
     console.log("Connected to DB");
-    app.listen(process.env.PORT || 80);
+    httpsServer.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
   .catch((err) => console.log("Failed to Connect ", err));
