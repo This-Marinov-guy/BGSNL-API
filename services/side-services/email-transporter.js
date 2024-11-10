@@ -31,20 +31,21 @@ const sendTicketEmail = async (
     MEMBER_TICKET_TEMPLATE
     : GUEST_TICKET_TEMPLATE;
 
-  await client
-    .send({
-      from: sender,
-      to: recipients,
-      template_uuid,
+  await client.send({
+    from: sender,
+    to: recipients,
+    template_uuid,
+    template_variables: {
       template_variables: {
-        template_variables: {
-          eventName,
-          eventDate: moment(eventDate).add('2', 'hours').format(MOMENT_DATE_TIME),
-          guestName,
-          ticket,
-        },
+        eventName,
+        eventDate: `${moment(eventDate)
+          .tz("Europe/Amsterdam")
+          .format(MOMENT_DATE_TIME)} (Amsterdam/Europe time)`,
+        guestName,
+        ticket,
       },
-    })
+    },
+  });
 };
 
 const sendNewPasswordEmail = async (receiver, resetToken) => {
