@@ -17,22 +17,15 @@ import specialEventsRouter from "./routes/special-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
 import { STRIPE_WEBHOOK_ROUTE } from "./util/config/defines.js";
+import futureEventRouter from "./routes/Events/future-events-routes.js";
+import wordpressRouter from "./routes/Integration/wordpress-routes.js";
+import googleScriptsRouter from "./routes/Integration/google-scripts.js";
+import { deleteFolder, getFolders } from "./util/functions/cloudinary.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
 import { REGIONS } from "./util/config/defines.js";
 import { updateUsers } from "./util/private/manipulate-db.js";
-import futureEventRouter from "./routes/Events/future-events-routes.js";
-import wordpressRouter from "./routes/Integration/wordpress-routes.js";
-import { deleteFolder, getFolders } from "./util/functions/cloudinary.js";
-import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 
 const app = express();
-
-// SSL configuration
-const sslOptions = {
-  key: fs.readFileSync('/etc/letsencrypt/live/kanatitsa.bulgariansociety.nl/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/kanatitsa.bulgariansociety.nl/fullchain.pem')
-};
-const httpsServer = https.createServer(sslOptions, app);
 
 // Pass secured routes
 app.use("/api/google-scripts", googleScriptsRouter);
@@ -113,7 +106,7 @@ mongoose
   )
   .then(() => {
     console.log("Connected to DB");
-    httpsServer.listen(process.env.PORT || 80);
+    app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
   .catch((err) => console.log("Failed to Connect ", err));
