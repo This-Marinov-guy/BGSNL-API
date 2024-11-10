@@ -42,6 +42,7 @@
     "multer-sharp-s3": "^0.2.5",
     "node-cache": "^5.1.2",
     "nodemailer": "^6.9.1",
+    "pm2": "^5.4.2",
     "stripe": "^11.17.0",
     "uuid": "^9.0.0"
   },
