@@ -1,20 +1,37 @@
-# Use the Node.js image as a base
+# Dockerfile
+# ==================
 FROM node:22-alpine
 
-# Set working directory
-WORKDIR /usr/src/app
+# Install PM2 globally
+RUN npm install -g pm2
 
-# Copy package.json and package-lock.json
+# Set working directory
+WORKDIR /app
+
+# Copy package files
 COPY package*.json ./
 
 # Install dependencies
 RUN npm install
 
-# Copy the rest of the application files
+# Copy application files
 COPY . .
 
-# Expose the port your app runs on (e.g., 3000)
+# Expose the port your app runs on
 EXPOSE 3000
 
-# Start the application with PM2
-CMD ["npx", "pm2-runtime", "ecosystem.config.js"]
+# Create PM2 ecosystem file
+RUN echo '{\
+  "apps": [{\
+    "name": "express-app",\
+    "script": "src/index.js",\
+    "instances": "max",\
+    "exec_mode": "cluster",\
+    "env": {\
+      "NODE_ENV": "production"\
+    }\
+  }]\
+}' > ecosystem.config.cjs
+
+# Start PM2
+CMD ["pm2-runtime", "ecosystem.config.cjs"]
