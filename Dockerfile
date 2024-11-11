@@ -1,10 +1,11 @@
+# Use the latest Node.js LTS (Long Term Support) image
 FROM node:22-alpine
 
 # Install PM2 globally
 RUN npm install -g pm2
 
-# Set working directory
-WORKDIR /
+# Set working directory to the root of the Express project
+WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
@@ -15,11 +16,11 @@ RUN npm install
 # Copy application files
 COPY . .
 
+# Copy ecosystem config file
+COPY ecosystem.config.cjs .
+
 # Expose the port your app runs on
 EXPOSE 3000
 
-# Create PM2 ecosystem file
-COPY ecosystem.config.cjs .
-
-# Start PM2
-CMD ["pm2-runtime", "ecosystem.config.cjs"]
+# Start the application with PM2
+CMD ["pm2", "start", "ecosystem.config.cjs"]
