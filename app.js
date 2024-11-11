@@ -4,8 +4,6 @@ import dotenv from "dotenv";
 dotenv.config();
 import mongoose from "mongoose";
 import cors from "cors";
-import https from "https";
-import fs from "fs";
 import HttpError from "./models/Http-error.js";
 import userRouter from "./routes/users-routes.js";
 import eventRouter from "./routes/Events/events-routes.js";
