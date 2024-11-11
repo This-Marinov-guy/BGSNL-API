@@ -20,4 +20,4 @@ COPY . .
 EXPOSE 3000
 
 # Start the application with PM2
-CMD ["node", "app.js"]
+CMD ["pm2", "start", "/usr/src/app/ecosystem.config.cjs"]
