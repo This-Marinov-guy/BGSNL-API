@@ -4,7 +4,7 @@ FROM node:22-alpine
 RUN npm install -g pm2
 
 # Set working directory
-WORKDIR /app
+WORKDIR /
 
 # Copy package files
 COPY package*.json ./
