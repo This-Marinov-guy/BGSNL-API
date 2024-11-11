@@ -1,5 +1,3 @@
-# Dockerfile
-# ==================
 FROM node:22-alpine
 
 # Install PM2 globally
@@ -21,17 +19,7 @@ COPY . .
 EXPOSE 3000
 
 # Create PM2 ecosystem file
-RUN echo '{\
-  "apps": [{\
-    "name": "express-app",\
-    "script": "src/index.js",\
-    "instances": "max",\
-    "exec_mode": "cluster",\
-    "env": {\
-      "NODE_ENV": "production"\
-    }\
-  }]\
-}' > ecosystem.config.cjs
+COPY ecosystem.config.cjs .
 
 # Start PM2
 CMD ["pm2-runtime", "ecosystem.config.cjs"]
