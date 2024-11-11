@@ -16,11 +16,8 @@ RUN npm install
 # Copy application files
 COPY . .
 
-# Copy ecosystem config file
-COPY ecosystem.config.cjs .
-
 # Expose the port your app runs on
 EXPOSE 3000
 
 # Start the application with PM2
-CMD ["pm2", "start", "ecosystem.config.cjs"]
+CMD ["pm2", "start", "/usr/src/app/ecosystem.config.cjs"]
