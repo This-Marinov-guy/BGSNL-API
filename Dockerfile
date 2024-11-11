@@ -5,7 +5,7 @@ FROM node:22-alpine
 RUN npm install -g pm2
 
 # Set working directory to the root of the Express project
-WORKDIR /app
+WORKDIR /usr/src/app
 
 # Copy package files
 COPY package*.json ./
