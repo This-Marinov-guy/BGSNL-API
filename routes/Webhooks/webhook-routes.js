@@ -1,9 +1,7 @@
 import express from "express";
-import {
-  postWebhookCheckout,
-} from "../controllers/payments-controllers.js";
 import dotenv from "dotenv";
-import { STRIPE_WEBHOOK_ROUTE } from "../util/config/defines.js";
+import { STRIPE_WEBHOOK_ROUTE } from "../../util/config/defines.js";
+import { postWebhookCheckout } from "../../controllers/Webhooks/stripe-wh-controllers.js";
 dotenv.config();
 
 const webhookRouter = express.Router();

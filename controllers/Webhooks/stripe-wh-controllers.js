@@ -1,35 +1,35 @@
 import dotenv from "dotenv";
 dotenv.config();
 import bcrypt from "bcryptjs";
-import HttpError from "../models/Http-error.js";
+import HttpError from "../../models/Http-error.js";
 import mongoose from "mongoose";
-import Event from "../models/Event.js";
-import User from "../models/User.js";
+import Event from "../../models/Event.js";
+import User from "../../models/User.js";
 import {
   paymentFailedEmail,
   sendTicketEmail,
   welcomeEmail,
-} from "../services/side-services/email-transporter.js";
+} from "../../services/side-services/email-transporter.js";
 import {
   eventToSpreadsheet,
   usersToSpreadsheet,
-} from "../services/side-services/google-spreadsheets.js";
-import { decryptData, hasOverlap } from "../util/functions/helpers.js";
+} from "../../services/side-services/google-spreadsheets.js";
+import { decryptData, hasOverlap } from "../../util/functions/helpers.js";
 import {
   MOMENT_DATE_YEAR,
   calculatePurchaseAndExpireDates,
-} from "../util/functions/dateConvert.js";
+} from "../../util/functions/dateConvert.js";
 import {
   HOME_URL,
   LIMITLESS_ACCOUNT,
   SUBSCRIPTION_PERIOD,
-} from "../util/config/defines.js";
+} from "../../util/config/defines.js";
 import moment from "moment";
-import { ACTIVE, LOCKED, USER_STATUSES } from "../util/config/enums.js";
+import { ACTIVE, LOCKED, USER_STATUSES } from "../../util/config/enums.js";
 import {
   createStripeClient,
   getStripeKey,
-} from "../util/config/stripe.js";
+} from "../../util/config/stripe.js";
 
 export const postWebhookCheckout = async (req, res, next) => {
   const userRegion = req.query.region ?? "netherlands";
