@@ -1,10 +1,10 @@
-# Use the latest Node.js LTS (Long Term Support) image
-FROM node:22-alpine
+# Use LTS version
+FROM node:20-alpine
 
 # Install PM2 globally
 RUN npm install -g pm2
 
-# Set working directory to the root of the Express project
+# Set working directory
 WORKDIR /usr/src/app
 
 # Copy package files
@@ -16,8 +16,17 @@ RUN npm install
 # Copy application files
 COPY . .
 
-# Expose the port your app runs on
+# Create logs directory
+RUN mkdir -p /usr/src/app/logs
+
+# Set proper permissions
+RUN chown -R node:node /usr/src/app
+
+# Switch to non-root user
+USER node
+
+# Expose the port
 EXPOSE 3000
 
-# Start the application with PM2
-CMD ["pm2", "start", "/usr/src/app/ecosystem.config.cjs"]
+# Start with PM2
+CMD ["pm2-runtime", "start", "ecosystem.config.cjs"]
