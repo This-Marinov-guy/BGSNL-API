@@ -22,11 +22,13 @@ import { deleteFolder, getFolders } from "./util/functions/cloudinary.js";
 import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
 import { REGIONS } from "./util/config/defines.js";
 import { updateUsers } from "./util/private/manipulate-db.js";
+import webhookRouter from "./routes/Webhooks/webhook-routes.js";
 
 const app = express();
 
 // Pass secured routes
 app.use("/api/google-scripts", googleScriptsRouter);
+app.use("/api/webhooks", webhookRouter);
 
 // Firewall
 if (app.get('env') !== 'development') {  
