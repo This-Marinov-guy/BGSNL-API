@@ -122,6 +122,8 @@ export const decryptData = (string) => {
 };
 
 export const processExtraInputsForm = (extraInputsForm) => {
+  console.log(extraInputsForm);
+  
   if (!extraInputsForm) {
     return extraInputsForm;
   }
@@ -195,7 +197,7 @@ export const parseStingData = (arr, fromJson = true) => {
         } else if (newObj[key] === "false") {
           newObj[key] = false; // Convert string "false" to boolean false
         }
-      });
+      });      
 
       return newObj;
     });
