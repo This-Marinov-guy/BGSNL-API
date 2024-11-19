@@ -31,6 +31,8 @@ app.use("/api/google-scripts", googleScriptsRouter);
 app.use("/api/webhooks", webhookRouter);
 
 // Firewall
+app.set("trust proxy", true);
+
 if (app.get('env') !== 'development') {  
   app.use(rateLimiter);
   app.use(firewall);

@@ -60,3 +60,22 @@ export const allowedOrigins = [...webOrigins, ...stripeUrls];
 export const allowedIps = [...stripeIp];
 
 export const PROTOCOL = process.env.APP_ENV === "dev" ? "http://" : "https://";
+
+export const allowedCrawlers = [
+  { name: "Googlebot", userAgent: "Googlebot", domain: ".googlebot.com" },
+  { name: "Bingbot", userAgent: "bingbot", domain: ".search.msn.com" },
+  { name: "Yahoo Slurp", userAgent: "Slurp", domain: ".yahoo.com" },
+  { name: "DuckDuckBot", userAgent: "DuckDuckBot", domain: ".duckduckgo.com" },
+  { name: "Baiduspider", userAgent: "Baiduspider", domain: ".baidu.com" },
+  { name: "YandexBot", userAgent: "YandexBot", domain: ".yandex.ru" },
+  { name: "Applebot", userAgent: "Applebot", domain: ".applebot.apple.com" },
+  {
+    name: "Facebook",
+    userAgent: "facebookexternalhit",
+    domain: ".facebook.com",
+  },
+  { name: "Twitterbot", userAgent: "Twitterbot", domain: ".twitter.com" },
+  { name: "LinkedInBot", userAgent: "LinkedInBot", domain: ".linkedin.com" },
+  { name: "Pinterest", userAgent: "Pinterest", domain: ".pinterest.com" },
+  { name: "SemrushBot", userAgent: "SemrushBot", domain: ".semrush.com" },
+];

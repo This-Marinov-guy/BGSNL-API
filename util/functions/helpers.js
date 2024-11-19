@@ -1,9 +1,11 @@
 import dotenv from "dotenv";
 dotenv.config();
 import jwt from "jsonwebtoken";
+import dns from "dns";
 import CryptoJS from "crypto-js";
 import moment from "moment-timezone";
 import { DEV_JWT_TIMEOUT, PROD_JWT_TIMEOUT } from "../config/defines.js";
+import { allowedCrawlers } from "../config/access.js";
 
 const JWT_TIMEOUT =
   process.env.APP_ENV === "prod" ? PROD_JWT_TIMEOUT : DEV_JWT_TIMEOUT;
@@ -204,4 +206,27 @@ export const parseStingData = (arr, fromJson = true) => {
   } catch (err) {
     return arr;
   }
+};
+
+export const isAllowedCrawlerBot = async (ip, userAgent) => {
+ for (const crawler of allowedCrawlers) {
+   if (userAgent.includes(crawler.userAgent)) {
+     try {
+       const hostnames = await new Promise((resolve, reject) =>
+         dns.reverse(ip, (err, domains) =>
+           err ? reject(err) : resolve(domains)
+         )
+       );
+       if (hostnames.some((domain) => domain.endsWith(crawler.domain))) {
+         console.log(`${crawler.name} allowed: IP ${ip}`);
+         return true;
+       }
+     } catch (error) {
+       console.error(`DNS lookup failed for ${crawler.name}, IP: ${ip}`);
+       console.log(error);
+       
+     }
+   }
+ }
+ return false;
 };
