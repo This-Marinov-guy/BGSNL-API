@@ -15,7 +15,7 @@ export const authMiddleware = (req, res, next) => {
   jwt.verify(token, process.env.JWT_STRING, (err, user) => {
     if (err) {
       console.log(`Token: ${token} | Error: ${err}`);
-      return next(new HttpError("No access for such request", 403));
+      return next(new HttpError("Session expired: please login again!", 403));
     }
 
     next();
@@ -35,7 +35,7 @@ export const adminMiddleware = (requiredRoles = []) => {
     jwt.verify(token, process.env.JWT_STRING, (err, user) => {
       if (err) {
         console.log(`Token: ${token} | Error: ${err}`);
-        return next(new HttpError("No access for such request", 403));
+        return next(new HttpError("Session expired: please login again!", 403));
       }
 
       if (!requiredRoles.some((role) => user["roles"].includes(role))) {
