@@ -123,9 +123,7 @@ export const decryptData = (string) => {
   return decryptedData;
 };
 
-export const processExtraInputsForm = (extraInputsForm) => {
-  console.log(extraInputsForm);
-  
+export const processExtraInputsForm = (extraInputsForm) => {  
   if (!extraInputsForm) {
     return extraInputsForm;
   }

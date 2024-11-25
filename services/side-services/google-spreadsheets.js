@@ -84,11 +84,7 @@ const searchInDatabase = (eventName, region) => {
             return;
           }
 
-          if (result.length > 0) {
-            // Event found
-            console.log(eventName);
-            console.log(result[0].guests);
-          } else {
+          if (result.length <= 0) {
             console.log("Event not found.");
           }
         });
