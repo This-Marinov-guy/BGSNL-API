@@ -36,12 +36,12 @@ export const rateLimiter = (req, res, next) => {
 export const firewall = async (req, res, next) => {
   const origin = req.headers.origin || "unknown origin";
   const connectingIp =
-    req.headers["do-connecting-ip"] ||
-    req.ip ||
-    req.headers["x-forwarded-for"] ||
-    req.connection.remoteAddress ||
+    req.headers["do-connecting-ip"] ??
+    req.ip ??
+    req.headers["x-forwarded-for"] ??
+    req.connection.remoteAddress ??
     "unknown IP";
-  const userAgent = req.headers["user-agent"] || "";
+  const userAgent = req.headers["user-agent"] ?? "";
 
   // TODO: optimize for crawler check
   //   if (await isAllowedCrawlerBot(connectingIp, userAgent)) {
