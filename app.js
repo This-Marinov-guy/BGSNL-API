@@ -122,3 +122,5 @@ mongoose
 //     await usersToSpreadsheet(r);
 //   })
 // }
+
+// exportStripeSubscriptionsToCsv();
