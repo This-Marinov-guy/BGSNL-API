@@ -159,6 +159,10 @@ export async function importCustomers(
   file = "unified_customers-1.csv",
   region = "netherlands"
 ) {
+  if (process.env.APP_ENV !== "dev") {
+    return;
+  }
+
   const stripe = createStripeClient(region);
 
   const customers = [];
@@ -222,4 +226,102 @@ export async function importCustomers(
         }
       }
     });
-};
+}
+
+export async function cancelAllSubscriptions() {
+  if (process.env.APP_ENV !== "dev") {
+    return;
+  }
+
+  // add stripe client
+
+  try {
+    // Retrieve all active subscriptions
+    const subscriptions = await stripe.subscriptions.list({
+      status: "active",
+      limit: 100, // Adjust limit as needed
+    });
+
+    // Track cancellation results
+    const cancellationResults = {
+      total: subscriptions.data.length,
+      cancelled: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    // Cancel each subscription
+    for (const subscription of subscriptions.data) {
+      try {
+        await stripe.subscriptions.cancel(subscription.id, {
+          // Optional: specify reason for cancellation
+          cancellation_details: {
+            comment: "Bulk subscription cancellation",
+          },
+        });
+
+        cancellationResults.cancelled++;
+
+        console.log('Canceled subscription: ' + subscription.id);
+        
+      } catch (cancelError) {
+        cancellationResults.failed++;
+        cancellationResults.errors.push({
+          subscriptionId: subscription.id,
+          error: cancelError.message,
+        });
+
+        console.error(
+          `Failed to cancel subscription ${subscription.id}:`,
+          cancelError
+        );
+      }
+    }
+
+    // Check if there are more subscriptions (pagination)
+    let hasMore = subscriptions.has_more;
+    let startingAfter = subscriptions.data[subscriptions.data.length - 1]?.id;
+
+    while (hasMore) {
+      const nextSubscriptions = await stripe.subscriptions.list({
+        status: "active",
+        limit: 100,
+        starting_after: startingAfter,
+      });
+
+      for (const subscription of nextSubscriptions.data) {
+        try {
+          await stripe.subscriptions.cancel(subscription.id, {
+            cancellation_details: {
+              comment: "Bulk subscription cancellation",
+            },
+          });
+
+          cancellationResults.cancelled++;
+        } catch (cancelError) {
+          cancellationResults.failed++;
+          cancellationResults.errors.push({
+            subscriptionId: subscription.id,
+            error: cancelError.message,
+          });
+
+          console.error(
+            `Failed to cancel subscription ${subscription.id}:`,
+            cancelError
+          );
+        }
+      }
+
+      hasMore = nextSubscriptions.has_more;
+      startingAfter =
+        nextSubscriptions.data[nextSubscriptions.data.length - 1]?.id;
+    }
+
+    console.log('Subscription Cancelation Done');
+  
+    return cancellationResults;
+  } catch (error) {
+    console.error("Error retrieving subscriptions:", error);
+    throw error;
+  }
+}
