@@ -23,7 +23,7 @@ import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services
 import { REGIONS } from "./util/config/defines.js";
 import { updateUsers } from "./util/private/manipulate-db.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
-import { exportStripeSubscriptionsToCsv } from "./util/private/stripe-data.js";
+import { cancelAllSubscriptions, exportStripeSubscriptionsToCsv } from "./util/private/stripe-data.js";
 
 const app = express();
 
@@ -122,5 +122,3 @@ mongoose
 //     await usersToSpreadsheet(r);
 //   })
 // }
-
-// exportStripeSubscriptionsToCsv();

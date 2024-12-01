@@ -27,7 +27,8 @@ export async function exportStripeSubscriptionsToCsv(
     while (hasMore) {
       const result = startingAfter
         ? await stripe.subscriptions.list({
-            limit: 100,
+            limit: 150,
+            status: "canceled",
             expand: [
               "data.customer",
               "data.latest_invoice",
@@ -37,7 +38,8 @@ export async function exportStripeSubscriptionsToCsv(
             starting_after: startingAfter,
           })
         : await stripe.subscriptions.list({
-            limit: 100,
+            limit: 150,
+            status: "canceled",
             expand: [
               "data.customer",
               "data.latest_invoice",
@@ -46,12 +48,20 @@ export async function exportStripeSubscriptionsToCsv(
             ],
           });
 
+      const now = Math.floor(Date.now() / 1000); // Current Unix timestamp in seconds
+
+      
       const formattedSubscriptions = result.data.map((subscription) => {
+        const startDate = now + 26 * 60 * 60;;
+        const billingCycle = subscription.current_period_end || "";
+
+        const isCanceled = billingCycle <= startDate;
+
         // Exactly match the columns from the billing_migration_template.csv
         return {
           customer: subscription.customer.id,
           // start at 1st dec
-          start_date: 1733011200 + 24 * 60 * 60,
+          start_date: startDate,
           price:
             subscription.plan.amount === 600
               ? "price_1QOg1FAShinXgMFZ1dZiQn1P"
@@ -61,15 +71,20 @@ export async function exportStripeSubscriptionsToCsv(
           automatic_tax:
             // subscription.automatic_tax ? "TRUE" :
             "FALSE",
-          billing_cycle_anchor: 1733011200 + 25 * 60 * 60,
+          // when to bill the customer
+          billing_cycle_anchor: isCanceled ? "" : billingCycle,
           coupon: "",
           trial_end: subscription.trial_end || "",
           proration_behavior: subscription.proration_behavior ?? "none",
-          collection_method: subscription.collection_method,
+          collection_method: isCanceled
+            ? "send_invoice"
+            : subscription.collection_method,
           default_tax_rate: subscription.default_tax_rates?.[0]?.id || "",
-          backdate_start_date: subscription.backdate_start_date || "",
-          days_until_due: subscription.days_until_due || "",
-          cancel_at_period_end: subscription.cancel_at_period_end
+          backdate_start_date: subscription.current_period_start || "",
+          days_until_due: isCanceled ? 3 : (subscription.days_until_due || ""),
+          cancel_at_period_end: isCanceled
+            ? "TRUE"
+            : subscription.cancel_at_period_end
             ? "TRUE"
             : "FALSE",
           // "add_invoice_items.0.amount": subscription.plan.amount || "",
@@ -77,9 +92,9 @@ export async function exportStripeSubscriptionsToCsv(
           // "add_invoice_items.0.currency": subscription.plan.currency || "",
 
           // overwrite
-          "add_invoice_items.0.amount": subscription.plan.amount || "",
-          "add_invoice_items.0.product": "prod_RHEU16P5ALJjPi",
-          "add_invoice_items.0.currency": subscription.plan.currency || "",
+          "add_invoice_items.0.amount": "",
+          "add_invoice_items.0.product": "",
+          "add_invoice_items.0.currency": "",
         };
       });
 
@@ -262,8 +277,7 @@ export async function cancelAllSubscriptions() {
 
         cancellationResults.cancelled++;
 
-        console.log('Canceled subscription: ' + subscription.id);
-        
+        console.log("Canceled subscription: " + subscription.id);
       } catch (cancelError) {
         cancellationResults.failed++;
         cancellationResults.errors.push({
@@ -317,8 +331,8 @@ export async function cancelAllSubscriptions() {
         nextSubscriptions.data[nextSubscriptions.data.length - 1]?.id;
     }
 
-    console.log('Subscription Cancelation Done');
-  
+    console.log("Subscription Cancelation Done");
+
     return cancellationResults;
   } catch (error) {
     console.error("Error retrieving subscriptions:", error);
