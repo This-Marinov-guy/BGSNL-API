@@ -15,6 +15,7 @@ import {
 import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
 import moment from "moment";
 import { checkDiscountsOnEvents } from "../../services/main-services/event-action-service.js";
+import { extractUserFromRequest } from "../../util/functions/security.js";
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -352,13 +353,23 @@ export const postAddGuestToEvent = async (req, res, next) => {
   return res.status(201).json({ status: true, message: "Success" });
 };
 
+// TODO: migrate for both user and member
 export const postNonSocietyEvent = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return next(new HttpError("Invalid inputs passed", 422));
   }
-  const { event, date, user, name, email, phone, notificationTypeTerms } =
-    req.body;
+
+  const {
+    event,
+    date,
+    user,
+    name,
+    email,
+    phone,
+    notificationTypeTerms,
+    extraData,
+  } = req.body;
 
   let nonSocietyEvent;
   try {
@@ -366,7 +377,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
       { event: event },
       { status: "open", event: event, date: date, guestList: [] }
     );
-  } catch (err) {
+  } catch (err) {    
     return next(
       new HttpError("Could not add you to the event, please try again!", 500)
     );
@@ -376,24 +387,55 @@ export const postNonSocietyEvent = async (req, res, next) => {
     return next(new HttpError("Could not find such event", 404));
   }
 
+  const { userId } = extractUserFromRequest(req);
+
+  let targetUser;
+
+  try {
+    targetUser = await User.findById(userId);
+  } catch (err) {
+    return next(
+      new HttpError("Could not find the current user, please try again", 500)
+    );
+  }
+
   let guest = {
     user,
     name,
     email,
     phone,
+    ticket: req.file.location,
+    extraData,
     notificationTypeTerms,
   };
 
   try {
     nonSocietyEvent.guestList.push(guest);
+    targetUser.tickets.push({
+      event:
+        event +
+        " | " +
+        moment(date).format(MOMENT_DATE_YEAR),
+      image: req.file.location,
+    });
     await nonSocietyEvent.save();
+    await targetUser.save();
   } catch (err) {
     return next(
       new HttpError("Adding user to the event failed, please try again", 500)
     );
   }
 
-  res.status(201).json({ message: "Success" });
+  sendTicketEmail(
+    "member",
+    email,
+    event,
+    date,
+    name,
+    req.file.location
+  );
+
+  res.status(201).json({ status: true });
 };
 
 // status 0 = noting to update

@@ -82,6 +82,8 @@ eventRouter.post(
 
 eventRouter.post(
   "/register/non-society-event",
+  authMiddleware,
+  fileUpload(process.env.BUCKET_MEMBER_TICKETS).single("image"),
   [
     check("event").notEmpty(),
     check("user").notEmpty(),

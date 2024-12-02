@@ -48,11 +48,11 @@ export async function exportStripeSubscriptionsToCsv(
             ],
           });
 
-      const now = Math.floor(Date.now() / 1000); // Current Unix timestamp in seconds
+      console.log(result.data);
+      return;
 
-      
       const formattedSubscriptions = result.data.map((subscription) => {
-        const startDate = now + 26 * 60 * 60;;
+        const startDate = now + 26 * 60 * 60;
         const billingCycle = subscription.current_period_end || "";
 
         const isCanceled = billingCycle <= startDate;
@@ -81,7 +81,7 @@ export async function exportStripeSubscriptionsToCsv(
             : subscription.collection_method,
           default_tax_rate: subscription.default_tax_rates?.[0]?.id || "",
           backdate_start_date: subscription.current_period_start || "",
-          days_until_due: isCanceled ? 3 : (subscription.days_until_due || ""),
+          days_until_due: isCanceled ? 3 : subscription.days_until_due || "",
           cancel_at_period_end: isCanceled
             ? "TRUE"
             : subscription.cancel_at_period_end
@@ -337,5 +337,82 @@ export async function cancelAllSubscriptions() {
   } catch (error) {
     console.error("Error retrieving subscriptions:", error);
     throw error;
+  }
+}
+
+export async function recreateSubscription() {
+  const stripe = createStripeClient("netherlands");
+
+  try {
+    // const subscriptions = await stripe.subscriptions.list({
+    //   limit: 150,
+    //   status: "canceled",
+    //   expand: [
+    //     "data.customer",
+    //     "data.latest_invoice",
+    //     "data.plan",
+    //     "data.default_tax_rates",
+    //   ],
+    // });
+
+    // Step 1: Check or Create the Customer
+    const customerId = "gcus_1QQqJtAShinXgMFZRQWYc1Q7"; // Existing customer ID
+    let customer;
+
+    // try {
+    //   customer = await stripe.customers.retrieve(customerId);
+    // } catch (error) {
+    //    console.log("No such customer" + customerId);
+    //    return
+    // }
+
+    // Step 2: Recreate the Subscription
+    const subscription = await stripe.subscriptions.create({
+      customer: customer.id,
+      items: [
+        {
+          price: "price_1QOg1FAShinXgMFZ1dZiQn1P", // Original price ID
+          quantity: 1,
+        },
+      ],
+      billing_cycle_anchor: 1745591343, // Original billing cycle anchor (Unix timestamp)
+      cancel_at_period_end: false, // Ensure it's an active subscription
+      default_payment_method: "pm_1QQpQYAShinXgMFZPNYJzqoc", // Original payment method
+      metadata: {
+        imported_from: "original_system",
+      },
+    });
+
+    console.log("Subscription recreated successfully:", subscription);
+  } catch (error) {
+    console.error("Error recreating subscription:", error);
+  }
+}
+
+async function getAllCustomers() {
+  const stripe = createStripeClient("groningen");
+
+  try {
+    // Use Stripe's API to list customers (pagination may be needed for large data sets)
+    let customers = [];
+    let has_more = true;
+    let starting_after = null;
+
+    // while (has_more) {
+      const response = await stripe.customers.list({
+        limit: 300, // Max number of customers per request
+      });
+
+      customers = customers.concat(response.data);
+      has_more = response.has_more;
+      starting_after = response.data.length
+        ? response.data[response.data.length - 1].id
+        : null;
+    // }
+
+    console.log("All customers:", customers);
+    return customers;
+  } catch (error) {
+    console.error("Error retrieving customers:", error);
   }
 }
