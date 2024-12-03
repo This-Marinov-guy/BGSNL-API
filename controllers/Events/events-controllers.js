@@ -377,7 +377,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
       { event: event },
       { status: "open", event: event, date: date, guestList: [] }
     );
-  } catch (err) {    
+  } catch (err) {
     return next(
       new HttpError("Could not add you to the event, please try again!", 500)
     );
@@ -399,6 +399,10 @@ export const postNonSocietyEvent = async (req, res, next) => {
     );
   }
 
+  if (!targetUser) {
+    return next(new HttpError("Could not find a user with provided id", 404));
+  }
+
   let guest = {
     user,
     name,
@@ -409,13 +413,24 @@ export const postNonSocietyEvent = async (req, res, next) => {
     notificationTypeTerms,
   };
 
+  const memberName = `${targetUser.name} ${targetUser.surname}`;
+  let status = true;
+
+  for (const guest of nonSocietyEvent.guestList) {
+    if (guest.name === memberName && guest.email === targetUser.email) {
+      status = false;
+      break;
+    }
+  }
+
+  if (!status) {
+    return next(new HttpError("This account has already purchased a ticket for the event!", 401));
+  }
+
   try {
     nonSocietyEvent.guestList.push(guest);
     targetUser.tickets.push({
-      event:
-        event +
-        " | " +
-        moment(date).format(MOMENT_DATE_YEAR),
+      event: event + " | " + moment(date).format(MOMENT_DATE_YEAR),
       image: req.file.location,
     });
     await nonSocietyEvent.save();
@@ -426,14 +441,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
     );
   }
 
-  sendTicketEmail(
-    "member",
-    email,
-    event,
-    date,
-    name,
-    req.file.location
-  );
+  sendTicketEmail("member", email, event, date, name, req.file.location);
 
   res.status(201).json({ status: true });
 };
