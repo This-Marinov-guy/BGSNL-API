@@ -1,7 +1,6 @@
 import { MongoClient } from "mongodb";
 import { google } from "googleapis";
 import {
-  BGSNL_MEMBERS_SPREADSHEETS_ID,
   CLONE_SHEETS,
   SPREADSHEETS_ID,
 } from "../../util/config/SPREEDSHEATS.js";
@@ -13,7 +12,11 @@ import Event from "../../models/Event.js";
 import { BGSNL_URL } from "../../util/config/defines.js";
 import User from "../../models/User.js";
 import { refactorToKeyValuePairs } from "../../util/functions/helpers.js";
-import { MOMENT_DATE_TIME_YEAR, MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
+import {
+  MOMENT_DATE_TIME_YEAR,
+  MOMENT_DATE_YEAR,
+} from "../../util/functions/dateConvert.js";
+import NonSocietyEvent from "../../models/NonSocietyEvent.js";
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -339,9 +342,148 @@ const eventToSpreadsheet = async (id) => {
   }
 };
 
+const specialEventsToSpreadsheet = async (id) => {
+  try {
+    const nonSocietyEvent = await NonSocietyEvent.findById(id);
+
+    if (!nonSocietyEvent) {
+      console.log("Event not found.");
+      return;
+    }
+
+    const { event, date } = nonSocietyEvent;
+
+    const sheetName = `${event} | ${moment(date).format('DD.MM.YYYY')}`;
+
+    const spreadsheetIds = [SPREADSHEETS_ID["netherlands"].events];
+
+    // Connecting to Google Sheets
+    const credentials = JSON.parse(
+      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
+    );
+    const auth = new google.auth.GoogleAuth({
+      credentials: credentials,
+      scopes: "https://www.googleapis.com/auth/spreadsheets",
+    });
+
+    const googleClient = await auth.getClient();
+    const googleSheets = google.sheets({ version: "v4", auth: googleClient });
+
+    // Fetch event data and guest list from the database
+    const result = await NonSocietyEvent.aggregate([
+      { $match: { _id: mongoose.Types.ObjectId(id) } },
+      {
+        $project: {
+          _id: 0,
+          guests: {
+            $map: {
+              input: "$guestList",
+              as: "guest",
+              in: {
+                user: "$$guest.user",
+                timestamp: "$$guest.timestamp",
+                name: "$$guest.name",
+                email: "$$guest.email",
+                phone: "$$guest.phone",
+                extraData: "$$guest.extraData",
+                ticket: "$$guest.ticket",
+              },
+            },
+          },
+        },
+      },
+    ]);
+
+    if (result.length === 0) {
+      console.log("Event not found in database.");
+      return;
+    }
+
+    // Prepare event and guest data
+    const eventDetails = [
+      ["Title", "Date"],
+      [event, date],
+    ];
+
+    const guestListHeaders = [
+      "Timestamp",
+      "Name",
+      "Email",
+      "Phone",
+      "Extra Data",
+      "Ticket",
+    ];
+    const guests = result[0].guests.map((obj) => [
+      moment(obj.timestamp).format(MOMENT_DATE_TIME_YEAR),
+      obj.name,
+      obj.email,
+      obj.phone,
+      obj.extraData ?? "N/A",
+      obj.ticket,
+    ]);
+
+    const values = [
+      ...eventDetails,
+      [],
+      ["Guest List", "Presence", guests.length],
+      guestListHeaders,
+      ...guests,
+    ];
+
+    // Loop over each spreadsheetId (original and clone, if applicable) and update the spreadsheet
+    for (const spreadsheetId of spreadsheetIds) {
+      const metaData = await googleSheets.spreadsheets.get({
+        auth,
+        spreadsheetId,
+      });
+
+      const sheetsList = metaData.data.sheets;
+      let sheetId = sheetsList.find(
+        (sheet) => sheet.properties.title === sheetName
+      )?.properties.sheetId;
+
+      if (!sheetId) {
+        // Create the sheet if it doesn't exist
+        const newSheet = await googleSheets.spreadsheets.batchUpdate({
+          auth,
+          spreadsheetId,
+          resource: {
+            requests: [{ addSheet: { properties: { title: sheetName } } }],
+          },
+        });
+
+        console.log(
+          `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
+        );
+        sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
+      }
+
+      // Clear the existing data in the sheet
+      await googleSheets.spreadsheets.values.clear({
+        auth,
+        spreadsheetId,
+        range: sheetName,
+      });
+
+      // Append the new event and guest data
+      await googleSheets.spreadsheets.values.append({
+        auth,
+        spreadsheetId,
+        range: sheetName,
+        valueInputOption: "RAW",
+        resource: { values },
+      });
+
+      console.log(`Event data updated in spreadsheet: ${spreadsheetId}`);
+    }
+  } catch (err) {
+    console.log(err);
+  }
+};
+
 const usersToSpreadsheet = async (region = null) => {
   try {
-    let spreadsheetId = BGSNL_MEMBERS_SPREADSHEETS_ID;
+    let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.users;
     const filterByRegion = region && SPREADSHEETS_ID[region]?.users;
 
     if (filterByRegion) {
@@ -395,7 +537,9 @@ const usersToSpreadsheet = async (region = null) => {
       const formattedPurchaseDate = moment(rest.purchaseDate).format(
         MOMENT_DATE_YEAR
       );
-      const formattedExpireDate = moment(rest.expireDate).format(MOMENT_DATE_YEAR);
+      const formattedExpireDate = moment(rest.expireDate).format(
+        MOMENT_DATE_YEAR
+      );
 
       const dataFields = {
         ...(filterByRegion ? {} : { region }),
@@ -522,4 +666,9 @@ export const readSpreadsheetRows = async (
   }
 };
 
-export { searchInDatabase, eventToSpreadsheet, usersToSpreadsheet };
+export {
+  searchInDatabase,
+  eventToSpreadsheet,
+  specialEventsToSpreadsheet,
+  usersToSpreadsheet,
+};

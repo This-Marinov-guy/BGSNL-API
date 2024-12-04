@@ -6,7 +6,7 @@ import { validationResult } from "express-validator";
 import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
 import HttpError from "../../models/Http-error.js";
 import { sendTicketEmail } from "../../services/side-services/email-transporter.js";
-import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
+import { eventToSpreadsheet, specialEventsToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
 import {
   decodeFromURL,
   isEventTimerFinished,
@@ -442,6 +442,8 @@ export const postNonSocietyEvent = async (req, res, next) => {
   }
 
   sendTicketEmail("member", email, event, date, name, req.file.location);
+
+  specialEventsToSpreadsheet(nonSocietyEvent.id);
 
   res.status(201).json({ status: true });
 };

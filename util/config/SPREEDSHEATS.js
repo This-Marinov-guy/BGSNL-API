@@ -1,5 +1,3 @@
-export const BGSNL_MEMBERS_SPREADSHEETS_ID = '1iOCDGM2VLn5PNR0wyEUQkD2WMkuFAxnORzGG1iw4e1Q';
-
 export const SPREADSHEETS_ID = {
   groningen: {
     events: "1kyT9mBkJwl6vj8TBwe8UsFDNmgUF85dhVTihz2LnvM4",
@@ -29,11 +27,16 @@ export const SPREADSHEETS_ID = {
     events: "17BDzqt18QzFUBnU68pxwIO7-r6lqzx-rkvAiWyAawOo",
     users: "1nOZseFLca2qTMXOUSA_atenAKOfvqzaCk9b3cJdALNc",
   },
+  netherlands: {
+    events: "1beH2D2gY6AIVpqZ-qropFoktVKO91T03Qj700WBtxKk",
+    users: "1iOCDGM2VLn5PNR0wyEUQkD2WMkuFAxnORzGG1iw4e1Q",
+  },
 };
 
-export const STATISTICS_ABOUT_US = "170XOaxJ-aVYNiXRplyx6R8vezDxGOR8nMCJB3O3AaRs";
+export const STATISTICS_ABOUT_US =
+  "170XOaxJ-aVYNiXRplyx6R8vezDxGOR8nMCJB3O3AaRs";
 
 export const CLONE_SHEETS = {
-    //amsterdam
-    ["67081406ed33752545c5ee62"]: "12hG3IQJq9A7SdWBL4n2aKBq6ddg16iQ9T2um68iBFy4"
+  //amsterdam
+  ["67081406ed33752545c5ee62"]: "12hG3IQJq9A7SdWBL4n2aKBq6ddg16iQ9T2um68iBFy4",
 };
