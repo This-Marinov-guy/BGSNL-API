@@ -353,7 +353,7 @@ const specialEventsToSpreadsheet = async (id) => {
 
     const { event, date } = nonSocietyEvent;
 
-    const sheetName = `${event} | ${moment(date).format('DD.MM.YYYY')}`;
+    const sheetName = `${event} | ${moment(date).format(MOMENT_DATE_YEAR)}`;
 
     const spreadsheetIds = [SPREADSHEETS_ID["netherlands"].events];
 
@@ -402,7 +402,7 @@ const specialEventsToSpreadsheet = async (id) => {
     // Prepare event and guest data
     const eventDetails = [
       ["Title", "Date"],
-      [event, date],
+      [event, moment(date).format(MOMENT_DATE_TIME_YEAR)],
     ];
 
     const guestListHeaders = [
