@@ -41,6 +41,7 @@ export const NEW_PASS_TEMPLATE = '824f447b-0ca1-4dcf-9c10-223d71cf48eb';
 export const WELCOME_TEMPLATE = 'f6eb08e8-7e2d-4abe-9edf-1c874ae49035';
 export const CONTEST_MATERIALS_TEMPLATE = 'c130f73a-17f7-4fe8-be84-4acf9d5d2800';
 export const MEMBERSHIP_EXPIRED_TEMPLATE = '12db74ea-e568-4309-a64f-d543b909a520';
+export const DELOITTE_TEMPLATE = "7e8088d0-3408-4875-ae5d-21a810fe0c7d";
 
 export const NO_REPLY_EMAIL = 'no-reply@bulgariansociety.nl';
 export const NO_REPLY_EMAIL_NAME = 'Bulgarian Society Netherlands';

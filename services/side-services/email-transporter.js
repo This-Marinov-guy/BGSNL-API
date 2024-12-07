@@ -128,4 +128,24 @@ const paymentFailedEmail = async (receiver, link) => {
     })
 };
 
+export const sendMarketingEmail = async (templateId, receiver, name) => {
+   const recipients = [
+    {
+      email: receiver,
+    },
+  ];
+
+  await client
+    .send({
+      from: sender,
+      to: recipients,
+      template_uuid: templateId,
+      template_variables: {
+        template_variables: {
+          name,
+        },
+      },
+    })
+}
+
 export { sendTicketEmail, sendNewPasswordEmail, welcomeEmail, sendContestMaterials, paymentFailedEmail };
