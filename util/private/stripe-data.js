@@ -15,6 +15,7 @@ export async function exportStripeSubscriptionsToCsv(
 
   const stripe = createStripeClient("groningen");
   const subscriptions = [];
+  const now = new Date();
 
   try {
     console.log("🚀 Starting Stripe Subscriptions Export...");
@@ -34,6 +35,7 @@ export async function exportStripeSubscriptionsToCsv(
               "data.latest_invoice",
               "data.plan",
               "data.default_tax_rates",
+              "data.default_payment_method",
             ],
             starting_after: startingAfter,
           })
@@ -48,8 +50,12 @@ export async function exportStripeSubscriptionsToCsv(
             ],
           });
 
-      console.log(result.data);
-      return;
+      const customers = result.data.map((r) => {
+        return {
+          id: r.customer.id,
+          default_payment_method: r.default_payment_method,
+        };
+      });
 
       const formattedSubscriptions = result.data.map((subscription) => {
         const startDate = now + 26 * 60 * 60;
@@ -356,7 +362,7 @@ export async function recreateSubscription() {
     // });
 
     // Step 1: Check or Create the Customer
-    const customerId = "gcus_1QQqJtAShinXgMFZRQWYc1Q7"; // Existing customer ID
+    const customerId = "cus_PyOos786fQE1E7"; // Existing customer ID
     let customer;
 
     // try {
@@ -368,7 +374,7 @@ export async function recreateSubscription() {
 
     // Step 2: Recreate the Subscription
     const subscription = await stripe.subscriptions.create({
-      customer: customer.id,
+      customer: customerId,
       items: [
         {
           price: "price_1QOg1FAShinXgMFZ1dZiQn1P", // Original price ID
@@ -377,7 +383,7 @@ export async function recreateSubscription() {
       ],
       billing_cycle_anchor: 1745591343, // Original billing cycle anchor (Unix timestamp)
       cancel_at_period_end: false, // Ensure it's an active subscription
-      default_payment_method: "pm_1QQpQYAShinXgMFZPNYJzqoc", // Original payment method
+      default_payment_method: "pm_1P8S1QIOw5UGbAo1xd9GuXov", // Original payment method
       metadata: {
         imported_from: "original_system",
       },
@@ -399,20 +405,81 @@ async function getAllCustomers() {
     let starting_after = null;
 
     // while (has_more) {
-      const response = await stripe.customers.list({
-        limit: 300, // Max number of customers per request
-      });
+    const response = await stripe.customers.list({
+      limit: 300, // Max number of customers per request
+    });
 
-      customers = customers.concat(response.data);
-      has_more = response.has_more;
-      starting_after = response.data.length
-        ? response.data[response.data.length - 1].id
-        : null;
+    customers = customers.concat(response.data);
+    has_more = response.has_more;
+    starting_after = response.data.length
+      ? response.data[response.data.length - 1].id
+      : null;
     // }
 
     console.log("All customers:", customers);
     return customers;
   } catch (error) {
     console.error("Error retrieving customers:", error);
+  }
+}
+
+export async function updateCustomerPaymentMethods() {
+  let stripe = createStripeClient("groningen");
+
+  const result = await stripe.subscriptions.list({
+    limit: 150,
+    status: "canceled",
+    expand: [
+      "data.customer",
+      "data.latest_invoice",
+      "data.plan",
+      "data.default_tax_rates",
+      "data.default_payment_method",
+      "data.customer.default_payment_method",
+    ],
+  });
+
+  const customers = result.data.map((r) => {
+    return {
+      id: r.customer.id,
+      // Extract only the payment method ID, not the entire object
+      default_payment_method:
+        r.default_payment_method?.id || r.default_payment_method,
+    };
+  });
+
+  try {
+    let stripe = createStripeClient("netherlands");
+
+    const updatePromises = customers.map(async (customer) => {
+      // Only attempt to update if a payment method ID exists
+      if (customer.default_payment_method) {
+        try {
+          const updatedCustomer = await stripe.customers.update(customer.id, {
+            invoice_settings: {
+              default_payment_method: customer.default_payment_method,
+            },
+          });
+          console.log(`Updated customer ${customer.id} successfully`);
+          return updatedCustomer;
+        } catch (error) {
+          console.error(`Error updating customer ${customer.id}:`, error);
+          return null;
+        }
+      }
+      return null;
+    });
+
+    // Wait for all updates to complete
+    const results = await Promise.all(updatePromises);
+
+    // Filter out any failed or skipped updates
+    const successfulUpdates = results.filter((result) => result !== null);
+
+    console.log(
+      `Successfully updated ${successfulUpdates.length} out of ${customers.length} customers`
+    );
+  } catch (error) {
+    console.error("Error in update process:", error);
   }
 }

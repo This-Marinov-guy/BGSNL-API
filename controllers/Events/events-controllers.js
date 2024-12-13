@@ -441,11 +441,11 @@ export const postNonSocietyEvent = async (req, res, next) => {
     );
   }
 
-  sendTicketEmail("member", email, event, date, name, req.file.location);
+  await sendTicketEmail("member", email, event, date, name, req.file.location);
 
-  specialEventsToSpreadsheet(nonSocietyEvent.id);
+  await specialEventsToSpreadsheet(nonSocietyEvent.id);
 
-  res.status(201).json({ status: true });
+  return res.status(201).json({ status: true });
 };
 
 // status 0 = noting to update

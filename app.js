@@ -19,7 +19,7 @@ import futureEventRouter from "./routes/Events/future-events-routes.js";
 import wordpressRouter from "./routes/Integration/wordpress-routes.js";
 import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import { deleteFolder, getFolders } from "./util/functions/cloudinary.js";
-import { eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
+import { eventToSpreadsheet, specialEventsToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
 import { REGIONS } from "./util/config/defines.js";
 import { updateUsers } from "./util/private/manipulate-db.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
@@ -122,4 +122,3 @@ mongoose
 //     await usersToSpreadsheet(r);
 //   })
 // }
-
