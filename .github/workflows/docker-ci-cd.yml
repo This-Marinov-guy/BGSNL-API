@@ -1,0 +1,20 @@
+name: CI/CD Pipeline for Docker
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Build Docker image
+        run: docker build -t BGSNL-API .
+
+      # REPLACE DOCKER IMAGE 
+
+      # DELETE THE LAST VERSION OF THE APP

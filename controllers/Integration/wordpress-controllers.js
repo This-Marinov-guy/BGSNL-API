@@ -21,10 +21,35 @@ export const getWordpressPosts = async (req, res, next) => {
     return next(new HttpError("Failed to load posts", 500));
   }
 
-  const posts = response.data.map((p) => {
+  const posts = response.data.map((p, index) => {
+    // Replace http with https
+    let processedContent = p.content.rendered.replace(/http:\/\//g, "https://");
+
+    // Fix relative image paths
+    processedContent = processedContent.replace(
+      /src="\/wp-content/g,
+      `src=${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/wp-content`
+    );
+
+    const matches = processedContent.match(/<img[^>]+src="([^">]+)"/);
+    const firstImageSrc = matches ? matches[1] : null;
+
+    const match = processedContent.match(/<p[^>]*>([^<|&]+)<\/p>/);
+    let description = match
+      ? match[1].trim()
+      : "Curious to learn more about this article? Click below and jump right to it!";
+
+    if (index !== 0) {
+      description =
+        description.trim().slice(0, 80) +
+        (description.trim().length > 80 ? "..." : "");
+    }
+
     return {
       id: p.id,
+      thumbnail: firstImageSrc,
       title: p.title.rendered.replace(/&nbsp;/g, " "),
+      description: description,
     };
   });
 
