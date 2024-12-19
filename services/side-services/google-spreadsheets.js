@@ -105,6 +105,7 @@ const eventToSpreadsheet = async (id) => {
     }
 
     const {
+      id,
       region,
       date,
       title,
@@ -117,6 +118,7 @@ const eventToSpreadsheet = async (id) => {
       sheetName,
       createdAt = "-",
     } = event;
+
     let ticketLink = event.ticketLink ?? null;
 
     if (!ticketLink) {
@@ -189,6 +191,7 @@ const eventToSpreadsheet = async (id) => {
     // Prepare event and guest data
     const eventDetails = [
       [
+        "ID",
         "Status",
         "Region",
         "Title",
@@ -203,6 +206,7 @@ const eventToSpreadsheet = async (id) => {
         "Created At",
       ],
       [
+        id,
         status,
         region,
         title,
@@ -401,8 +405,8 @@ const specialEventsToSpreadsheet = async (id) => {
 
     // Prepare event and guest data
     const eventDetails = [
-      ["Title", "Date"],
-      [event, moment(date).format(MOMENT_DATE_TIME_YEAR)],
+      ["ID", "Title", "Date"],
+      [id, event, moment(date).format(MOMENT_DATE_TIME_YEAR)],
     ];
 
     const guestListHeaders = [
