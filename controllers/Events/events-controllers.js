@@ -6,7 +6,10 @@ import { validationResult } from "express-validator";
 import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
 import HttpError from "../../models/Http-error.js";
 import { sendTicketEmail } from "../../services/side-services/email-transporter.js";
-import { eventToSpreadsheet, specialEventsToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
+import {
+  eventToSpreadsheet,
+  specialEventsToSpreadsheet,
+} from "../../services/side-services/google-spreadsheets.js";
 import {
   decodeFromURL,
   isEventTimerFinished,
@@ -424,7 +427,12 @@ export const postNonSocietyEvent = async (req, res, next) => {
   }
 
   if (!status) {
-    return next(new HttpError("This account has already purchased a ticket for the event!", 401));
+    return next(
+      new HttpError(
+        "This account has already purchased a ticket for the event!",
+        401
+      )
+    );
   }
 
   try {
@@ -443,7 +451,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
 
   await sendTicketEmail("member", email, event, date, name, req.file.location);
 
-  await specialEventsToSpreadsheet(nonSocietyEvent.id);
+  await specialEventsToSpreadsheet(nonSocietyEvent.id, targetUser);
 
   return res.status(201).json({ status: true });
 };

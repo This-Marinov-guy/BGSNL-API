@@ -346,7 +346,7 @@ const eventToSpreadsheet = async (id) => {
   }
 };
 
-const specialEventsToSpreadsheet = async (id) => {
+const specialEventsToSpreadsheet = async (id, userData = {}) => {
   try {
     const nonSocietyEvent = await NonSocietyEvent.findById(id);
 
@@ -415,6 +415,7 @@ const specialEventsToSpreadsheet = async (id) => {
       "Email",
       "Phone",
       "Extra Data",
+      "Specialty",
       "Ticket",
     ];
     const guests = result[0].guests.map((obj) => [
@@ -423,6 +424,7 @@ const specialEventsToSpreadsheet = async (id) => {
       obj.email,
       obj.phone,
       obj.extraData ?? "N/A",
+      userData.course ?? "-",
       obj.ticket,
     ]);
 
