@@ -235,7 +235,10 @@ export const chooseRandomAvatar = () => {
 
   // If the current month is November (10), December (11), or January (0)
   if (currentMonth === 10 || currentMonth === 11 || currentMonth === 0) {
-    luckyIndex = Math.floor(Math.random() * 8) + 1;
+    luckyIndex = 8;
+    // If the current month is June (5), July (6), or August (7)
+  } else if (currentMonth === 5 || currentMonth === 6 || currentMonth === 7) {
+    luckyIndex = 9;
   } else {
     luckyIndex = Math.floor(Math.random() * 7) + 1;
   }
