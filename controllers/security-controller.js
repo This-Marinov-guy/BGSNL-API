@@ -7,7 +7,7 @@ import User from '../models/User.js';
 import { sendNewPasswordEmail, welcomeEmail } from '../services/side-services/email-transporter.js';
 import { ACCOUNT_KEYS } from '../util/config/KEYS.js';
 import { usersToSpreadsheet } from '../services/side-services/google-spreadsheets.js';
-import { compareIntStrings, decryptData, hasOverlap, isBirthdayToday, jwtSign } from '../util/functions/helpers.js';
+import { chooseRandomAvatar, compareIntStrings, decryptData, hasOverlap, isBirthdayToday, jwtSign } from '../util/functions/helpers.js';
 import { ADMIN, LIMITLESS_ACCOUNT, MEMBER } from '../util/config/defines.js';
 import { forgottenPassTokenCache } from '../util/config/caches.js';
 import moment from 'moment';
@@ -87,9 +87,7 @@ export const signup = async (req, res, next) => {
 
   let image;
   if (!req.file) {
-    image = `/assets/images/avatars/bg_other_avatar_${Math.floor(
-      Math.random() * 3 + 1
-    )}.jpeg`;
+    image = chooseRandomAvatar();
   } else {
     image = req.file.Location;
   }

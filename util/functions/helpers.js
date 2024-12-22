@@ -123,7 +123,7 @@ export const decryptData = (string) => {
   return decryptedData;
 };
 
-export const processExtraInputsForm = (extraInputsForm) => {  
+export const processExtraInputsForm = (extraInputsForm) => {
   if (!extraInputsForm) {
     return extraInputsForm;
   }
@@ -197,7 +197,7 @@ export const parseStingData = (arr, fromJson = true) => {
         } else if (newObj[key] === "false") {
           newObj[key] = false; // Convert string "false" to boolean false
         }
-      });      
+      });
 
       return newObj;
     });
@@ -207,24 +207,38 @@ export const parseStingData = (arr, fromJson = true) => {
 };
 
 export const isAllowedCrawlerBot = async (ip, userAgent) => {
- for (const crawler of allowedCrawlers) {
-   if (userAgent.includes(crawler.userAgent)) {
-     try {
-       const hostnames = await new Promise((resolve, reject) =>
-         dns.reverse(ip, (err, domains) =>
-           err ? reject(err) : resolve(domains)
-         )
-       );
-       if (hostnames.some((domain) => domain.endsWith(crawler.domain))) {
-         console.log(`${crawler.name} allowed: IP ${ip}`);
-         return true;
-       }
-     } catch (error) {
-       console.error(`DNS lookup failed for ${crawler.name}, IP: ${ip}`);
-       console.log(error);
-       
-     }
-   }
- }
- return false;
+  for (const crawler of allowedCrawlers) {
+    if (userAgent.includes(crawler.userAgent)) {
+      try {
+        const hostnames = await new Promise((resolve, reject) =>
+          dns.reverse(ip, (err, domains) =>
+            err ? reject(err) : resolve(domains)
+          )
+        );
+        if (hostnames.some((domain) => domain.endsWith(crawler.domain))) {
+          console.log(`${crawler.name} allowed: IP ${ip}`);
+          return true;
+        }
+      } catch (error) {
+        console.error(`DNS lookup failed for ${crawler.name}, IP: ${ip}`);
+        console.log(error);
+      }
+    }
+  }
+  return false;
+};
+
+export const chooseRandomAvatar = () => {
+  const currentMonth = new Date().getMonth();
+
+  let luckyIndex;
+
+  // If the current month is November (10), December (11), or January (0)
+  if (currentMonth === 10 || currentMonth === 11 || currentMonth === 0) {
+    luckyIndex = Math.floor(Math.random() * 8) + 1;
+  } else {
+    luckyIndex = Math.floor(Math.random() * 7) + 1;
+  }
+
+  return `/assets/images/avatars/bg_other_avatar_${luckyIndex}.jpeg`;
 };

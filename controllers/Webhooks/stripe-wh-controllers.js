@@ -14,7 +14,7 @@ import {
   eventToSpreadsheet,
   usersToSpreadsheet,
 } from "../../services/side-services/google-spreadsheets.js";
-import { decryptData, hasOverlap } from "../../util/functions/helpers.js";
+import { chooseRandomAvatar, decryptData, hasOverlap } from "../../util/functions/helpers.js";
 import {
   MOMENT_DATE_YEAR,
   calculatePurchaseAndExpireDates,
@@ -84,9 +84,7 @@ export const postWebhookCheckout = async (req, res, next) => {
 
           let image;
           if (!metadata.file) {
-            image = `/assets/images/avatars/bg_other_avatar_${Math.floor(
-              Math.random() * 3 + 1
-            )}.jpeg`;
+            image = chooseRandomAvatar();
           } else {
             image = metadata.file;
           }
