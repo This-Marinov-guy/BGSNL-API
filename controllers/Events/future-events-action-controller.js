@@ -28,6 +28,11 @@ import {
 } from "../../services/main-services/event-action-service.js";
 import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
 import { getFingerprintLite } from "../../services/main-services/user-service.js";
+import { 
+  addEventToGoogleCalendar, 
+  insertOrUpdateEvent, 
+  deleteEvent 
+} from "../../services/side-services/google-calendar.js";
 
 export const fetchFullDataEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
@@ -352,10 +357,12 @@ export const addEvent = async (req, res, next) => {
     },
     earlyBird,
     lateBird,
+    googleEventId: "",
   });
 
   try {
     await event.save();
+    await addEventToGoogleCalendar(event);
   } catch (err) {
     console.log(err);
     return next(
@@ -419,6 +426,7 @@ export const editEvent = async (req, res, next) => {
     ticketColor,
     bgImage,
     bgImageSelection,
+    googleEventId,
   } = req.body;
 
   const extraInputsForm = processExtraInputsForm(
@@ -652,9 +660,11 @@ export const editEvent = async (req, res, next) => {
     guest: guestPromotion,
     member: memberPromotion,
   };
+  event.googleEventId = googleEventId;
 
   try {
     await event.save();
+    await insertOrUpdateEvent(event);
   } catch (err) {
     console.log(err);
     return next(
@@ -675,7 +685,7 @@ export const editEvent = async (req, res, next) => {
 };
 
 export const deleteEvent = async (req, res, next) => {
-  const eventId = req.params.eventId;
+  const eventId = req.params.googleEventId;
 
   let event;
   try {
@@ -694,6 +704,7 @@ export const deleteEvent = async (req, res, next) => {
 
   try {
     await event.delete();
+    await deleteEvent(event.googleEventId);
   } catch (err) {
     console.log(err);
     return new HttpError(

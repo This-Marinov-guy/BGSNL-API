@@ -124,6 +124,7 @@ const eventSchema = new Schema({
       ticket: { type: String },
     },
   ],
+  googleEventId: { type: String } // todo: add field to the db
 });
 
 eventSchema.static(
