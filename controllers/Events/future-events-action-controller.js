@@ -31,7 +31,7 @@ import { getFingerprintLite } from "../../services/main-services/user-service.js
 import { 
   addEventToGoogleCalendar, 
   insertOrUpdateEvent, 
-  deleteEvent 
+  deleteCalendarEvent 
 } from "../../services/side-services/google-calendar.js";
 
 export const fetchFullDataEvent = async (req, res, next) => {
@@ -704,7 +704,7 @@ export const deleteEvent = async (req, res, next) => {
 
   try {
     await event.delete();
-    await deleteEvent(event.googleEventId);
+    await deleteCalendarEvent(event.googleEventId);
   } catch (err) {
     console.log(err);
     return new HttpError(

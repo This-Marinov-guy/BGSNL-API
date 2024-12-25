@@ -1,6 +1,5 @@
 import { google } from "googleapis";
 import dotenv from "dotenv";
-import Event from "../../models/event";
 dotenv.config();
 
 const calendarId = process.env.CALENDAR_ID;
@@ -91,7 +90,7 @@ export const insertOrUpdateEvent = async (eventData) => {
   }
 };
 
-export const deleteEvent = async (googleEventId) => {
+export const deleteCalendarEvent = async (googleEventId) => {
   const calendar = await getCalendarClient();
 
   try {
