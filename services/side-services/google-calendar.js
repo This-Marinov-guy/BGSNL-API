@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import dotenv from "dotenv";
+import moment from "moment";
 dotenv.config();
 
 const calendarId = process.env.CALENDAR_ID;
@@ -16,23 +17,28 @@ const getCalendarClient = async () => {
 };
 
 export const addEventToGoogleCalendar = async (eventData) => {
-  if (eventData.hidden) {
-    console.log("Event is hidden, not adding to Google Calendar");
-    return;
+  // if (eventData.hidden) {
+  //   console.log("Event is hidden, not adding to Google Calendar");
+  //   return;
+  // }
+
+  const startDateTime = moment(eventData.date, moment.ISO_8601, true);
+  if (!startDateTime.isValid()) {
+    throw new Error("Invalid date format. Please use ISO 8601.");
   }
 
   const calendar = await getCalendarClient();
 
-  const event = {
+  const calendarEvent = {
     summary: eventData.title,
     location: eventData.location,
     description: eventData.description,
     start: {
-      dateTime: new Date(eventData.date).toISOString(),
+      dateTime: startDateTime.toISOString(),
       timeZone: "Europe/Amsterdam",
     },
     end: {
-      dateTime: new Date(eventData.date).toISOString(),
+      dateTime: startDateTime.add(2, "hours").toISOString(),
       timeZone: "Europe/Amsterdam",
     },
   };
@@ -40,7 +46,7 @@ export const addEventToGoogleCalendar = async (eventData) => {
   try {
     const response = await calendar.events.insert({
       calendarId: calendarId,
-      resource: event,
+      resource: calendarEvent,
     });
     console.log("Event created:", response.data.htmlLink);
 
@@ -55,32 +61,40 @@ export const addEventToGoogleCalendar = async (eventData) => {
 };
 
 export const insertOrUpdateEvent = async (eventData) => {
-  if (eventData.hidden) {
-    console.log("Event is hidden, not updating in Google Calendar");
-    return;
+  // if (eventData.hidden) {
+  //   console.log("Event is hidden, not updating in Google Calendar");
+  //   return;
+  // }
+
+  const startDateTime = moment(eventData.date, moment.ISO_8601, true);
+  if (!startDateTime.isValid()) {
+    throw new Error("Invalid date format. Please use ISO 8601.");
   }
 
   const calendar = await getCalendarClient();
 
-  const event = {
+  const calendarEvent = {
     summary: eventData.title,
     location: eventData.location,
     description: eventData.description,
     start: {
-      dateTime: new Date(eventData.date).toISOString(),
+      dateTime: startDateTime.toISOString(),
       timeZone: "Europe/Amsterdam",
     },
     end: {
-      dateTime: new Date(eventData.date).toISOString(),
+      dateTime: startDateTime.add(2, "hours").toISOString(),
       timeZone: "Europe/Amsterdam",
     },
   };
 
+  console.log(eventData)
+  console.log("Event ID: ", eventData.googleEventId);
+  
   try {
     const response = await calendar.events.update({
       calendarId: calendarId,
       eventId: eventData.googleEventId,
-      resource: event,
+      resource: calendarEvent,
     });
     console.log("Event updated:", response.data.htmlLink);
     return response.data;

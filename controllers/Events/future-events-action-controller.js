@@ -151,8 +151,9 @@ export const addEvent = async (req, res, next) => {
     return next(error);
   }
 
+  const validDate = moment(new Date(date)).toISOString();
   const folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${moment(
-    date
+    validDate
   ).format(MOMENT_DATE_TIME)}`;
 
   if (!req.files["poster"] || !req.files["ticketImg"]) {
@@ -313,7 +314,7 @@ export const addEvent = async (req, res, next) => {
     }
   }
 
-  const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`;
+  const sheetName = `${title}|${moment(validDate).format(MOMENT_DATE_TIME_YEAR)}`;
 
   //create event
   event = new Event({
@@ -362,7 +363,9 @@ export const addEvent = async (req, res, next) => {
 
   try {
     await event.save();
-    await addEventToGoogleCalendar(event);
+    // await addEventToGoogleCalendar(event);
+    await addEventToGoogleCalendar(await Event.findById(event._id));
+
   } catch (err) {
     console.log(err);
     return next(
