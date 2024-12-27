@@ -8,9 +8,11 @@ const eventSchema = new Schema({
   guestList: [
     {
       user: { type: String, required: true },
+      userId: { type: String },
       timestamp: { type: Date, default: new Date() },
       name: { type: String, required: true },
       ticket: { type: String },
+      course: { type: String },
       extraData: { type: String },
       email: { type: String, required: true },
       phone: { type: String, required: true },

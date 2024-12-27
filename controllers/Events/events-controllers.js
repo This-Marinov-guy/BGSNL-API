@@ -406,21 +406,14 @@ export const postNonSocietyEvent = async (req, res, next) => {
     return next(new HttpError("Could not find a user with provided id", 404));
   }
 
-  let guest = {
-    user,
-    name,
-    email,
-    phone,
-    ticket: req.file.location,
-    extraData,
-    notificationTypeTerms,
-  };
-
   const memberName = `${targetUser.name} ${targetUser.surname}`;
   let status = true;
 
-  for (const guest of nonSocietyEvent.guestList) {
-    if (guest.name === memberName && guest.email === targetUser.email) {
+  for (const guestCheck of nonSocietyEvent.guestList) {
+    if (
+      guestCheck.name === memberName &&
+      guestCheck.email === targetUser.email
+    ) {
       status = false;
       break;
     }
@@ -434,6 +427,18 @@ export const postNonSocietyEvent = async (req, res, next) => {
       )
     );
   }
+
+  let guest = {
+    user,
+    userId: userId ?? "-",
+    name,
+    email,
+    phone,
+    ticket: req.file.location,
+    course: targetUser.course ?? "-",
+    extraData,
+    notificationTypeTerms,
+  };
 
   try {
     nonSocietyEvent.guestList.push(guest);
@@ -451,7 +456,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
 
   await sendTicketEmail("member", email, event, date, name, req.file.location);
 
-  await specialEventsToSpreadsheet(nonSocietyEvent.id, targetUser);
+  await specialEventsToSpreadsheet(nonSocietyEvent.id);
 
   return res.status(201).json({ status: true });
 };

@@ -346,7 +346,7 @@ const eventToSpreadsheet = async (id) => {
   }
 };
 
-const specialEventsToSpreadsheet = async (id, userData = {}) => {
+const specialEventsToSpreadsheet = async (id) => {
   try {
     const nonSocietyEvent = await NonSocietyEvent.findById(id);
 
@@ -385,11 +385,13 @@ const specialEventsToSpreadsheet = async (id, userData = {}) => {
               as: "guest",
               in: {
                 user: "$$guest.user",
+                userId: "$$guest.userId",
                 timestamp: "$$guest.timestamp",
                 name: "$$guest.name",
                 email: "$$guest.email",
                 phone: "$$guest.phone",
                 extraData: "$$guest.extraData",
+                course: "$$guest.course",
                 ticket: "$$guest.ticket",
               },
             },
@@ -412,19 +414,21 @@ const specialEventsToSpreadsheet = async (id, userData = {}) => {
     const guestListHeaders = [
       "Timestamp",
       "Name",
+      'User ID',
       "Email",
       "Phone",
       "Extra Data",
-      "Specialty",
+      "Course",
       "Ticket",
     ];
     const guests = result[0].guests.map((obj) => [
       moment(obj.timestamp).format(MOMENT_DATE_TIME_YEAR),
       obj.name,
+      obj.userId ?? '-',
       obj.email,
       obj.phone,
       obj.extraData ?? "N/A",
-      userData.course ?? "-",
+      obj.course ?? "-",
       obj.ticket,
     ]);
 
