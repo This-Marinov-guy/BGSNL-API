@@ -412,9 +412,9 @@ const specialEventsToSpreadsheet = async (id) => {
     ];
 
     const guestListHeaders = [
+      'ID',
       "Timestamp",
       "Name",
-      'User ID',
       "Email",
       "Phone",
       "Extra Data",
@@ -422,9 +422,9 @@ const specialEventsToSpreadsheet = async (id) => {
       "Ticket",
     ];
     const guests = result[0].guests.map((obj) => [
+      obj.userId ?? '-',
       moment(obj.timestamp).format(MOMENT_DATE_TIME_YEAR),
       obj.name,
-      obj.userId ?? '-',
       obj.email,
       obj.phone,
       obj.extraData ?? "N/A",
