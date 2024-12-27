@@ -391,6 +391,7 @@ export const editEvent = async (req, res, next) => {
   let event;
   try {
     event = await Event.findById(eventId);
+    console.log(event);
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
@@ -400,6 +401,10 @@ export const editEvent = async (req, res, next) => {
   }
 
   const folder = event.folder ?? "spare";
+
+  console.log("\n\n\n\n\n");
+  console.log("0 Google Event ID: " + event.googleEventId);
+  console.log("\n\n\n\n\n");
 
   const {
     memberOnly,
@@ -429,8 +434,9 @@ export const editEvent = async (req, res, next) => {
     ticketColor,
     bgImage,
     bgImageSelection,
-    googleEventId,
   } = req.body;
+
+  console.log("1 Google Event ID: " + req.body.googleEventId);
 
   const extraInputsForm = processExtraInputsForm(
     parseStingData(req.body.extraInputsForm)
@@ -441,6 +447,7 @@ export const editEvent = async (req, res, next) => {
   const guestPromotion = JSON.parse(req.body.guestPromotion);
   const memberPromotion = JSON.parse(req.body.memberPromotion);
   const subEvent = JSON.parse(req.body.subEvent);
+  const googleEventId = req.body.googleEventId;
 
   const poster = req.files["poster"]
     ? await uploadToCloudinary(req.files["poster"][0], {
@@ -663,11 +670,19 @@ export const editEvent = async (req, res, next) => {
     guest: guestPromotion,
     member: memberPromotion,
   };
-  event.googleEventId = googleEventId;
+  event.date = date;
+  
+  console.log("\n\n\n\n\n");
+  console.log("event date " + event.date);
+  console.log("date: " + date);
+  console.log("\n\n\n\n\n");
 
   try {
+    console.log("EVENT");
+
     await event.save();
-    await insertOrUpdateEvent(event);
+    // await insertOrUpdateEvent(event);
+    await insertOrUpdateEvent(await Event.findById(event._id));
   } catch (err) {
     console.log(err);
     return next(
@@ -697,6 +712,7 @@ export const deleteEvent = async (req, res, next) => {
     return next(new HttpError("Fetching events failed", 500));
   }
 
+  // todo: check the error with the no such event 
   if (!event) {
     return next(new HttpError("No such event", 404));
   }
@@ -706,8 +722,8 @@ export const deleteEvent = async (req, res, next) => {
   const productId = event.product.id ?? "";
 
   try {
+    await deleteCalendarEvent(await Event.findById(event._id));
     await event.delete();
-    await deleteCalendarEvent(event.googleEventId);
   } catch (err) {
     console.log(err);
     return new HttpError(

@@ -66,10 +66,16 @@ export const insertOrUpdateEvent = async (eventData) => {
   //   return;
   // }
 
+
+  console.log(eventData)
+  console.log("Event ID: ", eventData.googleEventId);
+
   const startDateTime = moment(eventData.date, moment.ISO_8601, true);
   if (!startDateTime.isValid()) {
     throw new Error("Invalid date format. Please use ISO 8601.");
   }
+
+  console.log("Start date:", startDateTime.toISOString());
 
   const calendar = await getCalendarClient();
 
@@ -87,9 +93,6 @@ export const insertOrUpdateEvent = async (eventData) => {
     },
   };
 
-  console.log(eventData)
-  console.log("Event ID: ", eventData.googleEventId);
-  
   try {
     const response = await calendar.events.update({
       calendarId: calendarId,
