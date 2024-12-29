@@ -29,8 +29,7 @@ import {
 import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
 import { getFingerprintLite } from "../../services/main-services/user-service.js";
 import { 
-  addEventToGoogleCalendar, 
-  insertOrUpdateEvent, 
+  addOrUpdateEvent, 
   deleteCalendarEvent 
 } from "../../services/side-services/google-calendar.js";
 
@@ -363,8 +362,7 @@ export const addEvent = async (req, res, next) => {
 
   try {
     await event.save();
-    // await addEventToGoogleCalendar(event);
-    await addEventToGoogleCalendar(await Event.findById(event._id));
+    await addOrUpdateEvent(await Event.findById(event._id));
 
   } catch (err) {
     console.log(err);
@@ -402,10 +400,6 @@ export const editEvent = async (req, res, next) => {
 
   const folder = event.folder ?? "spare";
 
-  console.log("\n\n\n\n\n");
-  console.log("0 Google Event ID: " + event.googleEventId);
-  console.log("\n\n\n\n\n");
-
   const {
     memberOnly,
     hidden,
@@ -435,8 +429,6 @@ export const editEvent = async (req, res, next) => {
     bgImage,
     bgImageSelection,
   } = req.body;
-
-  console.log("1 Google Event ID: " + req.body.googleEventId);
 
   const extraInputsForm = processExtraInputsForm(
     parseStingData(req.body.extraInputsForm)
@@ -671,18 +663,10 @@ export const editEvent = async (req, res, next) => {
     member: memberPromotion,
   };
   event.date = date;
-  
-  console.log("\n\n\n\n\n");
-  console.log("event date " + event.date);
-  console.log("date: " + date);
-  console.log("\n\n\n\n\n");
 
   try {
-    console.log("EVENT");
-
     await event.save();
-    // await insertOrUpdateEvent(event);
-    await insertOrUpdateEvent(await Event.findById(event._id));
+    await addOrUpdateEvent(await Event.findById(event._id));
   } catch (err) {
     console.log(err);
     return next(
@@ -703,7 +687,7 @@ export const editEvent = async (req, res, next) => {
 };
 
 export const deleteEvent = async (req, res, next) => {
-  const eventId = req.params.googleEventId;
+  const eventId = req.params.eventId;
 
   let event;
   try {
