@@ -76,6 +76,7 @@ const eventSchema = new Schema({
   bgImageSelection: { type: Number, default: 1 },
   memberOnly: { type: Boolean, required: true, default: false },
   hidden: { type: Boolean, required: true, default: false },
+  googleEventId: { type: String },
   extraInputsForm: {
     type: mongoose.Schema.Types.Mixed,
   },

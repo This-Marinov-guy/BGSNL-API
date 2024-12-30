@@ -28,6 +28,10 @@ import {
 } from "../../services/main-services/event-action-service.js";
 import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
 import { getFingerprintLite } from "../../services/main-services/user-service.js";
+import { 
+  addOrUpdateEvent, 
+  deleteCalendarEvent 
+} from "../../services/side-services/google-calendar.js";
 
 export const fetchFullDataEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
@@ -146,8 +150,9 @@ export const addEvent = async (req, res, next) => {
     return next(error);
   }
 
+  const validDate = moment(new Date(date)).toISOString();
   const folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${moment(
-    date
+    validDate
   ).format(MOMENT_DATE_TIME)}`;
 
   if (!req.files["poster"] || !req.files["ticketImg"]) {
@@ -308,7 +313,7 @@ export const addEvent = async (req, res, next) => {
     }
   }
 
-  const sheetName = `${title}|${moment(date).format(MOMENT_DATE_TIME_YEAR)}`;
+  const sheetName = `${title}|${moment(validDate).format(MOMENT_DATE_TIME_YEAR)}`;
 
   //create event
   event = new Event({
@@ -352,10 +357,13 @@ export const addEvent = async (req, res, next) => {
     },
     earlyBird,
     lateBird,
+    googleEventId: "",
   });
 
   try {
     await event.save();
+    await addOrUpdateEvent(await Event.findById(event._id));
+
   } catch (err) {
     console.log(err);
     return next(
@@ -381,6 +389,7 @@ export const editEvent = async (req, res, next) => {
   let event;
   try {
     event = await Event.findById(eventId);
+    console.log(event);
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
@@ -430,6 +439,7 @@ export const editEvent = async (req, res, next) => {
   const guestPromotion = JSON.parse(req.body.guestPromotion);
   const memberPromotion = JSON.parse(req.body.memberPromotion);
   const subEvent = JSON.parse(req.body.subEvent);
+  const googleEventId = req.body.googleEventId;
 
   const poster = req.files["poster"]
     ? await uploadToCloudinary(req.files["poster"][0], {
@@ -652,9 +662,11 @@ export const editEvent = async (req, res, next) => {
     guest: guestPromotion,
     member: memberPromotion,
   };
+  event.date = date;
 
   try {
     await event.save();
+    await addOrUpdateEvent(await Event.findById(event._id));
   } catch (err) {
     console.log(err);
     return next(
@@ -684,6 +696,7 @@ export const deleteEvent = async (req, res, next) => {
     return next(new HttpError("Fetching events failed", 500));
   }
 
+  // todo: check the error with the no such event 
   if (!event) {
     return next(new HttpError("No such event", 404));
   }
@@ -693,6 +706,7 @@ export const deleteEvent = async (req, res, next) => {
   const productId = event.product.id ?? "";
 
   try {
+    await deleteCalendarEvent(await Event.findById(event._id));
     await event.delete();
   } catch (err) {
     console.log(err);
