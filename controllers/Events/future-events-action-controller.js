@@ -428,6 +428,7 @@ export const editEvent = async (req, res, next) => {
     ticketColor,
     bgImage,
     bgImageSelection,
+    googleEventId
   } = req.body;
 
   const extraInputsForm = processExtraInputsForm(
@@ -439,7 +440,6 @@ export const editEvent = async (req, res, next) => {
   const guestPromotion = JSON.parse(req.body.guestPromotion);
   const memberPromotion = JSON.parse(req.body.memberPromotion);
   const subEvent = JSON.parse(req.body.subEvent);
-  const googleEventId = req.body.googleEventId;
 
   const poster = req.files["poster"]
     ? await uploadToCloudinary(req.files["poster"][0], {
