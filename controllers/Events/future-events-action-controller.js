@@ -28,9 +28,9 @@ import {
 } from "../../services/main-services/event-action-service.js";
 import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
 import { getFingerprintLite } from "../../services/main-services/user-service.js";
-import { 
-  addOrUpdateEvent, 
-  deleteCalendarEvent 
+import {
+  addOrUpdateEvent,
+  deleteCalendarEvent,
 } from "../../services/side-services/google-calendar.js";
 
 export const fetchFullDataEvent = async (req, res, next) => {
@@ -313,7 +313,9 @@ export const addEvent = async (req, res, next) => {
     }
   }
 
-  const sheetName = `${title}|${moment(validDate).format(MOMENT_DATE_TIME_YEAR)}`;
+  const sheetName = `${title}|${moment(validDate).format(
+    MOMENT_DATE_TIME_YEAR
+  )}`;
 
   //create event
   event = new Event({
@@ -362,8 +364,6 @@ export const addEvent = async (req, res, next) => {
 
   try {
     await event.save();
-    await addOrUpdateEvent(await Event.findById(event._id));
-
   } catch (err) {
     console.log(err);
     return next(
@@ -376,7 +376,11 @@ export const addEvent = async (req, res, next) => {
 
   try {
     await eventToSpreadsheet(event.id);
-  } catch {}
+    await addOrUpdateEvent(await Event.findById(event._id));
+  } catch (err) {
+    // TODO: email or notify error
+    console.log(err);
+  }
 
   event = event.toObject({ getters: true });
 
@@ -428,7 +432,7 @@ export const editEvent = async (req, res, next) => {
     ticketColor,
     bgImage,
     bgImageSelection,
-    googleEventId
+    googleEventId,
   } = req.body;
 
   const extraInputsForm = processExtraInputsForm(
@@ -666,7 +670,6 @@ export const editEvent = async (req, res, next) => {
 
   try {
     await event.save();
-    await addOrUpdateEvent(await Event.findById(event._id));
   } catch (err) {
     console.log(err);
     return next(
@@ -679,7 +682,11 @@ export const editEvent = async (req, res, next) => {
 
   try {
     // await eventToSpreadsheet(event.id);
-  } catch {}
+    await addOrUpdateEvent(await Event.findById(event._id));
+  } catch (err) {
+    // TODO: email or notify error
+    console.log(err);
+  }
 
   event = event.toObject({ getters: true });
 
@@ -696,7 +703,7 @@ export const deleteEvent = async (req, res, next) => {
     return next(new HttpError("Fetching events failed", 500));
   }
 
-  // todo: check the error with the no such event 
+  // todo: check the error with the no such event
   if (!event) {
     return next(new HttpError("No such event", 404));
   }
