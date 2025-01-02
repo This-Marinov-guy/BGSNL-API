@@ -64,7 +64,7 @@ export const postDonationIntent = async (req, res, next) => {
     });
   }
 
-  const stripeClient = createStripeClient();
+  const stripeClient = createStripeClient(DEFAULT_REGION);
 
   try {
     const paymentIntent = await stripeClient.paymentIntents.create({
@@ -207,12 +207,21 @@ export const postCustomerPortal = async (req, res, next) => {
     );
   }
 
-  const stripeClient = createStripeClient(user.region);
+  const stripeClient = createStripeClient(DEFAULT_REGION);
 
-  const session = await stripeClient.billingPortal.sessions.create({
-    customer: user.subscription.customerId,
-    return_url: url,
-  });
+  let session = null;
+
+  try {
+    session = await stripeClient.billingPortal.sessions.create({
+      customer: user.subscription.customerId,
+      return_url: url,
+    });
+  } catch (err) {
+    console.log(err);
+    return next(
+      new HttpError("Operation failed - please contact support!", 500)
+    );
+  }
 
   res.status(200).json({ url: session.url });
 };

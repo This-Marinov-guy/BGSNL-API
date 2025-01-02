@@ -128,7 +128,7 @@ const paymentFailedEmail = async (receiver, link) => {
     })
 };
 
-export const sendMarketingEmail = async (templateId, receiver, name) => {
+export const sendMarketingEmail = async (templateId, receiver, name = '') => {
    const recipients = [
     {
       email: receiver,

@@ -6,10 +6,13 @@ import {
   COMMITTEE_MEMBER,
   DELOITTE_TEMPLATE,
   MEMBER,
+  PWC_TEMPLATE,
   VIP,
 } from "../config/defines.js";
 import User from "../../models/User.js";
 import { sendMarketingEmail } from "../../services/side-services/email-transporter.js";
+import { get } from "http";
+import { log } from "util";
 
 // Connection URI
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;
@@ -74,13 +77,13 @@ export async function getMarketingUsers() {
     const clients = await User.find({
       expireDate: { $gte: today }, // $lt means "less than" (before today)
     }).select("email name"); // Select only email and name fields
-
-    console.log(clients);
     
-    // clients.forEach(
-    //   async (client) =>
-    //     await sendMarketingEmail(DELOITTE_TEMPLATE, client.email, client.name)
-    // );
+    console.log(clients);
+
+    clients.forEach(
+      async (client) =>
+        await sendMarketingEmail(PWC_TEMPLATE, client.email, client.name)
+    );
 
     return clients;
   } catch (error) {
