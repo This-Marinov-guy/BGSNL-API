@@ -4,6 +4,7 @@ import path from "path";
 import { parse } from "json2csv";
 import csv from "csv-parser";
 import dotenv from "dotenv";
+import { dateToUnix } from "../functions/helpers.js";
 dotenv.config();
 
 export async function exportStripeSubscriptionsToCsv(
@@ -15,7 +16,7 @@ export async function exportStripeSubscriptionsToCsv(
 
   const stripe = createStripeClient("groningen");
   const subscriptions = [];
-  const now = new Date();
+  const now = dateToUnix();
 
   try {
     console.log("🚀 Starting Stripe Subscriptions Export...");
@@ -57,52 +58,55 @@ export async function exportStripeSubscriptionsToCsv(
         };
       });
 
-      const formattedSubscriptions = result.data.map((subscription) => {
-        const startDate = now + 26 * 60 * 60;
-        const billingCycle = subscription.current_period_end || "";
+      const formattedSubscriptions = result.data
+        .filter(
+          (subscription) => subscription.id === "sub_1Puf7oIOw5UGbAo18MPWSFMZ"
+        )
+        .map((subscription) => {
+          const startDate = now + 26 * 60 * 60;
+          const billingCycle = subscription.current_period_end || "";
 
-        const isCanceled = billingCycle <= startDate;
+          const isCanceled = billingCycle <= startDate;
 
-        // Exactly match the columns from the billing_migration_template.csv
-        return {
-          customer: subscription.customer.id,
-          // start at 1st dec
-          start_date: startDate,
-          price:
-            subscription.plan.amount === 600
-              ? "price_1QOg1FAShinXgMFZ1dZiQn1P"
-              : "price_1QOg1XAShinXgMFZyH0F4P9i",
-          quantity: subscription.quantity,
-          "metadata.third_party_sub_id": subscription.id,
-          automatic_tax:
-            // subscription.automatic_tax ? "TRUE" :
-            "FALSE",
-          // when to bill the customer
-          billing_cycle_anchor: isCanceled ? "" : billingCycle,
-          coupon: "",
-          trial_end: subscription.trial_end || "",
-          proration_behavior: subscription.proration_behavior ?? "none",
-          collection_method: isCanceled
-            ? "send_invoice"
-            : subscription.collection_method,
-          default_tax_rate: subscription.default_tax_rates?.[0]?.id || "",
-          backdate_start_date: subscription.current_period_start || "",
-          days_until_due: isCanceled ? 3 : subscription.days_until_due || "",
-          cancel_at_period_end: isCanceled
-            ? "TRUE"
-            : subscription.cancel_at_period_end
-            ? "TRUE"
-            : "FALSE",
-          // "add_invoice_items.0.amount": subscription.plan.amount || "",
-          // "add_invoice_items.0.product": subscription.plan.product || "",
-          // "add_invoice_items.0.currency": subscription.plan.currency || "",
+          // Exactly match the columns from the billing_migration_template.csv
+          return {
+            customer: subscription.customer.id,
+            start_date: startDate,
+            price:
+              subscription.plan.amount === 600
+                ? "price_1QOg1FAShinXgMFZ1dZiQn1P"
+                : "price_1QOg1XAShinXgMFZyH0F4P9i",
+            quantity: subscription.quantity,
+            "metadata.third_party_sub_id": subscription.id,
+            automatic_tax:
+              // subscription.automatic_tax ? "TRUE" :
+              "FALSE",
+            // when to bill the customer
+            billing_cycle_anchor: isCanceled ? "" : billingCycle,
+            coupon: "",
+            trial_end: "",
+            proration_behavior: "none",
+            collection_method: isCanceled
+              ? "send_invoice"
+              : subscription.collection_method,
+            default_tax_rate: subscription.default_tax_rates?.[0]?.id || "",
+            backdate_start_date: subscription.current_period_start || "",
+            days_until_due: isCanceled ? 3 : subscription.days_until_due || "",
+            cancel_at_period_end: isCanceled
+              ? "TRUE"
+              : subscription.cancel_at_period_end
+              ? "TRUE"
+              : "FALSE",
+            // "add_invoice_items.0.amount": subscription.plan.amount || "",
+            // "add_invoice_items.0.product": subscription.plan.product || "",
+            // "add_invoice_items.0.currency": subscription.plan.currency || "",
 
-          // overwrite
-          "add_invoice_items.0.amount": "",
-          "add_invoice_items.0.product": "",
-          "add_invoice_items.0.currency": "",
-        };
-      });
+            // overwrite
+            "add_invoice_items.0.amount": "",
+            "add_invoice_items.0.product": "",
+            "add_invoice_items.0.currency": "",
+          };
+        });
 
       subscriptions.push(...formattedSubscriptions);
       totalSubscriptionsFetched += formattedSubscriptions.length;
@@ -260,7 +264,7 @@ export async function cancelAllSubscriptions() {
     // Retrieve all active subscriptions
     const subscriptions = await stripe.subscriptions.list({
       status: "active",
-      limit: 100, // Adjust limit as needed
+      limit: 1000, // Adjust limit as needed
     });
 
     // Track cancellation results
@@ -305,7 +309,7 @@ export async function cancelAllSubscriptions() {
     while (hasMore) {
       const nextSubscriptions = await stripe.subscriptions.list({
         status: "active",
-        limit: 100,
+        limit: 1000,
         starting_after: startingAfter,
       });
 
@@ -483,3 +487,67 @@ export async function updateCustomerPaymentMethods() {
     console.error("Error in update process:", error);
   }
 }
+
+export const getCustomers = async (sourceRegion) => {
+  const sourceStripe = createStripeClient(sourceRegion);
+
+  const customers = await sourceStripe.customers.list({
+    limit: 1000,
+    expand: ["data.default_source"],
+  });
+
+  console.log(customers);
+};
+
+export const transferBillingInfo = async (sourceRegion, targetRegion) => {
+  const sourceStripe = createStripeClient(sourceRegion);
+  const targetStripe = createStripeClient(targetRegion);
+
+  let hasMore = true;
+  let startingAfter = undefined;
+
+  while (hasMore) {
+    const listParams = { limit: 1000 };
+    if (startingAfter) {
+      listParams.starting_after = startingAfter;
+    }
+
+    const customers = await sourceStripe.customers.list(listParams);
+    
+    hasMore = customers.has_more;
+    if (customers.data.length) {
+      startingAfter = customers.data[customers.data.length - 1].id;
+    }
+
+    for (const customer of customers.data) {
+      try {
+        const billingData = {
+          address: customer.address,
+          shipping: customer.shipping,
+          invoice_settings: customer.invoice_settings,
+          tax: customer.tax,
+          tax_exempt: customer.tax_exempt,
+          tax_ids: customer.tax_ids,
+          preferred_locales: customer.preferred_locales
+        };
+
+        // Only include non-null fields
+        const cleanBillingData = Object.entries(billingData)
+          .reduce((acc, [key, value]) => {
+            if (value !== null && value !== undefined) {
+              acc[key] = value;
+            }
+            return acc;
+          }, {});
+
+        await targetStripe.customers.update(customer.id, cleanBillingData);
+        console.log(`Updated billing info for customer: ${customer.email}`);
+      } catch (error) {
+        console.error(`Error updating billing for customer ${customer.email}:`, error.message);
+      }
+    }
+  }
+};
+
+// Usage:
+// await transferBillingInfo('groningen', 'netherlands');

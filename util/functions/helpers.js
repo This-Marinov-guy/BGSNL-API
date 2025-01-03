@@ -245,3 +245,11 @@ export const chooseRandomAvatar = () => {
 
   return `/assets/images/avatars/bg_other_avatar_${luckyIndex}.jpeg`;
 };
+
+export const dateToUnix = (date = null) => {
+  if (!date) {
+    return Math.floor(new Date().getTime() / 1000);
+  }
+
+  return Math.floor(new Date(date).getTime() / 1000);
+};
