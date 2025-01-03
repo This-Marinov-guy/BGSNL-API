@@ -180,79 +180,6 @@ export async function exportStripeSubscriptionsToCsv(
   }
 }
 
-export async function importCustomers(
-  file = "unified_customers-1.csv",
-  region = "netherlands"
-) {
-  if (process.env.APP_ENV !== "dev") {
-    return;
-  }
-
-  const stripe = createStripeClient(region);
-
-  const customers = [];
-
-  fs.createReadStream(path.resolve("util/files/" + file))
-    .pipe(csv())
-    .on("data", (row) => {
-      if (row.Email) {
-        const customerData = {
-          id: row.id || undefined,
-          email: row.Email,
-          name: row.Name || "",
-          description: row.Description || "",
-          // created: row["Created (UTC)"]
-          //   ? new Date(row["Created (UTC)"])
-          //   : undefined,
-          metadata: {
-            delinquent: row.Delinquent || "false",
-            card_id: row["Card ID"] || "",
-            card_name: row["Card Name"] || "",
-            total_spend: row["Total Spend"] || "0",
-            payment_count: row["Payment Count"] || "0",
-            average_order: row["Average Order"] || "0",
-            account_balance: row["Account Balance"] || "0",
-            currency: row.Currency || "",
-            plan: row.Plan || "",
-            status: row.Status || "",
-            cancel_at_period_end: row["Cancel At Period End"] || "false",
-          },
-          address: {
-            line1: row["Card Address Line1"] || "",
-            line2: row["Card Address Line2"] || "",
-            city: row["Card Address City"] || "",
-            state: row["Card Address State"] || "",
-            country: row["Card Address Country"] || "",
-            postal_code: row["Card Address Zip"] || "",
-          },
-          shipping: {
-            name: row.Name || "",
-            address: {
-              line1: row["Card Address Line1"] || "",
-              line2: row["Card Address Line2"] || "",
-              city: row["Card Address City"] || "",
-              state: row["Card Address State"] || "",
-              country: row["Card Address Country"] || "",
-              postal_code: row["Card Address Zip"] || "",
-            },
-          },
-        };
-
-        customers.push(customerData);
-      }
-    })
-    .on("end", async () => {
-      for (const customer of customers) {
-        try {
-          await stripe.customers.create(customer);
-          console.log(`Imported: ${customer.email}`);
-        } catch (error) {
-          console.error(`Error importing ${customer.email}:`, error);
-        }
-      }
-    });
-}
-
 export async function cancelAllSubscriptions() {
   if (process.env.APP_ENV !== "dev") {
     return;
@@ -350,144 +277,6 @@ export async function cancelAllSubscriptions() {
   }
 }
 
-export async function recreateSubscription() {
-  const stripe = createStripeClient("netherlands");
-
-  try {
-    // const subscriptions = await stripe.subscriptions.list({
-    //   limit: 150,
-    //   status: "canceled",
-    //   expand: [
-    //     "data.customer",
-    //     "data.latest_invoice",
-    //     "data.plan",
-    //     "data.default_tax_rates",
-    //   ],
-    // });
-
-    // Step 1: Check or Create the Customer
-    const customerId = "cus_PyOos786fQE1E7"; // Existing customer ID
-    let customer;
-
-    // try {
-    //   customer = await stripe.customers.retrieve(customerId);
-    // } catch (error) {
-    //    console.log("No such customer" + customerId);
-    //    return
-    // }
-
-    // Step 2: Recreate the Subscription
-    const subscription = await stripe.subscriptions.create({
-      customer: customerId,
-      items: [
-        {
-          price: "price_1QOg1FAShinXgMFZ1dZiQn1P", // Original price ID
-          quantity: 1,
-        },
-      ],
-      billing_cycle_anchor: 1745591343, // Original billing cycle anchor (Unix timestamp)
-      cancel_at_period_end: false, // Ensure it's an active subscription
-      default_payment_method: "pm_1P8S1QIOw5UGbAo1xd9GuXov", // Original payment method
-      metadata: {
-        imported_from: "original_system",
-      },
-    });
-
-    console.log("Subscription recreated successfully:", subscription);
-  } catch (error) {
-    console.error("Error recreating subscription:", error);
-  }
-}
-
-async function getAllCustomers() {
-  const stripe = createStripeClient("groningen");
-
-  try {
-    // Use Stripe's API to list customers (pagination may be needed for large data sets)
-    let customers = [];
-    let has_more = true;
-    let starting_after = null;
-
-    // while (has_more) {
-    const response = await stripe.customers.list({
-      limit: 300, // Max number of customers per request
-    });
-
-    customers = customers.concat(response.data);
-    has_more = response.has_more;
-    starting_after = response.data.length
-      ? response.data[response.data.length - 1].id
-      : null;
-    // }
-
-    console.log("All customers:", customers);
-    return customers;
-  } catch (error) {
-    console.error("Error retrieving customers:", error);
-  }
-}
-
-export async function updateCustomerPaymentMethods() {
-  let stripe = createStripeClient("groningen");
-
-  const result = await stripe.subscriptions.list({
-    limit: 150,
-    status: "canceled",
-    expand: [
-      "data.customer",
-      "data.latest_invoice",
-      "data.plan",
-      "data.default_tax_rates",
-      "data.default_payment_method",
-      "data.customer.default_payment_method",
-    ],
-  });
-
-  const customers = result.data.map((r) => {
-    return {
-      id: r.customer.id,
-      // Extract only the payment method ID, not the entire object
-      default_payment_method:
-        r.default_payment_method?.id || r.default_payment_method,
-    };
-  });
-
-  try {
-    let stripe = createStripeClient("netherlands");
-
-    const updatePromises = customers.map(async (customer) => {
-      // Only attempt to update if a payment method ID exists
-      if (customer.default_payment_method) {
-        try {
-          const updatedCustomer = await stripe.customers.update(customer.id, {
-            invoice_settings: {
-              default_payment_method: customer.default_payment_method,
-            },
-          });
-          console.log(`Updated customer ${customer.id} successfully`);
-          return updatedCustomer;
-        } catch (error) {
-          console.error(`Error updating customer ${customer.id}:`, error);
-          return null;
-        }
-      }
-      return null;
-    });
-
-    // Wait for all updates to complete
-    const results = await Promise.all(updatePromises);
-
-    // Filter out any failed or skipped updates
-    const successfulUpdates = results.filter((result) => result !== null);
-
-    console.log(
-      `Successfully updated ${successfulUpdates.length} out of ${customers.length} customers`
-    );
-  } catch (error) {
-    console.error("Error in update process:", error);
-  }
-}
-
 export const getCustomers = async (sourceRegion) => {
   const sourceStripe = createStripeClient(sourceRegion);
 
@@ -513,7 +302,7 @@ export const transferBillingInfo = async (sourceRegion, targetRegion) => {
     }
 
     const customers = await sourceStripe.customers.list(listParams);
-    
+
     hasMore = customers.has_more;
     if (customers.data.length) {
       startingAfter = customers.data[customers.data.length - 1].id;
@@ -528,26 +317,178 @@ export const transferBillingInfo = async (sourceRegion, targetRegion) => {
           tax: customer.tax,
           tax_exempt: customer.tax_exempt,
           tax_ids: customer.tax_ids,
-          preferred_locales: customer.preferred_locales
+          preferred_locales: customer.preferred_locales,
         };
 
         // Only include non-null fields
-        const cleanBillingData = Object.entries(billingData)
-          .reduce((acc, [key, value]) => {
+        const cleanBillingData = Object.entries(billingData).reduce(
+          (acc, [key, value]) => {
             if (value !== null && value !== undefined) {
               acc[key] = value;
             }
             return acc;
-          }, {});
+          },
+          {}
+        );
 
         await targetStripe.customers.update(customer.id, cleanBillingData);
         console.log(`Updated billing info for customer: ${customer.email}`);
       } catch (error) {
-        console.error(`Error updating billing for customer ${customer.email}:`, error.message);
+        console.error(
+          `Error updating billing for customer ${customer.email}:`,
+          error.message
+        );
+      }
+    }
+  }
+};
+
+// NOTE: creates a new invoice but from today and 0 amount
+export const transferPaidBillingHistory = async (
+  sourceRegion,
+  targetRegion
+) => {
+  const sourceStripe = createStripeClient(sourceRegion);
+  const targetStripe = createStripeClient(targetRegion);
+
+  let hasMore = true;
+  let startingAfter = undefined;
+
+  while (hasMore) {
+    const listParams = {
+      limit: 1000,
+      expand: ["data.subscription"], // Include subscription details
+    };
+    if (startingAfter) {
+      listParams.starting_after = startingAfter;
+    }
+
+    const customers = await sourceStripe.customers.list(listParams);
+
+    hasMore = customers.has_more;
+    if (customers.data.length) {
+      startingAfter = customers.data[customers.data.length - 1].id;
+    }
+
+    for (const customer of customers.data) {
+      if (customer.id !== "cus_QmDY394aMHCuGb") {
+        continue;
+      }
+
+      try {
+        let invHasMore = true;
+        let invStartingAfter = undefined;
+
+        while (invHasMore) {
+          const invListParams = {
+            customer: customer.id,
+            limit: 100,
+            status: "paid",
+          };
+          if (invStartingAfter) {
+            invListParams.starting_after = invStartingAfter;
+          }
+
+          const invoices = await sourceStripe.invoices.list(invListParams);
+
+          invHasMore = invoices.has_more;
+          if (invoices.data.length) {
+            invStartingAfter = invoices.data[invoices.data.length - 1].id;
+          }
+
+          for (const invoice of invoices.data) {
+            // Fetch subscription details
+            const subscription = await sourceStripe.subscriptions.retrieve(
+              invoice.subscription
+            );
+
+            // console.log(invoice);
+
+            // return console.log(subscription);
+
+            if (invoice?.subscription === undefined) {
+              continue;
+            }
+
+            const invoiceData = {
+              customer: customer.id,
+              collection_method: invoice.collection_method,
+              currency: invoice.currency,
+              auto_advance: false,
+              application_fee_amount: invoice.amount_paid,
+              effective_at: invoice.created,
+              metadata: {
+                original_invoice_id: invoice.id,
+                original_subscription_id: invoice.subscription,
+                subscription_period_start: subscription.current_period_start,
+                subscription_period_end: subscription.current_period_end,
+                subscription_status: subscription.status,
+                original_amount_paid: invoice.amount_paid,
+                original_paid_at: invoice.status_transitions?.paid_at,
+              },
+            };
+
+            // Add subscription description
+            invoiceData.description = `Subscription payment for period: ${new Date(
+              subscription.current_period_start * 1000
+            ).toLocaleDateString()} to ${new Date(
+              subscription.current_period_end * 1000
+            ).toLocaleDateString()}`;
+
+            // Get and create invoice items with subscription details
+            const items = await sourceStripe.invoiceItems.list({
+              invoice: invoice.id,
+            });
+
+            // Create the invoice
+            const newInvoice = await targetStripe.invoices.create(invoiceData);
+
+            // Add invoice items
+            for (const item of items.data) {
+              const itemData = {
+                customer: customer.id,
+                invoice: newInvoice.id,
+                amount: item.amount,
+                currency: item.currency,
+                description: `${
+                  item.description ||
+                  subscription.plan.nickname ||
+                  "Subscription payment"
+                } (${new Date(
+                  subscription.current_period_start * 1000
+                ).toLocaleDateString()})`,
+              };
+
+              if (item.price) itemData.price = item.price;
+              if (item.quantity) itemData.quantity = item.quantity;
+
+              await targetStripe.invoiceItems.create(itemData);
+            }
+
+            // Finalize and mark as paid
+            await targetStripe.invoices.finalizeInvoice(newInvoice.id);
+            // await targetStripe.invoices.pay(newInvoice.id, {
+            //   paid_out_of_band: true,
+            // });
+
+            console.log(
+              `Transferred subscription invoice ${invoice.id} for customer: ${customer.email}`
+            );
+          }
+        }
+
+        console.log(
+          `Completed subscription billing history transfer for customer: ${customer.email}`
+        );
+      } catch (error) {
+        console.error(
+          `Error transferring subscription history for customer ${customer.email}:`,
+          error.message
+        );
       }
     }
   }
 };
 
 // Usage:
-// await transferBillingInfo('groningen', 'netherlands');
+// await transferSubscriptionBillingHistory('groningen', 'netherlands');
