@@ -59,9 +59,6 @@ export async function exportStripeSubscriptionsToCsv(
       });
 
       const formattedSubscriptions = result.data
-        .filter(
-          (subscription) => subscription.id === "sub_1Puf7oIOw5UGbAo18MPWSFMZ"
-        )
         .map((subscription) => {
           const startDate = now + 26 * 60 * 60;
           const billingCycle = subscription.current_period_end || "";
