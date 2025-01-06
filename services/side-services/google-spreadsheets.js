@@ -105,7 +105,6 @@ const eventToSpreadsheet = async (id) => {
     }
 
     const {
-      id,
       region,
       date,
       title,
