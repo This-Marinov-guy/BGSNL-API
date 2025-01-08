@@ -14,11 +14,12 @@ import securityRouter from "./routes/security-routes.js";
 import specialEventsRouter from "./routes/special-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
-import { STRIPE_WEBHOOK_ROUTE } from "./util/config/defines.js";
+import { REGIONS, STRIPE_WEBHOOK_ROUTE } from "./util/config/defines.js";
 import futureEventRouter from "./routes/Events/future-events-routes.js";
 import wordpressRouter from "./routes/Integration/wordpress-routes.js";
 import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
+import { usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
 
 const app = express();
 
@@ -112,8 +113,8 @@ mongoose
 // instantly update all user spreadsheets (do not leave uncommented)
 
 // if (app.get('env') === 'development') {
-//   await usersToSpreadsheet()
+//   await usersToSpreadsheet();
 //   REGIONS.forEach(async (r) => {
 //     await usersToSpreadsheet(r);
-//   })
+//   });
 // }
