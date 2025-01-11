@@ -515,10 +515,12 @@ const usersToSpreadsheet = async (region = null) => {
 
     // Fetch users from MongoDB using Mongoose
     const query = filterByRegion ? { region } : {};
-    const users = await User.find().sort({
-      purchaseDate: 1,
-      _id: -1,
-    }).lean();
+    const users = await User.find(query)
+      .sort({
+        purchaseDate: 1,
+        _id: -1,
+      })
+      .lean();
 
     const values = users.map((user) => {
       const {
