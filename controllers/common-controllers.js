@@ -3,7 +3,7 @@ dotenv.config();
 import User from "../models/User.js";
 import { usersCountCache } from "../util/config/caches.js";
 import { readSpreadsheetRows } from "../services/side-services/google-spreadsheets.js";
-import { STATISTICS_ABOUT_US } from "../util/config/SPREEDSHEATS.js";
+import { STATISTICS_ABOUT_US_SHEET } from "../util/config/SPREEDSHEATS.js";
 
 export const getTotalMemberCount = async (req, res, next) => {
   let userCount = usersCountCache.get("total");
@@ -77,7 +77,7 @@ export const getActiveMemberCount = async (req, res, next) => {
 export const getAboutUsData = async (req, res, next) => {
   try {
     const data = await readSpreadsheetRows(
-      STATISTICS_ABOUT_US,
+      STATISTICS_ABOUT_US_SHEET,
       "Dashboard",
       "B2",
       "B6"

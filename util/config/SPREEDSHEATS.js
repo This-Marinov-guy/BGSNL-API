@@ -33,8 +33,10 @@ export const SPREADSHEETS_ID = {
   },
 };
 
-export const STATISTICS_ABOUT_US =
+export const STATISTICS_ABOUT_US_SHEET =
   "170XOaxJ-aVYNiXRplyx6R8vezDxGOR8nMCJB3O3AaRs";
+
+export const ARTICLES_SHEET = "14Q76RuXAX0J3tX4bYA3WR2SFyyaXHAbxktIo-0tKN_E";
 
 export const CLONE_SHEETS = {
   //amsterdam

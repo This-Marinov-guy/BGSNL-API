@@ -3,6 +3,13 @@ import axios from "axios";
 import dotenv from "dotenv";
 import { PROTOCOL } from "../../util/config/access.js";
 import { DEFAULT_WP_TITLES } from "../../util/config/defines.js";
+import { readSpreadsheetRows } from "../../services/side-services/google-spreadsheets.js";
+import { ARTICLES_SHEET } from "../../util/config/SPREEDSHEATS.js";
+import {
+  checkPostTranslation,
+  pairTranslatedPosts,
+  removeBgPosts,
+} from "../../services/side-services/integration/wordpress-service.js";
 dotenv.config();
 
 const ENDPOINT = "public-api.wordpress.com/wp/v2/sites/";
@@ -53,7 +60,16 @@ export const getWordpressPosts = async (req, res, next) => {
     };
   });
 
-  return res.status(200).json({ status: true, posts });
+  const translatedPostsIds = await readSpreadsheetRows(
+    ARTICLES_SHEET,
+    "Translations",
+    "B2",
+    `C${posts.length + 1}`
+  );
+
+  const enPosts = removeBgPosts(posts, translatedPostsIds);
+
+  return res.status(200).json({ status: true, posts: enPosts });
 };
 
 export const getWordpressPostDetails = async (req, res, next) => {
@@ -87,6 +103,16 @@ export const getWordpressPostDetails = async (req, res, next) => {
     return next(new HttpError("Failed to load post", 500));
   }
 
+  // TODO: make the C digit dynamic
+  const translatedPostsIds = await readSpreadsheetRows(
+    ARTICLES_SHEET,
+    "Translations",
+    "B2",
+    `C${6}`
+  );
+
+  const translatedPost = checkPostTranslation(post.id, translatedPostsIds);
+  
   // Replace http with https
   let processedContent = post.content.rendered.replace(
     /http:\/\//g,
@@ -102,6 +128,7 @@ export const getWordpressPostDetails = async (req, res, next) => {
   return res.status(200).json({
     status: true,
     data: {
+      ...translatedPost,
       title: post.title.rendered.replace(/&nbsp;/g, " ") ?? null,
       content: processedContent ?? null,
       styles: responseStyles.data ?? null,
