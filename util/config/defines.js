@@ -56,7 +56,7 @@ export const SUBSCRIPTION_PERIOD = {
   [YEAR_1]: 12
 };
 
-export const HOME_URL = 'bulgariansociety.nl';
+export const HOME_URL = 'https://bulgariansociety.nl';
 
 export const DEFAULT_WP_TITLES = [
   "The Art of&nbsp;Connection",
