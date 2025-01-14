@@ -5,6 +5,8 @@ import { parse } from "json2csv";
 import csv from "csv-parser";
 import dotenv from "dotenv";
 import { dateToUnix } from "../functions/helpers.js";
+import { DEFAULT_REGION } from "../config/defines.js";
+import User from "../../models/User.js";
 dotenv.config();
 
 export async function exportStripeSubscriptionsToCsv(
@@ -58,52 +60,51 @@ export async function exportStripeSubscriptionsToCsv(
         };
       });
 
-      const formattedSubscriptions = result.data
-        .map((subscription) => {
-          const startDate = now + 26 * 60 * 60;
-          const billingCycle = subscription.current_period_end || "";
+      const formattedSubscriptions = result.data.map((subscription) => {
+        const startDate = now + 26 * 60 * 60;
+        const billingCycle = subscription.current_period_end || "";
 
-          const isCanceled = billingCycle <= startDate;
+        const isCanceled = billingCycle <= startDate;
 
-          // Exactly match the columns from the billing_migration_template.csv
-          return {
-            customer: subscription.customer.id,
-            start_date: startDate,
-            price:
-              subscription.plan.amount === 600
-                ? "price_1QOg1FAShinXgMFZ1dZiQn1P"
-                : "price_1QOg1XAShinXgMFZyH0F4P9i",
-            quantity: subscription.quantity,
-            "metadata.third_party_sub_id": subscription.id,
-            automatic_tax:
-              // subscription.automatic_tax ? "TRUE" :
-              "FALSE",
-            // when to bill the customer
-            billing_cycle_anchor: isCanceled ? "" : billingCycle,
-            coupon: "",
-            trial_end: "",
-            proration_behavior: "none",
-            collection_method: isCanceled
-              ? "send_invoice"
-              : subscription.collection_method,
-            default_tax_rate: subscription.default_tax_rates?.[0]?.id || "",
-            backdate_start_date: subscription.current_period_start || "",
-            days_until_due: isCanceled ? 3 : subscription.days_until_due || "",
-            cancel_at_period_end: isCanceled
-              ? "TRUE"
-              : subscription.cancel_at_period_end
-              ? "TRUE"
-              : "FALSE",
-            // "add_invoice_items.0.amount": subscription.plan.amount || "",
-            // "add_invoice_items.0.product": subscription.plan.product || "",
-            // "add_invoice_items.0.currency": subscription.plan.currency || "",
+        // Exactly match the columns from the billing_migration_template.csv
+        return {
+          customer: subscription.customer.id,
+          start_date: startDate,
+          price:
+            subscription.plan.amount === 600
+              ? "price_1QOg1FAShinXgMFZ1dZiQn1P"
+              : "price_1QOg1XAShinXgMFZyH0F4P9i",
+          quantity: subscription.quantity,
+          "metadata.third_party_sub_id": subscription.id,
+          automatic_tax:
+            // subscription.automatic_tax ? "TRUE" :
+            "FALSE",
+          // when to bill the customer
+          billing_cycle_anchor: isCanceled ? "" : billingCycle,
+          coupon: "",
+          trial_end: "",
+          proration_behavior: "none",
+          collection_method: isCanceled
+            ? "send_invoice"
+            : subscription.collection_method,
+          default_tax_rate: subscription.default_tax_rates?.[0]?.id || "",
+          backdate_start_date: subscription.current_period_start || "",
+          days_until_due: isCanceled ? 3 : subscription.days_until_due || "",
+          cancel_at_period_end: isCanceled
+            ? "TRUE"
+            : subscription.cancel_at_period_end
+            ? "TRUE"
+            : "FALSE",
+          // "add_invoice_items.0.amount": subscription.plan.amount || "",
+          // "add_invoice_items.0.product": subscription.plan.product || "",
+          // "add_invoice_items.0.currency": subscription.plan.currency || "",
 
-            // overwrite
-            "add_invoice_items.0.amount": "",
-            "add_invoice_items.0.product": "",
-            "add_invoice_items.0.currency": "",
-          };
-        });
+          // overwrite
+          "add_invoice_items.0.amount": "",
+          "add_invoice_items.0.product": "",
+          "add_invoice_items.0.currency": "",
+        };
+      });
 
       subscriptions.push(...formattedSubscriptions);
       totalSubscriptionsFetched += formattedSubscriptions.length;
@@ -368,6 +369,7 @@ export const transferPaidBillingHistory = async (
     }
 
     for (const customer of customers.data) {
+      // Vladislav Marinov customer id
       if (customer.id !== "cus_QmDY394aMHCuGb") {
         continue;
       }
@@ -487,5 +489,86 @@ export const transferPaidBillingHistory = async (
   }
 };
 
-// Usage:
-// await transferSubscriptionBillingHistory('groningen', 'netherlands');
+export async function migratedSubscriptionsDBupdate() {
+  const stripe = createStripeClient(DEFAULT_REGION);
+  let updated = 0;
+
+  try {
+    let hasMore = true;
+    let startingAfter = null;
+    const subscriptions = [];
+
+    while (hasMore) {
+      const result = startingAfter
+        ? await stripe.subscriptions.list({
+            limit: 200,
+            // expand: [
+            //   "data.customer",
+            //   "data.latest_invoice",
+            //   "data.plan",
+            //   "data.default_tax_rates",
+            //   "data.default_payment_method",
+            // ],
+            starting_after: startingAfter,
+          })
+        : await stripe.subscriptions.list({
+            limit: 150,
+            // expand: [
+            //   "data.customer",
+            //   "data.latest_invoice",
+            //   "data.plan",
+            //   "data.default_tax_rates",
+            // ],
+          });
+
+      subscriptions.push(...result.data);
+
+      // Check if there are more subscriptions to retrieve
+      hasMore = result.has_more;
+      if (hasMore) {
+        startingAfter = result.data[result.data.length - 1].id;
+      }
+    }
+
+    for (const sub of subscriptions) {
+      if (!sub?.metadata?.third_party_sub_id) {
+        console.log("User is not migratable");
+        continue;
+      }
+
+      let user;
+
+      try {
+        user = await User.findOne({
+          "subscription.id": sub?.metadata?.third_party_sub_id,
+        });
+      } catch (err) {
+        console.error("Error fetching user:", err);
+        continue;
+      }
+
+      if (!user?.subscription?.id) {
+        console.log(
+          "User not found for subscription:",
+          sub?.metadata?.third_party_sub_id
+        );
+        continue;
+      }
+
+      user.subscription.id = sub.id;
+
+      try {
+        await user.save();
+        console.log("User updated:", sub.id);
+        updated++;
+      } catch (err) {
+        console.log("User was not updated", sub.id, err);
+      }
+    }
+  } catch (error) {
+    console.error("Error fetching subscriptions:", error);
+    throw error;
+  }
+
+  console.log("Done", updated);
+}
