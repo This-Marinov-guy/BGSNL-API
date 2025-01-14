@@ -14,7 +14,11 @@ import {
   eventToSpreadsheet,
   usersToSpreadsheet,
 } from "../../services/side-services/google-spreadsheets.js";
-import { chooseRandomAvatar, decryptData, hasOverlap } from "../../util/functions/helpers.js";
+import {
+  chooseRandomAvatar,
+  decryptData,
+  hasOverlap,
+} from "../../util/functions/helpers.js";
 import {
   MOMENT_DATE_YEAR,
   calculatePurchaseAndExpireDates,
@@ -27,10 +31,7 @@ import {
 } from "../../util/config/defines.js";
 import moment from "moment";
 import { ACTIVE, LOCKED, USER_STATUSES } from "../../util/config/enums.js";
-import {
-  createStripeClient,
-  getStripeKey,
-} from "../../util/config/stripe.js";
+import { createStripeClient, getStripeKey } from "../../util/config/stripe.js";
 
 export const postWebhookCheckout = async (req, res, next) => {
   const userRegion = req.query.region ?? "netherlands";
@@ -366,7 +367,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           const stripeClient = createStripeClient(DEFAULT_REGION);
 
           const session = await stripeClient.billingPortal.sessions.create({
-            customer: user.customerId,
+            customer: user.subscription.customerId,
             return_url: HOME_URL,
           });
 
