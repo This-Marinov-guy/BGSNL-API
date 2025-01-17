@@ -713,7 +713,8 @@ export const deleteEvent = async (req, res, next) => {
   const productId = event.product.id ?? "";
 
   try {
-    await deleteCalendarEvent(await Event.findById(event._id));
+    // TODO: 17.01 we will not delete events until we fill the calendar
+    // await deleteCalendarEvent(await Event.findById(event._id));
     await event.delete();
   } catch (err) {
     console.log(err);
