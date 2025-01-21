@@ -11,7 +11,7 @@ import moment from "moment-timezone";
 import Event from "../../models/Event.js";
 import { BGSNL_URL } from "../../util/config/defines.js";
 import User from "../../models/User.js";
-import { refactorToKeyValuePairs } from "../../util/functions/helpers.js";
+import { IS_PROD, refactorToKeyValuePairs } from "../../util/functions/helpers.js";
 import {
   MOMENT_DATE_TIME_YEAR,
   MOMENT_DATE_YEAR,
@@ -493,7 +493,7 @@ const specialEventsToSpreadsheet = async (id) => {
 const usersToSpreadsheet = async (region = null) => {
   try {
     let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.users;
-    const filterByRegion = region && SPREADSHEETS_ID[region]?.users;
+    const filterByRegion = IS_PROD && region && SPREADSHEETS_ID[region]?.users;
 
     if (filterByRegion) {
       spreadsheetId = SPREADSHEETS_ID[region].users;
