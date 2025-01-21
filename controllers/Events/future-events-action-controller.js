@@ -32,6 +32,7 @@ import {
   addOrUpdateEvent,
   deleteCalendarEvent,
 } from "../../services/side-services/google-calendar.js";
+import { IS_PROD } from "../../util/functions/helpers.js";
 
 export const fetchFullDataEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
@@ -151,9 +152,14 @@ export const addEvent = async (req, res, next) => {
   }
 
   const validDate = moment(new Date(date)).toISOString();
-  const folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${moment(
+
+  let folder = `${region}_${replaceSpecialSymbolsWithSpaces(title)}_${moment(
     validDate
   ).format(MOMENT_DATE_TIME)}`;
+
+  if (!IS_PROD) {
+    folder = `development/${folder}`;
+  }
 
   if (!req.files["poster"] || !req.files["ticketImg"]) {
     const error = new HttpError("We lack poster or/and ticket", 422);
@@ -402,7 +408,7 @@ export const editEvent = async (req, res, next) => {
     return next(new HttpError("No such event", 404));
   }
 
-  const folder = event.folder ?? "spare";
+  const folder = event.folder ?? (IS_PROD ? "spare" : "development/spare");
 
   const {
     memberOnly,

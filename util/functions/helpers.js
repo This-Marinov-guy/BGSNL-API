@@ -10,6 +10,8 @@ import { allowedCrawlers } from "../config/access.js";
 const JWT_TIMEOUT =
   process.env.APP_ENV === "prod" ? PROD_JWT_TIMEOUT : DEV_JWT_TIMEOUT;
 
+export const IS_PROD = process.env.APP_ENV === "prod";
+
 // Function to update the original array with the modified subset | needs to have ids
 export const updateOriginalArray = (originalArray, modifiedSubset) => {
   const updatedArray = originalArray.map((originalObject) => {

@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import dotenv from "dotenv";
+import { IS_PROD } from "../../../util/functions/helpers.js";
 dotenv.config();
 
 const calendarId = process.env.CALENDAR_ID;
@@ -20,6 +21,10 @@ const getCalendarClient = async () => {
 };
 
 export async function fetchExistingEvents() {
+  if (!IS_PROD) {
+    return;
+  }
+
   const now = new Date();
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
@@ -45,6 +50,10 @@ export async function fetchExistingEvents() {
 }
 
 export async function insertOrUpdateEvent(eventData) {
+  if (!IS_PROD) {
+    return;
+  }
+
   const startDate = new Date(eventData.date);
   if (isNaN(startDate.getTime())) {
     console.error("Invalid event date:", eventData.date);
@@ -97,6 +106,10 @@ export async function insertOrUpdateEvent(eventData) {
 }
 
 export async function deleteEvent(eventId) {
+  if (!IS_PROD) {
+    return;
+  }
+
   const calendar = await getCalendarClient();
 
   try {
