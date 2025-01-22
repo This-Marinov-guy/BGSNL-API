@@ -18,7 +18,6 @@ export const accessCollectionDirectly = async () => {
   const events = db.collection("events");
 
   const documents = await events.find({}).toArray();
-  console.log(documents);
 
   mongoose.disconnect();
 };

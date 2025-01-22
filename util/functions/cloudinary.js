@@ -41,7 +41,5 @@ export const getFolders = async (exclude = []) => {
   const result = await cloudinary.api.root_folders();
   const folders = result.folders.map((f) => f.name);
 
-  console.log(folders);
-
   return folders;
 };
