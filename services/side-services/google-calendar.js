@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import dotenv from "dotenv";
 import moment from "moment";
+import { IS_PROD } from "../../util/functions/helpers.js";
 
 dotenv.config();
 
@@ -52,6 +53,10 @@ const handleCalendarOperation = async (operation, params) => {
 };
 
 export const addOrUpdateEvent = async (eventData) => {
+  if (!IS_PROD) {
+    return;
+  }
+  
   if (eventData.hidden) {
     console.log("Event is hidden, not adding or updating in Google Calendar");
     return;

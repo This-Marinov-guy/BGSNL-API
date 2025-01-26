@@ -11,7 +11,10 @@ import moment from "moment-timezone";
 import Event from "../../models/Event.js";
 import { BGSNL_URL } from "../../util/config/defines.js";
 import User from "../../models/User.js";
-import { IS_PROD, refactorToKeyValuePairs } from "../../util/functions/helpers.js";
+import {
+  IS_PROD,
+  refactorToKeyValuePairs,
+} from "../../util/functions/helpers.js";
 import {
   MOMENT_DATE_TIME_YEAR,
   MOMENT_DATE_YEAR,
@@ -174,6 +177,7 @@ const eventToSpreadsheet = async (id) => {
                 email: "$$guest.email",
                 phone: "$$guest.phone",
                 preferences: "$$guest.preferences",
+                addOns: "$$guest.addOns",
                 ticket: "$$guest.ticket",
               },
             },
@@ -231,6 +235,7 @@ const eventToSpreadsheet = async (id) => {
       "Email",
       "Phone",
       "Preferences",
+      "AddOns",
       "Ticket",
     ];
     const guests = result[0].guests.map((obj) => [
@@ -241,6 +246,14 @@ const eventToSpreadsheet = async (id) => {
       obj.email,
       obj.phone,
       obj.preferences ? refactorToKeyValuePairs(obj.preferences) : "N/A",
+      obj.addOns?.length
+        ? obj.addOns
+            .map(
+              (item) =>
+                `${item.title} ${item.price ? item.price + " euro" : "Free"}`
+            )
+            .join(" + ")
+        : "N/A",
       obj.ticket,
     ]);
 
@@ -411,7 +424,7 @@ const specialEventsToSpreadsheet = async (id) => {
     ];
 
     const guestListHeaders = [
-      'ID',
+      "ID",
       "Timestamp",
       "Name",
       "Email",
@@ -421,7 +434,7 @@ const specialEventsToSpreadsheet = async (id) => {
       "Ticket",
     ];
     const guests = result[0].guests.map((obj) => [
-      obj.userId ?? '-',
+      obj.userId ?? "-",
       moment(obj.timestamp).format(MOMENT_DATE_TIME_YEAR),
       obj.name,
       obj.email,

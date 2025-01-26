@@ -85,6 +85,7 @@ export const getEventById = async (req, res, next) => {
       "earlyBird",
       "lateBird",
       "promotion",
+      "addOns",
     ]);
 
     res.status(200).json({ event, status });
@@ -117,6 +118,7 @@ export const getEvents = async (req, res, next) => {
       "earlyBird",
       "lateBird",
       "promotion",
+      "addOns",
     ])
   );
 
@@ -216,6 +218,8 @@ export const checkEligibleGuestForDiscount = async (req, res, next) => {
 
 export const postAddMemberToEvent = async (req, res, next) => {
   const { userId, eventId, code, type, preferences } = req.body;
+  const addOns = req.body?.addOns ? JSON.parse(req.body?.addOns) : [];
+
   let societyEvent;
 
   try {
@@ -253,6 +257,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
       email: targetUser.email,
       phone: targetUser.phone,
       preferences,
+      addOns,
       ticket: req.file.location,
     });
     targetUser.tickets.push({
@@ -297,6 +302,8 @@ export const postAddGuestToEvent = async (req, res, next) => {
     type,
   } = req.body;
 
+  const addOns = req.body?.addOns ? JSON.parse(req.body?.addOns) : [];
+
   let societyEvent;
   try {
     societyEvent = await Event.findById(eventId);
@@ -324,6 +331,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
     email: guestEmail,
     phone: guestPhone,
     preferences,
+    addOns,
     ticket: req.file.location,
   };
 

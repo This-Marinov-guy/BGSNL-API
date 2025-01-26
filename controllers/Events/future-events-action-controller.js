@@ -131,6 +131,7 @@ export const addEvent = async (req, res, next) => {
   const lateBird = JSON.parse(req.body.lateBird);
   const guestPromotion = JSON.parse(req.body.guestPromotion);
   const memberPromotion = JSON.parse(req.body.memberPromotion);
+  const addOns = JSON.parse(req.body.addOns);
 
   const subEvent = JSON.parse(req.body.subEvent);
 
@@ -317,6 +318,38 @@ export const addEvent = async (req, res, next) => {
         console.log(err.message);
       }
     }
+
+    if (addOns.isEnabled) {
+      if (!addOns?.title) {
+        addOns["title"] = "Add more to your ticket";
+      }
+
+      addOns["multi"] = addOns.multi === "true";
+
+      for (let i = 0; i < addOns.items.length; i++) {
+        if (!addOns.items[i]?.price && !addOns.items[i]?.title) {
+          continue;
+        }
+
+        addOns.items[i]["id"] = i;
+
+        if (!addOns.items[i]?.price) {
+          addOns.items[i]["price"] = "";
+          continue;
+        }
+
+        try {
+          addOns.items[i]["priceId"] = await addPrice(
+            region,
+            product.id,
+            addOns.items[i].price,
+            "Addon: " + addOns.items[i].title
+          );
+        } catch (err) {
+          console.log(err.message);
+        }
+      }
+    }
   }
 
   const sheetName = `${title}|${moment(validDate).format(
@@ -366,6 +399,7 @@ export const addEvent = async (req, res, next) => {
     earlyBird,
     lateBird,
     googleEventId: "",
+    addOns,
   });
 
   try {
@@ -438,7 +472,6 @@ export const editEvent = async (req, res, next) => {
     ticketColor,
     bgImage,
     bgImageSelection,
-    googleEventId,
   } = req.body;
 
   const extraInputsForm = processExtraInputsForm(
@@ -450,6 +483,7 @@ export const editEvent = async (req, res, next) => {
   const guestPromotion = JSON.parse(req.body.guestPromotion);
   const memberPromotion = JSON.parse(req.body.memberPromotion);
   const subEvent = JSON.parse(req.body.subEvent);
+  const addOns = JSON.parse(req.body.addOns);
 
   const poster = req.files["poster"]
     ? await uploadToCloudinary(req.files["poster"][0], {
@@ -642,6 +676,45 @@ export const editEvent = async (req, res, next) => {
     }
   }
 
+  if (addOns.isEnabled && event?.product) {
+    if (!addOns?.title) {
+      addOns["title"] = "Add more to your ticket";
+    }
+
+    addOns["multi"] = addOns.multi === "true";
+
+    for (let i = 0; i < addOns.items.length; i++) {
+      if (!addOns.items[i]?.price && !addOns.items[i]?.title) {
+        continue;
+      }
+
+      addOns.items[i]["id"] = i;
+
+      if (
+        event?.addOns?.items[i] !== undefined &&
+        addOns.items[i]?.price === event?.addOns?.items[i]?.price
+      ) {
+        continue;
+      }
+
+      if (!addOns.items[i]?.price) {
+        addOns.items[i]["price"] = "";
+        continue;
+      }
+
+      try {
+        addOns.items[i]["priceId"] = await addPrice(
+          region,
+          event.product.id,
+          addOns.items[i].price,
+          "Addon: " + addOns.items[i].title
+        );
+      } catch (err) {
+        console.log(err.message);
+      }
+    }
+  }
+
   event.images = images;
   event.bgImageSelection = bgImageSelection;
   event.memberOnly = memberOnly;
@@ -673,6 +746,7 @@ export const editEvent = async (req, res, next) => {
     member: memberPromotion,
   };
   event.date = date;
+  event.addOns = addOns;
 
   try {
     await event.save();

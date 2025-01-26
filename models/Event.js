@@ -53,12 +53,26 @@ const eventSchema = new Schema({
       endTimer: { type: Date },
     },
     member: {
-      isEnabled: { type: Boolean, required: true, default: 0 },
+      isEnabled: { type: Boolean, required: true, default: false },
       discount: { type: Number },
       priceId: { type: String },
       startTimer: { type: Date },
       endTimer: { type: Date },
     },
+  },
+  addOns: {
+    isEnabled: { type: Boolean, required: true, default: false },
+    multi: { type: Boolean },
+    title: { type: String },
+    description: { type: String },
+    items: [
+      {
+        title: { type: String },
+        description: { type: String },
+        price: { type: Number },
+        priceId: { type: String },
+      },
+    ],
   },
   entryIncluding: { type: String },
   memberIncluding: { type: String },
@@ -122,6 +136,13 @@ const eventSchema = new Schema({
       preferences: {
         type: mongoose.Schema.Types.Mixed,
       },
+      addOns: [
+        {
+          id: { type: Number },
+          title: { type: String },
+          price: { type: Number },
+        },
+      ],
       ticket: { type: String },
     },
   ],

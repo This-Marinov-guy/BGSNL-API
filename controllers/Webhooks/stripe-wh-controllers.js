@@ -178,6 +178,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             guestEmail,
             guestPhone,
             preferences,
+            addOns,
             type,
           } = metadata;
 
@@ -187,6 +188,9 @@ export const postWebhookCheckout = async (req, res, next) => {
           } catch (err) {
             return next(new HttpError(err.message, 500));
           }
+
+          addOns = addOns !== undefined ? JSON.parse(addOns) : [];
+
           let guest = {
             type: type ?? "guest",
             code,
@@ -194,6 +198,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             email: guestEmail,
             phone: guestPhone,
             preferences,
+            addOns,
             ticket: metadata.file,
           };
 
@@ -242,6 +247,9 @@ export const postWebhookCheckout = async (req, res, next) => {
           } catch (err) {
             return next(new HttpError(err.message, 500));
           }
+
+          const addOns = metadata?.addOns ? JSON.parse(metadata?.addOns) : [];
+
           try {
             const sess = await mongoose.startSession();
             sess.startTransaction();
@@ -252,6 +260,7 @@ export const postWebhookCheckout = async (req, res, next) => {
               email: targetUser.email,
               phone: targetUser.phone,
               preferences,
+              addOns,
               ticket: metadata.file,
             });
 
