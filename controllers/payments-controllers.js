@@ -2,14 +2,9 @@ import dotenv from "dotenv";
 dotenv.config();
 import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
-import {
-  DEFAULT_REGION,
-} from "../util/config/defines.js";
+import { DEFAULT_REGION } from "../util/config/defines.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
-import {
-  createStripeClient,
-  getStripeKey,
-} from "../util/config/stripe.js";
+import { createStripeClient, getStripeKey } from "../util/config/stripe.js";
 
 export const cancelSubscription = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
@@ -136,6 +131,7 @@ export const postSubscriptionFile = async (req, res, next) => {
 
 export const postCheckoutNoFile = async (req, res, next) => {
   const { itemId, origin_url, region } = req.body;
+  const addOns = req.body.addOns ? JSON.parse(req.body.addOns) : [];
   let { quantity } = req.body;
 
   const stripeClient = createStripeClient(region);
@@ -144,10 +140,25 @@ export const postCheckoutNoFile = async (req, res, next) => {
     quantity = 1;
   }
 
+  const lineItems = [{ price: itemId, quantity }];
+
+  if (addOns.length > 0) {
+    for (let i = 0; i < addOns.length; i++) {
+      if (!addOns[i]?.priceId) {
+        continue;
+      }
+
+      lineItems.push({
+        price: addOns[i].priceId,
+        quantity: addOns[i].quantity ?? 1,
+      });
+    }
+  }
+
   const session = await stripeClient.checkout.sessions.create({
     mode: "payment",
     allow_promotion_codes: true,
-    line_items: [{ price: itemId, quantity: quantity }],
+    line_items: lineItems,
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
@@ -160,6 +171,7 @@ export const postCheckoutNoFile = async (req, res, next) => {
 
 export const postCheckoutFile = async (req, res, next) => {
   const { itemId, origin_url, region } = req.body;
+  const addOns = req.body.addOns ? JSON.parse(req.body.addOns) : [];
   let { quantity } = req.body;
 
   const stripeClient = createStripeClient(region);
@@ -168,14 +180,31 @@ export const postCheckoutFile = async (req, res, next) => {
     quantity = 1;
   }
 
+  const lineItems = [{ price: itemId, quantity }];
+  
+  if (addOns.length > 0) {
+    for (let i = 0; i < addOns.length; i++) {
+      if (!addOns[i]?.priceId) {
+        continue;
+      }
+
+      lineItems.push({
+        price: addOns[i].priceId,
+        quantity: addOns[i].quantity ?? 1,
+      });
+    }
+  }
+
   let fileLocation;
+
   if (req.file) {
     fileLocation = req.file.Location ? req.file.Location : req.file.location;
   }
+
   const session = await stripeClient.checkout.sessions.create({
     mode: "payment",
     allow_promotion_codes: true,
-    line_items: [{ price: itemId, quantity: quantity }],
+    line_items: lineItems,
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
