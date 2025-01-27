@@ -151,6 +151,7 @@ export const postCheckoutNoFile = async (req, res, next) => {
       lineItems.push({
         price: addOns[i].priceId,
         quantity: addOns[i].quantity ?? 1,
+        description: addOns[i].title ?? "Add-on",
       });
     }
   }
@@ -191,6 +192,7 @@ export const postCheckoutFile = async (req, res, next) => {
       lineItems.push({
         price: addOns[i].priceId,
         quantity: addOns[i].quantity ?? 1,
+        description: addOns[i].title ?? "Add-on",
       });
     }
   }
