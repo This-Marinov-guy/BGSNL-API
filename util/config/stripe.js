@@ -18,22 +18,20 @@ export const STRIPE_KEYS = {
     secretKey: process.env.STRIPE_NL_SECRET_KEY,
     webhookSecretKey: process.env.STRIPE_NL_WEBHOOK_CH_KEY,
   },
-  // TODO: Migrate to NL
   leeuwarden: {
-    publishableKey: process.env.STRIPE_GRO_PUBLISHABLE_KEY,
-    secretKey: process.env.STRIPE_GRO_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_GRO_WEBHOOK_CH_KEY,
-  },
-  // TODO: Migrate to NL
-  breda: {
-    publishableKey: process.env.STRIPE_GRO_PUBLISHABLE_KEY,
-    secretKey: process.env.STRIPE_GRO_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_GRO_WEBHOOK_CH_KEY,
-  },
-  eindhoven: {
     publishableKey: process.env.STRIPE_NL_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_NL_SECRET_KEY,
     webhookSecretKey: process.env.STRIPE_NL_WEBHOOK_CH_KEY,
+  },
+  breda: {
+    publishableKey: process.env.STRIPE_NL_PUBLISHABLE_KEY,
+    secretKey: process.env.STRIPE_NL_SECRET_KEY,
+    webhookSecretKey: process.env.STRIPE_NL_WEBHOOK_CH_KEY,
+  },
+  eindhoven: {
+    publishableKey: process.env.STRIPE_EIN_PUBLISHABLE_KEY,
+    secretKey: process.env.STRIPE_EIN_SECRET_KEY,
+    webhookSecretKey: process.env.STRIPE_EIN_WEBHOOK_CH_KEY,
   },
   maastricht: {
     publishableKey: process.env.STRIPE_NL_PUBLISHABLE_KEY,
