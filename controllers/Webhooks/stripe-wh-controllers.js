@@ -317,7 +317,6 @@ export const postWebhookCheckout = async (req, res, next) => {
           user = await User.findOne({ "subscription.customerId": customerId });
         } catch (err) {
           responseMessage = "No user to update";
-          break;
         }
       }
 
@@ -367,7 +366,6 @@ export const postWebhookCheckout = async (req, res, next) => {
           user = await User.findOne({ "subscription.customerId": customerId });
         } catch (err) {
           responseMessage = "No user to update";
-          break;
         }
       }
 
