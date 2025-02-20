@@ -299,7 +299,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           });
       }
     case "invoice.paid": {
-      if (!subscriptionId) {
+      if (!subscriptionId || !customerId) {
         responseMessage = "No user to update";
         break;
       }
@@ -310,7 +310,15 @@ export const postWebhookCheckout = async (req, res, next) => {
         user = await User.findOne({ "subscription.id": subscriptionId });
       } catch (err) {
         responseMessage = "No user to update";
-        break;
+      }
+
+      if (!user) {
+        try {
+          user = await User.findOne({ "subscription.customerId": customerId });
+        } catch (err) {
+          responseMessage = "No user to update";
+          break;
+        }
       }
 
       if (!user) {
@@ -341,13 +349,26 @@ export const postWebhookCheckout = async (req, res, next) => {
     }
     case "invoice.payment_failed":
     case "invoice.payment_action_required": {
+      if (!subscriptionId || !customerId) {
+        responseMessage = "No user to update";
+        break;
+      }
+
       let user;
 
       try {
         user = await User.findOne({ "subscription.id": subscriptionId });
       } catch (err) {
         responseMessage = "No user to update";
-        break;
+      }
+
+      if (!user) {
+        try {
+          user = await User.findOne({ "subscription.customerId": customerId });
+        } catch (err) {
+          responseMessage = "No user to update";
+          break;
+        }
       }
 
       if (!user) {
