@@ -5,7 +5,7 @@ import { parse } from "json2csv";
 import csv from "csv-parser";
 import dotenv from "dotenv";
 import { dateToUnix } from "../functions/helpers.js";
-import { DEFAULT_REGION } from "../config/defines.js";
+import { DEFAULT_REGION, SUBSCRIPTION_ID_BY_AMOUNT, YEAR_1 } from "../config/defines.js";
 import User from "../../models/User.js";
 dotenv.config();
 
@@ -70,10 +70,7 @@ export async function exportStripeSubscriptionsToCsv(
         return {
           customer: subscription.customer.id,
           start_date: startDate,
-          price:
-            subscription.plan.amount === 600
-              ? "price_1QOg1FAShinXgMFZ1dZiQn1P"
-              : "price_1QOg1XAShinXgMFZyH0F4P9i",
+          price: SUBSCRIPTION_ID_BY_AMOUNT[subscription.plan.amount] ?? YEAR_1,     
           quantity: subscription.quantity,
           "metadata.third_party_sub_id": subscription.id,
           automatic_tax:

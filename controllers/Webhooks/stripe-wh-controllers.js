@@ -27,7 +27,7 @@ import {
   DEFAULT_REGION,
   HOME_URL,
   LIMITLESS_ACCOUNT,
-  SUBSCRIPTION_PERIOD,
+  SUBSCRIPTION_PERIOD_BY_ID,
 } from "../../util/config/defines.js";
 import moment from "moment";
 import { ACTIVE, LOCKED, USER_STATUSES } from "../../util/config/enums.js";
@@ -326,7 +326,7 @@ export const postWebhookCheckout = async (req, res, next) => {
       }
 
       const priceId = event.data.object.lines.data[0].price.id || "";
-      const period = SUBSCRIPTION_PERIOD[priceId] ?? 12;
+      const period = SUBSCRIPTION_PERIOD_BY_ID[priceId] ?? 12;
 
       const { purchaseDate, expireDate } =
         calculatePurchaseAndExpireDates(period);
