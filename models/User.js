@@ -8,11 +8,11 @@ const Schema = mongoose.Schema;
 const userSchema = new Schema({
   // refactor to enum
   status: { type: String, required: true, default: USER_STATUSES[ACTIVE] },
-  roles: {type: Array, required: true, default: [MEMBER]},
+  roles: { type: Array, required: true, default: [MEMBER] },
   subscription: {
     period: { type: Number },
     id: { type: String },
-    customerId: { type: String }
+    customerId: { type: String },
   },
   region: { type: String },
   purchaseDate: { type: Date, default: new Date(), required: true },
@@ -44,8 +44,12 @@ const userSchema = new Schema({
       receiver: { type: String },
       text: { type: String, required: true },
       gif: { type: String },
-    }
-  ]
+    },
+  ],
+  mmmCampaign2025: {
+    calendarSubscription: { type: Boolean, default: false },
+    calendarImage: { type: String, default: "" },
+  },
 });
 
 userSchema.plugin(uniqueValidator);
