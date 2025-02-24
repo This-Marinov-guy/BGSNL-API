@@ -7,6 +7,7 @@ import {
   getCurrentUserRoles,
   refreshToken,
   getCurrentUserSubscriptionStatus,
+  submitCalendarVerification,
 } from "../controllers/users-controllers.js";
 import {
   cancelSubscription
@@ -15,6 +16,7 @@ import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
 import { authMiddleware } from "../middleware/authorization.js";
+import fileUpload from "../middleware/file-upload.js";
 dotenv.config();
 
 const userRouter = express.Router();
@@ -53,6 +55,14 @@ userRouter.patch(
   patchUserInfo
 );
 
-userRouter.delete("/cancel-membership", authMiddleware, cancelSubscription)
+userRouter.delete("/cancel-membership", authMiddleware, cancelSubscription);
+
+userRouter.post(
+  "/verify-calendar-subscription",
+  authMiddleware,
+  fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
+  submitCalendarVerification
+);
+;
 
 export default userRouter;

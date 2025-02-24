@@ -211,3 +211,36 @@ export const patchUserInfo = async (req, res, next) => {
 
   res.status(200).json({ status: true });
 };
+
+export const submitCalendarVerification = async (req, res, next) => {
+  const { userId } = extractUserFromRequest(req);
+
+  let user;
+  let calendarImage;
+
+  try {
+    user = await User.findById(userId);
+  } catch (err) {
+    return next(
+      new HttpError("Could not find the current user, please try again", 500)
+    );
+  }
+
+  if (req.file) {
+    calendarImage = req.file.location;
+  } else {
+    return next(
+      new HttpError("Please provide an image!", 500)
+    );
+  }
+
+  user.mmmCampaign2025.calendarImage = calendarImage;
+
+  try {
+    await user.save();
+  } catch (err) {
+    return next(new HttpError("Something went wrong, please try again", 500));
+  }
+
+  res.status(200).json({ status: true });
+};
