@@ -550,6 +550,7 @@ const usersToSpreadsheet = async (region = null) => {
         registrationKey,
         __v,
         christmas,
+        mmmCampaign2025,
         region,
         subscription,
         status,
