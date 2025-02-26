@@ -77,5 +77,5 @@ export const ARTICLES_SHEET = "14Q76RuXAX0J3tX4bYA3WR2SFyyaXHAbxktIo-0tKN_E";
 
 export const CLONE_SHEETS = {
   //amsterdam
-  ["67081406ed33752545c5ee62"]: "12hG3IQJq9A7SdWBL4n2aKBq6ddg16iQ9T2um68iBFy4",
+  ["67bf7f7e46918f8ec1cc2712"]: "12hG3IQJq9A7SdWBL4n2aKBq6ddg16iQ9T2um68iBFy4",
 };
