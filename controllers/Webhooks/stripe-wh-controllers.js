@@ -56,6 +56,7 @@ export const postWebhookCheckout = async (req, res, next) => {
 
   switch (eventType) {
     case "checkout.session.completed":
+    case "checkout.session.async_payment_succeeded":
       switch (metadata.method) {
         case "signup": {
           const {
