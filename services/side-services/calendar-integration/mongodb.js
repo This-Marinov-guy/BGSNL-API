@@ -1,5 +1,6 @@
 import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
+import User from '../../../models/User.js';
 
 dotenv.config();
 
@@ -21,4 +22,12 @@ export async function fetchEventsFromDB() {
   } finally {
     await client.close();
   }
+}
+
+export async function fetchMMCampaignUsers() {
+  const users = await User.find({
+    "mmmCampaign2025.calendarImage": { $ne: "" },
+  });
+
+  console.log('Users:', users.length);
 }

@@ -20,6 +20,7 @@ import wordpressRouter from "./routes/Integration/wordpress-routes.js";
 import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
 import { usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
+import { fetchMMCampaignUsers } from "./services/side-services/calendar-integration/mongodb.js";
 
 const app = express();
 
@@ -118,3 +119,5 @@ mongoose
 //     await usersToSpreadsheet(r);
 //   });
 // }
+
+// fetchMMCampaignUsers()
