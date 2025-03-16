@@ -119,5 +119,3 @@ mongoose
 //     await usersToSpreadsheet(r);
 //   });
 // }
-
-// fetchMMCampaignUsers()
