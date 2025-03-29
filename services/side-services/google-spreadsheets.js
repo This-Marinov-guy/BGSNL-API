@@ -735,7 +735,9 @@ export const addEventToDataPool = async (eventId, sheetName = "2024-2025") => {
       event.product?.member.price ?? "-",
       event.product?.activeMember.price ?? event.product?.member.price ?? "-",
       event.ticketLink ?? "-",
-      event.createdAt ?? "-",
+      event.createdAt
+        ? moment(event.createdAt).format(MOMENT_DATE_TIME_YEAR)
+        : "-",
     ]);
 
     if (rows.length === 0) {
