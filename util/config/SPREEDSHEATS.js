@@ -70,6 +70,11 @@ export const SPREADSHEETS_ID = IS_PROD
       },
     };
 
+// PRODUCTION POOL
+export const DATA_POOL = "1juVudcUYCQk4OYcQKwxoEMa48H_WWRq9HriH0-wzXLc";
+// TESTING POOL
+// export const DATA_POOL = "1Y7Ew5JDG_-SfAQBalr7m_L2t2AsASG5uuH8KDBJLKWc";
+
 export const STATISTICS_ABOUT_US_SHEET =
   "170XOaxJ-aVYNiXRplyx6R8vezDxGOR8nMCJB3O3AaRs";
 

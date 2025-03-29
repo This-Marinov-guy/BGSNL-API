@@ -26,7 +26,10 @@ import {
   createEventProductWithPrice,
   updateEventPrices,
 } from "../../services/main-services/event-action-service.js";
-import { eventToSpreadsheet } from "../../services/side-services/google-spreadsheets.js";
+import {
+  addEventToDataPool,
+  eventToSpreadsheet,
+} from "../../services/side-services/google-spreadsheets.js";
 import { getFingerprintLite } from "../../services/main-services/user-service.js";
 import {
   addOrUpdateEvent,
@@ -791,6 +794,9 @@ export const deleteEvent = async (req, res, next) => {
   const folder = event.folder ?? "";
   const region = event.region ?? "";
   const productId = event.product.id ?? "";
+
+  // feed the event to the data pool
+  await addEventToDataPool(eventId);
 
   try {
     // TODO: 17.01 we will not delete events until we fill the calendar

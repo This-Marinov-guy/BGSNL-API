@@ -2,6 +2,7 @@ import { MongoClient } from "mongodb";
 import { google } from "googleapis";
 import {
   CLONE_SHEETS,
+  DATA_POOL,
   SPREADSHEETS_ID,
 } from "../../util/config/SPREEDSHEATS.js";
 import dotenv from "dotenv";
@@ -691,6 +692,79 @@ export const readSpreadsheetRows = async (
   } catch (error) {
     console.error("Error reading spreadsheet:", error);
     throw error;
+  }
+};
+
+// change name to reflect the current data pool
+// NOTE from Vladi: I would like this to be a background job but I am not confident that the event fetch will be possible as it can be already deleted
+export const addEventToDataPool = async (eventId, sheetName = "2024-2025") => {
+  try {
+    const event = await Event.findById(eventId);
+    if (!event) {
+      console.log("Event not found in data pool fetching.");
+      return;
+    }
+
+    const rows = event.guestList.map((guest) => [
+      guest.status === 0 ? "missing" : "present",
+      guest.type ?? "-",
+      guest.timestamp ?? "-",
+      guest.name ?? "-",
+      guest.email ?? "-",
+      guest.phone ?? "-",
+      guest.preferences ? refactorToKeyValuePairs(guest.preferences) : "N/A",
+      guest.ticket ?? "-",
+      event.sheetName ?? "-",
+      event.id ?? "-",
+      event.status ?? "-",
+      event.region ?? "-",
+      event.title ?? "-",
+      event.date ?? "-",
+      event.location ?? "-",
+      event.ticketTimer ?? "-",
+      event.ticketLimit ?? "-",
+      event.product?.guest.price ?? "-",
+      event.product?.member.price ?? "-",
+      event.product?.activeMember.price ?? event.product?.member.price ?? "-",
+      event.ticketLink ?? "-",
+      event.createdAt ?? "-",
+    ]);
+
+    if (rows.length === 0) {
+      console.log("No tickets to add.");
+      return;
+    }
+
+    // Connecting to Google Spreadsheet
+    const credentials = JSON.parse(
+      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
+    );
+    const auth = new google.auth.GoogleAuth({
+      credentials: credentials,
+      scopes: "https://www.googleapis.com/auth/spreadsheets",
+    });
+
+    const sheets = google.sheets({ version: "v4", auth });
+
+    // Find the first empty row
+    const { data } = await sheets.spreadsheets.values.get({
+      spreadsheetId: DATA_POOL,
+      range: `${sheetName}!A:A`,
+    });
+
+    const nextRow = (data.values?.length || 1) + 1;
+
+    // Append new rows
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: DATA_POOL,
+      range: `${sheetName}!A${nextRow}`,
+      valueInputOption: "RAW",
+      resource: { values: rows },
+    });
+
+    console.log(`Tickets for event "${event.title}" added successfully!`);
+  } catch (error) {
+    console.error("Error adding tickets:", error);
   }
 };
 
