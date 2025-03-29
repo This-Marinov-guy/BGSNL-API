@@ -708,7 +708,9 @@ export const addEventToDataPool = async (eventId, sheetName = "2024-2025") => {
     const rows = event.guestList.map((guest) => [
       guest.status === 0 ? "missing" : "present",
       guest.type ?? "-",
-      guest.timestamp ?? "-",
+      guest.timestamp
+        ? moment(guest.timestamp).format(MOMENT_DATE_TIME_YEAR)
+        : "-",
       guest.name ?? "-",
       guest.email ?? "-",
       guest.phone ?? "-",
@@ -719,9 +721,15 @@ export const addEventToDataPool = async (eventId, sheetName = "2024-2025") => {
       event.status ?? "-",
       event.region ?? "-",
       event.title ?? "-",
-      event.date ?? "-",
+      event.date
+        ? moment(event.correctedDate ?? event.date).format(
+            MOMENT_DATE_TIME_YEAR
+          )
+        : "-",
       event.location ?? "-",
-      event.ticketTimer ?? "-",
+      event.ticketTimer
+        ? moment(event.ticketTimer).format(MOMENT_DATE_TIME_YEAR)
+        : "-",
       event.ticketLimit ?? "-",
       event.product?.guest.price ?? "-",
       event.product?.member.price ?? "-",
