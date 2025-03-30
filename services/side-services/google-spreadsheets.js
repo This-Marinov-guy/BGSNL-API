@@ -663,8 +663,8 @@ const usersToSpreadsheet = async (region = null) => {
 export const readSpreadsheetRows = async (
   spreadsheetId,
   sheetName,
-  startRow,
-  endRow
+  startRow = "",
+  endRow = ""
 ) => {
   try {
     // Connecting to Google Spreadsheet
@@ -677,6 +677,25 @@ export const readSpreadsheetRows = async (
     });
 
     const sheets = google.sheets({ version: "v4", auth });
+
+    if (!startRow) {
+      startRow = "A2"; // Default starting row
+    }
+
+    if (!endRow) {
+      const { data } = await sheets.spreadsheets.values.get({
+        spreadsheetId: spreadsheetId,
+        range: `${sheetName}!A:A`,
+      });
+
+      const lastRow = data.values[0]; // Get first row
+      const lastEmptyColumnIndex = lastRow.length + 2; // 1-based index
+      const lastEmptyColumnLetter = String.fromCharCode(
+        64 + lastEmptyColumnIndex
+      );
+
+      endRow = `${lastEmptyColumnLetter}${data.values?.length + 1}`;
+    }
 
     // Construct range (e.g., 'Sheet1!A2:Z5')
     const range = `${sheetName}!${startRow}:${endRow}`;

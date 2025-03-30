@@ -108,11 +108,10 @@ export const getWordpressPostDetails = async (req, res, next) => {
     ARTICLES_SHEET,
     "Translations",
     "B2",
-    `C${6}`
   );
 
   const translatedPost = checkPostTranslation(post.id, translatedPostsIds);
-  
+
   // Replace http with https
   let processedContent = post.content.rendered.replace(
     /http:\/\//g,
