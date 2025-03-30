@@ -107,7 +107,7 @@ export const getWordpressPostDetails = async (req, res, next) => {
   const translatedPostsIds = await readSpreadsheetRows(
     ARTICLES_SHEET,
     "Translations",
-    "B2",
+    "B2"
   );
 
   const translatedPost = checkPostTranslation(post.id, translatedPostsIds);
@@ -116,6 +116,12 @@ export const getWordpressPostDetails = async (req, res, next) => {
   let processedContent = post.content.rendered.replace(
     /http:\/\//g,
     "https://"
+  );
+
+  // add caption class to elements below figure tag
+  processedContent = processedContent.replace(
+    /(<\/figure>\s*<p[^>]*class=")([^"]*)"/g,
+    '$1$2 caption"'
   );
 
   // Fix relative image paths
