@@ -31,7 +31,7 @@ export const pairTranslatedPosts = (posts, translatedPostsIds) => {
 export const removeBgPosts = (posts, translatedPostsIds) => {
   // Get all Bulgarian post IDs (every second item in translatedPostsIds)
   const bgIds = translatedPostsIds.filter((_, index) => index % 2 === 1);
-
+  
   // Return new array without the Bulgarian posts
   return posts.filter((post) => !bgIds.includes(post.id.toString()));
 }

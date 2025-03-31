@@ -16,9 +16,13 @@ const ENDPOINT = "public-api.wordpress.com/wp/v2/sites/";
 
 export const getWordpressPosts = async (req, res, next) => {
   let response = null;
+  const page = 1;
+  const perPage = 100;
+
   try {
+    // TODO: paginate
     response = await axios.get(
-      `${PROTOCOL}${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts`
+      `${PROTOCOL}${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts?page=${page}&per_page=${perPage}`
     );
   } catch (err) {
     return next(new HttpError(err, 500));
@@ -26,7 +30,7 @@ export const getWordpressPosts = async (req, res, next) => {
 
   if (!response.data) {
     return next(new HttpError("Failed to load posts", 500));
-  }
+  }    
 
   const posts = response.data.map((p, index) => {
     // Replace http with https
@@ -48,9 +52,9 @@ export const getWordpressPosts = async (req, res, next) => {
 
     if (index !== 0) {
       description =
-        description.trim().slice(0, 80) +
-        (description.trim().length > 80 ? "..." : "");
-    }
+        description.trim().slice(0, 200) +
+        (description.trim().length > 200 ? "..." : "");
+    }    
 
     return {
       id: p.id,
@@ -58,7 +62,7 @@ export const getWordpressPosts = async (req, res, next) => {
       title: p.title.rendered.replace(/&nbsp;/g, " "),
       description: description,
     };
-  });
+  });  
 
   const translatedPostsIds = await readSpreadsheetRows(
     ARTICLES_SHEET,
