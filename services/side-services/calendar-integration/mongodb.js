@@ -29,5 +29,5 @@ export async function fetchMMCampaignUsers() {
     "mmmCampaign2025.calendarImage": { $ne: "" },
   });
 
-  console.log('Users:', users.length, users.map((u) => u.name + ' ' + u.surname + ' | ' + u.region));
+  console.log('Users:', users.length, users.map((u) => u.name + ' ' + u.surname + ' | ' + u.email  +' | ' + u.region));
 }
