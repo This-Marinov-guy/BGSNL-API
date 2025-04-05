@@ -784,7 +784,8 @@ export const addEventToDataPool = async (eventId, sheetName = "2024-2025") => {
     const nextRow = (data.values?.length || 1) + 1;
 
     // Append new rows
-    await sheets.spreadsheets.values.update({
+    // might not need to check the first empty row
+    await sheets.spreadsheets.values.append({
       spreadsheetId: DATA_POOL,
       range: `${sheetName}!A${nextRow}`,
       valueInputOption: "RAW",
