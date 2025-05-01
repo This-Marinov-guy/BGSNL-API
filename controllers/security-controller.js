@@ -269,9 +269,9 @@ export const postVerifyToken = async (req, res, next) => {
 
   const cachedData = forgottenPassTokenCache.get(email) || {};
   const resetToken = cachedData.resetToken ?? "";
-  let life = cachedData.life ?? 0;
+  let life = cachedData.life ?? 0;  
 
-  if (!life || token != resetToken) {
+  if (token != resetToken) {
     if (life < 1) {
       forgottenPassTokenCache.del(email);
       return next(
