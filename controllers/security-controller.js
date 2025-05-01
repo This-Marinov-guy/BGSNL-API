@@ -295,9 +295,11 @@ export const postVerifyToken = async (req, res, next) => {
   }
 
   if (
-    !user ||
-    !compareIntStrings(user.phone, phone) ||
-    !moment(user.birth).format("DD MM YY") === birth
+    !user
+    // remove the need for phone and birth verification as it is too complicated
+    // ||
+    // !compareIntStrings(user.phone, phone) ||
+    // !moment(user.birth).format("DD MM YY") === birth
   ) {
     const error = new HttpError("No such user with the provided data", 500);
     return next(error);
