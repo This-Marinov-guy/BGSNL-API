@@ -377,7 +377,10 @@ export const postWebhookCheckout = async (req, res, next) => {
 
       const today = new Date();
 
+      const isUserLocked = user.status === USER_STATUSES[LOCKED];
+
       if (
+        !isUserLocked &&
         !hasOverlap(LIMITLESS_ACCOUNT, user?.roles) &&
         today > user.expireDate
       ) {
