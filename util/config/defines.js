@@ -85,6 +85,7 @@ export const SUBSCRIPTION_ID_BY_AMOUNT = SUBSCRIPTIONS.reduce((acc, sub) => {
 }, {});
 
 export const HOME_URL = "https://bulgariansociety.nl";
+export const USER_URL = `${HOME_URL}/user`;
 
 export const DEFAULT_WP_TITLES = [
   "The Art of&nbsp;Connection",

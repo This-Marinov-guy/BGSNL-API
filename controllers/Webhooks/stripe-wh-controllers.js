@@ -28,6 +28,7 @@ import {
   HOME_URL,
   LIMITLESS_ACCOUNT,
   SUBSCRIPTION_PERIOD_BY_ID,
+  USER_URL,
 } from "../../util/config/defines.js";
 import moment from "moment";
 import { ACTIVE, LOCKED, USER_STATUSES } from "../../util/config/enums.js";
@@ -396,14 +397,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           await usersToSpreadsheet(user.region);
           await usersToSpreadsheet();
 
-          const stripeClient = createStripeClient(DEFAULT_REGION);
-
-          const session = await stripeClient.billingPortal.sessions.create({
-            customer: user.subscription.customerId,
-            return_url: HOME_URL,
-          });
-
-          await paymentFailedEmail(user.email, session.url);
+          await paymentFailedEmail(user.email, USER_URL);
         } catch (err) {
           console.log(err);
         }
