@@ -1,4 +1,5 @@
 import HttpError from "../models/Http-error.js";
+import { IS_PROD } from "../util/functions/helpers.js";
 // import CryptoJS from "crypto-js";
 
 export const passSecured = (req, res, next) => {
@@ -9,7 +10,7 @@ export const passSecured = (req, res, next) => {
   //     process.env.CRYPTO_ENCRYPTION_KEY
   //   ).toString();
 
-  if (authHeader !== process.env.GOOGLE_SCRIPTS_PASS) {
+  if (IS_PROD && authHeader !== process.env.GOOGLE_SCRIPTS_PASS) {
     return next(new HttpError("Unathorized access!", 403));
   }
 

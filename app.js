@@ -19,13 +19,13 @@ import futureEventRouter from "./routes/Events/future-events-routes.js";
 import wordpressRouter from "./routes/Integration/wordpress-routes.js";
 import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
-import { usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
-import { fetchMMCampaignUsers } from "./services/side-services/calendar-integration/mongodb.js";
+import kokoAppRouter from "./routes/Integration/koko-app-data.js";
 
 const app = express();
 
 // Pass secured routes
 app.use("/api/google-scripts", googleScriptsRouter);
+app.use("/api/mobile", kokoAppRouter);
 app.use("/api/webhooks", webhookRouter);
 
 // Firewall

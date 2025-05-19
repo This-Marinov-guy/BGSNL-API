@@ -798,6 +798,55 @@ export const addEventToDataPool = async (eventId, sheetName = "2024-2025") => {
   }
 };
 
+export const getPresenceStatsOfCity = async (spreadsheetId) => {
+  const credentials = JSON.parse(
+    process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
+  );
+  const auth = new google.auth.GoogleAuth({
+    credentials: credentials,
+    scopes: "https://www.googleapis.com/auth/spreadsheets",
+  });
+  const sheets = google.sheets({ version: "v4", auth });
+
+  // Get all sheets metadata
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const sheetInfos = meta.data.sheets;
+
+  let presenceCounts = [];
+  let numericPresences = [];
+
+  for (const sheet of sheetInfos) {
+    const sheetName = sheet.properties.title;
+
+    const { data: title } = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!C2`,
+    });
+
+    const { data: presenceData } = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!C4`,
+    });
+
+    const value = presenceData.values && presenceData.values[0] && presenceData.values[0][0] ? presenceData.values[0][0] : null;
+    presenceCounts.push({ event: title.values[0][0], presence: value });
+    // Try to parse as number for averaging
+    const num = Number(value);
+    if (!isNaN(num)) {
+      numericPresences.push(num);
+    }
+  }
+
+  const totalEvents = presenceCounts.length;
+  const avgPresence = Math.round(numericPresences.length > 0 ? numericPresences.reduce((a, b) => a + b, 0) / numericPresences.length : 0);
+
+  return {
+    presenceCounts,
+    totalEvents,
+    avgPresence,
+  };
+};
+
 export {
   searchInDatabase,
   eventToSpreadsheet,
