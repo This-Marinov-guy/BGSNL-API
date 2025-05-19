@@ -814,6 +814,7 @@ export const getPresenceStatsOfCity = async (spreadsheetId) => {
 
   let presenceCounts = [];
   let numericPresences = [];
+  let totalPresence = 0;
 
   for (const sheet of sheetInfos) {
     const sheetName = sheet.properties.title;
@@ -828,10 +829,14 @@ export const getPresenceStatsOfCity = async (spreadsheetId) => {
       range: `${sheetName}!C4`,
     });
 
-    const value = presenceData.values && presenceData.values[0] && presenceData.values[0][0] ? presenceData.values[0][0] : null;
-    presenceCounts.push({ event: title.values[0][0], presence: Number(value) });
-    // Try to parse as number for averaging
-    const num = Number(value);
+    const presenceString = (presenceData.values && presenceData.values[0] && presenceData.values[0][0] ? presenceData.values[0][0] : null) || 0;
+    presenceCounts.push({
+      event: title.values[0][0],
+      presence: Number(presenceString),
+    });
+    totalPresence += Number(presenceString);
+
+    const num = Number(presenceString);
     if (!isNaN(num)) {
       numericPresences.push(num);
     }
@@ -843,6 +848,7 @@ export const getPresenceStatsOfCity = async (spreadsheetId) => {
   return {
     presenceCounts,
     totalEvents,
+    totalPresence,
     avgPresence,
   };
 };
