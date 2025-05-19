@@ -829,7 +829,7 @@ export const getPresenceStatsOfCity = async (spreadsheetId) => {
     });
 
     const value = presenceData.values && presenceData.values[0] && presenceData.values[0][0] ? presenceData.values[0][0] : null;
-    presenceCounts.push({ event: title.values[0][0], presence: value });
+    presenceCounts.push({ event: title.values[0][0], presence: Number(value) });
     // Try to parse as number for averaging
     const num = Number(value);
     if (!isNaN(num)) {
