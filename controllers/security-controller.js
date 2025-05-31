@@ -164,6 +164,7 @@ export const login = async (req, res, next) => {
   try {
     existingUser = await User.findOne({ email: email });
   } catch (err) {
+    console.log(err);
     const error = new HttpError("Logging in failed", 500);
     return next(error);
   }
@@ -177,6 +178,7 @@ export const login = async (req, res, next) => {
   try {
     isValidPassword = await bcrypt.compare(password, existingUser.password);
   } catch (err) {
+    console.log(err);
     return next(
       new HttpError("Could not log you in, please check your credentials", 500)
     );
@@ -198,6 +200,7 @@ export const login = async (req, res, next) => {
     try {
       await existingUser.save();
     } catch (err) {
+      console.log(err);
       const error = new HttpError("Logging in failed, please try again", 500);
       return next(error);
     }
@@ -291,7 +294,7 @@ export const postVerifyToken = async (req, res, next) => {
       userId: user?.id,
     });
 
-    if (!temporaryCode.code !== token) {
+    if (temporaryCode.code != token) {
       if (temporaryCode.life < 1) {
         await TemporaryCode.deleteOne({ _id: temporaryCode._id });
 
@@ -303,7 +306,7 @@ export const postVerifyToken = async (req, res, next) => {
         );
       }
 
-      temporaryCode.life = -1;
+      temporaryCode.life = temporaryCode.life - 1;
       await temporaryCode.save();
 
       return next(new HttpError("Invalid code, please try again", 400));
