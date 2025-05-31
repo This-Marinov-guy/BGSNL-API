@@ -385,3 +385,40 @@ export const patchUserPassword = async (req, res, next) => {
 
   return res.status(200).json({ status: true });
 };
+
+export const adminPatchUserPassword = async (req, res, next) => {
+  const { email, password = 1111 } = req.body;
+
+  let existingUser;
+  
+  try {
+    existingUser = await User.findOne({ email: email });
+  } catch (err) {
+    console.log(err);
+    return next(new HttpError("Invalid user", 400));
+  }
+
+  if (!existingUser) {
+    return next(new HttpError("Invalid user", 400));
+  }
+
+  let hashedPassword;
+  try {
+    hashedPassword = await bcrypt.hash(password.toString(), 12);
+  } catch (err) {
+    console.log(err);
+    return next(new HttpError("Invalid user", 400));
+  }
+
+  try {
+    existingUser.password = hashedPassword;
+    await existingUser.save();
+  } catch (err) {
+    console.log(err);
+    return next(new HttpError("Invalid user", 400));
+  }
+
+  return res
+    .status(200)
+    .json({ status: true, message: "Password changed successfully" });
+};
