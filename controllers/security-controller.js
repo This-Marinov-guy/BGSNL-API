@@ -23,6 +23,7 @@ import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
 import { calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
 import { LOCKED, USER_STATUSES } from "../util/config/enums.js";
+import TemporaryCode from "../models/TemporaryCode.js";
 
 export const postCheckEmail = async (req, res, next) => {
   const errors = validationResult(req);
@@ -253,7 +254,13 @@ export const postSendPasswordResetEmail = async (req, res, next) => {
   try {
     const resetToken = Math.floor(100000 + Math.random() * 900000);
 
-    forgottenPassTokenCache.set(email, { resetToken, life: 3 });
+    const temporaryCode = new TemporaryCode({
+      userId: user._id,
+      code: resetToken,
+      life: 3,
+    });
+
+    await temporaryCode.save();
 
     await sendNewPasswordEmail(email, resetToken);
   } catch (err) {
@@ -265,33 +272,46 @@ export const postSendPasswordResetEmail = async (req, res, next) => {
 };
 
 export const postVerifyToken = async (req, res, next) => {
-  const { token, email, birth, phone } = req.body;
-
-  const cachedData = forgottenPassTokenCache.get(email) || {};
-  const resetToken = cachedData.resetToken ?? "";
-  let life = cachedData.life ?? 0;  
-
-  if (token != resetToken) {
-    if (life < 1) {
-      forgottenPassTokenCache.del(email);
-      return next(
-        new HttpError(
-          "You have reached your maximum attempts - please start again",
-          400
-        )
-      );
-    }
-
-    forgottenPassTokenCache.set(email, { resetToken, life: life - 1 });
-    return next(new HttpError("Invalid code, please try again", 400));
-  }
-
+  const { token, email } = req.body;
   let user;
+
   try {
     user = await User.findOne({ email: email });
   } catch (err) {
-    const error = new HttpError("No such user with the provided data", 500);
-    return next(error);
+    console.log(err);
+    return next(new HttpError("Invalid code, please try again", 400));
+  }
+
+  if (!user) {
+    return next(new HttpError("Invalid code, please try again", 400));
+  }
+
+  try {
+    const temporaryCode = await TemporaryCode.findOne({
+      userId: user?.id,
+    });
+
+    if (!temporaryCode.code !== token) {
+      if (temporaryCode.life < 1) {
+        await TemporaryCode.deleteOne({ _id: temporaryCode._id });
+
+        return next(
+          new HttpError(
+            "You have reached your maximum attempts - please start again",
+            400
+          )
+        );
+      }
+
+      temporaryCode.life = -1;
+      await temporaryCode.save();
+
+      return next(new HttpError("Invalid code, please try again", 400));
+    }
+  } catch (err) {
+    console.log(err);
+
+    return next(new HttpError("Something went wrong, please try again", 500));
   }
 
   if (
@@ -305,7 +325,7 @@ export const postVerifyToken = async (req, res, next) => {
     return next(error);
   }
 
-  res.status(201).json({ status: true });
+  return res.status(201).json({ status: true });
 };
 
 export const patchUserPassword = async (req, res, next) => {
@@ -315,25 +335,18 @@ export const patchUserPassword = async (req, res, next) => {
   }
 
   const { email, password, token } = req.body;
-
-  const cachedData = forgottenPassTokenCache.get(email) || {};
-  const resetToken = cachedData.resetToken ?? "";
-  let life = cachedData.life ?? 0;
-
-  if (!email || life < 1 || token != resetToken) {
-    return next(new HttpError("Service expired, please start again!", 400));
-  }
-
   let existingUser;
+  let temporaryCode;
 
   try {
     existingUser = await User.findOne({ email: email });
+    temporaryCode = await TemporaryCode.findOne({
+      userId: existingUser?._id,
+      code: token,
+    });
   } catch (err) {
-    const error = new HttpError(
-      "Changing password failed, please try again!",
-      500
-    );
-    return next(error);
+    console.log(err);
+    return next(new HttpError("Invalid code, please try again", 400));
   }
 
   if (!existingUser) {
@@ -344,10 +357,15 @@ export const patchUserPassword = async (req, res, next) => {
     return next(error);
   }
 
+  if (!existingUser || temporaryCode.life < 1 || temporaryCode.code != token) {
+    return next(new HttpError("Service expired, please start again!", 400));
+  }
+
   let hashedPassword;
   try {
     hashedPassword = await bcrypt.hash(password, 12);
   } catch (err) {
+    console.log(err);
     return next(
       new HttpError("Changing password failed, please try again!", 500)
     );
@@ -356,9 +374,11 @@ export const patchUserPassword = async (req, res, next) => {
   try {
     existingUser.password = hashedPassword;
     await existingUser.save();
+    await TemporaryCode.deleteOne({ _id: temporaryCode._id });
   } catch (err) {
+    console.log(err);
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  res.status(200).json({ status: true });
+  return res.status(200).json({ status: true });
 };
