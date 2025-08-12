@@ -256,10 +256,12 @@ export const exportVitalStatsXls = async (req, res, next) => {
     const { buffer, filename, mime } = await generateAnonymizedUserStatsXls(filter);
 
     // Save report to local 'reports' folder
-    const reportsDir = path.resolve(process.cwd(), "reports");
-    await fs.mkdir(reportsDir, { recursive: true });
-    const filePath = path.join(reportsDir, filename);
-    await fs.writeFile(filePath, buffer);
+    if (process.env.APP_ENV !== "prod") {
+      const reportsDir = path.resolve(process.cwd(), "reports");
+      await fs.mkdir(reportsDir, { recursive: true });
+      const filePath = path.join(reportsDir, filename);
+      await fs.writeFile(filePath, buffer);
+    }
 
     res.setHeader("Content-Type", mime);
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);

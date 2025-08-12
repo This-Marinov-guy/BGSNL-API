@@ -35,17 +35,19 @@ const increment = (map, key, by = 1) => {
   map[k] = (map[k] || 0) + by;
 };
 
-const toSheet = (titleRow, dataObject, sortByValueDesc = true, limit = null) => {
-  const entries = Object.entries(dataObject);
-  const sorted = sortByValueDesc
-    ? entries.sort((a, b) => b[1] - a[1])
-    : entries.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-  const limited = limit ? sorted.slice(0, limit) : sorted;
-  return [titleRow, ...limited.map(([k, v]) => [k, v])];
+// Sort data entries and return as array
+const sortData = (dataObject, sortByValueDesc = true, limit = null) => {
+  let entries = Object.entries(dataObject);
+  if (sortByValueDesc) {
+    entries = entries.sort((a, b) => b[1] - a[1]);
+  } else {
+    entries = entries.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  }
+  return limit ? entries.slice(0, limit) : entries;
 };
 
 export const generateAnonymizedUserStatsXls = async (filter = {}) => {
-  // Fetch only fields needed for statistics, DO NOT fetch names/emails
+  // Fetch only fields needed for statistics
   const users = await User.find(filter, {
     status: 1,
     roles: 1,
@@ -56,6 +58,7 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
     birth: 1,
     university: 1,
     otherUniversityName: 1,
+    course: 1,
     "mmmCampaign2025.calendarSubscription": 1,
   })
     .sort({ _id: -1 })
@@ -70,6 +73,7 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
   const byAgeBucket = {};
   const byUniversity = {};
   const byPurchaseYear = {};
+  const byCourse = {};
 
   let expiredCount = 0;
   let activeMembershipCount = 0;
@@ -105,6 +109,9 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
     let uni = u.university;
     if (uni === "other") uni = u.otherUniversityName || "other";
     increment(byUniversity, uni);
+    
+    // course/specialty
+    increment(byCourse, u.course || "Not specified");
 
     // purchase year
     if (u.purchaseDate) increment(byPurchaseYear, moment(u.purchaseDate).format("YYYY"));
@@ -113,38 +120,85 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
     if (u?.mmmCampaign2025?.calendarSubscription) calendarSubscribed += 1;
   }
 
-  // Build workbook
+  // Create a single comprehensive report
   const wb = XLSX.utils.book_new();
+  
+  // Create single worksheet
+  const wsData = [];
+  const addSection = (title, rowSpacing = 1) => {
+    wsData.push([title]);
+    for (let i = 0; i < rowSpacing; i++) {
+      wsData.push([]);
+    }
+  };
+  
+  // Add data table with optional limits
+  const addDataTable = (title, headers, dataMap, sortDesc = true, limit = null, spacing = 1) => {
+    wsData.push([title]);
+    wsData.push(headers);
+    
+    const sortedData = sortData(dataMap, sortDesc, limit);
+    sortedData.forEach(([key, value]) => {
+      wsData.push([key, value]);
+    });
+    
+    for (let i = 0; i < spacing; i++) {
+      wsData.push([]);
+    }
+    
+    // Return row count for chart positioning
+    return sortedData.length + 2; // headers + title + data rows
+  };
 
-  // Overview sheet
-  const overviewRows = [
-    ["Metric", "Value"],
-    ["Total Users", totalUsers],
-    ["Active Memberships (expireDate in future)", activeMembershipCount],
-    ["Expired Memberships", expiredCount],
-    ["Calendar Subscribed (MMM 2025)", calendarSubscribed],
+  // Title and overview section
+  wsData.push(["User Statistics Report", `Generated: ${moment().format("YYYY-MM-DD HH:mm:ss")}`]);
+  wsData.push([]);
+  wsData.push(["Overview"]);
+  wsData.push(["Total Users", totalUsers]);
+  wsData.push(["Active Memberships", activeMembershipCount]);
+  wsData.push(["Expired Memberships", expiredCount]);
+  wsData.push(["Calendar Subscribed (MMM 2025)", calendarSubscribed]);
+  wsData.push([]);
+  wsData.push([]);
+  
+  // Membership Status
+  addSection("Membership Status");
+  addDataTable("Status Distribution", ["Status", "Count"], byStatus, true, null, 2);
+  
+  // Subscription Types
+  addSection("Subscription Types");
+  addDataTable("Subscription Distribution", ["Type", "Count"], bySubscriptionType, true, null, 2);
+  
+  // Demographics
+  addSection("Demographics");
+  addDataTable("Age Distribution", ["Age Group", "Count"], byAgeBucket, false, null, 2);
+  
+  // Regions
+  addSection("Regional Distribution");
+  addDataTable("Members by Region", ["Region", "Count"], byRegion, true, null, 2);
+  
+  // Universities
+  addSection("Educational Institutions");
+  addDataTable("Top Universities", ["University", "Count"], byUniversity, true, 15, 2);
+  
+  // Courses/Specialties (NEW)
+  addSection("Student Specialties");
+  addDataTable("Top Fields of Study", ["Field/Course", "Count"], byCourse, true, 15, 2);
+  
+  // Purchase Year
+  addSection("Membership Acquisition");
+  addDataTable("Members by Purchase Year", ["Year", "Count"], byPurchaseYear, false, null, 0);
+
+  // Create the worksheet from our data
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  
+  // Add column width metadata
+  ws['!cols'] = [
+    { wch: 30 }, // Column A width
+    { wch: 15 }, // Column B width
   ];
-  const wsOverview = XLSX.utils.aoa_to_sheet(overviewRows);
-  XLSX.utils.book_append_sheet(wb, wsOverview, "Overview");
-
-  // Detail sheets
-  const sheets = [
-    { name: "By Status", rows: toSheet(["Status", "Count"], byStatus) },
-    { name: "By Region", rows: toSheet(["Region", "Count"], byRegion) },
-    { name: "By Roles", rows: toSheet(["Role", "Count"], byRole) },
-    {
-      name: "By Subscription",
-      rows: toSheet(["Type", "Count"], bySubscriptionType, true),
-    },
-    { name: "Age Buckets", rows: toSheet(["Age Bucket", "Count"], byAgeBucket, false) },
-    { name: "Universities (Top 50)", rows: toSheet(["University", "Count"], byUniversity, true, 50) },
-    { name: "Purchase Year", rows: toSheet(["Year", "Count"], byPurchaseYear, false) },
-  ];
-
-  for (const s of sheets) {
-    const ws = XLSX.utils.aoa_to_sheet(s.rows);
-    XLSX.utils.book_append_sheet(wb, ws, s.name);
-  }
+  
+  XLSX.utils.book_append_sheet(wb, ws, "User Statistics");
 
   const filename = `user_stats_${moment().format("YYYY-MM-DD_HHmmss")}.xls`;
   const buffer = XLSX.write(wb, { type: "buffer", bookType: "xls" });
@@ -152,5 +206,3 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
 
   return { buffer, filename, mime };
 };
-
-
