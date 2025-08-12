@@ -155,19 +155,8 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
   wsData.push([]);
   wsData.push(["Overview"]);
   wsData.push(["Total Users", totalUsers]);
-  wsData.push(["Active Memberships", activeMembershipCount]);
-  wsData.push(["Expired Memberships", expiredCount]);
   wsData.push(["Calendar Subscribed (MMM 2025)", calendarSubscribed]);
   wsData.push([]);
-  wsData.push([]);
-  
-  // Membership Status
-  addSection("Membership Status");
-  addDataTable("Status Distribution", ["Status", "Count"], byStatus, true, null, 2);
-  
-  // Subscription Types
-  addSection("Subscription Types");
-  addDataTable("Subscription Distribution", ["Type", "Count"], bySubscriptionType, true, null, 2);
   
   // Demographics
   addSection("Demographics");
