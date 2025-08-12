@@ -8,6 +8,7 @@ import {
   refreshToken,
   getCurrentUserSubscriptionStatus,
   submitCalendarVerification,
+  exportVitalStatsXls,
 } from "../controllers/users-controllers.js";
 import {
   cancelSubscription
@@ -16,6 +17,8 @@ import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
 import { authMiddleware } from "../middleware/authorization.js";
+import { adminMiddleware } from "../middleware/authorization.js";
+import { ACCESS_2 } from "../util/config/defines.js";
 import fileUpload from "../middleware/file-upload.js";
 dotenv.config();
 
@@ -64,5 +67,12 @@ userRouter.post(
   submitCalendarVerification
 );
 ;
+
+// Anonymized vital stats export (XLS)
+userRouter.get(
+  "/export-vital-stats",
+  // adminMiddleware(ACCESS_2),
+  exportVitalStatsXls
+);
 
 export default userRouter;

@@ -20,7 +20,7 @@
     "@aws-sdk/client-s3": "^3.290.0",
     "@stripe/stripe-js": "^1.52.0",
     "aws-sdk": "^2.1357.0",
-    "axios": "^1.7.7",
+    "axios": "^1.9.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
     "cloudinary": "^2.2.0",
@@ -46,13 +46,14 @@
     "nodemailer": "^6.9.1",
     "pm2": "^5.4.2",
     "stripe": "^11.17.0",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.11.1",
     "eslint": "^9.11.1",
     "globals": "^15.9.0",
-    "nodemon": "^2.0.20"
+    "nodemon": "^3.1.10"
   },
   "resolutions": {
     "fs-capacitor": "3.0.0"

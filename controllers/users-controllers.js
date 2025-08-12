@@ -10,6 +10,9 @@ import { isBirthdayToday, jwtRefresh } from '../util/functions/helpers.js';
 import { extractUserFromRequest } from '../util/functions/security.js';
 import { getTokenFromHeader } from '../util/functions/security.js';
 import { ACTIVE, USER_STATUSES } from '../util/config/enums.js';
+import { generateAnonymizedUserStatsXls } from "../services/main-services/user-stats-service.js";
+import fs from "fs/promises";
+import path from "path";
 
 export const refreshToken = async (req, res, next) => {
   let newToken = null;
@@ -243,4 +246,26 @@ export const submitCalendarVerification = async (req, res, next) => {
   }
 
   res.status(200).json({ status: true });
+};
+
+export const exportVitalStatsXls = async (req, res, next) => {
+  try {
+    const { region } = req.query;
+    const filter = region ? { region } : {};
+
+    const { buffer, filename, mime } = await generateAnonymizedUserStatsXls(filter);
+
+    // Save report to local 'reports' folder
+    const reportsDir = path.resolve(process.cwd(), "reports");
+    await fs.mkdir(reportsDir, { recursive: true });
+    const filePath = path.join(reportsDir, filename);
+    await fs.writeFile(filePath, buffer);
+
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.status(200).send(buffer);
+  } catch (err) {
+    console.log(err);
+    return next(new HttpError("Failed to generate statistics", 500));
+  }
 };
