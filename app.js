@@ -14,6 +14,7 @@ import securityRouter from "./routes/security-routes.js";
 import specialEventsRouter from "./routes/special-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
+import axiomLogger from "./middleware/axiom-logger.js";
 import { REGIONS, STRIPE_WEBHOOK_ROUTE } from "./util/config/defines.js";
 import futureEventRouter from "./routes/Events/future-events-routes.js";
 import wordpressRouter from "./routes/Integration/wordpress-routes.js";
@@ -49,6 +50,9 @@ app.use(
     },
   })
 );
+
+// Axiom request/response logging
+app.use(axiomLogger);
 
 app.use((req, res, next) => {
   if ("OPTIONS" == req.method) {
