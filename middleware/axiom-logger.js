@@ -94,12 +94,26 @@ export const axiomLogger = (req, res, next) => {
         }
       };
       
-      // Don't log request bodies or responses if they might contain sensitive data
-      // or if they're too large
-      if (req.path.startsWith('/api/security') || 
-          req.path.startsWith('/api/user')) {
-        logData.request.body = '<redacted>';
-        logData.response.body = '<redacted>';
+      // Filter out password fields from request and response bodies for sensitive routes
+      if (req.path.startsWith('/api/security') || req.path.startsWith('/api/user')) {
+        // Filter request body if it exists
+        if (req.body) {
+          logData.request.body = filterPasswordFields(req.body);
+        }
+        
+        // Filter response body if it exists
+        if (chunks.length > 0) {
+          try {
+            const responseBody = Buffer.concat(chunks).toString('utf8');
+            if (responseBody) {
+              const parsedResponse = JSON.parse(responseBody);
+              logData.response.body = filterPasswordFields(parsedResponse);
+            }
+          } catch (err) {
+            // If response is not JSON, just log as is
+            logData.response.body = Buffer.concat(chunks).toString('utf8');
+          }
+        }
       }
       
       axiom.ingest(DATASET, logData)
@@ -110,6 +124,36 @@ export const axiomLogger = (req, res, next) => {
   };
   
   next();
+};
+
+/**
+ * Recursively filter out password fields from objects
+ */
+const filterPasswordFields = (obj) => {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => filterPasswordFields(item));
+  }
+  
+  const filtered = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof key === 'string' && 
+        (key.toLowerCase().includes('password') || 
+         key.toLowerCase().includes('passwd') || 
+         key.toLowerCase().includes('pwd') ||
+         key.toLowerCase().includes('secret') ||
+         key.toLowerCase().includes('token') ||
+         key.toLowerCase().includes('key'))) {
+      filtered[key] = '<redacted>';
+    } else {
+      filtered[key] = filterPasswordFields(value);
+    }
+  }
+  
+  return filtered;
 };
 
 export default axiomLogger;
