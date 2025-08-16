@@ -54,6 +54,11 @@ export const axiomLogger = (req, res, next) => {
   // Capture original request
   const requestData = formatRequest(req);
   
+  // Add request body to request data if it exists
+  if (req.body) {
+    requestData.body = req.body;
+  }
+  
   // Create a reference to the original end method
   const originalEnd = res.end;
   const chunks = [];
@@ -94,25 +99,27 @@ export const axiomLogger = (req, res, next) => {
         }
       };
       
+      // Add response body to all routes
+      if (chunks.length > 0) {
+        try {
+          const responseBody = Buffer.concat(chunks).toString('utf8');
+          if (responseBody) {
+            const parsedResponse = JSON.parse(responseBody);
+            logData.response.body = parsedResponse;
+          }
+        } catch (err) {
+          // If response is not JSON, just log as is
+          logData.response.body = Buffer.concat(chunks).toString('utf8');
+        }
+      }
+      
       // Filter out password fields from request and response bodies for sensitive routes
       if (req.path.startsWith('/api/security') || req.path.startsWith('/api/user')) {
-        // Filter request body if it exists
-        if (req.body) {
-          logData.request.body = filterPasswordFields(req.body);
+        if (logData.request.body) {
+          logData.request.body = filterPasswordFields(logData.request.body);
         }
-        
-        // Filter response body if it exists
-        if (chunks.length > 0) {
-          try {
-            const responseBody = Buffer.concat(chunks).toString('utf8');
-            if (responseBody) {
-              const parsedResponse = JSON.parse(responseBody);
-              logData.response.body = filterPasswordFields(parsedResponse);
-            }
-          } catch (err) {
-            // If response is not JSON, just log as is
-            logData.response.body = Buffer.concat(chunks).toString('utf8');
-          }
+        if (logData.response.body) {
+          logData.response.body = filterPasswordFields(logData.response.body);
         }
       }
       
