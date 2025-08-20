@@ -51,7 +51,16 @@ app.use(
   })
 );
 
-// Axiom request/response logging
+// TODO: fix this as it is risky (one change in path will break the payments)
+app.use((req, res, next) => {
+  if (req.path === `/api/payment${STRIPE_WEBHOOK_ROUTE}`) {
+    next()
+  } else {
+    bodyParser.json()(req, res, next);
+  }
+});
+
+// Axiom request/response logging (moved after body parser)
 app.use(axiomLogger);
 
 app.use((req, res, next) => {
@@ -59,15 +68,6 @@ app.use((req, res, next) => {
     return res.sendStatus(200);
   } else {
     next();
-  }
-});
-
-// TODO: fix this as it is risky (one change in path will break the payments)
-app.use((req, res, next) => {
-  if (req.path === `/api/payment${STRIPE_WEBHOOK_ROUTE}`) {
-    next()
-  } else {
-    bodyParser.json()(req, res, next);
   }
 });
 
