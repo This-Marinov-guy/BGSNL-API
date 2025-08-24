@@ -9,6 +9,7 @@ import {
   postCheckMemberKey,
   postVerifyToken,
   adminPatchUserPassword,
+  alumniSignup,
 } from "../controllers/security-controller.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
@@ -41,6 +42,18 @@ securityRouter.post(
     check("password").isLength({ min: 5 }),
   ],
   signup
+);
+
+securityRouter.post(
+  "/alumni-signup",
+  fileResizedUpload(process.env.BUCKET_USERS).single("image"),
+  [
+    check("name").notEmpty(),
+    check("surname").notEmpty(),
+    check("email").notEmpty(),
+    check("password").isLength({ min: 5 }),
+  ],
+  alumniSignup
 );
 
 securityRouter.post("/login", login);

@@ -59,6 +59,59 @@ export const postWebhookCheckout = async (req, res, next) => {
     case "checkout.session.completed":
     case "checkout.session.async_payment_succeeded":
       switch (metadata.method) {
+        case "alumni-signup": {
+          const { tier, period, name, surname, email } = metadata;
+
+          const password = decryptData(metadata.password);
+
+          let hashedPassword;
+          try {
+            hashedPassword = await bcrypt.hash(password, 12);
+          } catch (err) {
+            return next(new HttpError("Could not create a new user", 500));
+          }
+
+          let image;
+          if (!metadata.file) {
+            image = chooseRandomAvatar();
+          } else {
+            image = metadata.file;
+          }
+
+          const { purchaseDate, expireDate } =
+            calculatePurchaseAndExpireDates(1);
+
+          const createdUser = new AlumniUser({
+            status: USER_STATUSES[ACTIVE],
+            subscription: {
+              period,
+              id: subscriptionId,
+              customerId,
+            },
+            tier,
+            purchaseDate,
+            expireDate,
+            image,
+            name,
+            surname,
+            email,
+            password: hashedPassword,
+            tickets: [],
+            roles: [ADMIN],
+          });
+
+          try {
+            await createdUser.save();
+          } catch (err) {
+            const error = new HttpError("Signing up failed", 500);
+            return next(error);
+          }
+
+          await alumniToSpreadsheet();
+          await alumniWelcomeEmail(email, name);
+
+          return res.status(200).json({ received: true });
+        }
         case "signup": {
           const {
             longTerm,

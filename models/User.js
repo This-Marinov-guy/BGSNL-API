@@ -6,6 +6,10 @@ import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
+  _id: {
+    type: String,
+    default: () => "member_" + new mongoose.Types.ObjectId(),
+  },
   // refactor to enum
   status: { type: String, required: true, default: USER_STATUSES[ACTIVE] },
   roles: { type: Array, required: true, default: [MEMBER] },
