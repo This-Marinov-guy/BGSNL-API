@@ -215,16 +215,22 @@ const eventToSpreadsheet = async (id) => {
         status,
         region,
         title,
-        moment(correctedDate ?? date).format(MOMENT_DATE_TIME_YEAR),
+        moment(correctedDate ?? date)
+          .tz("Europe/Amsterdam")
+          .format(MOMENT_DATE_TIME_YEAR),
         location,
-        moment(ticketTimer).format(MOMENT_DATE_TIME_YEAR),
+        moment(ticketTimer)
+          .tz("Europe/Amsterdam")
+          .format(MOMENT_DATE_TIME_YEAR),
         ticketLimit,
         product?.guest.price ?? "-",
         product?.member.price ?? "-",
         product?.activeMember.price ?? "-",
         ticketLink,
         createdAt != "-"
-          ? moment(createdAt).format(MOMENT_DATE_TIME_YEAR)
+          ? moment(createdAt)
+              .tz("Europe/Amsterdam")
+              .format(MOMENT_DATE_TIME_YEAR)
           : "-",
       ],
     ];
@@ -371,7 +377,9 @@ const specialEventsToSpreadsheet = async (id) => {
 
     const { event, date } = nonSocietyEvent;
 
-    const sheetName = `${event} | ${moment(date).format(MOMENT_DATE_YEAR)}`;
+    const sheetName = `${event} | ${moment(date)
+      .tz("Europe/Amsterdam")
+      .format(MOMENT_DATE_YEAR)}`;
 
     const spreadsheetIds = [SPREADSHEETS_ID["netherlands"].events];
 
@@ -422,7 +430,11 @@ const specialEventsToSpreadsheet = async (id) => {
     // Prepare event and guest data
     const eventDetails = [
       ["ID", "Title", "Date"],
-      [id, event, moment(date).format(MOMENT_DATE_TIME_YEAR)],
+      [
+        id,
+        event,
+        moment(date).tz("Europe/Amsterdam").format(MOMENT_DATE_TIME_YEAR),
+      ],
     ];
 
     const guestListHeaders = [
@@ -437,7 +449,9 @@ const specialEventsToSpreadsheet = async (id) => {
     ];
     const guests = result[0].guests.map((obj) => [
       obj.userId ?? "-",
-      moment(obj.timestamp).format(MOMENT_DATE_TIME_YEAR),
+      moment(obj.timestamp)
+        .tz("Europe/Amsterdam")
+        .format(MOMENT_DATE_TIME_YEAR),
       obj.name,
       obj.email,
       obj.phone,
