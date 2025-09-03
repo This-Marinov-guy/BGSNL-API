@@ -97,6 +97,10 @@ export const decodeFromURL = (url) => {
 };
 
 export const isBirthdayToday = (birthdayStr) => {
+  if (!birthdayStr) {
+    return false;
+  }
+
   const birthdayDate = new Date(birthdayStr);
   if (isNaN(birthdayDate.getTime())) {
     throw new Error("Invalid date format");
