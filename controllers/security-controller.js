@@ -5,11 +5,12 @@ import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
 import {
+  alumniWelcomeEmail,
   sendNewPasswordEmail,
   welcomeEmail,
 } from "../services/side-services/email-transporter.js";
 import { ACCOUNT_KEYS } from "../util/config/KEYS.js";
-import { usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
+import { alumniToSpreadsheet, usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
 import {
   chooseRandomAvatar,
   compareIntStrings,
@@ -24,6 +25,8 @@ import moment from "moment";
 import { calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
 import { LOCKED, USER_STATUSES } from "../util/config/enums.js";
 import TemporaryCode from "../models/TemporaryCode.js";
+import { findUserByEmail } from "../services/main-services/user-service.js";
+import AlumniUser from "../models/AlumniUser.js";
 
 export const postCheckEmail = async (req, res, next) => {
   const errors = validationResult(req);
@@ -36,7 +39,7 @@ export const postCheckEmail = async (req, res, next) => {
 
   let existingUser;
   try {
-    existingUser = await User.findOne({ email: email });
+    existingUser = await findUserByEmail(email);
   } catch (err) {
     const error = new HttpError("Email verifying failed", 500);
     return next(error);
@@ -156,13 +159,82 @@ export const signup = async (req, res, next) => {
   res.status(201).json({ token, region, roles: [MEMBER] });
 };
 
+export const alumniSignup = async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const error = new HttpError("Invalid inputs passed", 422);
+    return next(error);
+  }
+
+  const {
+    tier,
+    period,
+    name,
+    surname,
+    email,
+  } = req.body;
+
+  const password = decryptData(req.body.password);
+
+  let hashedPassword;
+  try {
+    hashedPassword = await bcrypt.hash(password, 12);
+  } catch (err) {
+    return next(new HttpError("Could not create a new user", 500));
+  }
+
+  let image;
+  if (!req.file) {
+    image = chooseRandomAvatar();
+  } else {
+    image = req.file.Location;
+  }
+
+  const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(1200);
+
+  const createdUser = new AlumniUser({
+    status: "freezed",
+    tier,
+    purchaseDate,
+    expireDate,
+    image,
+    name,
+    surname,
+    email,
+    password: hashedPassword,
+    tickets: [],
+    roles: [ADMIN],
+  });
+
+  try {
+    await createdUser.save();
+  } catch (err) {
+    const error = new HttpError("Signing up failed", 500);
+    return next(error);
+  }
+
+  let token;
+  try {
+    token = await jwtSign(createdUser);
+  } catch (err) {
+    const error = new HttpError("Signing up failed", 500);
+    return next(error);
+  }
+
+  await alumniToSpreadsheet();
+
+  await alumniWelcomeEmail(email, name);
+
+  res.status(201).json({ token, region: null, roles: [MEMBER] });
+};
+
 export const login = async (req, res, next) => {
   const { email, password } = req.body;
 
   let existingUser;
 
   try {
-    existingUser = await User.findOne({ email: email });
+    existingUser = await findUserByEmail(email);
   } catch (err) {
     console.log(err);
     const error = new HttpError("Logging in failed", 500);

@@ -3,7 +3,6 @@ dotenv.config();
 import bcrypt from 'bcryptjs';
 import { validationResult } from 'express-validator';
 import HttpError from '../models/Http-error.js';
-import User from '../models/User.js';
 import ActiveMembers from '../models/ActiveMembers.js';
 import { usersToSpreadsheet } from '../services/side-services/google-spreadsheets.js';
 import { isBirthdayToday, jwtRefresh } from '../util/functions/helpers.js';
@@ -13,6 +12,7 @@ import { ACTIVE, USER_STATUSES } from '../util/config/enums.js';
 import { generateAnonymizedUserStatsXls } from "../services/main-services/user-stats-service.js";
 import fs from "fs/promises";
 import path from "path";
+import { findUserById } from '../services/main-services/user-service.js';
 
 export const refreshToken = async (req, res, next) => {
   let newToken = null;
@@ -36,7 +36,7 @@ export const getCurrentUser = async (req, res, next) => {
 
   let user;
   try {
-    user = await User.findById(userId);
+    user = await findUserById(userId);
   } catch (err) {
     const error = new HttpError('Could not fetch user', 500);
     return next(error);
@@ -71,7 +71,7 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
 
   let user;
   try {
-    user = await User.findById(userId);
+    user = await findUserById(userId);
   } catch (err) {
     const error = new HttpError('Could not fetch user', 500);
     return next(error);
@@ -93,7 +93,7 @@ export const getCurrentUserRoles = async (req, res, next) => {
 
   let user;
   try {
-    user = await User.findById(userId);
+    user = await findUserById(userId);
   } catch (err) {
     const error = new HttpError('Could not fetch user', 500);
     return next(error);
@@ -171,7 +171,7 @@ export const patchUserInfo = async (req, res, next) => {
   let user;
 
   try {
-    user = await User.findById(userId);
+    user = await findUserById(userId);
   } catch (err) {
     return next(
       new HttpError('Could not find the current user, please try again', 500)
@@ -222,7 +222,7 @@ export const submitCalendarVerification = async (req, res, next) => {
   let calendarImage;
 
   try {
-    user = await User.findById(userId);
+    user = await findUserById(userId);
   } catch (err) {
     return next(
       new HttpError("Could not find the current user, please try again", 500)

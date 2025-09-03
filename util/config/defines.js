@@ -25,6 +25,7 @@ export const SOCIETY_ADMIN = "society_board_member";
 export const BOARD_MEMBER = "board_member";
 export const COMMITTEE_MEMBER = "committee_member";
 export const MEMBER = "member";
+export const ALUMNI = "alumni";
 export const VIP = "vip";
 
 export const ACCESS_1 = [SUPER_ADMIN];
@@ -51,6 +52,7 @@ export const MEMBERSHIP_EXPIRED_TEMPLATE =
   "12db74ea-e568-4309-a64f-d543b909a520";
 export const DELOITTE_TEMPLATE = "7e8088d0-3408-4875-ae5d-21a810fe0c7d";
 export const PWC_TEMPLATE = "5947c9b6-795a-4bb7-aa23-916b317a8156";
+export const ALUMNI_TEMPLATE = "55b52240-b23e-4109-b0f4-2741989be36d";
 
 export const NO_REPLY_EMAIL = "no-reply@bulgariansociety.nl";
 export const NO_REPLY_EMAIL_NAME = "Bulgarian Society Netherlands";

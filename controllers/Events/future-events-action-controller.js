@@ -42,7 +42,10 @@ export const fetchFullDataEvent = async (req, res, next) => {
 
   let event;
   try {
-    event = await Event.findById(eventId);
+    event = await Event.findOne({
+      _id: eventId,
+      status: { $ne: "archived" },
+    });
   } catch (err) {
     return res.status(200).json({
       status: false,
@@ -81,9 +84,14 @@ export const fetchFullDataEventsList = async (req, res, next) => {
 
   try {
     if (region) {
-      events = await Event.find({ region });
+      events = await Event.find({
+        region,
+        status: { $ne: "archived" }, // exclude archived
+      });
     } else {
-      events = await Event.find();
+      events = await Event.find({
+        status: { $ne: "archived" }, // exclude archived
+      });
     }
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
@@ -801,7 +809,8 @@ export const deleteEvent = async (req, res, next) => {
   try {
     // TODO: 17.01 we will not delete events until we fill the calendar
     // await deleteCalendarEvent(await Event.findById(event._id));
-    await event.delete();
+    event.status = "archived";
+    await event.save();
   } catch (err) {
     console.log(err);
     return new HttpError(

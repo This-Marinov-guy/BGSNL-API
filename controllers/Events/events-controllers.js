@@ -60,7 +60,10 @@ export const getEventById = async (req, res, next) => {
   }
 
   try {
-    let event = await Event.findById(eventId);
+    let event = await Event.findOne({
+      _id: eventId,
+      status: { $ne: "archived" },
+    });
 
     if (!event) {
       return res.status(200).json({
@@ -102,9 +105,13 @@ export const getEvents = async (req, res, next) => {
 
   try {
     if (region) {
-      events = await Event.find({ region, hidden: false });
+      events = await Event.find({
+        region,
+        hidden: false,
+        status: { $ne: "archived" },
+      });
     } else {
-      events = await Event.find({ hidden: false });
+      events = await Event.find({ hidden: false, status: { $ne: "archived" } });
     }
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));

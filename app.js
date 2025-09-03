@@ -32,11 +32,11 @@ app.use("/api/webhooks", webhookRouter);
 // Firewall
 app.set("trust proxy", true);
 
-if (app.get('env') !== 'development') {  
+if (app.get("env") !== "development") {
   app.use(rateLimiter);
   app.use(firewall);
 } else {
-  allowedOrigins.push('http://localhost:3000')
+  allowedOrigins.push("http://localhost:3000");
 }
 
 app.use(
@@ -45,7 +45,12 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new HttpError('There was a problem with your request, please try again later!', 403)); 
+        callback(
+          new HttpError(
+            "There was a problem with your request, please try again later!",
+            403
+          )
+        );
       }
     },
   })
@@ -54,14 +59,16 @@ app.use(
 // TODO: fix this as it is risky (one change in path will break the payments)
 app.use((req, res, next) => {
   if (req.path === `/api/payment${STRIPE_WEBHOOK_ROUTE}`) {
-    next()
+    next();
   } else {
     bodyParser.json()(req, res, next);
   }
 });
 
 // Axiom request/response logging (moved after body parser)
-app.use(axiomLogger);
+if (process.env.APP_ENV !== "dev") {
+  app.use(axiomLogger);
+}
 
 app.use((req, res, next) => {
   if ("OPTIONS" == req.method) {
@@ -72,8 +79,8 @@ app.use((req, res, next) => {
 });
 
 //routes
-app.get('/', (req, res) => {
-  res.status(200).json({ message: 'Welcome to BGSNL Official Server' });
+app.get("/", (req, res) => {
+  res.status(200).json({ message: "Welcome to BGSNL Official Server" });
 });
 
 // Protected routes
@@ -87,9 +94,12 @@ app.use("/api/contest", contestRouter);
 app.use("/api/special", specialEventsRouter);
 app.use("/api/wordpress", wordpressRouter);
 
-//no page found 
+//no page found
 app.use((req, res, next) => {
-  const error = new HttpError("No action found - please try different path!", 404);
+  const error = new HttpError(
+    "No action found - please try different path!",
+    404
+  );
   return next(error);
 });
 

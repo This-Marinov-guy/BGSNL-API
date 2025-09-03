@@ -1,7 +1,7 @@
 import { MailtrapClient } from "mailtrap";
 import dotenv from "dotenv";
 import { WHATS_APP } from "../../util/config/LINKS.js";
-import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE } from "../../util/config/defines.js";
+import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE, ALUMNI_TEMPLATE } from "../../util/config/defines.js";
 import moment from "moment";
 import { MOMENT_DATE_TIME } from "../../util/functions/dateConvert.js";
 dotenv.config();
@@ -87,6 +87,26 @@ const welcomeEmail = async (receiver, name, region = '') => {
         },
       },
     })
+};
+
+export const alumniWelcomeEmail = async (receiver, name) => {
+  const recipients = [
+    {
+      email: receiver,
+    },
+  ];
+
+  await client.send({
+    from: sender,
+    to: recipients,
+    template_uuid: ALUMNI_TEMPLATE,
+    template_variables: {
+      template_variables: {
+        name,
+        link: WHATS_APP['alumni'],
+      },
+    },
+  });
 };
 
 const sendContestMaterials = async (receiver) => {

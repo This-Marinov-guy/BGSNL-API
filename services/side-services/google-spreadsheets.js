@@ -21,6 +21,7 @@ import {
   MOMENT_DATE_YEAR,
 } from "../../util/functions/dateConvert.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
+import AlumniUser from "../../models/AlumniUser.js";
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -214,16 +215,22 @@ const eventToSpreadsheet = async (id) => {
         status,
         region,
         title,
-        moment(correctedDate ?? date).format(MOMENT_DATE_TIME_YEAR),
+        moment(correctedDate ?? date)
+          .tz("Europe/Amsterdam")
+          .format(MOMENT_DATE_TIME_YEAR),
         location,
-        moment(ticketTimer).format(MOMENT_DATE_TIME_YEAR),
+        moment(ticketTimer)
+          .tz("Europe/Amsterdam")
+          .format(MOMENT_DATE_TIME_YEAR),
         ticketLimit,
         product?.guest.price ?? "-",
         product?.member.price ?? "-",
         product?.activeMember.price ?? "-",
         ticketLink,
         createdAt != "-"
-          ? moment(createdAt).format(MOMENT_DATE_TIME_YEAR)
+          ? moment(createdAt)
+              .tz("Europe/Amsterdam")
+              .format(MOMENT_DATE_TIME_YEAR)
           : "-",
       ],
     ];
@@ -284,7 +291,7 @@ const eventToSpreadsheet = async (id) => {
           auth,
           spreadsheetId,
           resource: {
-            requests: [{ addSheet: { properties: { title: sheetName } } }],
+            requests: [{ addSheet: { properties: { title: sheetName, index: 0 } } }],
           },
         });
 
@@ -370,7 +377,9 @@ const specialEventsToSpreadsheet = async (id) => {
 
     const { event, date } = nonSocietyEvent;
 
-    const sheetName = `${event} | ${moment(date).format(MOMENT_DATE_YEAR)}`;
+    const sheetName = `${event} | ${moment(date)
+      .tz("Europe/Amsterdam")
+      .format(MOMENT_DATE_YEAR)}`;
 
     const spreadsheetIds = [SPREADSHEETS_ID["netherlands"].events];
 
@@ -421,7 +430,11 @@ const specialEventsToSpreadsheet = async (id) => {
     // Prepare event and guest data
     const eventDetails = [
       ["ID", "Title", "Date"],
-      [id, event, moment(date).format(MOMENT_DATE_TIME_YEAR)],
+      [
+        id,
+        event,
+        moment(date).tz("Europe/Amsterdam").format(MOMENT_DATE_TIME_YEAR),
+      ],
     ];
 
     const guestListHeaders = [
@@ -436,7 +449,9 @@ const specialEventsToSpreadsheet = async (id) => {
     ];
     const guests = result[0].guests.map((obj) => [
       obj.userId ?? "-",
-      moment(obj.timestamp).format(MOMENT_DATE_TIME_YEAR),
+      moment(obj.timestamp)
+        .tz("Europe/Amsterdam")
+        .format(MOMENT_DATE_TIME_YEAR),
       obj.name,
       obj.email,
       obj.phone,
@@ -471,7 +486,7 @@ const specialEventsToSpreadsheet = async (id) => {
           auth,
           spreadsheetId,
           resource: {
-            requests: [{ addSheet: { properties: { title: sheetName } } }],
+            requests: [{ addSheet: { properties: { title: sheetName, index: 0 } } }],
           },
         });
 
@@ -648,6 +663,106 @@ const usersToSpreadsheet = async (region = null) => {
     console.log(`Member Sheet updated for: ${region ?? "Netherlands"}`);
   } catch (error) {
     console.error("Error in usersToSpreadsheet:", error);
+  }
+};
+
+export const alumniToSpreadsheet = async () => {
+  try {
+    let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.alumni;
+    const sheetName = "Users";
+
+    // Connecting to Google Spreadsheet
+    const credentials = JSON.parse(
+      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
+    );
+    const auth = new google.auth.GoogleAuth({
+      credentials: credentials,
+      scopes: "https://www.googleapis.com/auth/spreadsheets",
+    });
+
+    const googleClient = await auth.getClient();
+    const googleSheets = google.sheets({ version: "v4", auth: googleClient });
+
+    // Fetch users from MongoDB using Mongoose
+    const query = {};
+    const users = await AlumniUser.find(query)
+      .sort({
+        purchaseDate: 1,
+        _id: -1,
+      })
+      .lean();
+
+    const values = users.map((user) => {
+      const {
+        _id,
+        image,
+        password,
+        tickets,
+        registrationKey,
+        __v,
+        christmas,
+        mmmCampaign2025,
+        subscription,
+        status,
+        name,
+        surname,
+        ...rest
+      } = user;
+
+      const formattedPurchaseDate = moment(rest.purchaseDate).format(
+        MOMENT_DATE_YEAR
+      );
+      const formattedExpireDate = moment(rest.expireDate).format(
+        MOMENT_DATE_YEAR
+      );
+
+      const dataFields = {
+        status,
+        type:
+          subscription && subscription.id
+            ? `Subscription ${subscription.id} | Customer ${
+                subscription.customerId ?? ""
+              }`
+            : "One-time (old)",
+        name,
+        surname,
+        ...rest,
+        purchaseDate: formattedPurchaseDate,
+        expireDate: formattedExpireDate,
+      };
+
+      return Object.values(dataFields);
+    });
+
+    const nameOfValues = [
+      "Status",
+      "Tier",
+      "Name",
+      "Surname",
+      "Purchase Date",
+      "Expire/Renew Date",
+      "Email",
+    ];
+
+    await googleSheets.spreadsheets.values.clear({
+      auth,
+      spreadsheetId,
+      range: sheetName,
+    });
+
+    await googleSheets.spreadsheets.values.append({
+      auth,
+      spreadsheetId,
+      range: sheetName,
+      valueInputOption: "RAW",
+      resource: {
+        values: [["Members of:", sheetName], nameOfValues, ...values],
+      },
+    });
+
+    console.log(`Member Sheet updated for "Netherlands"}`);
+  } catch (error) {
+    console.error("Error in alumniToSpreadsheet:", error);
   }
 };
 
@@ -829,7 +944,12 @@ export const getPresenceStatsOfCity = async (spreadsheetId) => {
       range: `${sheetName}!C4`,
     });
 
-    const presenceString = (presenceData.values && presenceData.values[0] && presenceData.values[0][0] ? presenceData.values[0][0] : null) || 0;
+    const presenceString =
+      (presenceData.values &&
+      presenceData.values[0] &&
+      presenceData.values[0][0]
+        ? presenceData.values[0][0]
+        : null) || 0;
     presenceCounts.push({
       event: title.values[0][0],
       presence: Number(presenceString),
@@ -843,7 +963,11 @@ export const getPresenceStatsOfCity = async (spreadsheetId) => {
   }
 
   const totalEvents = presenceCounts.length;
-  const avgPresence = Math.round(numericPresences.length > 0 ? numericPresences.reduce((a, b) => a + b, 0) / numericPresences.length : 0);
+  const avgPresence = Math.round(
+    numericPresences.length > 0
+      ? numericPresences.reduce((a, b) => a + b, 0) / numericPresences.length
+      : 0
+  );
 
   return {
     presenceCounts,
