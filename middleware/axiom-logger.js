@@ -44,7 +44,11 @@ const formatRequest = (req) => {
  */
 export const axiomLogger = (req, res, next) => {
   // Skip logging in development environment
-  if (!axiom || process.env.NODE_ENV === 'development') {
+  if (!axiom || process.env.APP_ENV === "dev") {
+    return next();
+  }
+
+  if (!process.env.AXIOM_TOKEN || !process.env.AXIOM_ORG_ID || !process.env.AXIOM_DATASET) {
     return next();
   }
 
