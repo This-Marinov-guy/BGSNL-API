@@ -18,19 +18,39 @@ export const getFingerprintLite = (req) => {
 
 // we always prioritize alumnis
 export const findUserByEmail = async (email) => {
-  const userQuery = User.findOne({ email });
-  const alumniQuery = AlumniUser.findOne({ email });
+  // Check if email is valid before running queries
+  if (!email || typeof email !== 'string') {
+    return null;
+  }
 
-  const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
+  try {
+    const userQuery = User.findOne({ email });
+    const alumniQuery = AlumniUser.findOne({ email });
 
-  return alumni || user;
+    const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
+
+    return alumni || user;
+  } catch (err) {
+    console.error("Error in findUserByEmail:", err);
+    return null;
+  }
 };
 
-export const findUserById = async (id) => {
-  const userQuery = User.findById(id);
-  const alumniQuery = AlumniUser.findById(id);
+export const findUserById = async (id) => {  
+  // Check if id is valid before running queries
+  if (!id || typeof id !== 'string' && !id.toString) {
+    return null;
+  }
 
-  const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
+  try {
+    const userQuery = User.findOne({ _id: id });
+    const alumniQuery = AlumniUser.findOne({ _id: id });
 
-  return alumni || user;
+    const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
+
+    return (alumni || user);
+  } catch (err) {
+    console.error("Error in findUserById:", err);
+    return null;
+  }
 };

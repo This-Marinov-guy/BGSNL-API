@@ -6,10 +6,6 @@ import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 const Schema = mongoose.Schema;
 
 const alumniUserSchema = new Schema({
-  _id: {
-    type: String,
-    default: () => "alumni_" + new mongoose.Types.ObjectId(),
-  },
   status: { type: String, required: true, default: USER_STATUSES[ACTIVE] },
   tier: { type: Number, required: true, default: 0 },
   roles: { type: Array, required: true, default: [ALUMNI] },

@@ -24,26 +24,27 @@ const eventRouter = express.Router();
 eventRouter.get(
   "/get-purchase-status/:eventId",
   getEventPurchaseAvailability
-)
+);
 
 eventRouter.get(
   "/event-details/:eventId",
   getEventById
-)
+);
+
 eventRouter.get(
   "/events-list",
   getEvents
-)
+);
 
 eventRouter.get(
   "/sold-ticket-count/:eventId",
   getSoldTicketQuantity
-)
+);
 
 eventRouter.get(
   "/check-member/:userId/:eventId",
   checkEligibleMemberForPurchase
-)
+);
 
 eventRouter.post(
   "/check-guest-discount/:eventId",
@@ -53,7 +54,7 @@ eventRouter.post(
     check("surname").notEmpty(),
   ],
   checkEligibleGuestForDiscount
-)
+);
 
 eventRouter.post(
   "/purchase-ticket/guest",
