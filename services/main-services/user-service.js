@@ -43,8 +43,8 @@ export const findUserById = async (id) => {
   }
 
   try {
-    const userQuery = User.findOne({ _id: id });
-    const alumniQuery = AlumniUser.findOne({ _id: id });
+    const userQuery = User.findById(id);
+    const alumniQuery = AlumniUser.findById(id);
 
     const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
 
