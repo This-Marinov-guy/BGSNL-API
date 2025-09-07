@@ -12,7 +12,7 @@ export const cancelSubscription = async (req, res, next) => {
   let user;
 
   try {
-    user = await User.findById(userId);
+    user = await User.findOne({_id: userId});
   } catch (err) {
     return next(
       new HttpError("Could not find the current user, please try again", 500)
@@ -223,7 +223,7 @@ export const postCustomerPortal = async (req, res, next) => {
   let user;
 
   try {
-    user = await User.findById(userId);
+    user = await User.findOne({_id: userId});
   } catch (err) {
     return next(
       new HttpError("Could not find the current user, please try again", 500)

@@ -171,7 +171,7 @@ export const checkEligibleMemberForPurchase = async (req, res, next) => {
     return next(new HttpError("No event was found", 404));
   }
 
-  let member = await User.findById(userId);
+  let member = await User.findOne({_id: userId});
 
   if (!member) {
     return next(new HttpError("Could not find a user with provided id", 404));
@@ -250,7 +250,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
 
   let targetUser;
   try {
-    targetUser = await User.findById(userId);
+    targetUser = await User.findOne({_id: userId});
   } catch (err) {
     new HttpError("Could not find a user with provided id", 404);
   }
@@ -410,7 +410,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
   let targetUser;
 
   try {
-    targetUser = await User.findById(userId);
+    targetUser = await User.findOne({_id: userId});
   } catch (err) {
     return next(
       new HttpError("Could not find the current user, please try again", 500)

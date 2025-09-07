@@ -10,7 +10,10 @@ import {
   welcomeEmail,
 } from "../services/side-services/email-transporter.js";
 import { ACCOUNT_KEYS } from "../util/config/KEYS.js";
-import { alumniToSpreadsheet, usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
+import {
+  alumniToSpreadsheet,
+  usersToSpreadsheet,
+} from "../services/side-services/google-spreadsheets.js";
 import {
   chooseRandomAvatar,
   compareIntStrings,
@@ -166,13 +169,21 @@ export const alumniSignup = async (req, res, next) => {
     return next(error);
   }
 
-  const {
-    tier,
-    period,
-    name,
-    surname,
-    email,
-  } = req.body;
+  let existingUser;
+  try {
+    existingUser = await findUserByEmail(req.body.email);
+  } catch (err) {}
+
+  if (existingUser) {
+    return next(
+      new HttpError(
+        "Looks like you already have an account - please login and upgrade to an alumni account from there",
+        422
+      )
+    );
+  }
+
+  const { tier, period, name, surname, email } = req.body;
 
   const password = decryptData(req.body.password);
 
@@ -462,7 +473,7 @@ export const adminPatchUserPassword = async (req, res, next) => {
   const { email, password = 1111 } = req.body;
 
   let existingUser;
-  
+
   try {
     existingUser = await User.findOne({ email: email });
   } catch (err) {

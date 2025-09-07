@@ -9,6 +9,8 @@ import {
   getCurrentUserSubscriptionStatus,
   submitCalendarVerification,
   exportVitalStatsXls,
+  convertUserToAlumni,
+  getActiveAlumniMembers,
 } from "../controllers/users-controllers.js";
 import {
   cancelSubscription
@@ -73,6 +75,22 @@ userRouter.get(
   "/export-vital-stats",
   // adminMiddleware(ACCESS_2),
   exportVitalStatsXls
+);
+
+// Convert a regular user to alumni user
+userRouter.post(
+  "/convert-to-alumni",
+  adminMiddleware(ACCESS_2), // Restrict to admin access
+  [
+    check("email").isEmail().withMessage("Please provide a valid email")
+  ],
+  convertUserToAlumni
+);
+
+// Get active alumni members with basic info
+userRouter.get(
+  "/active-alumni",
+  getActiveAlumniMembers
 );
 
 export default userRouter;

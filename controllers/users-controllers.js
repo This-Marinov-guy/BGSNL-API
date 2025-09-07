@@ -12,7 +12,11 @@ import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 import { generateAnonymizedUserStatsXls } from "../services/main-services/user-stats-service.js";
 import fs from "fs/promises";
 import path from "path";
-import { findUserById } from "../services/main-services/user-service.js";
+import { findUserById, findUserByEmail } from "../services/main-services/user-service.js";
+import AlumniUser from "../models/AlumniUser.js";
+import User from "../models/User.js";
+import mongoose from "mongoose";
+import { ALUMNI } from "../util/config/defines.js";
 
 export const refreshToken = async (req, res, next) => {
   let newToken = null;
@@ -294,5 +298,174 @@ export const exportVitalStatsXls = async (req, res, next) => {
   } catch (err) {
     console.log(err);
     return next(new HttpError("Failed to generate statistics", 500));
+  }
+};
+
+/**
+ * Creates or updates an alumni user record based on a regular user
+ * POST /api/user/convert-to-alumni
+ * @param {string} email - Email of the user to convert
+ * @returns {object} - Information about the created/updated alumni user
+ */
+export const convertUserToAlumni = async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return next(
+      new HttpError("Invalid inputs passed", 422)
+    );
+  }
+
+  const { userId } = extractUserFromRequest(req);
+  
+  // Find the regular user
+  let regularUser;
+  try {
+    regularUser = await User.findOne({ _id: userId });
+    
+    if (!regularUser) {
+      return next(new HttpError("User not found with provided email", 404));
+    }
+  } catch (err) {
+    console.error(err);
+    return next(new HttpError("Error finding user", 500));
+  }
+  
+  // Extract the ObjectId part if the user already has a prefixed ID
+  let objectIdPart;
+  if (typeof regularUser._id === 'string' && regularUser._id.includes('member_')) {
+    const idMatch = regularUser._id.match(/member_(.*)/);
+    if (idMatch && idMatch[1]) {
+      objectIdPart = idMatch[1];
+    } else {
+      return next(new HttpError("User ID format is invalid", 400));
+    }
+  } else {
+    // If the user has a regular ObjectId, convert it to string
+    objectIdPart = regularUser._id.toString();
+  }
+  
+  // Create the alumni ID with the same ObjectId part
+  const alumniId = `alumni_${objectIdPart}`;
+  
+  // Check if an alumni user already exists with this ID or email
+  let existingAlumni;
+  try {
+    existingAlumni = await AlumniUser.findOne({ 
+      $or: [
+        { _id: alumniId },
+        { email: regularUser.email }
+      ]
+    });
+  } catch (err) {
+    console.error(err);
+    return next(new HttpError("Error checking for existing alumni user", 500));
+  }
+  
+  let result;
+  
+  try {
+    if (existingAlumni) {
+      // Update existing alumni user with data from regular user
+      existingAlumni.name = regularUser.name;
+      existingAlumni.surname = regularUser.surname;
+      existingAlumni.email = regularUser.email;
+      existingAlumni.image = regularUser.image;
+      existingAlumni.password = regularUser.password;
+      existingAlumni.status = regularUser.status || "active";
+      existingAlumni.purchaseDate = regularUser.purchaseDate || new Date();
+      existingAlumni.expireDate = regularUser.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1));
+      
+      // Make sure the alumni role is set
+      if (!existingAlumni.roles.includes(ALUMNI)) {
+        existingAlumni.roles.push(ALUMNI);
+      }
+      
+      await existingAlumni.save();
+      result = {
+        action: "updated",
+        alumniId: existingAlumni._id,
+        userId: regularUser._id,
+        email: regularUser.email
+      };
+    } else {
+      // Create new alumni user with data from regular user
+      const newAlumniUser = new AlumniUser({
+        _id: alumniId,
+        name: regularUser.name,
+        surname: regularUser.surname,
+        email: regularUser.email,
+        password: regularUser.password,
+        image: regularUser.image || "",
+        status: regularUser.status || "active",
+        tier: 0, // Default tier
+        roles: [ALUMNI],
+        purchaseDate: regularUser.purchaseDate || new Date(),
+        expireDate: regularUser.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+        tickets: regularUser.tickets || [],
+        christmas: regularUser.christmas || []
+      });
+      
+      await newAlumniUser.save();
+      result = {
+        action: "created",
+        alumniId: newAlumniUser._id,
+        userId: regularUser._id,
+        email: regularUser.email
+      };
+    }
+
+    regularUser.status = USER_STATUSES[ALUMNI];
+    await regularUser.save();
+    
+    return res.status(200).json({ 
+      message: `User successfully ${result.action} as alumni`, 
+      result 
+    });
+    
+  } catch (err) {
+    console.error(err);
+    return next(new HttpError("Error converting user to alumni", 500));
+  }
+};
+
+/**
+ * Retrieves a list of active alumni members with limited fields
+ * GET /api/user/active-alumni
+ * @returns {array} - Array of active alumni users with selected fields
+ */
+export const getActiveAlumniMembers = async (req, res, next) => {
+  try {
+    // Find all alumni users with 'active' status
+    const alumniMembers = await AlumniUser.find({ 
+      status: USER_STATUSES[ACTIVE]
+    })
+    .select('name surname image tier quote joinDate')
+    .sort({ name: 1, surname: 1 }); // Sort by name and surname alphabetically
+    
+    // Format the response to include only the required fields
+    const formattedMembers = alumniMembers.map(member => {
+      const memberObj = member.toObject({ getters: true });
+      
+      // Create a clean object with only the fields we need
+      return {
+        id: memberObj.id || memberObj._id,
+        name: memberObj.name,
+        surname: memberObj.surname,
+        image: memberObj.image,
+        tier: memberObj.tier,
+        joinDate: memberObj.joinDate,
+        // Include quote only if it exists
+        ...(memberObj.quote && { quote: memberObj.quote })
+      };
+    });
+    
+    return res.status(200).json({ 
+      count: formattedMembers.length,
+      alumniMembers: formattedMembers 
+    });
+    
+  } catch (err) {
+    console.error(err);
+    return next(new HttpError("Error fetching alumni members", 500));
   }
 };

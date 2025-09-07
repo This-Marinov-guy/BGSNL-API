@@ -21,6 +21,10 @@ import wordpressRouter from "./routes/Integration/wordpress-routes.js";
 import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
 import kokoAppRouter from "./routes/Integration/koko-app-data.js";
+import { 
+  convertUsersWithoutSubscriptionToAlumni,
+  setJoinDateForAllAlumniUsers
+} from './util/private/manipulate-db.js';
 
 const app = express();
 
@@ -132,4 +136,16 @@ mongoose
 //   REGIONS.forEach(async (r) => {
 //     await usersToSpreadsheet(r);
 //   });
+// }
+
+// Convert users without subscription to alumni users
+// Uncomment to run the conversion (do not leave uncommented)
+// if (app.get('env') === 'development') {
+//   try {
+//     console.log('Starting conversion of users without subscription to alumni...');
+//     const results = await convertUsersWithoutSubscriptionToAlumni();
+//     console.log(`Conversion completed. Processed ${results?.length || 0} users.`);
+//   } catch (error) {
+//     console.error('Error in conversion process:', error);
+//   }
 // }
