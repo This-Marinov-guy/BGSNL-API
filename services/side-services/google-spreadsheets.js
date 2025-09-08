@@ -287,11 +287,19 @@ const eventToSpreadsheet = async (id) => {
 
       if (!sheetId) {
         // Create the sheet if it doesn't exist
+        // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
         const newSheet = await googleSheets.spreadsheets.batchUpdate({
           auth,
           spreadsheetId,
           resource: {
-            requests: [{ addSheet: { properties: { title: sheetName, index: 0 } } }],
+            requests: [{ 
+              addSheet: { 
+                properties: { 
+                  title: sheetName, 
+                  index: 0 
+                } 
+              } 
+            }],
           },
         });
 
@@ -299,6 +307,25 @@ const eventToSpreadsheet = async (id) => {
           `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
         );
         sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
+        
+        // Explicitly update the sheet's position to ensure it's at the beginning
+        await googleSheets.spreadsheets.batchUpdate({
+          auth,
+          spreadsheetId,
+          resource: {
+            requests: [{
+              updateSheetProperties: {
+                properties: {
+                  sheetId: sheetId,
+                  index: 0
+                },
+                fields: "index"
+              }
+            }]
+          }
+        });
+        
+        console.log(`Sheet '${sheetName}' moved to the beginning of the spreadsheet`);
       }
 
       // Clear the existing data in the sheet
@@ -482,11 +509,19 @@ const specialEventsToSpreadsheet = async (id) => {
 
       if (!sheetId) {
         // Create the sheet if it doesn't exist
+        // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
         const newSheet = await googleSheets.spreadsheets.batchUpdate({
           auth,
           spreadsheetId,
           resource: {
-            requests: [{ addSheet: { properties: { title: sheetName, index: 0 } } }],
+            requests: [{ 
+              addSheet: { 
+                properties: { 
+                  title: sheetName, 
+                  index: 0 
+                } 
+              } 
+            }],
           },
         });
 
@@ -494,6 +529,25 @@ const specialEventsToSpreadsheet = async (id) => {
           `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
         );
         sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
+        
+        // Explicitly update the sheet's position to ensure it's at the beginning
+        await googleSheets.spreadsheets.batchUpdate({
+          auth,
+          spreadsheetId,
+          resource: {
+            requests: [{
+              updateSheetProperties: {
+                properties: {
+                  sheetId: sheetId,
+                  index: 0
+                },
+                fields: "index"
+              }
+            }]
+          }
+        });
+        
+        console.log(`Sheet '${sheetName}' moved to the beginning of the spreadsheet`);
       }
 
       // Clear the existing data in the sheet

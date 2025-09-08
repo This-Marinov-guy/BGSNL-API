@@ -436,9 +436,7 @@ export const convertUserToAlumni = async (req, res, next) => {
 export const getActiveAlumniMembers = async (req, res, next) => {
   try {
     // Find all alumni users with 'active' status
-    const alumniMembers = await AlumniUser.find({ 
-      status: USER_STATUSES[ACTIVE]
-    })
+    const alumniMembers = await AlumniUser.find()
     .select('name surname image tier quote joinDate')
     .sort({ name: 1, surname: 1 }); // Sort by name and surname alphabetically
     
