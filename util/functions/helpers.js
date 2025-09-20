@@ -45,6 +45,7 @@ export const removeModelProperties = (obj, properties) => {
 export const jwtSign = (user) => {
   return jwt.sign(
     {
+      image: user.image,
       userId: user.id,
       status: user.status,
       roles: user.roles,
@@ -64,6 +65,7 @@ export const jwtRefresh = (token) => {
 
     const newToken = jwt.sign(
       {
+        image: decoded.image,
         userId: decoded.userId,
         roles: decoded.roles,
         email: decoded.email,

@@ -34,6 +34,7 @@ import {
   LIMITLESS_ACCOUNT,
   SUBSCRIPTION_PERIOD_BY_ID,
   USER_URL,
+  ALUMNI_TIER_BY_PRICE_ID,
 } from "../../util/config/defines.js";
 import moment from "moment";
 import { ACTIVE, LOCKED, USER_STATUSES } from "../../util/config/enums.js";
@@ -625,6 +626,76 @@ export const postWebhookCheckout = async (req, res, next) => {
       }
 
       return res.status(200).json({ received: true });
+    }
+    case "customer.subscription.updated": {
+      if (!subscriptionId || !customerId) {
+        responseMessage = "No subscription to update";
+        break;
+      }
+
+      // Get the new price ID from the subscription
+      const newPriceId = event.data.object.items.data[0]?.price?.id;
+      
+      if (!newPriceId) {
+        responseMessage = "No price ID found in subscription";
+        break;
+      }
+
+      // Check if this is an alumni subscription by looking for the price ID in our mapping
+      const newTier = ALUMNI_TIER_BY_PRICE_ID[newPriceId];
+      
+      if (!newTier) {
+        responseMessage = "Price ID not found in alumni mapping";
+        break;
+      }
+
+      // Find the alumni user by subscription ID or customer ID
+      let alumniUser;
+      try {
+        alumniUser = await AlumniUser.findOne({ 
+          $or: [
+            { "subscription.id": subscriptionId },
+            { "subscription.customerId": customerId }
+          ]
+        });
+      } catch (err) {
+        console.error(`Error finding alumni user: ${err.message}`);
+        responseMessage = "Error finding alumni user";
+        break;
+      }
+
+      if (!alumniUser) {
+        responseMessage = "No alumni user found for this subscription";
+        break;
+      }
+
+      // Update the tier
+      const oldTier = alumniUser.tier;
+      alumniUser.tier = newTier;
+
+      try {
+        await alumniUser.save();
+        console.log(`Updated alumni user ${alumniUser._id} tier from ${oldTier} to ${newTier}`);
+        
+        // Update spreadsheets
+        await alumniToSpreadsheet();
+        
+        responseMessage = `Alumni tier updated from ${oldTier} to ${newTier}`;
+      } catch (err) {
+        console.error(`Error updating alumni user tier: ${err.message}`);
+        responseMessage = "Error updating alumni user tier";
+      }
+
+      return res.status(200).json({ 
+        received: true, 
+        message: responseMessage,
+        details: {
+          alumniId: alumniUser._id,
+          oldTier,
+          newTier,
+          priceId: newPriceId
+        }
+      });
     }
     default:
       return res.status(200).json({

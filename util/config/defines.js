@@ -86,6 +86,17 @@ export const SUBSCRIPTION_ID_BY_AMOUNT = SUBSCRIPTIONS.reduce((acc, sub) => {
   return acc;
 }, {});
 
+// Alumni subscription price IDs and their corresponding tiers
+export const ALUMNI_PRICE_IDS = {
+  "price_1Rx1XKAShinXgMFZqWsg4V0D": 1, // 3 euro.month - tier 1
+  "price_1Rx1XYAShinXgMFZSTH9nEvo": 2, // 5 euro.month - tier 2
+  "price_1Rx1Y7AShinXgMFZzqTEzqHz": 3, // 7 euro.month - tier 3
+  "price_1Rx1YOAShinXgMFZITzXRuam": 4, // 10 euro.month - tier 4
+};
+
+// get the tier by passing alumni price id
+export const ALUMNI_TIER_BY_PRICE_ID = ALUMNI_PRICE_IDS;
+
 export const HOME_URL = "https://bulgariansociety.nl";
 export const USER_URL = `${HOME_URL}/user`;
 
