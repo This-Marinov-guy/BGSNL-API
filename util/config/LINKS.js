@@ -6,4 +6,7 @@ export const WHATS_APP = {
   amsterdam: "https://chat.whatsapp.com/JVSM61uSkBB61oysBvABUm",
   maastricht: "",
   alumni: "https://chat.whatsapp.com/LrHWIHDfqX59zNtlQ1dBAR",
+  leiden_hague: "",
+  netherlands: "",
+  eindhoven: "",
 };

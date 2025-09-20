@@ -38,6 +38,11 @@ export const STRIPE_KEYS = {
     secretKey: process.env.STRIPE_NL_SECRET_KEY,
     webhookSecretKey: process.env.STRIPE_NL_WEBHOOK_CH_KEY,
   },
+  leiden_hague: {
+    publishableKey: process.env.STRIPE_NL_PUBLISHABLE_KEY,
+    secretKey: process.env.STRIPE_NL_SECRET_KEY,
+    webhookSecretKey: process.env.STRIPE_NL_WEBHOOK_CH_KEY,
+  },
   netherlands: {
     publishableKey: process.env.STRIPE_NL_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_NL_SECRET_KEY,

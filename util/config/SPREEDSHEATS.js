@@ -22,6 +22,10 @@ export const SPREADSHEETS_ID = IS_PROD
         events: "1qZ3TFRFyumCr2SYVcWj_X6BGdal5-0yhzqUCxrPVZkc",
         users: "1YBdhVdEQA_8ulAx_Tkm7z-E_XsVgfJKBO6m5E9iiiXU",
       },
+      leiden_hague: {
+        events: "1fbQyRsfMCV085rvX_t7p1TnJ9HKSRzPDeHdZ6IFFDM0",
+        users: "1O0jR44waD6__R543XyHZT-4EZhSbe6dedsv89YIPDRI",
+      },
       amsterdam: {
         events: "1OmuK1f1XOrNWmiMyX1kJqvPRsWqZLHBsGthfM4IVQWw",
         users: "1Jb_wU-OSzuRA5mL-1LhvfboX2EM6jXzj-F-FMvvY6XI",

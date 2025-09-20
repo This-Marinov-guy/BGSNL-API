@@ -5,12 +5,15 @@ import HttpError from "../../models/Http-error.js";
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
 import User from "../../models/User.js";
+import AlumniUser from "../../models/AlumniUser.js";
 import {
   paymentFailedEmail,
   sendTicketEmail,
   welcomeEmail,
+  alumniWelcomeEmail,
 } from "../../services/side-services/email-transporter.js";
 import {
+  alumniToSpreadsheet,
   eventToSpreadsheet,
   usersToSpreadsheet,
 } from "../../services/side-services/google-spreadsheets.js";
@@ -24,6 +27,8 @@ import {
   calculatePurchaseAndExpireDates,
 } from "../../util/functions/dateConvert.js";
 import {
+  ADMIN,
+  ALUMNI,
   DEFAULT_REGION,
   HOME_URL,
   LIMITLESS_ACCOUNT,
@@ -195,7 +200,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           let user;
 
           try {
-            user = await User.findById(userId);
+            user = await User.findOne({_id: userId});
           } catch (err) {
             return next(new HttpError(err.message, 500));
           }
@@ -298,7 +303,7 @@ export const postWebhookCheckout = async (req, res, next) => {
 
           let targetUser;
           try {
-            targetUser = await User.findById(userId);
+            targetUser = await User.findOne({_id: userId});
           } catch (err) {
             return next(new HttpError(err.message, 500));
           }
@@ -346,6 +351,169 @@ export const postWebhookCheckout = async (req, res, next) => {
           await eventToSpreadsheet(societyEvent.id);
 
           return res.status(200).json({ received: true });
+        }
+        case "alumni_migration": {
+          const { userId, tier, period } = metadata;
+          
+          // Find the regular user
+          let regularUser;
+          try {
+            regularUser = await User.findOne({_id: userId});
+            
+            if (!regularUser) {
+              console.error(`No user found with ID: ${userId}`);
+              return res.status(200).json({ 
+                received: true,
+                message: "User not found for migration" 
+              });
+            }
+          } catch (err) {
+            console.error(`Error finding user: ${err.message}`);
+            return res.status(200).json({ 
+              received: true, 
+              message: "Error finding user for migration" 
+            });
+          }
+          
+          // Extract the ObjectId part if the user already has a prefixed ID
+          let objectIdPart;
+          if (typeof regularUser._id === 'string' && regularUser._id.includes('member_')) {
+            const idMatch = regularUser._id.match(/member_(.*)/);
+            if (idMatch && idMatch[1]) {
+              objectIdPart = idMatch[1];
+            } else {
+              console.error(`ID format invalid: ${regularUser._id}`);
+              return res.status(200).json({ 
+                received: true, 
+                message: "Invalid user ID format for migration" 
+              });
+            }
+          } else {
+            // If the user has a regular ObjectId, convert it to string
+            objectIdPart = regularUser._id.toString();
+          }
+          
+          // Create the alumni ID with the same ObjectId part
+          const alumniId = `alumni_${objectIdPart}`;
+          
+          // Check if we need to cancel an existing subscription
+          let oldSubscriptionId = null;
+          if (regularUser.subscription && regularUser.subscription.id) {
+            oldSubscriptionId = regularUser.subscription.id;
+            
+            // Cancel old subscription
+            try {
+              const stripeClient = createStripeClient(regularUser.region || DEFAULT_REGION);
+              await stripeClient.subscriptions.cancel(oldSubscriptionId);
+              console.log(`Cancelled subscription ${oldSubscriptionId} for user ${userId}`);
+            } catch (err) {
+              console.error(`Error cancelling subscription: ${err.message}`);
+              // Continue with the migration even if cancellation fails
+            }
+          }
+          
+          const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period || 12);
+          
+          // Check if an alumni user already exists
+          let existingAlumni;
+          try {
+            existingAlumni = await AlumniUser.findOne({ 
+              $or: [
+                { _id: alumniId },
+                { email: regularUser.email }
+              ]
+            });
+          } catch (err) {
+            console.error(`Error checking existing alumni: ${err.message}`);
+          }
+          
+          let alumniUser;
+          
+          try {
+            if (existingAlumni) {
+              // Update existing alumni user
+              existingAlumni.name = regularUser.name;
+              existingAlumni.surname = regularUser.surname;
+              existingAlumni.email = regularUser.email;
+              existingAlumni.image = regularUser.image || "";
+              existingAlumni.status = USER_STATUSES[ACTIVE];
+              existingAlumni.tier = tier || 0;
+              existingAlumni.subscription = {
+                period,
+                id: subscriptionId,
+                customerId,
+              };
+              existingAlumni.purchaseDate = purchaseDate;
+              existingAlumni.expireDate = expireDate;
+              existingAlumni.joinDate = existingAlumni.joinDate || new Date();
+              
+              // Make sure the alumni role is set
+              if (!existingAlumni.roles.includes(ALUMNI)) {
+                existingAlumni.roles.push(ALUMNI);
+              }
+              
+              await existingAlumni.save();
+              alumniUser = existingAlumni;
+              console.log(`Updated alumni user ${alumniId} for migration`);
+            } else {
+              // Create new alumni user
+              const newAlumniUser = new AlumniUser({
+                _id: alumniId,
+                name: regularUser.name,
+                surname: regularUser.surname,
+                email: regularUser.email,
+                password: regularUser.password,
+                image: regularUser.image || "",
+                status: USER_STATUSES[ACTIVE],
+                tier: tier || 0,
+                roles: [ALUMNI],
+                subscription: {
+                  period,
+                  id: subscriptionId,
+                  customerId,
+                },
+                joinDate: new Date(),
+                purchaseDate,
+                expireDate,
+                tickets: regularUser.tickets || [],
+                christmas: regularUser.christmas || []
+              });
+              
+              await newAlumniUser.save();
+              alumniUser = newAlumniUser;
+              console.log(`Created new alumni user ${alumniId} for migration`);
+            }
+            
+            // Update regular user status to alumni
+            regularUser.status = USER_STATUSES[ALUMNI];
+            await regularUser.save();
+            
+            // Update spreadsheets
+            await alumniToSpreadsheet();
+            await usersToSpreadsheet(regularUser.region);
+            await usersToSpreadsheet();
+            
+            // Send welcome email
+            await alumniWelcomeEmail(regularUser.email, regularUser.name);
+            
+            return res.status(200).json({ 
+              received: true,
+              message: "User successfully migrated to alumni",
+              details: {
+                userId: regularUser._id,
+                alumniId: alumniUser._id,
+                oldSubscription: oldSubscriptionId,
+                newSubscription: subscriptionId
+              }
+            });
+            
+          } catch (err) {
+            console.error(`Error during migration: ${err.message}`);
+            return res.status(200).json({ 
+              received: true, 
+              error: `Migration failed: ${err.message}` 
+            });
+          }
         }
         default:
           return res.status(200).json({
