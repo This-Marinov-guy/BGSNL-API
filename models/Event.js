@@ -12,7 +12,7 @@ const eventSchema = new Schema({
   status: { type: String, required: true, default: EVENT_OPENED },
   region: { type: String, required: true },
   title: { type: String, required: true },
-  description: { type: String, required: true },
+  description: { type: String, default: "" },
   date: { type: Date, required: true },
   correctedDate: { type: Date },
   location: { type: String, required: true },
