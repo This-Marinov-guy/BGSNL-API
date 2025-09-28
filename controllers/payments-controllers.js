@@ -43,6 +43,7 @@ export const donationConfig = (req, res) => {
 
 export const postDonationIntent = async (req, res, next) => {
   const { amount, name, comments } = req.body;
+  const { userId } = extractUserFromRequest(req);
 
   if (amount < 2 || amount > 10000) {
     return res.status(200).json({
@@ -69,6 +70,7 @@ export const postDonationIntent = async (req, res, next) => {
       metadata: {
         name,
         comments,
+        userId: userId || '',
       },
     });
     // Send publishable key and PaymentIntent details to client
@@ -98,7 +100,7 @@ export const postSubscriptionNoFile = async (req, res, next) => {
     cancel_url: `${origin_url}/fail`,
     metadata: {
       ...req.body,
-      userId,
+      userId: userId || '',
     },
   });
 
@@ -107,6 +109,7 @@ export const postSubscriptionNoFile = async (req, res, next) => {
 
 export const postSubscriptionFile = async (req, res, next) => {
   const { itemId, origin_url, region } = req.body;
+  const { userId } = extractUserFromRequest(req);
 
   const stripeClient = createStripeClient(DEFAULT_REGION);
 
@@ -122,6 +125,7 @@ export const postSubscriptionFile = async (req, res, next) => {
     cancel_url: `${origin_url}/fail`,
     metadata: {
       file: fileLocation ? fileLocation : null,
+      userId: userId || '',
       ...req.body,
     },
   });
@@ -131,6 +135,7 @@ export const postSubscriptionFile = async (req, res, next) => {
 
 export const postCheckoutNoFile = async (req, res, next) => {
   const { itemId, origin_url, region } = req.body;
+  const { userId } = extractUserFromRequest(req);
   const addOns = req.body.addOns ? JSON.parse(req.body.addOns) : [];
   let { quantity } = req.body;
 
@@ -162,6 +167,7 @@ export const postCheckoutNoFile = async (req, res, next) => {
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
+      userId: userId || '',
       ...req.body,
     },
   });
@@ -171,6 +177,7 @@ export const postCheckoutNoFile = async (req, res, next) => {
 
 export const postCheckoutFile = async (req, res, next) => {
   const { itemId, origin_url, region } = req.body;
+  const { userId } = extractUserFromRequest(req);
   const addOns = req.body.addOns ? JSON.parse(req.body.addOns) : [];
   let { quantity } = req.body;
 
@@ -209,6 +216,7 @@ export const postCheckoutFile = async (req, res, next) => {
     cancel_url: `${origin_url}/fail`,
     metadata: {
       file: fileLocation ? fileLocation : null,
+      userId: userId || '',
       ...req.body,
     },
   });

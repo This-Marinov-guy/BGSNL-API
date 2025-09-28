@@ -14,9 +14,9 @@ export const STRIPE_KEYS = {
     webhookSecretKey: process.env.STRIPE_AMS_WEBHOOK_CH_KEY,
   },
   rotterdam: {
-    publishableKey: process.env.STRIPE_NL_PUBLISHABLE_KEY,
-    secretKey: process.env.STRIPE_NL_SECRET_KEY,
-    webhookSecretKey: process.env.STRIPE_NL_WEBHOOK_CH_KEY,
+    publishableKey: process.env.STRIPE_RTM_PUBLISHABLE_KEY,
+    secretKey: process.env.STRIPE_RTM_SECRET_KEY,
+    webhookSecretKey: process.env.STRIPE_RTM_WEBHOOK_CH_KEY,
   },
   leeuwarden: {
     publishableKey: process.env.STRIPE_NL_PUBLISHABLE_KEY,
