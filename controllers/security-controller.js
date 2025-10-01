@@ -277,7 +277,8 @@ export const login = async (req, res, next) => {
 
   if (
     !hasOverlap(LIMITLESS_ACCOUNT, existingUser.roles) &&
-    today > existingUser.expireDate
+    today > existingUser.expireDate &&
+    existingUser?.tier !== 0
   ) {
     existingUser.status = USER_STATUSES[LOCKED];
     try {
