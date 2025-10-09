@@ -511,27 +511,70 @@ export const handleAlumniMigration = async (metadata, subscriptionId, customerId
  * Handle invoice paid event
  */
 export const handleInvoicePaid = async (subscriptionId, customerId, event) => {
+  console.log(`handleInvoicePaid - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`);
+  
   if (!subscriptionId || !customerId) {
-    return { success: false, message: "No user to update" };
+    console.log("Missing subscriptionId or customerId in invoice.paid event");
+    return { 
+      success: false, 
+      message: "No user to update",
+      debug: {
+        subscriptionId,
+        customerId,
+        eventType: "invoice.paid",
+        priceId: event?.data?.object?.lines?.data?.[0]?.price?.id || "not found"
+      }
+    };
   }
 
   let user;
   try {
     user = await findUserByQuery({ "subscription.id": subscriptionId });
+    console.log(`Found user by subscription.id: ${user ? user.email : 'none'}`);
   } catch (err) {
-    return { success: false, message: "No user to update" };
+    console.error(`Error finding user by subscription.id: ${err.message}`);
+    return { 
+      success: false, 
+      message: "Error finding user by subscription ID",
+      debug: {
+        subscriptionId,
+        customerId,
+        error: err.message,
+        searchMethod: "subscription.id"
+      }
+    };
   }
 
   if (!user) {
     try {
       user = await findUserByQuery({ "subscription.customerId": customerId });
+      console.log(`Found user by subscription.customerId: ${user ? user.email : 'none'}`);
     } catch (err) {
-      return { success: false, message: "No user to update" };
+      console.error(`Error finding user by subscription.customerId: ${err.message}`);
+      return { 
+        success: false, 
+        message: "Error finding user by customer ID",
+        debug: {
+          subscriptionId,
+          customerId,
+          error: err.message,
+          searchMethod: "subscription.customerId"
+        }
+      };
     }
   }
 
   if (!user) {
-    return { success: false, message: "No user to update" };
+    console.log("No user found with either subscription ID or customer ID");
+    return { 
+      success: false, 
+      message: "No user found with provided subscription or customer ID",
+      debug: {
+        subscriptionId,
+        customerId,
+        searchAttempts: ["subscription.id", "subscription.customerId"]
+      }
+    };
   }
 
   const priceId = event.data.object.lines.data[0].price.id || "";
@@ -552,14 +595,29 @@ export const handleInvoicePaid = async (subscriptionId, customerId, event) => {
   await usersToSpreadsheet(user.region);
   await usersToSpreadsheet();
 
-  return { success: true };
+  console.log(`Successfully processed invoice.paid for user: ${user.email}`);
+  return { 
+    success: true,
+    debug: {
+      userId: user._id,
+      userEmail: user.email,
+      userRegion: user.region,
+      priceId,
+      period,
+      purchaseDate,
+      expireDate
+    }
+  };
 };
 
 /**
  * Handle invoice payment failed event
  */
 export const handleInvoicePaymentFailed = async (subscriptionId, customerId) => {
+  console.log(`handleInvoicePaymentFailed - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`);
+  
   if (!subscriptionId || !customerId) {
+    console.log("Missing subscriptionId or customerId in invoice.payment_failed event");
     return { success: false, message: "No user to update" };
   }
 
@@ -614,7 +672,10 @@ export const handleInvoicePaymentFailed = async (subscriptionId, customerId) => 
  * Handle customer subscription updated event
  */
 export const handleSubscriptionUpdated = async (subscriptionId, customerId, event) => {
+  console.log(`handleSubscriptionUpdated - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`);
+  
   if (!subscriptionId || !customerId) {
+    console.log("Missing subscriptionId or customerId in customer.subscription.updated event");
     return { success: false, message: "No subscription to update" };
   }
 
