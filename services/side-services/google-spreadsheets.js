@@ -287,52 +287,103 @@ const eventToSpreadsheet = async (id) => {
       )?.properties.sheetId;
 
       if (!sheetId) {
-        // Create the sheet if it doesn't exist
-        // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
-        const newSheet = await googleSheets.spreadsheets.batchUpdate({
-          auth,
-          spreadsheetId,
-          resource: {
-            requests: [
-              {
-                addSheet: {
-                  properties: {
-                    title: sheetName,
-                    index: 0,
+        try {
+          // Create the sheet if it doesn't exist
+          // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
+          const newSheet = await googleSheets.spreadsheets.batchUpdate({
+            auth,
+            spreadsheetId,
+            resource: {
+              requests: [
+                {
+                  addSheet: {
+                    properties: {
+                      title: sheetName,
+                      index: 0,
+                    },
                   },
                 },
-              },
-            ],
-          },
-        });
+              ],
+            },
+          });
 
-        console.log(
-          `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
-        );
-        sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
+          console.log(
+            `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
+          );
+          sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
 
-        // Explicitly update the sheet's position to ensure it's at the beginning
-        await googleSheets.spreadsheets.batchUpdate({
-          auth,
-          spreadsheetId,
-          resource: {
-            requests: [
-              {
-                updateSheetProperties: {
-                  properties: {
-                    sheetId: sheetId,
-                    index: 0,
+          // Explicitly update the sheet's position to ensure it's at the beginning
+          await googleSheets.spreadsheets.batchUpdate({
+            auth,
+            spreadsheetId,
+            resource: {
+              requests: [
+                {
+                  updateSheetProperties: {
+                    properties: {
+                      sheetId: sheetId,
+                      index: 0,
+                    },
+                    fields: "index",
                   },
-                  fields: "index",
                 },
-              },
-            ],
-          },
-        });
+              ],
+            },
+          });
 
-        console.log(
-          `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
-        );
+          console.log(
+            `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
+          );
+        } catch (createError) {
+          // Check if the error is because the sheet already exists
+          if (createError.message && createError.message.includes('already exists')) {
+            console.log(`Sheet '${sheetName}' already exists, fetching its ID instead`);
+            
+            try {
+              // Re-fetch the spreadsheet metadata to get the existing sheet ID
+              const updatedMetaData = await googleSheets.spreadsheets.get({
+                auth,
+                spreadsheetId,
+              });
+              
+              const updatedSheetsList = updatedMetaData.data.sheets;
+              console.log(`Available sheets in spreadsheet:`, updatedSheetsList.map(s => s.properties.title));
+              
+              // Try exact match first
+              let existingSheet = updatedSheetsList.find(
+                (sheet) => sheet.properties.title === sheetName
+              );
+              
+              // If exact match fails, try case-insensitive match
+              if (!existingSheet) {
+                existingSheet = updatedSheetsList.find(
+                  (sheet) => sheet.properties.title.toLowerCase() === sheetName.toLowerCase()
+                );
+              }
+              
+              // If still no match, try trimming whitespace
+              if (!existingSheet) {
+                existingSheet = updatedSheetsList.find(
+                  (sheet) => sheet.properties.title.trim() === sheetName.trim()
+                );
+              }
+              
+              if (existingSheet) {
+                sheetId = existingSheet.properties.sheetId;
+                console.log(`Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`);
+              } else {
+                console.error(`Could not find sheet '${sheetName}' after creation error. Available sheets:`, updatedSheetsList.map(s => s.properties.title));
+                continue; // Skip this spreadsheet and continue with the next one
+              }
+            } catch (fetchError) {
+              console.error(`Error fetching spreadsheet metadata after creation error:`, fetchError);
+              continue; // Skip this spreadsheet and continue with the next one
+            }
+          } else {
+            console.error(`Error creating sheet '${sheetName}':`, createError);
+            continue; // Skip this spreadsheet and continue with the next one
+          }
+        }
       }
 
       // Clear the existing data in the sheet
@@ -515,52 +566,103 @@ const specialEventsToSpreadsheet = async (id) => {
       )?.properties.sheetId;
 
       if (!sheetId) {
-        // Create the sheet if it doesn't exist
-        // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
-        const newSheet = await googleSheets.spreadsheets.batchUpdate({
-          auth,
-          spreadsheetId,
-          resource: {
-            requests: [
-              {
-                addSheet: {
-                  properties: {
-                    title: sheetName,
-                    index: 0,
+        try {
+          // Create the sheet if it doesn't exist
+          // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
+          const newSheet = await googleSheets.spreadsheets.batchUpdate({
+            auth,
+            spreadsheetId,
+            resource: {
+              requests: [
+                {
+                  addSheet: {
+                    properties: {
+                      title: sheetName,
+                      index: 0,
+                    },
                   },
                 },
-              },
-            ],
-          },
-        });
+              ],
+            },
+          });
 
-        console.log(
-          `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
-        );
-        sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
+          console.log(
+            `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
+          );
+          sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
 
-        // Explicitly update the sheet's position to ensure it's at the beginning
-        await googleSheets.spreadsheets.batchUpdate({
-          auth,
-          spreadsheetId,
-          resource: {
-            requests: [
-              {
-                updateSheetProperties: {
-                  properties: {
-                    sheetId: sheetId,
-                    index: 0,
+          // Explicitly update the sheet's position to ensure it's at the beginning
+          await googleSheets.spreadsheets.batchUpdate({
+            auth,
+            spreadsheetId,
+            resource: {
+              requests: [
+                {
+                  updateSheetProperties: {
+                    properties: {
+                      sheetId: sheetId,
+                      index: 0,
+                    },
+                    fields: "index",
                   },
-                  fields: "index",
                 },
-              },
-            ],
-          },
-        });
+              ],
+            },
+          });
 
-        console.log(
-          `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
-        );
+          console.log(
+            `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
+          );
+        } catch (createError) {
+          // Check if the error is because the sheet already exists
+          if (createError.message && createError.message.includes('already exists')) {
+            console.log(`Sheet '${sheetName}' already exists, fetching its ID instead`);
+            
+            try {
+              // Re-fetch the spreadsheet metadata to get the existing sheet ID
+              const updatedMetaData = await googleSheets.spreadsheets.get({
+                auth,
+                spreadsheetId,
+              });
+              
+              const updatedSheetsList = updatedMetaData.data.sheets;
+              console.log(`Available sheets in spreadsheet:`, updatedSheetsList.map(s => s.properties.title));
+              
+              // Try exact match first
+              let existingSheet = updatedSheetsList.find(
+                (sheet) => sheet.properties.title === sheetName
+              );
+              
+              // If exact match fails, try case-insensitive match
+              if (!existingSheet) {
+                existingSheet = updatedSheetsList.find(
+                  (sheet) => sheet.properties.title.toLowerCase() === sheetName.toLowerCase()
+                );
+              }
+              
+              // If still no match, try trimming whitespace
+              if (!existingSheet) {
+                existingSheet = updatedSheetsList.find(
+                  (sheet) => sheet.properties.title.trim() === sheetName.trim()
+                );
+              }
+              
+              if (existingSheet) {
+                sheetId = existingSheet.properties.sheetId;
+                console.log(`Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`);
+              } else {
+                console.error(`Could not find sheet '${sheetName}' after creation error. Available sheets:`, updatedSheetsList.map(s => s.properties.title));
+                continue; // Skip this spreadsheet and continue with the next one
+              }
+            } catch (fetchError) {
+              console.error(`Error fetching spreadsheet metadata after creation error:`, fetchError);
+              continue; // Skip this spreadsheet and continue with the next one
+            }
+          } else {
+            console.error(`Error creating sheet '${sheetName}':`, createError);
+            continue; // Skip this spreadsheet and continue with the next one
+          }
+        }
       }
 
       // Clear the existing data in the sheet
