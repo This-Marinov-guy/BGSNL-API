@@ -11,10 +11,9 @@ import {
   exportVitalStatsXls,
   convertUserToAlumni,
   getActiveAlumniMembers,
+  updateAlumniQuote,
 } from "../controllers/users-controllers.js";
-import {
-  cancelSubscription
-} from "../controllers/payments-controllers.js"
+import { cancelSubscription } from "../controllers/payments-controllers.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
@@ -28,23 +27,30 @@ const userRouter = express.Router();
 
 userRouter.get("/current", authMiddleware, getCurrentUser);
 
-userRouter.get("/get-subscription-status", authMiddleware, getCurrentUserSubscriptionStatus);
+userRouter.get(
+  "/get-subscription-status",
+  authMiddleware,
+  getCurrentUserSubscriptionStatus
+);
 
 userRouter.get("/refresh-token", refreshToken);
 
 userRouter.get("/roles", authMiddleware, getCurrentUserRoles);
 
-userRouter.post('/active-member', authMiddleware, multiFileUpload(process.env.BUCKET_AM).fields([
-  { name: 'cv', maxCount: 2 },
-  // { name: 'letter', maxCount: 2 },
-]),
-[
-  check("email").notEmpty(),
-  check("phone").notEmpty(),
-  check("questions").notEmpty(),
-],
-postActiveMember
-)
+userRouter.post(
+  "/active-member",
+  authMiddleware,
+  multiFileUpload(process.env.BUCKET_AM).fields([
+    { name: "cv", maxCount: 2 },
+    // { name: 'letter', maxCount: 2 },
+  ]),
+  [
+    check("email").notEmpty(),
+    check("phone").notEmpty(),
+    check("questions").notEmpty(),
+  ],
+  postActiveMember
+);
 
 userRouter.patch(
   "/edit-info",
@@ -68,8 +74,6 @@ userRouter.post(
   fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
   submitCalendarVerification
 );
-;
-
 // Anonymized vital stats export (XLS)
 userRouter.get(
   "/export-vital-stats",
@@ -81,16 +85,13 @@ userRouter.get(
 userRouter.post(
   "/convert-to-alumni",
   adminMiddleware(ACCESS_2), // Restrict to admin access
-  [
-    check("email").isEmail().withMessage("Please provide a valid email")
-  ],
+  [check("email").isEmail().withMessage("Please provide a valid email")],
   convertUserToAlumni
 );
 
+userRouter.patch("/alumni-quote", authMiddleware, updateAlumniQuote);
+
 // Get active alumni members with basic info
-userRouter.get(
-  "/active-alumni",
-  getActiveAlumniMembers
-);
+userRouter.get("/active-alumni", getActiveAlumniMembers);
 
 export default userRouter;

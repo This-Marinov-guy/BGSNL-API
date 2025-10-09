@@ -467,3 +467,49 @@ export const getActiveAlumniMembers = async (req, res, next) => {
     return next(new HttpError("Error fetching alumni members", 500));
   }
 };
+
+/**
+ * Updates an alumni user's quote
+ * PATCH /api/user/alumni-quote
+ * @param {string} quote - The new quote text
+ * @returns {object} - Success message and updated quote
+ */
+export const updateAlumniQuote = async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return next(
+      new HttpError("Invalid inputs passed", 422)
+    );
+  }
+
+  const { userId } = extractUserFromRequest(req);
+  const { quote } = req.body;
+
+  // Find the alumni user
+  let alumniUser;
+  try {
+    alumniUser = await AlumniUser.findOne({ _id: userId });
+    
+    if (!alumniUser) {
+      return next(new HttpError("Alumni user not found", 404));
+    }
+  } catch (err) {
+    console.error(err);
+    return next(new HttpError("Error finding alumni user", 500));
+  }
+
+  // Update the quote
+  try {
+    alumniUser.quote = quote;
+    await alumniUser.save();
+    
+    return res.status(200).json({
+      status: true,
+      quote: alumniUser.quote
+    });
+    
+  } catch (err) {
+    console.error(err);
+    return next(new HttpError("Error updating quote", 500));
+  }
+};
