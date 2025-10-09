@@ -267,10 +267,10 @@ export const login = async (req, res, next) => {
     );
   }
 
-  // if (!isValidPassword) {
-  //   const error = new HttpError("Invalid credentials", 401);
-  //   return next(error);
-  // }
+  if (!isValidPassword) {
+    const error = new HttpError("Invalid credentials", 401);
+    return next(error);
+  }
 
   //check for expired account and lock it if necessary
   const today = new Date();
