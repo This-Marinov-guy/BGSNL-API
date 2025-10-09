@@ -37,7 +37,7 @@ export const SPREADSHEETS_ID = IS_PROD
       netherlands: {
         events: "1beH2D2gY6AIVpqZ-qropFoktVKO91T03Qj700WBtxKk",
         users: "1iOCDGM2VLn5PNR0wyEUQkD2WMkuFAxnORzGG1iw4e1Q",
-        alumni: "1TtdgGFQKC0jDMQctstUYd37nZvTeXWRmHn1RWA2Zs8M",
+        alumni: "1iOCDGM2VLn5PNR0wyEUQkD2WMkuFAxnORzGG1iw4e1Q",
       },
     }
   : {
@@ -72,7 +72,7 @@ export const SPREADSHEETS_ID = IS_PROD
       netherlands: {
         events: "1vJkbiMMS-UL8gEHX1W7eilSYMrFPQs_1fFQ1EVQjrZc",
         users: "1vJkbiMMS-UL8gEHX1W7eilSYMrFPQs_1fFQ1EVQjrZc",
-        alumni: "",
+        alumni: "1vJkbiMMS-UL8gEHX1W7eilSYMrFPQs_1fFQ1EVQjrZc",
       },
     };
 

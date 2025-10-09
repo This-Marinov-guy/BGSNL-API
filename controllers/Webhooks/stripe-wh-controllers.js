@@ -17,6 +17,7 @@ import {
   eventToSpreadsheet,
   usersToSpreadsheet,
 } from "../../services/side-services/google-spreadsheets.js";
+import { findUserByQuery } from "../../services/main-services/user-service.js";
 import {
   chooseRandomAvatar,
   decryptData,
@@ -37,8 +38,9 @@ import {
   ALUMNI_TIER_BY_PRICE_ID,
 } from "../../util/config/defines.js";
 import moment from "moment";
-import { ACTIVE, LOCKED, USER_STATUSES } from "../../util/config/enums.js";
+import { ACTIVE, ALUMNI_MIGRATED, LOCKED, USER_STATUSES } from "../../util/config/enums.js";
 import { createStripeClient, getStripeKey } from "../../util/config/stripe.js";
+import { findUserById } from "../../services/main-services/user-service.js";
 
 export const postWebhookCheckout = async (req, res, next) => {
   const userRegion = req.query.region ?? "netherlands";
@@ -201,7 +203,7 @@ export const postWebhookCheckout = async (req, res, next) => {
           let user;
 
           try {
-            user = await User.findOne({_id: userId});
+            user = await findUserById(userId);
           } catch (err) {
             return next(new HttpError(err.message, 500));
           }
@@ -304,7 +306,7 @@ export const postWebhookCheckout = async (req, res, next) => {
 
           let targetUser;
           try {
-            targetUser = await User.findOne({_id: userId});
+            targetUser = await findUserByQuery({_id: userId});
           } catch (err) {
             return next(new HttpError(err.message, 500));
           }
@@ -486,7 +488,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             }
             
             // Update regular user status to alumni
-            regularUser.status = USER_STATUSES[ALUMNI];
+            regularUser.status = USER_STATUSES[ALUMNI_MIGRATED];
             await regularUser.save();
             
             // Update spreadsheets
@@ -531,14 +533,14 @@ export const postWebhookCheckout = async (req, res, next) => {
       let user;
 
       try {
-        user = await User.findOne({ "subscription.id": subscriptionId });
+        user = await findUserByQuery({ "subscription.id": subscriptionId });
       } catch (err) {
         responseMessage = "No user to update";
       }
 
       if (!user) {
         try {
-          user = await User.findOne({ "subscription.customerId": customerId });
+          user = await findUserByQuery({ "subscription.customerId": customerId });
         } catch (err) {
           responseMessage = "No user to update";
         }
@@ -580,14 +582,14 @@ export const postWebhookCheckout = async (req, res, next) => {
       let user;
 
       try {
-        user = await User.findOne({ "subscription.id": subscriptionId });
+        user = await findUserByQuery({ "subscription.id": subscriptionId });
       } catch (err) {
         responseMessage = "No user to update";
       }
 
       if (!user) {
         try {
-          user = await User.findOne({ "subscription.customerId": customerId });
+          user = await findUserByQuery({ "subscription.customerId": customerId });
         } catch (err) {
           responseMessage = "No user to update";
         }

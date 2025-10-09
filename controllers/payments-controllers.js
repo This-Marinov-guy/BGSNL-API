@@ -2,9 +2,11 @@ import dotenv from "dotenv";
 dotenv.config();
 import HttpError from "../models/Http-error.js";
 import User from "../models/User.js";
-import { DEFAULT_REGION } from "../util/config/defines.js";
+import { DEFAULT_REGION, MEMBER } from "../util/config/defines.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
 import { createStripeClient, getStripeKey } from "../util/config/stripe.js";
+import { findUserById } from "../services/main-services/user-service.js";
+import { BILLING_PORTAL_CONFIGURATIONS } from "../util/config/enums.js";
 
 export const cancelSubscription = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
@@ -12,7 +14,7 @@ export const cancelSubscription = async (req, res, next) => {
   let user;
 
   try {
-    user = await User.findOne({_id: userId});
+    user = await findUserById(userId);
   } catch (err) {
     return next(
       new HttpError("Could not find the current user, please try again", 500)
@@ -225,18 +227,18 @@ export const postCheckoutFile = async (req, res, next) => {
 };
 
 export const postCustomerPortal = async (req, res, next) => {
-  const { url } = req.body;
+  const { url, type } = req.body;
   const { userId } = extractUserFromRequest(req);
 
   let user;
 
   try {
-    user = await User.findOne({_id: userId});
+    user = await findUserById(userId);
   } catch (err) {
     return next(
       new HttpError("Could not find the current user, please try again", 500)
     );
-  }
+  }  
 
   if (!user || !user.subscription.customerId) {
     return next(
@@ -247,11 +249,13 @@ export const postCustomerPortal = async (req, res, next) => {
   const stripeClient = createStripeClient(DEFAULT_REGION);
 
   let session = null;
+  let configuration = BILLING_PORTAL_CONFIGURATIONS[type] ?? BILLING_PORTAL_CONFIGURATIONS[MEMBER];
 
   try {
     session = await stripeClient.billingPortal.sessions.create({
       customer: user.subscription.customerId,
       return_url: url,
+      configuration: configuration,
     });
   } catch (err) {
     console.log(err);

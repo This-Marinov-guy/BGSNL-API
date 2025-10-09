@@ -25,6 +25,7 @@ import {
   convertUsersWithoutSubscriptionToAlumni,
   setJoinDateForAllAlumniUsers
 } from './util/private/manipulate-db.js';
+import { alumniToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
 
 const app = express();
 
@@ -149,3 +150,6 @@ mongoose
 //     console.error('Error in conversion process:', error);
 //   }
 // }
+
+// usersToSpreadsheet();
+// alumniToSpreadsheet();

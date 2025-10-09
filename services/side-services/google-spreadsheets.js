@@ -22,6 +22,7 @@ import {
 } from "../../util/functions/dateConvert.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
 import AlumniUser from "../../models/AlumniUser.js";
+import { ALUMNI_MIGRATED } from "../../util/config/enums.js";
 
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
@@ -292,14 +293,16 @@ const eventToSpreadsheet = async (id) => {
           auth,
           spreadsheetId,
           resource: {
-            requests: [{ 
-              addSheet: { 
-                properties: { 
-                  title: sheetName, 
-                  index: 0 
-                } 
-              } 
-            }],
+            requests: [
+              {
+                addSheet: {
+                  properties: {
+                    title: sheetName,
+                    index: 0,
+                  },
+                },
+              },
+            ],
           },
         });
 
@@ -307,25 +310,29 @@ const eventToSpreadsheet = async (id) => {
           `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
         );
         sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
-        
+
         // Explicitly update the sheet's position to ensure it's at the beginning
         await googleSheets.spreadsheets.batchUpdate({
           auth,
           spreadsheetId,
           resource: {
-            requests: [{
-              updateSheetProperties: {
-                properties: {
-                  sheetId: sheetId,
-                  index: 0
+            requests: [
+              {
+                updateSheetProperties: {
+                  properties: {
+                    sheetId: sheetId,
+                    index: 0,
+                  },
+                  fields: "index",
                 },
-                fields: "index"
-              }
-            }]
-          }
+              },
+            ],
+          },
         });
-        
-        console.log(`Sheet '${sheetName}' moved to the beginning of the spreadsheet`);
+
+        console.log(
+          `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
+        );
       }
 
       // Clear the existing data in the sheet
@@ -514,14 +521,16 @@ const specialEventsToSpreadsheet = async (id) => {
           auth,
           spreadsheetId,
           resource: {
-            requests: [{ 
-              addSheet: { 
-                properties: { 
-                  title: sheetName, 
-                  index: 0 
-                } 
-              } 
-            }],
+            requests: [
+              {
+                addSheet: {
+                  properties: {
+                    title: sheetName,
+                    index: 0,
+                  },
+                },
+              },
+            ],
           },
         });
 
@@ -529,25 +538,29 @@ const specialEventsToSpreadsheet = async (id) => {
           `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
         );
         sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
-        
+
         // Explicitly update the sheet's position to ensure it's at the beginning
         await googleSheets.spreadsheets.batchUpdate({
           auth,
           spreadsheetId,
           resource: {
-            requests: [{
-              updateSheetProperties: {
-                properties: {
-                  sheetId: sheetId,
-                  index: 0
+            requests: [
+              {
+                updateSheetProperties: {
+                  properties: {
+                    sheetId: sheetId,
+                    index: 0,
+                  },
+                  fields: "index",
                 },
-                fields: "index"
-              }
-            }]
-          }
+              },
+            ],
+          },
         });
-        
-        console.log(`Sheet '${sheetName}' moved to the beginning of the spreadsheet`);
+
+        console.log(
+          `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
+        );
       }
 
       // Clear the existing data in the sheet
@@ -597,7 +610,11 @@ const usersToSpreadsheet = async (region = null) => {
     const googleSheets = google.sheets({ version: "v4", auth: googleClient });
 
     // Fetch users from MongoDB using Mongoose
-    const query = filterByRegion ? { region } : {};
+    const query = {
+      ...(filterByRegion && { region }),
+      status: { $ne: ALUMNI_MIGRATED },
+    };
+
     const users = await User.find(query)
       .sort({
         purchaseDate: 1,
@@ -723,7 +740,7 @@ const usersToSpreadsheet = async (region = null) => {
 export const alumniToSpreadsheet = async () => {
   try {
     let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.alumni;
-    const sheetName = "Users";
+    const sheetName = "Alumnis";
 
     // Connecting to Google Spreadsheet
     const credentials = JSON.parse(
@@ -757,6 +774,8 @@ export const alumniToSpreadsheet = async () => {
         christmas,
         mmmCampaign2025,
         subscription,
+        email,
+        tier,
         status,
         name,
         surname,
@@ -772,20 +791,21 @@ export const alumniToSpreadsheet = async () => {
 
       const dataFields = {
         status,
-        type:
-          subscription && subscription.id
-            ? `Subscription ${subscription.id} | Customer ${
-                subscription.customerId ?? ""
-              }`
-            : "One-time (old)",
+        tier: `${tier}`,
         name,
         surname,
-        ...rest,
         purchaseDate: formattedPurchaseDate,
         expireDate: formattedExpireDate,
+        email,
       };
 
-      return Object.values(dataFields);
+      // Convert all values to strings, handling arrays properly
+      return Object.values(dataFields).map(value => {
+        if (Array.isArray(value)) {
+          return value.join(', ');
+        }
+        return String(value || '');
+      });
     });
 
     const nameOfValues = [
@@ -814,7 +834,7 @@ export const alumniToSpreadsheet = async () => {
       },
     });
 
-    console.log(`Member Sheet updated for "Netherlands"}`);
+    console.log(`Member Sheet updated for Alumnis`);
   } catch (error) {
     console.error("Error in alumniToSpreadsheet:", error);
   }

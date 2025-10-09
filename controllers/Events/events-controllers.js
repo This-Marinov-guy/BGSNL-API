@@ -19,6 +19,7 @@ import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
 import moment from "moment";
 import { checkDiscountsOnEvents } from "../../services/main-services/event-action-service.js";
 import { extractUserFromRequest } from "../../util/functions/security.js";
+import { findUserById } from "../../services/main-services/user-service.js";
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -410,7 +411,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
   let targetUser;
 
   try {
-    targetUser = await User.findOne({ _id: userId });
+    targetUser = await findUserById(userId);
   } catch (err) {
     return next(
       new HttpError("Could not find the current user, please try again", 500)

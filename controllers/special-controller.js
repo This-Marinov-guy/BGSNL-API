@@ -1,6 +1,7 @@
 import HttpError from '../models/Http-error.js';
 import User from '../models/User.js';
 import mongoose from 'mongoose';
+import { findUserByName } from '../services/main-services/user-service.js';
 
 export const postCard = async (req, res, next) => {
   const { text, gif, sender, receiver, randomReceiver, hideSender } = req.body;
@@ -38,7 +39,7 @@ export const postCard = async (req, res, next) => {
 
     let targetUser;
     try {
-      targetUser = await User.findOne({ name: firstName, surname: lastName });
+      targetUser = await findUserByName({ name: firstName, surname: lastName });
     } catch (err) {
       return next(new HttpError('Could not find a user with that name <;(', 404));
     }

@@ -54,3 +54,37 @@ export const findUserById = async (id) => {
     return null;
   }
 };
+
+export const findUserByName = async (name, surname) => {
+  try {
+    const userQuery = User.findOne({ name, surname });
+    const alumniQuery = AlumniUser.findOne({ name, surname });
+
+    const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
+
+    return alumni || user;
+  } catch (err) {
+    console.error("Error in findUserById:", err);
+    return null;
+  }
+};
+
+// Generic function to find user by any query, prioritizing alumni users
+export const findUserByQuery = async (query) => {
+  // Check if query is valid
+  if (!query || typeof query !== 'object') {
+    return null;
+  }
+
+  try {
+    const userQuery = User.findOne(query);
+    const alumniQuery = AlumniUser.findOne(query);
+
+    const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
+
+    return alumni || user;
+  } catch (err) {
+    console.error("Error in findUserByQuery:", err);
+    return null;
+  }
+};

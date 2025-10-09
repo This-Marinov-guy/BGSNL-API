@@ -486,6 +486,7 @@ export const transferPaidBillingHistory = async (
   }
 };
 
+// TODO: update for alumnis as well
 export async function migratedSubscriptionsDBupdate() {
   const stripe = createStripeClient(DEFAULT_REGION);
   let updated = 0;

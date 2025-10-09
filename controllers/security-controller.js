@@ -267,10 +267,10 @@ export const login = async (req, res, next) => {
     );
   }
 
-  if (!isValidPassword) {
-    const error = new HttpError("Invalid credentials", 401);
-    return next(error);
-  }
+  // if (!isValidPassword) {
+  //   const error = new HttpError("Invalid credentials", 401);
+  //   return next(error);
+  // }
 
   //check for expired account and lock it if necessary
   const today = new Date();
@@ -329,7 +329,7 @@ export const postSendPasswordResetEmail = async (req, res, next) => {
 
   let user;
   try {
-    user = await User.findOne({ email: email });
+    user = await findUserByEmail(email);
   } catch (err) {
     console.log(err);
   }
@@ -363,7 +363,7 @@ export const postVerifyToken = async (req, res, next) => {
   let user;
 
   try {
-    user = await User.findOne({ email: email });
+    user = await findUserByEmail(email);
   } catch (err) {
     console.log(err);
     return next(new HttpError("Invalid code, please try again", 400));
@@ -426,7 +426,7 @@ export const patchUserPassword = async (req, res, next) => {
   let temporaryCode;
 
   try {
-    existingUser = await User.findOne({ email: email });
+    existingUser = await findUserByEmail(email);
     temporaryCode = await TemporaryCode.findOne({
       userId: existingUser?._id,
       code: token,
@@ -476,7 +476,7 @@ export const adminPatchUserPassword = async (req, res, next) => {
   let existingUser;
 
   try {
-    existingUser = await User.findOne({ email: email });
+    existingUser = await findUserByEmail(email);
   } catch (err) {
     console.log(err);
     return next(new HttpError("Invalid user", 400));
