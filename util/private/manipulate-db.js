@@ -10,7 +10,7 @@ import {
   PWC_TEMPLATE,
   VIP,
 } from "../config/defines.js";
-import { ALUMNI as ALUMNI_STATUS, USER_STATUSES } from "../config/enums.js";
+import { ALUMNI_MIGRATED, ALUMNI as ALUMNI_STATUS, USER_STATUSES } from "../config/enums.js";
 import User from "../../models/User.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { sendMarketingEmail } from "../../services/side-services/email-transporter.js";
@@ -524,6 +524,177 @@ export async function setJoinDateForAllAlumniUsers(defaultDate = new Date()) {
   } finally {
     // Don't close the client here as it might be reused
     console.log("joinDate update process completed");
+  }
+}
+
+/**
+ * Migrates a specific user by ID from regular users to alumni users
+ * @param {string} userId - The ID of the user to migrate
+ * @param {Object} options - Optional configuration for the migration
+ * @param {number} options.tier - The tier to assign to the alumni user (default: 0)
+ * @param {Object} options.subscription - Subscription data to assign to the alumni user
+ * @param {string} options.subscription.id - Stripe subscription ID
+ * @param {string} options.subscription.customerId - Stripe customer ID
+ * @param {number} options.subscription.period - Subscription period in months
+ * @returns {Object|null} - Migration result object, or null if operation failed
+ */
+export async function migrateUserByIdToAlumni(userId, options = {}) {
+  try {
+    // Connect to the MongoDB server
+    await client.connect();
+    console.log("Connected successfully to server");
+
+    // Get the database and collections
+    const database = client.db();
+    const usersCollection = database.collection("users");
+    const alumniUsersCollection = database.collection("alumniusers");
+    
+    // Find the user by ID
+    const user = await usersCollection.findOne({ _id: userId });
+    
+    if (!user) {
+      console.log(`No user found with ID: ${userId}`);
+      return { success: false, message: "User not found" };
+    }
+    
+    console.log(`Found user: ${user.name} ${user.surname} (${user.email})`);
+    
+    // Extract the ObjectId part if the user has a prefixed ID
+    let objectIdPart;
+    if (typeof user._id === 'string' && user._id.includes('member_')) {
+      const idMatch = user._id.match(/member_(.*)/);
+      if (idMatch && idMatch[1]) {
+        objectIdPart = idMatch[1];
+      } else {
+        console.log(`ID ${user._id} doesn't match the expected format.`);
+        return { success: false, message: "Invalid user ID format" };
+      }
+    } else {
+      // If the user has a regular ObjectId, convert it to string
+      objectIdPart = user._id.toString();
+    }
+    
+    // Create the alumni ID with the same ObjectId part
+    const alumniId = `alumni_${objectIdPart}`;
+    
+    // Check if an alumni user already exists with this ID or email
+    let existingAlumni;
+    try {
+      existingAlumni = await alumniUsersCollection.findOne({ 
+        $or: [
+          { _id: alumniId },
+          { email: user.email }
+        ]
+      });
+    } catch (err) {
+      console.error(`Error checking existing alumni for user ${user.email}:`, err);
+      return { success: false, message: "Error checking existing alumni" };
+    }
+    
+    let result = {};
+    
+    if (existingAlumni) {
+      // Update existing alumni user with data from regular user
+      const updatedAlumni = { ...existingAlumni };
+      updatedAlumni.name = user.name;
+      updatedAlumni.surname = user.surname;
+      updatedAlumni.email = user.email;
+      updatedAlumni.image = user.image || "";
+      updatedAlumni.password = user.password;
+      updatedAlumni.status = user.status || "active";
+      updatedAlumni.tier = options.tier || 0;
+      updatedAlumni.purchaseDate = user.purchaseDate || new Date();
+      updatedAlumni.expireDate = user.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1));
+      updatedAlumni.joinDate = existingAlumni.joinDate || new Date();
+      
+      // Update subscription if provided
+      if (options.subscription) {
+        updatedAlumni.subscription = {
+          id: options.subscription.id || "",
+          customerId: options.subscription.customerId || "",
+          period: options.subscription.period || 12
+        };
+      } else if (user.subscription) {
+        updatedAlumni.subscription = user.subscription;
+      }
+      
+      // Make sure the alumni role is set
+      if (!updatedAlumni.roles || !updatedAlumni.roles.includes(ALUMNI)) {
+        updatedAlumni.roles = [...(updatedAlumni.roles || []), ALUMNI];
+      }
+      
+      // First delete the original alumni document
+      await alumniUsersCollection.deleteOne({ _id: existingAlumni._id });
+      
+      // Then insert the updated document
+      await alumniUsersCollection.insertOne(updatedAlumni);
+      
+      result = {
+        success: true,
+        action: "updated",
+        alumniId: existingAlumni._id,
+        userId: user._id,
+        email: user.email,
+        message: "Updated existing alumni user"
+      };
+    } else {
+      // Create new alumni user with data from regular user
+      const newAlumniUser = {
+        _id: alumniId,
+        name: user.name,
+        surname: user.surname,
+        email: user.email,
+        password: user.password,
+        image: user.image || "",
+        status: user.status || "active",
+        tier: options.tier || 0,
+        roles: [ALUMNI],
+        purchaseDate: user.purchaseDate || new Date(),
+        expireDate: user.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+        joinDate: new Date(),
+        tickets: user.tickets || [],
+        christmas: user.christmas || []
+      };
+      
+      // Add subscription if provided
+      if (options.subscription) {
+        newAlumniUser.subscription = {
+          id: options.subscription.id || "",
+          customerId: options.subscription.customerId || "",
+          period: options.subscription.period || 12
+        };
+      } else if (user.subscription) {
+        newAlumniUser.subscription = user.subscription;
+      }
+      
+      // Insert the new alumni user document
+      await alumniUsersCollection.insertOne(newAlumniUser);
+      
+      result = {
+        success: true,
+        action: "created",
+        alumniId: alumniId,
+        userId: user._id,
+        email: user.email,
+        message: "Created new alumni user"
+      };
+    }
+    
+    // Update the regular user's status to alumni_migrated
+    await usersCollection.updateOne(
+      { _id: user._id },
+      { $set: { status: USER_STATUSES[ALUMNI_MIGRATED] } }
+    );
+    
+    console.log(`Successfully migrated user ${user.email} to alumni`);
+    return result;
+    
+  } catch (error) {
+    console.error("Error migrating user to alumni:", error);
+    return { success: false, message: error.message };
+  } finally {
+    // Don't close the client here as it might be reused
+    console.log("User migration process completed");
   }
 }
 
