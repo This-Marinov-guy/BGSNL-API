@@ -307,6 +307,7 @@ export const login = async (req, res, next) => {
   const existingUserData = {
     token,
     isSubscribed,
+    isAlumni: existingUser?.tier !== undefined,
     region: existingUser.region,
     roles: existingUser.roles,
     status: existingUser.status,

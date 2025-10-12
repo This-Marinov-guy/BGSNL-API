@@ -89,25 +89,15 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
     return next(error);
   }
 
-  let isAlumni = false;
-  let alumniUser;
-
-  try {
-    alumniUser = await AlumniUser.findOne({ _id: userId });
-  } catch (err) {
-    alumniUser = null;
-  }
-
-  if (alumniUser) {
-    isAlumni = true;
-  }
-
+  
   if (!user) {
     const error = new HttpError("Could not fetch user", 500);
     return next(error);
   }
-
+  
   user = user.toObject({ getters: true });
+  
+  const isAlumni = user?.tier !== undefined;
   
   const isSubscribed = !!(
     user.subscription &&
