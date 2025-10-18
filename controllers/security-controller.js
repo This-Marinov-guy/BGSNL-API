@@ -304,10 +304,19 @@ export const login = async (req, res, next) => {
     existingUser.subscription.id &&
     existingUser.subscription.customerId
   );
+
+  const isAlumni = existingUser?.tier !== undefined;
+  const alumniData = isAlumni
+    ? {
+        tier: existingUser.tier,
+      }
+    : {};
+
   const existingUserData = {
     token,
     isSubscribed,
     isAlumni: existingUser?.tier !== undefined,
+    ...alumniData,
     region: existingUser.region,
     roles: existingUser.roles,
     status: existingUser.status,

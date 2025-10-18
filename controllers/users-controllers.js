@@ -8,11 +8,18 @@ import { usersToSpreadsheet } from "../services/side-services/google-spreadsheet
 import { isBirthdayToday, jwtRefresh } from "../util/functions/helpers.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
 import { getTokenFromHeader } from "../util/functions/security.js";
-import { ACTIVE, ALUMNI_MIGRATED, USER_STATUSES } from "../util/config/enums.js";
+import {
+  ACTIVE,
+  ALUMNI_MIGRATED,
+  USER_STATUSES,
+} from "../util/config/enums.js";
 import { generateAnonymizedUserStatsXls } from "../services/main-services/user-stats-service.js";
 import fs from "fs/promises";
 import path from "path";
-import { findUserById, findUserByEmail } from "../services/main-services/user-service.js";
+import {
+  findUserById,
+  findUserByEmail,
+} from "../services/main-services/user-service.js";
 import AlumniUser from "../models/AlumniUser.js";
 import User from "../models/User.js";
 import mongoose from "mongoose";
@@ -59,16 +66,14 @@ export const getCurrentUser = async (req, res, next) => {
   !withChristmas && delete user.christmas;
 
   if (user.status !== USER_STATUSES[ACTIVE]) {
-    return res
-      .status(200)
-      .json({
+    return res.status(200).json({
+      status: user.status,
+      user: {
+        id: user._id,
         status: user.status,
-        user: {
-          id: user._id,
-          status: user.status,
-          subscription: user.subscription,
-        },
-      });
+        subscription: user.subscription,
+      },
+    });
   }
 
   if (isBirthdayToday(user.birth)) {
@@ -89,16 +94,20 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
     return next(error);
   }
 
-  
   if (!user) {
     const error = new HttpError("Could not fetch user", 500);
     return next(error);
   }
-  
+
   user = user.toObject({ getters: true });
-  
+
   const isAlumni = user?.tier !== undefined;
-  
+  const alumniData = isAlumni
+    ? {
+        tier: user.tier,
+      }
+    : {};
+
   const isSubscribed = !!(
     user.subscription &&
     user.subscription.id &&
@@ -108,6 +117,7 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
   return res.status(200).json({
     isSubscribed,
     isAlumni,
+    ...alumniData,
     status: user.status,
   });
 };
@@ -314,18 +324,16 @@ export const exportVitalStatsXls = async (req, res, next) => {
 export const convertUserToAlumni = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return next(
-      new HttpError("Invalid inputs passed", 422)
-    );
+    return next(new HttpError("Invalid inputs passed", 422));
   }
 
   const { userId } = extractUserFromRequest(req);
-  
+
   // Find the regular user
   let regularUser;
   try {
     regularUser = await User.findOne({ _id: userId });
-    
+
     if (!regularUser) {
       return next(new HttpError("User not found with provided email", 404));
     }
@@ -333,10 +341,13 @@ export const convertUserToAlumni = async (req, res, next) => {
     console.error(err);
     return next(new HttpError("Error finding user", 500));
   }
-  
+
   // Extract the ObjectId part if the user already has a prefixed ID
   let objectIdPart;
-  if (typeof regularUser._id === 'string' && regularUser._id.includes('member_')) {
+  if (
+    typeof regularUser._id === "string" &&
+    regularUser._id.includes("member_")
+  ) {
     const idMatch = regularUser._id.match(/member_(.*)/);
     if (idMatch && idMatch[1]) {
       objectIdPart = idMatch[1];
@@ -347,26 +358,23 @@ export const convertUserToAlumni = async (req, res, next) => {
     // If the user has a regular ObjectId, convert it to string
     objectIdPart = regularUser._id.toString();
   }
-  
+
   // Create the alumni ID with the same ObjectId part
   const alumniId = `alumni_${objectIdPart}`;
-  
+
   // Check if an alumni user already exists with this ID or email
   let existingAlumni;
   try {
-    existingAlumni = await AlumniUser.findOne({ 
-      $or: [
-        { _id: alumniId },
-        { email: regularUser.email }
-      ]
+    existingAlumni = await AlumniUser.findOne({
+      $or: [{ _id: alumniId }, { email: regularUser.email }],
     });
   } catch (err) {
     console.error(err);
     return next(new HttpError("Error checking for existing alumni user", 500));
   }
-  
+
   let result;
-  
+
   try {
     if (existingAlumni) {
       // Update existing alumni user with data from regular user
@@ -377,19 +385,21 @@ export const convertUserToAlumni = async (req, res, next) => {
       existingAlumni.password = regularUser.password;
       existingAlumni.status = regularUser.status || "active";
       existingAlumni.purchaseDate = regularUser.purchaseDate || new Date();
-      existingAlumni.expireDate = regularUser.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1));
-      
+      existingAlumni.expireDate =
+        regularUser.expireDate ||
+        new Date(new Date().setFullYear(new Date().getFullYear() + 1));
+
       // Make sure the alumni role is set
       if (!existingAlumni.roles.includes(ALUMNI)) {
         existingAlumni.roles.push(ALUMNI);
       }
-      
+
       await existingAlumni.save();
       result = {
         action: "updated",
         alumniId: existingAlumni._id,
         userId: regularUser._id,
-        email: regularUser.email
+        email: regularUser.email,
       };
     } else {
       // Create new alumni user with data from regular user
@@ -404,28 +414,29 @@ export const convertUserToAlumni = async (req, res, next) => {
         tier: 0, // Default tier
         roles: [ALUMNI],
         purchaseDate: regularUser.purchaseDate || new Date(),
-        expireDate: regularUser.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+        expireDate:
+          regularUser.expireDate ||
+          new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
         tickets: regularUser.tickets || [],
-        christmas: regularUser.christmas || []
+        christmas: regularUser.christmas || [],
       });
-      
+
       await newAlumniUser.save();
       result = {
         action: "created",
         alumniId: newAlumniUser._id,
         userId: regularUser._id,
-        email: regularUser.email
+        email: regularUser.email,
       };
     }
 
     regularUser.status = USER_STATUSES[ALUMNI_MIGRATED];
     await regularUser.save();
-    
-    return res.status(200).json({ 
-      message: `User successfully ${result.action} as alumni`, 
-      result 
+
+    return res.status(200).json({
+      message: `User successfully ${result.action} as alumni`,
+      result,
     });
-    
   } catch (err) {
     console.error(err);
     return next(new HttpError("Error converting user to alumni", 500));
@@ -441,13 +452,13 @@ export const getActiveAlumniMembers = async (req, res, next) => {
   try {
     // Find all alumni users with 'active' status
     const alumniMembers = await AlumniUser.find()
-    .select('name surname image tier quote joinDate')
-    .sort({ name: 1, surname: 1 }); // Sort by name and surname alphabetically
-    
+      .select("name surname image tier quote joinDate")
+      .sort({ name: 1, surname: 1 }); // Sort by name and surname alphabetically
+
     // Format the response to include only the required fields
-    const formattedMembers = alumniMembers.map(member => {
+    const formattedMembers = alumniMembers.map((member) => {
       const memberObj = member.toObject({ getters: true });
-      
+
       // Create a clean object with only the fields we need
       return {
         id: memberObj.id || memberObj._id,
@@ -457,15 +468,14 @@ export const getActiveAlumniMembers = async (req, res, next) => {
         tier: memberObj.tier,
         joinDate: memberObj.joinDate,
         // Include quote only if it exists
-        ...(memberObj.quote && { quote: memberObj.quote })
+        ...(memberObj.quote && { quote: memberObj.quote }),
       };
     });
-    
-    return res.status(200).json({ 
+
+    return res.status(200).json({
       count: formattedMembers.length,
-      alumniMembers: formattedMembers 
+      alumniMembers: formattedMembers,
     });
-    
   } catch (err) {
     console.error(err);
     return next(new HttpError("Error fetching alumni members", 500));
@@ -481,9 +491,7 @@ export const getActiveAlumniMembers = async (req, res, next) => {
 export const updateAlumniQuote = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return next(
-      new HttpError("Invalid inputs passed", 422)
-    );
+    return next(new HttpError("Invalid inputs passed", 422));
   }
 
   const { userId } = extractUserFromRequest(req);
@@ -493,7 +501,7 @@ export const updateAlumniQuote = async (req, res, next) => {
   let alumniUser;
   try {
     alumniUser = await AlumniUser.findOne({ _id: userId });
-    
+
     if (!alumniUser) {
       return next(new HttpError("Alumni user not found", 404));
     }
@@ -506,12 +514,11 @@ export const updateAlumniQuote = async (req, res, next) => {
   try {
     alumniUser.quote = quote;
     await alumniUser.save();
-    
+
     return res.status(200).json({
       status: true,
-      quote: alumniUser.quote
+      quote: alumniUser.quote,
     });
-    
   } catch (err) {
     console.error(err);
     return next(new HttpError("Error updating quote", 500));
