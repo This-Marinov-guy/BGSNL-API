@@ -62,22 +62,23 @@ export const postWebhookCheckout = async (req, res, next) => {
   };
 
   const { customerId, subscriptionId } = extractIds(event);
-  const metadata = event.data.object.metadata ?? "";
+  const metadata = event.data.object.metadata ?? {};
 
   // Debug logging for webhook events
   console.log(`Webhook Event: ${eventType}`);
   console.log(`Customer ID: ${customerId}`);
   console.log(`Subscription ID: ${subscriptionId}`);
-  console.log(`Metadata:`, metadata);
+  console.log(`Metadata:`, JSON.stringify(metadata));
 
   // Base debug info to include in all responses
   const baseDebugInfo = {
-    eventType,
-    customerId,
-    subscriptionId,
-    metadata,
+    eventType: eventType || 'unknown',
+    customerId: customerId || 'none',
+    subscriptionId: subscriptionId || 'none',
+    metadata: Object.keys(metadata).length > 0 ? metadata : 'empty',
     timestamp: new Date().toISOString(),
-    region: userRegion
+    region: userRegion,
+    eventId: event.id || 'unknown'
   };
 
   try {

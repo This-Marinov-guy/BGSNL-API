@@ -578,7 +578,7 @@ export const handleInvoicePaid = async (subscriptionId, customerId, event) => {
   }
 
   const priceId = event.data.object.lines.data[0].price.id || "";
-  const period = SUBSCRIPTION_PERIOD_BY_ID[priceId] ?? 12;
+  const period = user.subscription.period ?? 12;
 
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
