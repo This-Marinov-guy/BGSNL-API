@@ -430,6 +430,7 @@ export const handleAlumniMigration = async (metadata, subscriptionId, customerId
   try {
     if (existingAlumni) {
       // Update existing alumni user
+      existingAlumni.status = USER_STATUSES[ACTIVE];
       existingAlumni.name = regularUser.name;
       existingAlumni.surname = regularUser.surname;
       existingAlumni.email = regularUser.email;
