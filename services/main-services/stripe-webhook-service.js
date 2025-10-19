@@ -349,13 +349,20 @@ export const handleAlumniMigration = async (metadata, subscriptionId, customerId
   // Find the regular user
   let regularUser;
   try {
-    regularUser = await User.findOne({_id: userId});
+    regularUser = await findUserById(userId);
     
     if (!regularUser) {
       console.error(`No user found with ID: ${userId}`);
       return { 
         success: false,
         message: "User not found for migration" 
+      };
+    }
+
+    if (regularUser?.subscription?.id !== undefined) {
+      return { 
+        success: false,
+        message: "User already has a subscription" 
       };
     }
   } catch (err) {

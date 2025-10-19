@@ -94,6 +94,12 @@ export const ALUMNI_TIER_BY_PRICE_ID = {
   price_1SGEBBAShinXgMFZuC6fiOqf: 2, // 5 euro.month - tier 2
   price_1SGEFLAShinXgMFZcWsbLjeE: 3, // 7 euro.month - tier 3
   price_1SGEFoAShinXgMFZZzo95PeT: 4, // 10 euro.month - tier 4
+
+  // old price ids
+  price_1Rx1XKAShinXgMFZqWsg4V0D: 1, // 3 euro.month - tier 1
+  price_1Rx1XYAShinXgMFZSTH9nEvo: 2, // 5 euro.month - tier 2
+  price_1Rx1Y7AShinXgMFZzqTEzqHz: 3, // 7 euro.month - tier 3
+  price_1Rx1YOAShinXgMFZITzXRuam: 4, // 10 euro.month - tier 4
 };
 
 export const HOME_URL = "https://bulgariansociety.nl";
