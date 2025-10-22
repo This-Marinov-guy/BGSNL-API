@@ -679,6 +679,7 @@ export const handleInvoicePaymentFailed = async (subscriptionId, customerId) => 
 /**
  * Handle customer subscription updated event
  */
+//TODO: fix this functionality to handle memberships (fix their period) and alumni (fix their tier)
 export const handleSubscriptionUpdated = async (subscriptionId, customerId, event) => {
   console.log(`handleSubscriptionUpdated - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`);
   
