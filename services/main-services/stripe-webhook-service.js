@@ -33,15 +33,35 @@ import {
   SUBSCRIPTION_PERIOD_BY_ID,
   USER_URL,
   ALUMNI_TIER_BY_PRICE_ID,
+  ALUMNI_PRICE_TIER_1,
+  ALUMNI_PRICE_TIER_1_OLD,
+  ALUMNI_PRICE_TIER_2,
+  ALUMNI_PRICE_TIER_2_OLD,
+  ALUMNI_PRICE_TIER_3,
+  ALUMNI_PRICE_TIER_3_OLD,
+  ALUMNI_PRICE_TIER_4,
+  ALUMNI_PRICE_TIER_4_OLD,
+  SUBSCRIPTION_PRICE_YEAR_1,
+  SUBSCRIPTION_PRICE_MONTHS_6,
+  SUBSCRIPTIONS,
 } from "../../util/config/defines.js";
 import moment from "moment";
-import { ACTIVE, ALUMNI_MIGRATED, LOCKED, USER_STATUSES } from "../../util/config/enums.js";
+import {
+  ACTIVE,
+  ALUMNI_MIGRATED,
+  LOCKED,
+  USER_STATUSES,
+} from "../../util/config/enums.js";
 import { createStripeClient } from "../../util/config/stripe.js";
 
 /**
  * Handle alumni signup checkout session
  */
-export const handleAlumniSignup = async (metadata, subscriptionId, customerId) => {
+export const handleAlumniSignup = async (
+  metadata,
+  subscriptionId,
+  customerId
+) => {
   const { tier, period, name, surname, email } = metadata;
 
   const password = decryptData(metadata.password);
@@ -96,7 +116,11 @@ export const handleAlumniSignup = async (metadata, subscriptionId, customerId) =
 /**
  * Handle regular user signup checkout session
  */
-export const handleUserSignup = async (metadata, subscriptionId, customerId) => {
+export const handleUserSignup = async (
+  metadata,
+  subscriptionId,
+  customerId
+) => {
   const {
     longTerm,
     name,
@@ -174,7 +198,11 @@ export const handleUserSignup = async (metadata, subscriptionId, customerId) => 
 /**
  * Handle account unlock checkout session
  */
-export const handleAccountUnlock = async (metadata, subscriptionId, customerId) => {
+export const handleAccountUnlock = async (
+  metadata,
+  subscriptionId,
+  customerId
+) => {
   const userId = metadata.userId;
   const period = metadata.period;
 
@@ -290,7 +318,7 @@ export const handleMemberTicketPurchase = async (metadata) => {
 
   let targetUser;
   try {
-    targetUser = await findUserByQuery({_id: userId});
+    targetUser = await findUserByQuery({ _id: userId });
   } catch (err) {
     throw new HttpError(err.message, 500);
   }
@@ -343,90 +371,100 @@ export const handleMemberTicketPurchase = async (metadata) => {
 /**
  * Handle alumni migration checkout session
  */
-export const handleAlumniMigration = async (metadata, subscriptionId, customerId) => {
+export const handleAlumniMigration = async (
+  metadata,
+  subscriptionId,
+  customerId
+) => {
   const { userId, tier, period } = metadata;
-  
+
   // Find the regular user
   let regularUser;
   try {
     regularUser = await findUserById(userId);
-    
+
     if (!regularUser) {
       console.error(`No user found with ID: ${userId}`);
-      return { 
+      return {
         success: false,
-        message: "User not found for migration" 
+        message: "User not found for migration",
       };
     }
 
     if (regularUser?.subscription?.id !== undefined) {
-      return { 
+      return {
         success: false,
-        message: "User already has a subscription" 
+        message: "User already has a subscription",
       };
     }
   } catch (err) {
     console.error(`Error finding user: ${err.message}`);
-    return { 
-      success: false, 
-      message: "Error finding user for migration" 
+    return {
+      success: false,
+      message: "Error finding user for migration",
     };
   }
-  
+
   // Extract the ObjectId part if the user already has a prefixed ID
   let objectIdPart;
-  if (typeof regularUser._id === 'string' && regularUser._id.includes('member_')) {
+  if (
+    typeof regularUser._id === "string" &&
+    regularUser._id.includes("member_")
+  ) {
     const idMatch = regularUser._id.match(/member_(.*)/);
     if (idMatch && idMatch[1]) {
       objectIdPart = idMatch[1];
     } else {
       console.error(`ID format invalid: ${regularUser._id}`);
-      return { 
-        success: false, 
-        message: "Invalid user ID format for migration" 
+      return {
+        success: false,
+        message: "Invalid user ID format for migration",
       };
     }
   } else {
     // If the user has a regular ObjectId, convert it to string
     objectIdPart = regularUser._id.toString();
   }
-  
+
   // Create the alumni ID with the same ObjectId part
   const alumniId = `alumni_${objectIdPart}`;
-  
+
   // Check if we need to cancel an existing subscription
   let oldSubscriptionId = null;
   if (regularUser.subscription && regularUser.subscription.id) {
     oldSubscriptionId = regularUser.subscription.id;
-    
+
     // Cancel old subscription
     try {
-      const stripeClient = createStripeClient(regularUser.region || DEFAULT_REGION);
+      const stripeClient = createStripeClient(
+        regularUser.region || DEFAULT_REGION
+      );
       await stripeClient.subscriptions.cancel(oldSubscriptionId);
-      console.log(`Cancelled subscription ${oldSubscriptionId} for user ${userId}`);
+      console.log(
+        `Cancelled subscription ${oldSubscriptionId} for user ${userId}`
+      );
     } catch (err) {
       console.error(`Error cancelling subscription: ${err.message}`);
       // Continue with the migration even if cancellation fails
     }
   }
-  
-  const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period || 12);
-  
+
+  const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(
+    period || 12
+  );
+
   // Check if an alumni user already exists
   let existingAlumni;
   try {
-    existingAlumni = await AlumniUser.findOne({ 
-      $or: [
-        { _id: alumniId },
-        { email: regularUser.email }
-      ]
+    existingAlumni = await AlumniUser.findOne({
+      $or: [{ _id: alumniId }, { email: regularUser.email }],
     });
   } catch (err) {
     console.error(`Error checking existing alumni: ${err.message}`);
   }
-  
+
   let alumniUser;
-  
+
   try {
     if (existingAlumni) {
       // Update existing alumni user
@@ -445,12 +483,12 @@ export const handleAlumniMigration = async (metadata, subscriptionId, customerId
       existingAlumni.purchaseDate = purchaseDate;
       existingAlumni.expireDate = expireDate;
       existingAlumni.joinDate = existingAlumni.joinDate || new Date();
-      
+
       // Make sure the alumni role is set
       if (!existingAlumni.roles.includes(ALUMNI)) {
         existingAlumni.roles.push(ALUMNI);
       }
-      
+
       await existingAlumni.save();
       alumniUser = existingAlumni;
       console.log(`Updated alumni user ${alumniId} for migration`);
@@ -475,42 +513,41 @@ export const handleAlumniMigration = async (metadata, subscriptionId, customerId
         purchaseDate,
         expireDate,
         tickets: regularUser.tickets || [],
-        christmas: regularUser.christmas || []
+        christmas: regularUser.christmas || [],
       });
-      
+
       await newAlumniUser.save();
       alumniUser = newAlumniUser;
       console.log(`Created new alumni user ${alumniId} for migration`);
     }
-    
+
     // Update regular user status to alumni
     regularUser.status = USER_STATUSES[ALUMNI_MIGRATED];
     await regularUser.save();
-    
+
     // Update spreadsheets
     await alumniToSpreadsheet();
     await usersToSpreadsheet(regularUser.region);
     await usersToSpreadsheet();
-    
+
     // Send welcome email
     await alumniWelcomeEmail(regularUser.email, regularUser.name);
-    
-    return { 
+
+    return {
       success: true,
       message: "User successfully migrated to alumni",
       details: {
         userId: regularUser._id,
         alumniId: alumniUser._id,
         oldSubscription: oldSubscriptionId,
-        newSubscription: subscriptionId
-      }
+        newSubscription: subscriptionId,
+      },
     };
-    
   } catch (err) {
     console.error(`Error during migration: ${err.message}`);
-    return { 
-      success: false, 
-      error: `Migration failed: ${err.message}` 
+    return {
+      success: false,
+      error: `Migration failed: ${err.message}`,
     };
   }
 };
@@ -519,69 +556,76 @@ export const handleAlumniMigration = async (metadata, subscriptionId, customerId
  * Handle invoice paid event
  */
 export const handleInvoicePaid = async (subscriptionId, customerId, event) => {
-  console.log(`handleInvoicePaid - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`);
-  
+  console.log(
+    `handleInvoicePaid - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
+  );
+
   if (!subscriptionId || !customerId) {
     console.log("Missing subscriptionId or customerId in invoice.paid event");
-    return { 
-      success: false, 
+    return {
+      success: false,
       message: "No user to update",
       debug: {
         subscriptionId,
         customerId,
         eventType: "invoice.paid",
-        priceId: event?.data?.object?.lines?.data?.[0]?.price?.id || "not found"
-      }
+        priceId:
+          event?.data?.object?.lines?.data?.[0]?.price?.id || "not found",
+      },
     };
   }
 
   let user;
   try {
     user = await findUserByQuery({ "subscription.id": subscriptionId });
-    console.log(`Found user by subscription.id: ${user ? user.email : 'none'}`);
+    console.log(`Found user by subscription.id: ${user ? user.email : "none"}`);
   } catch (err) {
     console.error(`Error finding user by subscription.id: ${err.message}`);
-    return { 
-      success: false, 
+    return {
+      success: false,
       message: "Error finding user by subscription ID",
       debug: {
         subscriptionId,
         customerId,
         error: err.message,
-        searchMethod: "subscription.id"
-      }
+        searchMethod: "subscription.id",
+      },
     };
   }
 
   if (!user) {
     try {
       user = await findUserByQuery({ "subscription.customerId": customerId });
-      console.log(`Found user by subscription.customerId: ${user ? user.email : 'none'}`);
+      console.log(
+        `Found user by subscription.customerId: ${user ? user.email : "none"}`
+      );
     } catch (err) {
-      console.error(`Error finding user by subscription.customerId: ${err.message}`);
-      return { 
-        success: false, 
+      console.error(
+        `Error finding user by subscription.customerId: ${err.message}`
+      );
+      return {
+        success: false,
         message: "Error finding user by customer ID",
         debug: {
           subscriptionId,
           customerId,
           error: err.message,
-          searchMethod: "subscription.customerId"
-        }
+          searchMethod: "subscription.customerId",
+        },
       };
     }
   }
 
   if (!user) {
     console.log("No user found with either subscription ID or customer ID");
-    return { 
-      success: false, 
+    return {
+      success: false,
       message: "No user found with provided subscription or customer ID",
       debug: {
         subscriptionId,
         customerId,
-        searchAttempts: ["subscription.id", "subscription.customerId"]
-      }
+        searchAttempts: ["subscription.id", "subscription.customerId"],
+      },
     };
   }
 
@@ -604,7 +648,7 @@ export const handleInvoicePaid = async (subscriptionId, customerId, event) => {
   await usersToSpreadsheet();
 
   console.log(`Successfully processed invoice.paid for user: ${user.email}`);
-  return { 
+  return {
     success: true,
     debug: {
       userId: user._id,
@@ -613,19 +657,26 @@ export const handleInvoicePaid = async (subscriptionId, customerId, event) => {
       priceId,
       period,
       purchaseDate,
-      expireDate
-    }
+      expireDate,
+    },
   };
 };
 
 /**
  * Handle invoice payment failed event
  */
-export const handleInvoicePaymentFailed = async (subscriptionId, customerId) => {
-  console.log(`handleInvoicePaymentFailed - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`);
-  
+export const handleInvoicePaymentFailed = async (
+  subscriptionId,
+  customerId
+) => {
+  console.log(
+    `handleInvoicePaymentFailed - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
+  );
+
   if (!subscriptionId || !customerId) {
-    console.log("Missing subscriptionId or customerId in invoice.payment_failed event");
+    console.log(
+      "Missing subscriptionId or customerId in invoice.payment_failed event"
+    );
     return { success: false, message: "No user to update" };
   }
 
@@ -679,70 +730,163 @@ export const handleInvoicePaymentFailed = async (subscriptionId, customerId) => 
 /**
  * Handle customer subscription updated event
  */
-//TODO: fix this functionality to handle memberships (fix their period) and alumni (fix their tier)
-export const handleSubscriptionUpdated = async (subscriptionId, customerId, event) => {
-  console.log(`handleSubscriptionUpdated - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`);
-  
+export const handleSubscriptionUpdated = async (
+  subscriptionId,
+  customerId,
+  event
+) => {
+  console.log(
+    `handleSubscriptionUpdated - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
+  );
+
   if (!subscriptionId || !customerId) {
-    console.log("Missing subscriptionId or customerId in customer.subscription.updated event");
+    console.log(
+      "Missing subscriptionId or customerId in customer.subscription.updated event"
+    );
     return { success: false, message: "No subscription to update" };
   }
 
   // Get the new price ID from the subscription
   const newPriceId = event.data.object.items.data[0]?.price?.id;
-  
+
   if (!newPriceId) {
     return { success: false, message: "No price ID found in subscription" };
   }
 
-  // Check if this is an alumni subscription by looking for the price ID in our mapping
-  const newTier = ALUMNI_TIER_BY_PRICE_ID[newPriceId];
-  
-  if (!newTier) {
-    return { success: false, message: "Price ID not found in alumni mapping" };
-  }
+  switch (newPriceId) {
+    // alumni update
+    case ALUMNI_PRICE_TIER_1:
+    case ALUMNI_PRICE_TIER_1_OLD:
+    case ALUMNI_PRICE_TIER_2:
+    case ALUMNI_PRICE_TIER_2_OLD:
+    case ALUMNI_PRICE_TIER_3:
+    case ALUMNI_PRICE_TIER_3_OLD:
+    case ALUMNI_PRICE_TIER_4:
+    case ALUMNI_PRICE_TIER_4_OLD:
+      const newTier = ALUMNI_TIER_BY_PRICE_ID[newPriceId];
 
-  // Find the alumni user by subscription ID or customer ID
-  let alumniUser;
-  try {
-    alumniUser = await AlumniUser.findOne({ 
-      $or: [
-        { "subscription.id": subscriptionId },
-        { "subscription.customerId": customerId }
-      ]
-    });
-  } catch (err) {
-    console.error(`Error finding alumni user: ${err.message}`);
-    return { success: false, message: "Error finding alumni user" };
-  }
-
-  if (!alumniUser) {
-    return { success: false, message: "No alumni user found for this subscription" };
-  }
-
-  // Update the tier
-  const oldTier = alumniUser.tier;
-  alumniUser.tier = newTier;
-
-  try {
-    await alumniUser.save();
-    console.log(`Updated alumni user ${alumniUser._id} tier from ${oldTier} to ${newTier}`);
-    
-    // Update spreadsheets
-    await alumniToSpreadsheet();
-    
-    return { 
-      success: true, 
-      message: `Alumni tier updated from ${oldTier} to ${newTier}`,
-      details: {
-        alumniId: alumniUser._id,
-        oldTier,
-        newTier,
-        priceId: newPriceId
+      if (!newTier) {
+        return {
+          success: false,
+          message: "Price ID not found in alumni mapping",
+        };
       }
-    };
-  } catch (err) {
-    console.error(`Error updating alumni user tier: ${err.message}`);
-    return { success: false, message: "Error updating alumni user tier" };
+
+      // Find the alumni user by subscription ID or customer ID
+      let alumniUser;
+      try {
+        alumniUser = await AlumniUser.findOne({
+          $or: [
+            { "subscription.id": subscriptionId },
+            { "subscription.customerId": customerId },
+          ],
+        });
+      } catch (err) {
+        console.error(`Error finding alumni user: ${err.message}`);
+        return { success: false, message: "Error finding alumni user" };
+      }
+
+      if (!alumniUser) {
+        return {
+          success: false,
+          message: "No alumni user found for this subscription",
+        };
+      }
+
+      // Update the tier
+      const oldTier = alumniUser.tier;
+      alumniUser.tier = newTier;
+
+      try {
+        await alumniUser.save();
+        console.log(
+          `Updated alumni user ${alumniUser._id} tier from ${oldTier} to ${newTier}`
+        );
+
+        // Update spreadsheets
+        await alumniToSpreadsheet();
+
+        return {
+          success: true,
+          message: `Alumni tier updated from ${oldTier} to ${newTier}`,
+          details: {
+            alumniId: alumniUser._id,
+            oldTier,
+            newTier,
+            priceId: newPriceId,
+          },
+        };
+      } catch (err) {
+        console.error(`Error updating alumni user tier: ${err.message}`);
+        return { success: false, message: "Error updating alumni user tier" };
+      }
+
+    case SUBSCRIPTION_PRICE_MONTHS_6:
+    case SUBSCRIPTION_PRICE_YEAR_1:
+      const newSubscription = SUBSCRIPTIONS.find(
+        (subscription) => subscription.id === newPriceId
+      );
+
+      if (!newSubscription) {
+        return {
+          success: false,
+          message: "Price ID not found in subscription mapping",
+        };
+      }
+
+      // Find the member user by subscription ID or customer ID
+      let user;
+      try {
+        user = await User.findOne({
+          $or: [
+            { "subscription.id": subscriptionId },
+            { "subscription.customerId": customerId },
+          ],
+        });
+      } catch (err) {
+        console.error(`Error finding member user: ${err.message}`);
+        return { success: false, message: "Error finding member user" };
+      }
+
+      if (!user) {
+        return {
+          success: false,
+          message: "No member user found for this subscription",
+        };
+      }
+
+      // Update the period
+      const oldPeriod = user.subscription.period;
+      user.subscription.period = newSubscription.period;
+
+      try {
+        await user.save();
+        console.log(
+          `Updated member user ${user._id} tier from ${oldPeriod} to ${newSubscription.period}`
+        );
+
+        // Update spreadsheets
+        await usersToSpreadsheet();
+
+        return {
+          success: true,
+          message: `Member tier updated from ${oldPeriod} to ${newSubscription.period}`,
+          details: {
+            userId: user._id,
+            oldPeriod,
+            newPeriod: newSubscription.period,
+            priceId: newPriceId,
+          },
+        };
+      } catch (err) {
+        console.error(`Error updating member user tier: ${err.message}`);
+        return { success: false, message: "Error updating member user tier" };
+      }
+
+    default:
+      return {
+        success: false,
+        message: "Price ID not found in mapping for subscription update",
+      };
   }
 };
