@@ -562,7 +562,7 @@ export const editEvent = async (req, res, next) => {
   ticketImg && (event.ticketImg = ticketImg);
   bgImageExtra && (event.bgImageExtra = bgImageExtra);
 
-  (date && event.date !== date) && (event.correctedDate = date);
+  (date && new Date(event.date).getTime() !== new Date(date).getTime()) && (event.correctedDate = date);
 
   try {
     // if no product and prices are passed, we create a product. If we have product we update it
