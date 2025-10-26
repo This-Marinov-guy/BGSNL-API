@@ -84,7 +84,18 @@ export const postWebhookCheckout = async (req, res, next) => {
   try {
     switch (eventType) {
       case "checkout.session.completed":
-      case "checkout.session.async_payment_succeeded":
+      case "checkout.session.async_payment_succeeded": {
+
+        // Stop processing if the payment is unpaid
+        const paymentStatus = event.data.object?.payment_status ?? "";
+        if (paymentStatus === "unpaid") {
+          return res.status(200).json({
+            received: true,
+            message: "Ignoring unpaid checkout session",
+            debug: { ...baseDebugInfo, paymentStatus }
+          });
+        }
+
         switch (metadata.method) {
           case "alumni-signup": {
             await handleAlumniSignup(metadata, subscriptionId, customerId);
@@ -141,6 +152,7 @@ export const postWebhookCheckout = async (req, res, next) => {
               debug: baseDebugInfo
             });
         }
+      }
       case "invoice.paid": {
         const result = await handleInvoicePaid(subscriptionId, customerId, event);
         if (!result.success) {
