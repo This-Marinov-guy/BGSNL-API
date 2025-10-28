@@ -96,6 +96,8 @@ export const postWebhookCheckout = async (req, res, next) => {
           });
         }
 
+        const transactionId = event.data.object?.payment_intent || event.id || "-";
+
         switch (metadata.method) {
           case "alumni-signup": {
             await handleAlumniSignup(metadata, subscriptionId, customerId);
@@ -122,7 +124,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             });
           }
           case "buy_guest_ticket": {
-            await handleGuestTicketPurchase(metadata);
+            await handleGuestTicketPurchase(metadata, transactionId);
             return res.status(200).json({ 
               received: true,
               message: "Guest ticket purchase completed successfully",
@@ -130,7 +132,7 @@ export const postWebhookCheckout = async (req, res, next) => {
             });
           }
           case "buy_member_ticket": {
-            await handleMemberTicketPurchase(metadata);
+            await handleMemberTicketPurchase(metadata, transactionId);
             return res.status(200).json({ 
               received: true,
               message: "Member ticket purchase completed successfully",

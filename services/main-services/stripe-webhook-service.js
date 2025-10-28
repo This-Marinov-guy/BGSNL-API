@@ -240,7 +240,7 @@ export const handleAccountUnlock = async (
 /**
  * Handle guest ticket purchase checkout session
  */
-export const handleGuestTicketPurchase = async (metadata) => {
+export const handleGuestTicketPurchase = async (metadata, transactionId) => {
   let {
     quantity,
     eventId,
@@ -265,6 +265,7 @@ export const handleGuestTicketPurchase = async (metadata) => {
   let guest = {
     type: type ?? "guest",
     code,
+    transactionId,
     name: guestName,
     email: guestEmail,
     phone: guestPhone,
@@ -303,7 +304,7 @@ export const handleGuestTicketPurchase = async (metadata) => {
 /**
  * Handle member ticket purchase checkout session
  */
-export const handleMemberTicketPurchase = async (metadata) => {
+export const handleMemberTicketPurchase = async (metadata, transactionId) => {
   const { eventId, userId, code, preferences, type } = metadata;
   let societyEvent;
   try {
@@ -331,6 +332,7 @@ export const handleMemberTicketPurchase = async (metadata) => {
     societyEvent.guestList.push({
       type: type ?? "member",
       code,
+      transactionId,
       name: targetUser.name + " " + targetUser.surname,
       email: targetUser.email,
       phone: targetUser.phone,

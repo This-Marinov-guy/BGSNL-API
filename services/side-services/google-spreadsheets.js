@@ -182,6 +182,7 @@ const eventToSpreadsheet = async (id) => {
                 preferences: "$$guest.preferences",
                 addOns: "$$guest.addOns",
                 ticket: "$$guest.ticket",
+                transactionId: "$$guest.transactionId",
               },
             },
           },
@@ -246,6 +247,7 @@ const eventToSpreadsheet = async (id) => {
       "Preferences",
       "AddOns",
       "Ticket",
+      "Transaction Id",
     ];
     const guests = result[0].guests.map((obj) => [
       obj.status === 1 ? "present" : "missing",
@@ -500,6 +502,7 @@ const specialEventsToSpreadsheet = async (id) => {
                 extraData: "$$guest.extraData",
                 course: "$$guest.course",
                 ticket: "$$guest.ticket",
+                transactionId: "$$guest.transactionId",
               },
             },
           },
@@ -531,6 +534,7 @@ const specialEventsToSpreadsheet = async (id) => {
       "Extra Data",
       "Course",
       "Ticket",
+      "Transaction Id",
     ];
     const guests = result[0].guests.map((obj) => [
       obj.userId ?? "-",
