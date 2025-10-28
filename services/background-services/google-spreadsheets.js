@@ -101,7 +101,8 @@ const searchInDatabase = (eventName, region) => {
   }
 };
 
-const eventToSpreadsheet = async (id) => {
+const eventToSpreadsheet = (id) => {
+  setImmediate(async () => {
   try {
     const event = await Event.findById(id);
 
@@ -469,9 +470,11 @@ const eventToSpreadsheet = async (id) => {
   } catch (error) {
     console.error("Error in eventToSpreadsheet:", error);
   }
+  });
 };
 
-const specialEventsToSpreadsheet = async (id) => {
+const specialEventsToSpreadsheet = (id) => {
+  setImmediate(async () => {
   try {
     const nonSocietyEvent = await NonSocietyEvent.findById(id);
 
@@ -726,9 +729,11 @@ const specialEventsToSpreadsheet = async (id) => {
   } catch (err) {
     console.log(err);
   }
+  });
 };
 
-const usersToSpreadsheet = async (region = null) => {
+const usersToSpreadsheet = (region = null) => {
+  setImmediate(async () => {
   try {
     let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.users;
     const filterByRegion = IS_PROD && region && SPREADSHEETS_ID[region]?.users;
@@ -877,9 +882,11 @@ const usersToSpreadsheet = async (region = null) => {
   } catch (error) {
     console.error("Error in usersToSpreadsheet:", error);
   }
+  });
 };
 
-export const alumniToSpreadsheet = async () => {
+export const alumniToSpreadsheet = () => {
+  setImmediate(async () => {
   try {
     let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.alumni;
     const sheetName = "Alumnis";
@@ -1032,6 +1039,7 @@ export const alumniToSpreadsheet = async () => {
   } catch (error) {
     console.error("Error in alumniToSpreadsheet:", error);
   }
+  });
 };
 
 /**
@@ -1099,7 +1107,8 @@ export const readSpreadsheetRows = async (
 
 // change name to reflect the current data pool
 // NOTE from Vladi: I would like this to be a background job but I am not confident that the event fetch will be possible as it can be already deleted
-export const addEventToDataPool = async (eventId, sheetName = "2024-2025") => {
+export const addEventToDataPool = (eventId, sheetName = "2024-2025") => {
+  setImmediate(async () => {
   try {
     const event = await Event.findById(eventId);
     if (!event) {
@@ -1179,6 +1188,7 @@ export const addEventToDataPool = async (eventId, sheetName = "2024-2025") => {
   } catch (error) {
     console.error("Error adding tickets:", error);
   }
+  });
 };
 
 export const getPresenceStatsOfCity = async (spreadsheetId) => {

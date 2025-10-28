@@ -25,7 +25,7 @@ import {
   convertUsersWithoutSubscriptionToAlumni,
   setJoinDateForAllAlumniUsers
 } from './util/private/manipulate-db.js';
-import { alumniToSpreadsheet, eventToSpreadsheet, usersToSpreadsheet } from "./services/side-services/google-spreadsheets.js";
+import { alumniToSpreadsheet, eventToSpreadsheet, usersToSpreadsheet } from "./services/background-services/google-spreadsheets.js";
 
 const app = express();
 

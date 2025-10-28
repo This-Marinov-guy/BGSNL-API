@@ -9,7 +9,7 @@ import { sendTicketEmail } from "../../services/side-services/email-transporter.
 import {
   eventToSpreadsheet,
   specialEventsToSpreadsheet,
-} from "../../services/side-services/google-spreadsheets.js";
+} from "../../services/background-services/google-spreadsheets.js";
 import {
   decodeFromURL,
   isEventTimerFinished,

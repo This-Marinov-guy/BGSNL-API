@@ -3,7 +3,7 @@ import axios from "axios";
 import dotenv from "dotenv";
 import { PROTOCOL } from "../../util/config/access.js";
 import { DEFAULT_WP_TITLES } from "../../util/config/defines.js";
-import { readSpreadsheetRows } from "../../services/side-services/google-spreadsheets.js";
+import { readSpreadsheetRows } from "../../services/background-services/google-spreadsheets.js";
 import { ARTICLES_SHEET } from "../../util/config/SPREEDSHEATS.js";
 import {
   checkPostTranslation,

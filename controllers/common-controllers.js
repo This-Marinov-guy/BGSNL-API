@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 import User from "../models/User.js";
 import { usersCountCache } from "../util/config/caches.js";
-import { readSpreadsheetRows } from "../services/side-services/google-spreadsheets.js";
+import { readSpreadsheetRows } from "../services/background-services/google-spreadsheets.js";
 import { STATISTICS_ABOUT_US_SHEET } from "../util/config/SPREEDSHEATS.js";
 
 export const getTotalMemberCount = async (req, res, next) => {

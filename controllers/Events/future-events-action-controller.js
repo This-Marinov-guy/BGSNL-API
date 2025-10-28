@@ -29,7 +29,7 @@ import {
 import {
   addEventToDataPool,
   eventToSpreadsheet,
-} from "../../services/side-services/google-spreadsheets.js";
+} from "../../services/background-services/google-spreadsheets.js";
 import { getFingerprintLite } from "../../services/main-services/user-service.js";
 import {
   addOrUpdateEvent,

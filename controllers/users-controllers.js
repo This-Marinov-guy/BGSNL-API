@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import ActiveMembers from "../models/ActiveMembers.js";
-import { usersToSpreadsheet } from "../services/side-services/google-spreadsheets.js";
+import { usersToSpreadsheet } from "../services/background-services/google-spreadsheets.js";
 import { isBirthdayToday, jwtRefresh } from "../util/functions/helpers.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
 import { getTokenFromHeader } from "../util/functions/security.js";

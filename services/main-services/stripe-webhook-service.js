@@ -14,7 +14,7 @@ import {
   alumniToSpreadsheet,
   eventToSpreadsheet,
   usersToSpreadsheet,
-} from "../side-services/google-spreadsheets.js";
+} from "../background-services/google-spreadsheets.js";
 import { findUserByQuery, findUserById } from "./user-service.js";
 import {
   chooseRandomAvatar,

@@ -13,7 +13,7 @@ import { ACCOUNT_KEYS } from "../util/config/KEYS.js";
 import {
   alumniToSpreadsheet,
   usersToSpreadsheet,
-} from "../services/side-services/google-spreadsheets.js";
+} from "../services/background-services/google-spreadsheets.js";
 import {
   chooseRandomAvatar,
   compareIntStrings,

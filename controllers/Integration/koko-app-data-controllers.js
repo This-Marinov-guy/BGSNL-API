@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import Event from "../../models/Event.js";
 import User from "../../models/User.js";
-import { getPresenceStatsOfCity } from "../../services/side-services/google-spreadsheets.js";
+import { getPresenceStatsOfCity } from "../../services/background-services/google-spreadsheets.js";
 import { SPREADSHEETS_ID } from "../../util/config/SPREEDSHEATS.js";
 import { eventsCache } from "../../util/config/caches.js";
 dotenv.config();
