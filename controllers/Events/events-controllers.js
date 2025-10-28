@@ -5,7 +5,7 @@ import User from "../../models/User.js";
 import { validationResult } from "express-validator";
 import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
 import HttpError from "../../models/Http-error.js";
-import { sendTicketEmail } from "../../services/side-services/email-transporter.js";
+import { sendTicketEmail } from "../../services/background-services/email-transporter.js";
 import {
   eventToSpreadsheet,
   specialEventsToSpreadsheet,
@@ -293,7 +293,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
     req.file.location
   );
 
-  await eventToSpreadsheet(societyEvent.id);
+  eventToSpreadsheet(societyEvent.id);
 
   res.status(201).json({ status: true, message: "Success" });
 };
@@ -367,7 +367,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
     req.file.location
   );
 
-  await eventToSpreadsheet(societyEvent.id);
+  eventToSpreadsheet(societyEvent.id);
 
   return res.status(201).json({ status: true, message: "Success" });
 };
@@ -472,9 +472,9 @@ export const postNonSocietyEvent = async (req, res, next) => {
     );
   }
 
-  await sendTicketEmail("member", email, event, date, name, req.file.location);
+  sendTicketEmail("member", email, event, date, name, req.file.location);
 
-  await specialEventsToSpreadsheet(nonSocietyEvent.id);
+  specialEventsToSpreadsheet(nonSocietyEvent.id);
 
   return res.status(201).json({ status: true });
 };
@@ -573,7 +573,7 @@ export const updatePresence = async (req, res, next) => {
     );
   }
 
-  await eventToSpreadsheet(societyEvent.id);
+  eventToSpreadsheet(societyEvent.id);
 
   res.status(201).json({
     status: 1,

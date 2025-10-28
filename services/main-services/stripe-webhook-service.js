@@ -9,7 +9,7 @@ import {
   sendTicketEmail,
   welcomeEmail,
   alumniWelcomeEmail,
-} from "../side-services/email-transporter.js";
+} from "../background-services/email-transporter.js";
 import {
   alumniToSpreadsheet,
   eventToSpreadsheet,
@@ -107,8 +107,8 @@ export const handleAlumniSignup = async (
     throw new HttpError("Signing up failed", 500);
   }
 
-  await alumniToSpreadsheet();
-  await alumniWelcomeEmail(email, name);
+  alumniToSpreadsheet();
+  alumniWelcomeEmail(email, name);
 
   return { success: true };
 };
@@ -188,9 +188,9 @@ export const handleUserSignup = async (
     throw new HttpError(err.message, 500);
   }
 
-  await welcomeEmail(email, name, region);
-  await usersToSpreadsheet(region);
-  await usersToSpreadsheet();
+  welcomeEmail(email, name, region);
+  usersToSpreadsheet(region);
+  usersToSpreadsheet();
 
   return { success: true };
 };
@@ -231,8 +231,8 @@ export const handleAccountUnlock = async (
     throw new HttpError(err.message, 500);
   }
 
-  await usersToSpreadsheet(user.region);
-  await usersToSpreadsheet();
+  usersToSpreadsheet(user.region);
+  usersToSpreadsheet();
 
   return { success: true };
 };
@@ -287,7 +287,7 @@ export const handleGuestTicketPurchase = async (metadata, transactionId) => {
     }
   }
 
-  await sendTicketEmail(
+  sendTicketEmail(
     "guest",
     guestEmail,
     societyEvent.title,
@@ -296,7 +296,7 @@ export const handleGuestTicketPurchase = async (metadata, transactionId) => {
     metadata.file
   );
 
-  await eventToSpreadsheet(societyEvent.id);
+  eventToSpreadsheet(societyEvent.id);
 
   return { success: true };
 };
@@ -356,7 +356,7 @@ export const handleMemberTicketPurchase = async (metadata, transactionId) => {
     throw new HttpError(err.message, 500);
   }
 
-  await sendTicketEmail(
+  sendTicketEmail(
     "member",
     targetUser.email,
     societyEvent.title,
@@ -365,7 +365,7 @@ export const handleMemberTicketPurchase = async (metadata, transactionId) => {
     metadata.file
   );
 
-  await eventToSpreadsheet(societyEvent.id);
+  eventToSpreadsheet(societyEvent.id);
 
   return { success: true };
 };
@@ -528,12 +528,12 @@ export const handleAlumniMigration = async (
     await regularUser.save();
 
     // Update spreadsheets
-    await alumniToSpreadsheet();
-    await usersToSpreadsheet(regularUser.region);
-    await usersToSpreadsheet();
+    alumniToSpreadsheet();
+    usersToSpreadsheet(regularUser.region);
+    usersToSpreadsheet();
 
     // Send welcome email
-    await alumniWelcomeEmail(regularUser.email, regularUser.name);
+    alumniWelcomeEmail(regularUser.email, regularUser.name);
 
     return {
       success: true,
@@ -646,8 +646,8 @@ export const handleInvoicePaid = async (subscriptionId, customerId, event) => {
     throw new HttpError(err.message, 500);
   }
 
-  await usersToSpreadsheet(user.region);
-  await usersToSpreadsheet();
+  usersToSpreadsheet(user.region);
+  usersToSpreadsheet();
 
   console.log(`Successfully processed invoice.paid for user: ${user.email}`);
   return {
@@ -718,9 +718,9 @@ export const handleInvoicePaymentFailed = async (
     }
 
     try {
-      await usersToSpreadsheet(user.region);
-      await usersToSpreadsheet();
-      await paymentFailedEmail(user.email, USER_URL);
+      usersToSpreadsheet(user.region);
+      usersToSpreadsheet();
+      paymentFailedEmail(user.email, USER_URL);
     } catch (err) {
       console.log(err);
     }
@@ -806,7 +806,7 @@ export const handleSubscriptionUpdated = async (
         );
 
         // Update spreadsheets
-        await alumniToSpreadsheet();
+        alumniToSpreadsheet();
 
         return {
           success: true,
@@ -868,7 +868,7 @@ export const handleSubscriptionUpdated = async (
         );
 
         // Update spreadsheets
-        await usersToSpreadsheet();
+        usersToSpreadsheet();
 
         return {
           success: true,

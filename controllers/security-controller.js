@@ -8,7 +8,7 @@ import {
   alumniWelcomeEmail,
   sendNewPasswordEmail,
   welcomeEmail,
-} from "../services/side-services/email-transporter.js";
+} from "../services/background-services/email-transporter.js";
 import { ACCOUNT_KEYS } from "../util/config/KEYS.js";
 import {
   alumniToSpreadsheet,
@@ -148,8 +148,8 @@ export const signup = async (req, res, next) => {
     return next(error);
   }
 
-  await usersToSpreadsheet(region);
-  await usersToSpreadsheet();
+  usersToSpreadsheet(region);
+  usersToSpreadsheet();
 
   if (isBirthdayToday(birth)) {
     return res
@@ -157,7 +157,7 @@ export const signup = async (req, res, next) => {
       .json({ token, region, celebrate: true, roles: [MEMBER] });
   }
 
-  await welcomeEmail(email, name, region);
+  welcomeEmail(email, name, region);
 
   res.status(201).json({ token, region, roles: [MEMBER] });
 };
@@ -232,9 +232,9 @@ export const alumniSignup = async (req, res, next) => {
     return next(error);
   }
 
-  await alumniToSpreadsheet();
+  alumniToSpreadsheet();
 
-  await alumniWelcomeEmail(email, name);
+  alumniWelcomeEmail(email, name);
 
   res.status(201).json({ token, region: null, roles: [MEMBER] });
 };
@@ -359,7 +359,7 @@ export const postSendPasswordResetEmail = async (req, res, next) => {
 
     await temporaryCode.save();
 
-    await sendNewPasswordEmail(email, resetToken);
+    sendNewPasswordEmail(email, resetToken);
   } catch (err) {
     console.log(err);
     return next(new HttpError("Something went wrong, please try again", 500));

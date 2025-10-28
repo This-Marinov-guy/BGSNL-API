@@ -252,8 +252,8 @@ export const patchUserInfo = async (req, res, next) => {
     return next(new HttpError("Something went wrong, please try again", 500));
   }
 
-  await usersToSpreadsheet(user.region);
-  await usersToSpreadsheet();
+  usersToSpreadsheet(user.region);
+  usersToSpreadsheet();
 
   res.status(200).json({ status: true });
 };

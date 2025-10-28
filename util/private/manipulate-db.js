@@ -13,7 +13,7 @@ import {
 import { ALUMNI_MIGRATED, ALUMNI as ALUMNI_STATUS, USER_STATUSES } from "../config/enums.js";
 import User from "../../models/User.js";
 import AlumniUser from "../../models/AlumniUser.js";
-import { sendMarketingEmail } from "../../services/side-services/email-transporter.js";
+import { sendMarketingEmail } from "../../services/background-services/email-transporter.js";
 
 // Connection URI
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;
@@ -82,8 +82,8 @@ export async function getMarketingUsers() {
     console.log(clients);
 
     clients.forEach(
-      async (client) =>
-        await sendMarketingEmail(PWC_TEMPLATE, client.email, client.name)
+      (client) =>
+        sendMarketingEmail(PWC_TEMPLATE, client.email, client.name)
     );
 
     return clients;

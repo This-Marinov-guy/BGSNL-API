@@ -24,6 +24,69 @@ import NonSocietyEvent from "../../models/NonSocietyEvent.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { ALUMNI_MIGRATED } from "../../util/config/enums.js";
 
+// Lightweight background job queue with concurrency limit and de-duplication
+const MAX_CONCURRENCY = 1;
+const MAX_QUEUE_LENGTH = 100; // backpressure guard
+const JOB_TIMEOUT_MS = 120000; // 2 minutes safety timeout per job
+const jobQueue = [];
+const activeKeys = new Set();
+let activeCount = 0;
+
+function processQueue() {
+  if (activeCount >= MAX_CONCURRENCY) return;
+  const next = jobQueue.shift();
+  if (!next) return;
+  activeCount++;
+  (async () => {
+    try {
+      // enforce timeout so stuck jobs don't block the queue indefinitely
+      await Promise.race([
+        next.jobFn(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Job timeout: ${next.key}`)), JOB_TIMEOUT_MS)
+        ),
+      ]);
+    } catch (e) {
+      console.error("Background job error:", e);
+    } finally {
+      activeKeys.delete(next.key);
+      activeCount--;
+      setImmediate(processQueue);
+    }
+  })();
+}
+
+function enqueueJob(key, jobFn) {
+  if (activeKeys.has(key)) return; // de-duplicate
+  if (jobQueue.length >= MAX_QUEUE_LENGTH) {
+    // Drop oldest to keep memory bounded; alternatively drop newest
+    const dropped = jobQueue.shift();
+    console.warn(`Job queue full, dropping oldest job: ${dropped?.key}`);
+  }
+  activeKeys.add(key);
+  jobQueue.push({ key, jobFn });
+  processQueue();
+}
+
+// Singleton Sheets client to avoid re-creating auth and sockets per job
+let sheetsClientPromise = null;
+async function getSheetsClient() {
+  if (sheetsClientPromise) return sheetsClientPromise;
+  sheetsClientPromise = (async () => {
+    const credentials = JSON.parse(
+      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
+    );
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: "https://www.googleapis.com/auth/spreadsheets",
+    });
+    const googleClient = await auth.getClient();
+    const googleSheets = google.sheets({ version: "v4", auth: googleClient });
+    return { auth: googleClient, googleSheets };
+  })();
+  return sheetsClientPromise;
+}
+
 const searchInDatabase = (eventName, region) => {
   if (SPREADSHEETS_ID[region]) {
     const spreadsheetId = SPREADSHEETS_ID[region];
@@ -102,8 +165,9 @@ const searchInDatabase = (eventName, region) => {
 };
 
 const eventToSpreadsheet = (id) => {
-  setImmediate(async () => {
-  try {
+  enqueueJob(`eventToSpreadsheet:${id}`, async () => {
+    const { auth, googleSheets } = await getSheetsClient();
+    try {
     const event = await Event.findById(id);
 
     if (!event) {
@@ -151,17 +215,7 @@ const eventToSpreadsheet = (id) => {
       return;
     }
 
-    // Connecting to Google Sheets
-    const credentials = JSON.parse(
-      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
-    );
-    const auth = new google.auth.GoogleAuth({
-      credentials: credentials,
-      scopes: "https://www.googleapis.com/auth/spreadsheets",
-    });
-
-    const googleClient = await auth.getClient();
-    const googleSheets = google.sheets({ version: "v4", auth: googleClient });
+    // Sheets client comes from singleton
 
     // Fetch event data and guest list from the database
     const result = await Event.aggregate([
@@ -467,15 +521,16 @@ const eventToSpreadsheet = (id) => {
         );
       }
     }
-  } catch (error) {
-    console.error("Error in eventToSpreadsheet:", error);
-  }
+    } catch (error) {
+      console.error("Error in eventToSpreadsheet:", error);
+    }
   });
 };
 
 const specialEventsToSpreadsheet = (id) => {
-  setImmediate(async () => {
-  try {
+  enqueueJob(`specialEventsToSpreadsheet:${id}`, async () => {
+    const { auth, googleSheets } = await getSheetsClient();
+    try {
     const nonSocietyEvent = await NonSocietyEvent.findById(id);
 
     if (!nonSocietyEvent) {
@@ -491,17 +546,7 @@ const specialEventsToSpreadsheet = (id) => {
 
     const spreadsheetIds = [SPREADSHEETS_ID["netherlands"].events];
 
-    // Connecting to Google Sheets
-    const credentials = JSON.parse(
-      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
-    );
-    const auth = new google.auth.GoogleAuth({
-      credentials: credentials,
-      scopes: "https://www.googleapis.com/auth/spreadsheets",
-    });
-
-    const googleClient = await auth.getClient();
-    const googleSheets = google.sheets({ version: "v4", auth: googleClient });
+    // Sheets client comes from singleton
 
     // Fetch event data and guest list from the database
     const result = await NonSocietyEvent.aggregate([
@@ -726,15 +771,16 @@ const specialEventsToSpreadsheet = (id) => {
 
       console.log(`Event data updated in spreadsheet: ${spreadsheetId}`);
     }
-  } catch (err) {
-    console.log(err);
-  }
+    } catch (err) {
+      console.log(err);
+    }
   });
 };
 
 const usersToSpreadsheet = (region = null) => {
-  setImmediate(async () => {
-  try {
+  enqueueJob(`usersToSpreadsheet:${region ?? "all"}`, async () => {
+    const { auth, googleSheets } = await getSheetsClient();
+    try {
     let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.users;
     const filterByRegion = IS_PROD && region && SPREADSHEETS_ID[region]?.users;
 
@@ -744,17 +790,7 @@ const usersToSpreadsheet = (region = null) => {
 
     const sheetName = "Members";
 
-    // Connecting to Google Spreadsheet
-    const credentials = JSON.parse(
-      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
-    );
-    const auth = new google.auth.GoogleAuth({
-      credentials: credentials,
-      scopes: "https://www.googleapis.com/auth/spreadsheets",
-    });
-
-    const googleClient = await auth.getClient();
-    const googleSheets = google.sheets({ version: "v4", auth: googleClient });
+    // Sheets client comes from singleton
 
     // Fetch users from MongoDB using Mongoose
     const query = {
@@ -879,29 +915,20 @@ const usersToSpreadsheet = (region = null) => {
     });
 
     console.log(`Member Sheet updated for: ${region ?? "Netherlands"}`);
-  } catch (error) {
-    console.error("Error in usersToSpreadsheet:", error);
-  }
+    } catch (error) {
+      console.error("Error in usersToSpreadsheet:", error);
+    }
   });
 };
 
 export const alumniToSpreadsheet = () => {
-  setImmediate(async () => {
-  try {
+  enqueueJob("alumniToSpreadsheet", async () => {
+    const { auth, googleSheets } = await getSheetsClient();
+    try {
     let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.alumni;
     const sheetName = "Alumnis";
 
-    // Connecting to Google Spreadsheet
-    const credentials = JSON.parse(
-      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
-    );
-    const auth = new google.auth.GoogleAuth({
-      credentials: credentials,
-      scopes: "https://www.googleapis.com/auth/spreadsheets",
-    });
-
-    const googleClient = await auth.getClient();
-    const googleSheets = google.sheets({ version: "v4", auth: googleClient });
+    // Sheets client comes from singleton
 
     // Fetch users from MongoDB using Mongoose
     const query = {};
@@ -1036,9 +1063,9 @@ export const alumniToSpreadsheet = () => {
     }
 
     console.log(`Member Sheet updated for Alumnis`);
-  } catch (error) {
-    console.error("Error in alumniToSpreadsheet:", error);
-  }
+    } catch (error) {
+      console.error("Error in alumniToSpreadsheet:", error);
+    }
   });
 };
 
@@ -1108,8 +1135,9 @@ export const readSpreadsheetRows = async (
 // change name to reflect the current data pool
 // NOTE from Vladi: I would like this to be a background job but I am not confident that the event fetch will be possible as it can be already deleted
 export const addEventToDataPool = (eventId, sheetName = "2024-2025") => {
-  setImmediate(async () => {
-  try {
+  enqueueJob(`addEventToDataPool:${eventId}:${sheetName}`, async () => {
+    const { auth, googleSheets } = await getSheetsClient();
+    try {
     const event = await Event.findById(eventId);
     if (!event) {
       console.log("Event not found in data pool fetching.");
@@ -1156,16 +1184,8 @@ export const addEventToDataPool = (eventId, sheetName = "2024-2025") => {
       return;
     }
 
-    // Connecting to Google Spreadsheet
-    const credentials = JSON.parse(
-      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
-    );
-    const auth = new google.auth.GoogleAuth({
-      credentials: credentials,
-      scopes: "https://www.googleapis.com/auth/spreadsheets",
-    });
-
-    const sheets = google.sheets({ version: "v4", auth });
+    // Sheets client comes from singleton
+    const sheets = googleSheets;
 
     // Find the first empty row
     const { data } = await sheets.spreadsheets.values.get({
@@ -1185,9 +1205,9 @@ export const addEventToDataPool = (eventId, sheetName = "2024-2025") => {
     });
 
     console.log(`Tickets for event "${event.title}" added successfully!`);
-  } catch (error) {
-    console.error("Error adding tickets:", error);
-  }
+    } catch (error) {
+      console.error("Error adding tickets:", error);
+    }
   });
 };
 

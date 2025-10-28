@@ -426,7 +426,7 @@ export const addEvent = async (req, res, next) => {
   }
 
   try {
-    await eventToSpreadsheet(event.id);
+    eventToSpreadsheet(event.id);
     await addOrUpdateEvent(await Event.findById(event._id));
   } catch (err) {
     // TODO: email or notify error
@@ -772,7 +772,7 @@ export const editEvent = async (req, res, next) => {
   }
 
   try {
-    // await eventToSpreadsheet(event.id);
+    // eventToSpreadsheet(event.id);
     await addOrUpdateEvent(await Event.findById(event._id));
   } catch (err) {
     // TODO: email or notify error
