@@ -50,6 +50,7 @@ import {
   ACTIVE,
   ALUMNI_MIGRATED,
   LOCKED,
+  PAYMENT_AWAITING,
   USER_STATUSES,
 } from "../../util/config/enums.js";
 import { createStripeClient } from "../../util/config/stripe.js";
@@ -57,11 +58,8 @@ import { createStripeClient } from "../../util/config/stripe.js";
 /**
  * Handle alumni signup checkout session
  */
-export const handleAlumniSignup = async (
-  metadata,
-  paymentData
-) => {
-  const { subscriptionId, customerId } = paymentData;
+export const handleAlumniSignup = async (metadata, paymentData) => {
+  const { subscriptionId, customerId, paymentStatus } = paymentData;
   const { tier, period, name, surname, email } = metadata;
 
   const password = decryptData(metadata.password);
@@ -83,7 +81,10 @@ export const handleAlumniSignup = async (
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(1);
 
   const createdUser = new AlumniUser({
-    status: USER_STATUSES[ACTIVE],
+    status:
+      paymentStatus === "unpaid"
+        ? USER_STATUSES[PAYMENT_AWAITING]
+        : USER_STATUSES[ACTIVE],
     subscription: {
       period,
       id: subscriptionId,
@@ -116,11 +117,8 @@ export const handleAlumniSignup = async (
 /**
  * Handle regular user signup checkout session
  */
-export const handleUserSignup = async (
-  metadata,
-  paymentData
-) => {
-  const { subscriptionId, customerId } = paymentData;
+export const handleUserSignup = async (metadata, paymentData) => {
+  const { subscriptionId, customerId, paymentStatus } = paymentData;
   const {
     longTerm,
     name,
@@ -157,7 +155,10 @@ export const handleUserSignup = async (
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
 
   const createdUser = new User({
-    status: USER_STATUSES[ACTIVE],
+    status:
+      paymentStatus === "unpaid"
+        ? USER_STATUSES[PAYMENT_AWAITING]
+        : USER_STATUSES[ACTIVE],
     subscription: {
       period,
       id: subscriptionId,
@@ -198,11 +199,8 @@ export const handleUserSignup = async (
 /**
  * Handle account unlock checkout session
  */
-export const handleAccountUnlock = async (
-  metadata,
-  paymentData
-) => {
-  const { subscriptionId, customerId } = paymentData;
+export const handleAccountUnlock = async (metadata, paymentData) => {
+  const { subscriptionId, customerId, paymentStatus } = paymentData;
   const userId = metadata.userId;
   const period = metadata.period;
 
@@ -213,7 +211,11 @@ export const handleAccountUnlock = async (
     throw new HttpError(err.message, 500);
   }
 
-  user.status = USER_STATUSES[ACTIVE];
+  user.status =
+    paymentStatus === "unpaid"
+      ? USER_STATUSES[PAYMENT_AWAITING]
+      : USER_STATUSES[ACTIVE];
+
   user.subscription = {
     period,
     id: subscriptionId,
@@ -375,11 +377,8 @@ export const handleMemberTicketPurchase = async (metadata, paymentData) => {
 /**
  * Handle alumni migration checkout session
  */
-export const handleAlumniMigration = async (
-  metadata,
-  paymentData
-) => {
-  const { subscriptionId, customerId } = paymentData;
+export const handleAlumniMigration = async (metadata, paymentData) => {
+  const { subscriptionId, customerId, paymentStatus } = paymentData;
   const { userId, tier, period } = metadata;
 
   // Find the regular user
@@ -472,7 +471,10 @@ export const handleAlumniMigration = async (
   try {
     if (existingAlumni) {
       // Update existing alumni user
-      existingAlumni.status = USER_STATUSES[ACTIVE];
+      existingAlumni.status =
+        paymentStatus === "unpaid"
+          ? USER_STATUSES[PAYMENT_AWAITING]
+          : USER_STATUSES[ACTIVE];
       existingAlumni.name = regularUser.name;
       existingAlumni.surname = regularUser.surname;
       existingAlumni.email = regularUser.email;
@@ -505,7 +507,10 @@ export const handleAlumniMigration = async (
         email: regularUser.email,
         password: regularUser.password,
         image: regularUser.image || "",
-        status: USER_STATUSES[ACTIVE],
+        status:
+          paymentStatus === "unpaid"
+            ? USER_STATUSES[PAYMENT_AWAITING]
+            : USER_STATUSES[ACTIVE],
         tier: tier || 0,
         roles: [ALUMNI],
         subscription: {
@@ -670,9 +675,7 @@ export const handleInvoicePaid = async (paymentData, event) => {
 /**
  * Handle invoice payment failed event
  */
-export const handleInvoicePaymentFailed = async (
-  paymentData
-) => {
+export const handleInvoicePaymentFailed = async (paymentData) => {
   const { subscriptionId, customerId } = paymentData;
   console.log(
     `handleInvoicePaymentFailed - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
@@ -735,10 +738,7 @@ export const handleInvoicePaymentFailed = async (
 /**
  * Handle customer subscription updated event
  */
-export const handleSubscriptionUpdated = async (
-  paymentData,
-  event
-) => {
+export const handleSubscriptionUpdated = async (paymentData, event) => {
   const { subscriptionId, customerId } = paymentData;
   console.log(
     `handleSubscriptionUpdated - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
