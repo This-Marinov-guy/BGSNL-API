@@ -59,9 +59,9 @@ import { createStripeClient } from "../../util/config/stripe.js";
  */
 export const handleAlumniSignup = async (
   metadata,
-  subscriptionId,
-  customerId
+  paymentData
 ) => {
+  const { subscriptionId, customerId } = paymentData;
   const { tier, period, name, surname, email } = metadata;
 
   const password = decryptData(metadata.password);
@@ -118,9 +118,9 @@ export const handleAlumniSignup = async (
  */
 export const handleUserSignup = async (
   metadata,
-  subscriptionId,
-  customerId
+  paymentData
 ) => {
+  const { subscriptionId, customerId } = paymentData;
   const {
     longTerm,
     name,
@@ -200,9 +200,9 @@ export const handleUserSignup = async (
  */
 export const handleAccountUnlock = async (
   metadata,
-  subscriptionId,
-  customerId
+  paymentData
 ) => {
+  const { subscriptionId, customerId } = paymentData;
   const userId = metadata.userId;
   const period = metadata.period;
 
@@ -240,7 +240,8 @@ export const handleAccountUnlock = async (
 /**
  * Handle guest ticket purchase checkout session
  */
-export const handleGuestTicketPurchase = async (metadata, transactionId) => {
+export const handleGuestTicketPurchase = async (metadata, paymentData) => {
+  const { transactionId } = paymentData;
   let {
     quantity,
     eventId,
@@ -304,7 +305,8 @@ export const handleGuestTicketPurchase = async (metadata, transactionId) => {
 /**
  * Handle member ticket purchase checkout session
  */
-export const handleMemberTicketPurchase = async (metadata, transactionId) => {
+export const handleMemberTicketPurchase = async (metadata, paymentData) => {
+  const { transactionId } = paymentData;
   const { eventId, userId, code, preferences, type } = metadata;
   let societyEvent;
   try {
@@ -375,9 +377,9 @@ export const handleMemberTicketPurchase = async (metadata, transactionId) => {
  */
 export const handleAlumniMigration = async (
   metadata,
-  subscriptionId,
-  customerId
+  paymentData
 ) => {
+  const { subscriptionId, customerId } = paymentData;
   const { userId, tier, period } = metadata;
 
   // Find the regular user
@@ -557,7 +559,8 @@ export const handleAlumniMigration = async (
 /**
  * Handle invoice paid event
  */
-export const handleInvoicePaid = async (subscriptionId, customerId, event) => {
+export const handleInvoicePaid = async (paymentData, event) => {
+  const { subscriptionId, customerId } = paymentData;
   console.log(
     `handleInvoicePaid - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
   );
@@ -668,9 +671,9 @@ export const handleInvoicePaid = async (subscriptionId, customerId, event) => {
  * Handle invoice payment failed event
  */
 export const handleInvoicePaymentFailed = async (
-  subscriptionId,
-  customerId
+  paymentData
 ) => {
+  const { subscriptionId, customerId } = paymentData;
   console.log(
     `handleInvoicePaymentFailed - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
   );
@@ -733,10 +736,10 @@ export const handleInvoicePaymentFailed = async (
  * Handle customer subscription updated event
  */
 export const handleSubscriptionUpdated = async (
-  subscriptionId,
-  customerId,
+  paymentData,
   event
 ) => {
+  const { subscriptionId, customerId } = paymentData;
   console.log(
     `handleSubscriptionUpdated - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
   );

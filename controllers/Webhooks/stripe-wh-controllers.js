@@ -32,27 +32,17 @@ export const postWebhookCheckout = async (req, res, next) => {
   const eventType = event.type ?? "";
   let responseMessage = "";
 
-  // Helper function to extract subscriptionId and customerId based on event type
+  // Helper to extract subscriptionId and customerId in a concise way
   const extractIds = (event) => {
     let customerId = "";
     let subscriptionId = "";
     
     switch (eventType) {
-      case "checkout.session.completed":
-      case "checkout.session.async_payment_succeeded":
-        customerId = event.data.object.customer ?? "";
-        subscriptionId = event.data.object.subscription ?? "";
-        break;
-      case "invoice.paid":
-      case "invoice.payment_failed":
-      case "invoice.payment_action_required":
-        customerId = event.data.object.customer ?? "";
-        subscriptionId = event.data.object.subscription ?? "";
-        break;
       case "customer.subscription.updated":
         customerId = event.data.object.customer ?? "";
         subscriptionId = event.data.object.id ?? "";
         break;
+        
       default:
         customerId = event.data.object.customer ?? "";
         subscriptionId = event.data.object.subscription ?? "";
@@ -63,141 +53,133 @@ export const postWebhookCheckout = async (req, res, next) => {
 
   const { customerId, subscriptionId } = extractIds(event);
   const metadata = event.data.object.metadata ?? {};
+  const paymentStatus = event.data.object?.payment_status ?? "";
+  const transactionId = event.data.object?.payment_intent || event.id || "-";
+  const paymentData = { subscriptionId, customerId, paymentStatus, transactionId };
 
   // Debug logging for webhook events
   console.log(`Webhook Event: ${eventType}`);
   console.log(`Customer ID: ${customerId}`);
   console.log(`Subscription ID: ${subscriptionId}`);
   console.log(`Metadata:`, JSON.stringify(metadata));
+  console.log(`Payment Status: ${paymentStatus}`);
+  console.log(`Transaction ID: ${transactionId}`);
 
   // Base debug info to include in all responses
   const baseDebugInfo = {
-    eventType: eventType || 'unknown',
-    customerId: customerId || 'none',
-    subscriptionId: subscriptionId || 'none',
-    metadata: Object.keys(metadata).length > 0 ? metadata : 'empty',
+    eventType: eventType || "unknown",
+    customerId: customerId || "none",
+    subscriptionId: subscriptionId || "none",
+    metadata: Object.keys(metadata).length > 0 ? metadata : "empty",
     timestamp: new Date().toISOString(),
     region: userRegion,
-    eventId: event.id || 'unknown'
+    eventId: event.id || "unknown",
   };
 
   try {
     switch (eventType) {
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
-
-        // Stop processing if the payment is unpaid
-        const paymentStatus = event.data.object?.payment_status ?? "";
-        if (paymentStatus === "unpaid") {
-          return res.status(200).json({
-            received: true,
-            message: "Ignoring unpaid checkout session",
-            debug: { ...baseDebugInfo, paymentStatus }
-          });
-        }
-
-        const transactionId = event.data.object?.payment_intent || event.id || "-";
-
         switch (metadata.method) {
           case "alumni-signup": {
-            await handleAlumniSignup(metadata, subscriptionId, customerId);
-            return res.status(200).json({ 
+            await handleAlumniSignup(metadata, paymentData);
+            return res.status(200).json({
               received: true,
               message: "Alumni signup completed successfully",
-              debug: baseDebugInfo
+              debug: baseDebugInfo,
             });
           }
           case "signup": {
-            await handleUserSignup(metadata, subscriptionId, customerId);
-            return res.status(200).json({ 
+            await handleUserSignup(metadata, paymentData);
+            return res.status(200).json({
               received: true,
               message: "User signup completed successfully",
-              debug: baseDebugInfo
+              debug: baseDebugInfo,
             });
           }
           case "unlock_account": {
-            await handleAccountUnlock(metadata, subscriptionId, customerId);
-            return res.status(200).json({ 
+            await handleAccountUnlock(metadata, paymentData);
+            return res.status(200).json({
               received: true,
               message: "Account unlock completed successfully",
-              debug: baseDebugInfo
+              debug: baseDebugInfo,
             });
           }
           case "buy_guest_ticket": {
-            await handleGuestTicketPurchase(metadata, transactionId);
-            return res.status(200).json({ 
+            await handleGuestTicketPurchase(metadata, paymentData);
+            return res.status(200).json({
               received: true,
               message: "Guest ticket purchase completed successfully",
-              debug: baseDebugInfo
+              debug: baseDebugInfo,
             });
           }
           case "buy_member_ticket": {
-            await handleMemberTicketPurchase(metadata, transactionId);
-            return res.status(200).json({ 
+            await handleMemberTicketPurchase(metadata, paymentData);
+            return res.status(200).json({
               received: true,
               message: "Member ticket purchase completed successfully",
-              debug: baseDebugInfo
+              debug: baseDebugInfo,
             });
           }
           case "alumni_migration": {
-            const result = await handleAlumniMigration(metadata, subscriptionId, customerId);
-            return res.status(200).json({ 
+            const result = await handleAlumniMigration(metadata, paymentData);
+            return res.status(200).json({
               received: true,
               ...result,
-              debug: baseDebugInfo
+              debug: baseDebugInfo,
             });
           }
           default:
             return res.status(200).json({
               received: true,
               message: "Unhandled event for checkout webhook",
-              debug: baseDebugInfo
+              debug: baseDebugInfo,
             });
         }
       }
       case "invoice.paid": {
-        const result = await handleInvoicePaid(subscriptionId, customerId, event);
+        const result = await handleInvoicePaid(paymentData, event);
         if (!result.success) {
           responseMessage = result.message;
           break;
         }
-        return res.status(200).json({ 
+        return res.status(200).json({
           received: true,
           message: "Invoice paid processed successfully",
-          debug: baseDebugInfo
+          debug: baseDebugInfo,
         });
       }
       case "invoice.payment_failed":
       case "invoice.payment_action_required": {
-        const result = await handleInvoicePaymentFailed(subscriptionId, customerId);
+        const result = await handleInvoicePaymentFailed(paymentData);
         if (!result.success) {
           responseMessage = result.message;
           break;
         }
-        return res.status(200).json({ 
+        return res.status(200).json({
           received: true,
           message: "Invoice payment failed processed successfully",
-          debug: baseDebugInfo
+          debug: baseDebugInfo,
         });
       }
       case "customer.subscription.updated": {
-        const result = await handleSubscriptionUpdated(subscriptionId, customerId, event);
+        const result = await handleSubscriptionUpdated(paymentData, event);
         if (!result.success) {
           responseMessage = result.message;
           break;
         }
-        return res.status(200).json({ 
-          received: true, 
+        return res.status(200).json({
+          received: true,
           message: result.message,
           details: result.details,
-          debug: baseDebugInfo
+          debug: baseDebugInfo,
         });
       }
       default:
         return res.status(200).json({
           received: true,
           message: "Unhandled event for subscription/checkout webhook",
-          debug: baseDebugInfo
+          debug: baseDebugInfo,
         });
     }
   } catch (error) {
@@ -211,6 +193,6 @@ export const postWebhookCheckout = async (req, res, next) => {
   return res.status(200).json({
     received: true,
     message: responseMessage || "No action performed",
-    debug: baseDebugInfo
+    debug: baseDebugInfo,
   });
 };
