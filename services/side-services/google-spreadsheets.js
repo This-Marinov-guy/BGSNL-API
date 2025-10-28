@@ -338,47 +338,65 @@ const eventToSpreadsheet = async (id) => {
           );
         } catch (createError) {
           // Check if the error is because the sheet already exists
-          if (createError.message && createError.message.includes('already exists')) {
-            console.log(`Sheet '${sheetName}' already exists, fetching its ID instead`);
-            
+          if (
+            createError.message &&
+            createError.message.includes("already exists")
+          ) {
+            console.log(
+              `Sheet '${sheetName}' already exists, fetching its ID instead`
+            );
+
             try {
               // Re-fetch the spreadsheet metadata to get the existing sheet ID
               const updatedMetaData = await googleSheets.spreadsheets.get({
                 auth,
                 spreadsheetId,
               });
-              
+
               const updatedSheetsList = updatedMetaData.data.sheets;
-              console.log(`Available sheets in spreadsheet:`, updatedSheetsList.map(s => s.properties.title));
-              
+              console.log(
+                `Available sheets in spreadsheet:`,
+                updatedSheetsList.map((s) => s.properties.title)
+              );
+
               // Try exact match first
               let existingSheet = updatedSheetsList.find(
                 (sheet) => sheet.properties.title === sheetName
               );
-              
+
               // If exact match fails, try case-insensitive match
               if (!existingSheet) {
                 existingSheet = updatedSheetsList.find(
-                  (sheet) => sheet.properties.title.toLowerCase() === sheetName.toLowerCase()
+                  (sheet) =>
+                    sheet.properties.title.toLowerCase() ===
+                    sheetName.toLowerCase()
                 );
               }
-              
+
               // If still no match, try trimming whitespace
               if (!existingSheet) {
                 existingSheet = updatedSheetsList.find(
                   (sheet) => sheet.properties.title.trim() === sheetName.trim()
                 );
               }
-              
+
               if (existingSheet) {
                 sheetId = existingSheet.properties.sheetId;
-                console.log(`Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`);
+                console.log(
+                  `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
+                );
               } else {
-                console.error(`Could not find sheet '${sheetName}' after creation error. Available sheets:`, updatedSheetsList.map(s => s.properties.title));
+                console.error(
+                  `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
+                  updatedSheetsList.map((s) => s.properties.title)
+                );
                 continue; // Skip this spreadsheet and continue with the next one
               }
             } catch (fetchError) {
-              console.error(`Error fetching spreadsheet metadata after creation error:`, fetchError);
+              console.error(
+                `Error fetching spreadsheet metadata after creation error:`,
+                fetchError
+              );
               continue; // Skip this spreadsheet and continue with the next one
             }
           } else {
@@ -619,47 +637,65 @@ const specialEventsToSpreadsheet = async (id) => {
           );
         } catch (createError) {
           // Check if the error is because the sheet already exists
-          if (createError.message && createError.message.includes('already exists')) {
-            console.log(`Sheet '${sheetName}' already exists, fetching its ID instead`);
-            
+          if (
+            createError.message &&
+            createError.message.includes("already exists")
+          ) {
+            console.log(
+              `Sheet '${sheetName}' already exists, fetching its ID instead`
+            );
+
             try {
               // Re-fetch the spreadsheet metadata to get the existing sheet ID
               const updatedMetaData = await googleSheets.spreadsheets.get({
                 auth,
                 spreadsheetId,
               });
-              
+
               const updatedSheetsList = updatedMetaData.data.sheets;
-              console.log(`Available sheets in spreadsheet:`, updatedSheetsList.map(s => s.properties.title));
-              
+              console.log(
+                `Available sheets in spreadsheet:`,
+                updatedSheetsList.map((s) => s.properties.title)
+              );
+
               // Try exact match first
               let existingSheet = updatedSheetsList.find(
                 (sheet) => sheet.properties.title === sheetName
               );
-              
+
               // If exact match fails, try case-insensitive match
               if (!existingSheet) {
                 existingSheet = updatedSheetsList.find(
-                  (sheet) => sheet.properties.title.toLowerCase() === sheetName.toLowerCase()
+                  (sheet) =>
+                    sheet.properties.title.toLowerCase() ===
+                    sheetName.toLowerCase()
                 );
               }
-              
+
               // If still no match, try trimming whitespace
               if (!existingSheet) {
                 existingSheet = updatedSheetsList.find(
                   (sheet) => sheet.properties.title.trim() === sheetName.trim()
                 );
               }
-              
+
               if (existingSheet) {
                 sheetId = existingSheet.properties.sheetId;
-                console.log(`Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`);
+                console.log(
+                  `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
+                );
               } else {
-                console.error(`Could not find sheet '${sheetName}' after creation error. Available sheets:`, updatedSheetsList.map(s => s.properties.title));
+                console.error(
+                  `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
+                  updatedSheetsList.map((s) => s.properties.title)
+                );
                 continue; // Skip this spreadsheet and continue with the next one
               }
             } catch (fetchError) {
-              console.error(`Error fetching spreadsheet metadata after creation error:`, fetchError);
+              console.error(
+                `Error fetching spreadsheet metadata after creation error:`,
+                fetchError
+              );
               continue; // Skip this spreadsheet and continue with the next one
             }
           } else {
@@ -869,7 +905,7 @@ export const alumniToSpreadsheet = async () => {
       })
       .lean();
 
-    const values = users.map((user) => {
+    const rows = users.map((user) => {
       const {
         _id,
         image,
@@ -897,6 +933,11 @@ export const alumniToSpreadsheet = async () => {
 
       const dataFields = {
         status,
+        subscription: subscription?.id
+          ? `Subscription ${subscription.id} | Customer ${
+              subscription.customerId ?? ""
+            }`
+          : "Migrated Free tier",
         tier: `${tier}`,
         name,
         surname,
@@ -905,17 +946,24 @@ export const alumniToSpreadsheet = async () => {
         email,
       };
 
-      // Convert all values to strings, handling arrays properly
-      return Object.values(dataFields).map(value => {
+      const values = Object.values(dataFields).map((value) => {
         if (Array.isArray(value)) {
-          return value.join(', ');
+          return value.join(", ");
         }
-        return String(value || '');
+        return String(value || "");
       });
+
+      const isFree = !(subscription && subscription.id);
+      return { values, isFree };
     });
+
+    const freeRows = rows.filter((r) => r.isFree).map((r) => r.values);
+    const paidRows = rows.filter((r) => !r.isFree).map((r) => r.values);
+    const values = [...freeRows, ...paidRows];
 
     const nameOfValues = [
       "Status",
+      "Subscription",
       "Tier",
       "Name",
       "Surname",
@@ -939,6 +987,46 @@ export const alumniToSpreadsheet = async () => {
         values: [["Members of:", sheetName], nameOfValues, ...values],
       },
     });
+
+    const meta = await googleSheets.spreadsheets.get({
+      auth,
+      spreadsheetId,
+    });
+    const sheetId = meta.data.sheets.find(
+      (s) => s.properties.title === sheetName
+    )?.properties.sheetId;
+
+    if (sheetId && freeRows.length > 0) {
+      const startRowIndex = 2;
+      const endRowIndex = startRowIndex + freeRows.length;
+      const endColumnIndex = nameOfValues.length;
+
+      await googleSheets.spreadsheets.batchUpdate({
+        auth,
+        spreadsheetId,
+        resource: {
+          requests: [
+            {
+              repeatCell: {
+                range: {
+                  sheetId,
+                  startRowIndex,
+                  endRowIndex,
+                  startColumnIndex: 0,
+                  endColumnIndex,
+                },
+                cell: {
+                  userEnteredFormat: {
+                    backgroundColor: { red: 0.7, green: 0.7, blue: 0.7 },
+                  },
+                },
+                fields: "userEnteredFormat.backgroundColor",
+              },
+            },
+          ],
+        },
+      });
+    }
 
     console.log(`Member Sheet updated for Alumnis`);
   } catch (error) {
