@@ -5,15 +5,21 @@ import {
   ALUMNI,
   BOARD_MEMBER,
   COMMITTEE_MEMBER,
+  DEFAULT_REGION,
   DELOITTE_TEMPLATE,
   MEMBER,
   PWC_TEMPLATE,
   VIP,
 } from "../config/defines.js";
-import { ALUMNI_MIGRATED, ALUMNI as ALUMNI_STATUS, USER_STATUSES } from "../config/enums.js";
+import {
+  ALUMNI_MIGRATED,
+  ALUMNI as ALUMNI_STATUS,
+  USER_STATUSES,
+} from "../config/enums.js";
 import User from "../../models/User.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { sendMarketingEmail } from "../../services/background-services/email-transporter.js";
+import { createStripeClient } from "../config/stripe.js";
 
 // Connection URI
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;
@@ -78,12 +84,11 @@ export async function getMarketingUsers() {
     const clients = await User.find({
       expireDate: { $gte: today }, // $lt means "less than" (before today)
     }).select("email name"); // Select only email and name fields
-    
+
     console.log(clients);
 
-    clients.forEach(
-      (client) =>
-        sendMarketingEmail(PWC_TEMPLATE, client.email, client.name)
+    clients.forEach((client) =>
+      sendMarketingEmail(PWC_TEMPLATE, client.email, client.name)
     );
 
     return clients;
@@ -105,53 +110,54 @@ export async function convertUserIdByEmail(email) {
     const database = client.db();
     const users = database.collection("users");
     const alumniUsers = database.collection("alumniusers");
-    
+
     // First, check if the user exists in either collection
     let user = await users.findOne({ email });
     let isAlumni = false;
-    
+
     if (!user) {
       user = await alumniUsers.findOne({ email });
       isAlumni = true;
-      
+
       if (!user) {
         console.log(`No user found with email: ${email}`);
         return null;
       }
     }
-    
+
     // Original ID (with prefix)
     const originalId = user._id;
     console.log(`Original ID: ${originalId}`);
-    
+
     // Extract the MongoDB ObjectId part from the string ID (after the prefix)
     const idMatch = originalId.match(/_(.*)/);
     if (!idMatch || !idMatch[1]) {
       console.log(`ID ${originalId} doesn't match the expected format.`);
       return null;
     }
-    
+
     // Create a new MongoDB ObjectId from the extracted part
     const objectIdPart = idMatch[1];
     const newObjectId = new ObjectId(objectIdPart);
     console.log(`New ObjectId: ${newObjectId}`);
-    
+
     // Create a new user object with the ObjectId
     const updatedUser = { ...user };
     delete updatedUser._id; // Remove the old _id
-    
+
     // Update the user in the appropriate collection
     const collection = isAlumni ? alumniUsers : users;
-    
+
     // First delete the original document with string ID to avoid duplicate key errors
     await collection.deleteOne({ _id: originalId });
-    
+
     // Then insert the updated document with the new ObjectId
     await collection.insertOne({ _id: newObjectId, ...updatedUser });
-    
-    console.log(`Updated user with email ${email}: ID changed from ${originalId} to ${newObjectId}`);
+
+    console.log(
+      `Updated user with email ${email}: ID changed from ${originalId} to ${newObjectId}`
+    );
     return { oldId: originalId, newId: newObjectId };
-    
   } catch (error) {
     console.error("Error converting user ID:", error);
     return null;
@@ -175,36 +181,42 @@ export async function createNewAlumniUsersFromRegularUsers() {
     const database = client.db();
     const users = database.collection("users");
     const alumniUsers = database.collection("alumniusers");
-    
+
     // Find all regular users
     const userCursor = users.find();
     const results = [];
     let count = 0;
-    
+
     // Iterate over all regular users
     for await (const user of userCursor) {
       try {
-        if (!user._id || !user._id.includes('member_')) {
-          console.log(`User ${user._id} doesn't have the expected prefix, skipping...`);
+        if (!user._id || !user._id.includes("member_")) {
+          console.log(
+            `User ${user._id} doesn't have the expected prefix, skipping...`
+          );
           continue;
         }
-        
+
         // Extract the ObjectId part after the prefix
         const idMatch = user._id.match(/member_(.*)/);
         if (!idMatch || !idMatch[1]) {
           console.log(`ID ${user._id} doesn't match the expected format.`);
           continue;
         }
-        
+
         // Check if an alumni user with matching ID already exists
         const matchingAlumniId = `alumni_${idMatch[1]}`;
-        const existingAlumni = await alumniUsers.findOne({ _id: matchingAlumniId });
-        
+        const existingAlumni = await alumniUsers.findOne({
+          _id: matchingAlumniId,
+        });
+
         if (existingAlumni) {
-          console.log(`Alumni user already exists with ID: ${matchingAlumniId}, skipping...`);
+          console.log(
+            `Alumni user already exists with ID: ${matchingAlumniId}, skipping...`
+          );
           continue;
         }
-        
+
         // Create a new alumni user with data from the regular user
         const newAlumniUser = {
           _id: matchingAlumniId,
@@ -212,35 +224,41 @@ export async function createNewAlumniUsersFromRegularUsers() {
           tier: 0, // Default tier
           roles: ["alumni"],
           purchaseDate: user.purchaseDate || new Date(),
-          expireDate: user.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+          expireDate:
+            user.expireDate ||
+            new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
           image: user.image || "",
           name: user.name,
           surname: user.surname,
           email: user.email,
           password: user.password,
           tickets: user.tickets || [],
-          christmas: user.christmas || []
+          christmas: user.christmas || [],
         };
-        
+
         // Insert the new alumni user document
         await alumniUsers.insertOne(newAlumniUser);
-        
+
         results.push({
           alumniId: matchingAlumniId,
           userId: user._id,
-          email: user.email
+          email: user.email,
         });
         count++;
-        console.log(`Created alumni user ${count} for regular user: ${user.email}`);
+        console.log(
+          `Created alumni user ${count} for regular user: ${user.email}`
+        );
       } catch (userError) {
-        console.error(`Error processing user ${user._id || user.email}:`, userError);
+        console.error(
+          `Error processing user ${user._id || user.email}:`,
+          userError
+        );
         // Continue with next user despite error
       }
     }
-    
+
     console.log(`Successfully created ${count} alumni users`);
     return results;
-    
   } catch (error) {
     console.error("Error creating new alumni users:", error);
     return null;
@@ -264,42 +282,48 @@ export async function createAlumniFromUsers() {
     const database = client.db();
     const users = database.collection("users");
     const alumniUsers = database.collection("alumniusers");
-    
+
     // Find all alumni users
     const alumniCursor = await alumniUsers.find();
     const results = [];
     let count = 0;
-    
+
     // Iterate over all alumni users
     for await (const alumniUser of alumniCursor) {
       try {
-        if (!alumniUser._id || !alumniUser._id.includes('alumni_')) {
-          console.log(`Alumni user ${alumniUser._id} doesn't have the expected prefix, skipping...`);
+        if (!alumniUser._id || !alumniUser._id.includes("alumni_")) {
+          console.log(
+            `Alumni user ${alumniUser._id} doesn't have the expected prefix, skipping...`
+          );
           continue;
         }
-        
+
         // Extract the ObjectId part after the prefix
         const idMatch = alumniUser._id.match(/alumni_(.*)/);
         if (!idMatch || !idMatch[1]) {
-          console.log(`ID ${alumniUser._id} doesn't match the expected format.`);
+          console.log(
+            `ID ${alumniUser._id} doesn't match the expected format.`
+          );
           continue;
         }
-        
+
         // Look for a regular user with matching ID but "member_" prefix
         const matchingId = `member_${idMatch[1]}`;
         const regularUser = await users.findOne({ _id: matchingId });
-        
+
         if (!regularUser) {
           console.log(`No matching user found with ID: ${matchingId}`);
           continue;
         }
-        
+
         // Check if the alumni user is already populated with data
         if (alumniUser.email && alumniUser.name && alumniUser.surname) {
-          console.log(`Alumni user ${alumniUser._id} already has data, skipping...`);
+          console.log(
+            `Alumni user ${alumniUser._id} already has data, skipping...`
+          );
           continue;
         }
-        
+
         // Create a new alumni user with data from the regular user
         const updatedAlumniUser = {
           _id: alumniUser._id,
@@ -307,38 +331,42 @@ export async function createAlumniFromUsers() {
           tier: 0, // Default tier
           roles: ["alumni"],
           purchaseDate: regularUser.purchaseDate || new Date(),
-          expireDate: regularUser.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+          expireDate:
+            regularUser.expireDate ||
+            new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
           image: regularUser.image || "",
           name: regularUser.name,
           surname: regularUser.surname,
           email: regularUser.email,
           password: regularUser.password,
           tickets: regularUser.tickets || [],
-          christmas: regularUser.christmas || []
+          christmas: regularUser.christmas || [],
         };
-        
+
         // First delete the original alumni document
         await alumniUsers.deleteOne({ _id: alumniUser._id });
-        
+
         // Then insert the updated document
         await alumniUsers.insertOne(updatedAlumniUser);
-        
+
         results.push({
           alumniId: alumniUser._id,
           userId: matchingId,
-          email: regularUser.email
+          email: regularUser.email,
         });
         count++;
         console.log(`Processed ${count} users`);
       } catch (userError) {
-        console.error(`Error processing alumni user ${alumniUser._id}:`, userError);
+        console.error(
+          `Error processing alumni user ${alumniUser._id}:`,
+          userError
+        );
         // Continue with next user despite error
       }
     }
-    
+
     console.log(`Successfully processed ${count} alumni users`);
     return results;
-    
   } catch (error) {
     console.error("Error creating alumni from users:", error);
     return null;
@@ -362,12 +390,12 @@ export async function convertAllUserIdsToString(prefix = "member_") {
     // Get the database and collection
     const database = client.db();
     const users = database.collection("users");
-    
+
     // Find all users
     const cursor = users.find();
     const results = [];
     let count = 0;
-    
+
     // Iterate over all users
     for await (const user of cursor) {
       try {
@@ -375,24 +403,29 @@ export async function convertAllUserIdsToString(prefix = "member_") {
           console.log(`User ${user._id} has no email, skipping...`);
           continue;
         }
-        
+
         // Convert the ID to string with prefix
-        const result = await convertUserIdToStringWithPrefix(user.email, prefix);
-        
+        const result = await convertUserIdToStringWithPrefix(
+          user.email,
+          prefix
+        );
+
         if (result) {
           results.push(result);
           count++;
           console.log(`Processed ${count} users`);
         }
       } catch (userError) {
-        console.error(`Error processing user ${user._id || user.email}:`, userError);
+        console.error(
+          `Error processing user ${user._id || user.email}:`,
+          userError
+        );
         // Continue with next user despite error
       }
     }
-    
+
     console.log(`Successfully processed ${count} users`);
     return results;
-    
   } catch (error) {
     console.error("Error converting all user IDs:", error);
     return null;
@@ -418,46 +451,47 @@ export async function convertUserIdToStringWithPrefix(email, prefix) {
     const database = client.db();
     const users = database.collection("users");
     const alumniUsers = database.collection("alumniusers");
-    
+
     // First, check if the user exists in either collection
     let user = await users.findOne({ email });
     let isAlumni = false;
-    
+
     if (!user) {
       console.log(`No user found with email: ${email}`);
       return null;
     }
-    
+
     // Original ID (ObjectId)
     const originalId = user._id;
     console.log(`Original ID: ${originalId}`);
-    
+
     // Check if the ID is already a string with a prefix
-    if (typeof originalId === 'string' && originalId.includes('_')) {
+    if (typeof originalId === "string" && originalId.includes("_")) {
       console.log(`ID ${originalId} is already a string with a prefix.`);
       return { oldId: originalId, newId: originalId };
     }
-    
+
     // Create the new string ID with the provided prefix
     const newStringId = `${prefix}${originalId}`;
     console.log(`New String ID: ${newStringId}`);
-    
+
     // Create a new user object
     const updatedUser = { ...user };
     delete updatedUser._id; // Remove the old _id
-    
+
     // Update the user in the appropriate collection
     const collection = isAlumni ? alumniUsers : users;
-    
+
     // First delete the original document with ObjectId to avoid duplicate key errors
     await collection.deleteOne({ _id: originalId });
-    
+
     // Then insert the updated document with the new string ID
     await collection.insertOne({ _id: newStringId, ...updatedUser });
-    
-    console.log(`Updated user with email ${email}: ID changed from ${originalId} to ${newStringId}`);
+
+    console.log(
+      `Updated user with email ${email}: ID changed from ${originalId} to ${newStringId}`
+    );
     return { oldId: originalId, newId: newStringId };
-    
   } catch (error) {
     console.error("Error converting user ID to string with prefix:", error);
     return null;
@@ -481,19 +515,16 @@ export async function setJoinDateForAllAlumniUsers(defaultDate = new Date()) {
     // Get the database and collection
     const database = client.db();
     const alumniUsersCollection = database.collection("alumniusers");
-    
+
     // Find all alumni users without joinDate or with null joinDate
-    const query = { 
-      $or: [
-        { joinDate: { $exists: false } },
-        { joinDate: null }
-      ]
+    const query = {
+      $or: [{ joinDate: { $exists: false } }, { joinDate: null }],
     };
-    
+
     const cursor = alumniUsersCollection.find(query);
     const results = [];
     let count = 0;
-    
+
     // Iterate over all alumni users that need updating
     for await (const user of cursor) {
       try {
@@ -502,22 +533,24 @@ export async function setJoinDateForAllAlumniUsers(defaultDate = new Date()) {
           { _id: user._id },
           { $set: { joinDate: defaultDate } }
         );
-        
+
         results.push({
           alumniId: user._id,
-          email: user.email
+          email: user.email,
         });
         count++;
         console.log(`Updated alumni user ${count}: ${user.email || user._id}`);
       } catch (userError) {
-        console.error(`Error updating alumni user ${user._id || user.email}:`, userError);
+        console.error(
+          `Error updating alumni user ${user._id || user.email}:`,
+          userError
+        );
         // Continue with next user despite error
       }
     }
-    
+
     console.log(`Successfully updated ${count} alumni users with joinDate`);
     return results;
-    
   } catch (error) {
     console.error("Error setting joinDate for alumni users:", error);
     return null;
@@ -538,7 +571,7 @@ export async function setJoinDateForAllAlumniUsers(defaultDate = new Date()) {
  * @param {number} options.subscription.period - Subscription period in months
  * @returns {Object|null} - Migration result object, or null if operation failed
  */
-export async function migrateUserByIdToAlumni(userId, options = {}) {
+export async function migrateUserByIdToAlumni(userId, options = {}, withCancellation = false) {
   try {
     // Connect to the MongoDB server
     await client.connect();
@@ -548,20 +581,20 @@ export async function migrateUserByIdToAlumni(userId, options = {}) {
     const database = client.db();
     const usersCollection = database.collection("users");
     const alumniUsersCollection = database.collection("alumniusers");
-    
+
     // Find the user by ID
     const user = await usersCollection.findOne({ _id: userId });
-    
+
     if (!user) {
       console.log(`No user found with ID: ${userId}`);
       return { success: false, message: "User not found" };
     }
-    
+
     console.log(`Found user: ${user.name} ${user.surname} (${user.email})`);
-    
+
     // Extract the ObjectId part if the user has a prefixed ID
     let objectIdPart;
-    if (typeof user._id === 'string' && user._id.includes('member_')) {
+    if (typeof user._id === "string" && user._id.includes("member_")) {
       const idMatch = user._id.match(/member_(.*)/);
       if (idMatch && idMatch[1]) {
         objectIdPart = idMatch[1];
@@ -573,26 +606,44 @@ export async function migrateUserByIdToAlumni(userId, options = {}) {
       // If the user has a regular ObjectId, convert it to string
       objectIdPart = user._id.toString();
     }
-    
+
+    // Check if we need to cancel an existing subscription
+    let oldSubscriptionId = null;
+    if (user.subscription && user.subscription.id && withCancellation) {
+      oldSubscriptionId = user.subscription.id;
+
+      // Cancel old subscription
+      try {
+        const stripeClient = createStripeClient(user.region || DEFAULT_REGION);
+        await stripeClient.subscriptions.cancel(oldSubscriptionId);
+        console.log(
+          `Cancelled subscription ${oldSubscriptionId} for user ${userId}`
+        );
+      } catch (err) {
+        console.error(`Error cancelling subscription: ${err.message}`);
+        // Continue with the migration even if cancellation fails
+      }
+    }
+
     // Create the alumni ID with the same ObjectId part
     const alumniId = `alumni_${objectIdPart}`;
-    
+
     // Check if an alumni user already exists with this ID or email
     let existingAlumni;
     try {
-      existingAlumni = await alumniUsersCollection.findOne({ 
-        $or: [
-          { _id: alumniId },
-          { email: user.email }
-        ]
+      existingAlumni = await alumniUsersCollection.findOne({
+        $or: [{ _id: alumniId }, { email: user.email }],
       });
     } catch (err) {
-      console.error(`Error checking existing alumni for user ${user.email}:`, err);
+      console.error(
+        `Error checking existing alumni for user ${user.email}:`,
+        err
+      );
       return { success: false, message: "Error checking existing alumni" };
     }
-    
+
     let result = {};
-    
+
     if (existingAlumni) {
       // Update existing alumni user with data from regular user
       const updatedAlumni = { ...existingAlumni };
@@ -604,38 +655,40 @@ export async function migrateUserByIdToAlumni(userId, options = {}) {
       updatedAlumni.status = user.status || "active";
       updatedAlumni.tier = options.tier || 0;
       updatedAlumni.purchaseDate = user.purchaseDate || new Date();
-      updatedAlumni.expireDate = user.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1));
+      updatedAlumni.expireDate =
+        user.expireDate ||
+        new Date(new Date().setFullYear(new Date().getFullYear() + 1));
       updatedAlumni.joinDate = existingAlumni.joinDate || new Date();
-      
+
       // Update subscription if provided
       if (options.subscription) {
         updatedAlumni.subscription = {
           id: options.subscription.id || "",
           customerId: options.subscription.customerId || "",
-          period: options.subscription.period || 12
+          period: options.subscription.period || 12,
         };
       } else if (user.subscription) {
         updatedAlumni.subscription = user.subscription;
       }
-      
+
       // Make sure the alumni role is set
       if (!updatedAlumni.roles || !updatedAlumni.roles.includes(ALUMNI)) {
         updatedAlumni.roles = [...(updatedAlumni.roles || []), ALUMNI];
       }
-      
+
       // First delete the original alumni document
       await alumniUsersCollection.deleteOne({ _id: existingAlumni._id });
-      
+
       // Then insert the updated document
       await alumniUsersCollection.insertOne(updatedAlumni);
-      
+
       result = {
         success: true,
         action: "updated",
         alumniId: existingAlumni._id,
         userId: user._id,
         email: user.email,
-        message: "Updated existing alumni user"
+        message: "Updated existing alumni user",
       };
     } else {
       // Create new alumni user with data from regular user
@@ -650,45 +703,46 @@ export async function migrateUserByIdToAlumni(userId, options = {}) {
         tier: options.tier || 0,
         roles: [ALUMNI],
         purchaseDate: user.purchaseDate || new Date(),
-        expireDate: user.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+        expireDate:
+          user.expireDate ||
+          new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
         joinDate: new Date(),
         tickets: user.tickets || [],
-        christmas: user.christmas || []
+        christmas: user.christmas || [],
       };
-      
+
       // Add subscription if provided
       if (options.subscription) {
         newAlumniUser.subscription = {
           id: options.subscription.id || "",
           customerId: options.subscription.customerId || "",
-          period: options.subscription.period || 12
+          period: options.subscription.period || 12,
         };
       } else if (user.subscription) {
         newAlumniUser.subscription = user.subscription;
       }
-      
+
       // Insert the new alumni user document
       await alumniUsersCollection.insertOne(newAlumniUser);
-      
+
       result = {
         success: true,
         action: "created",
         alumniId: alumniId,
         userId: user._id,
         email: user.email,
-        message: "Created new alumni user"
+        message: "Created new alumni user",
       };
     }
-    
+
     // Update the regular user's status to alumni_migrated
     await usersCollection.updateOne(
       { _id: user._id },
       { $set: { status: USER_STATUSES[ALUMNI_MIGRATED] } }
     );
-    
+
     console.log(`Successfully migrated user ${user.email} to alumni`);
     return result;
-    
   } catch (error) {
     console.error("Error migrating user to alumni:", error);
     return { success: false, message: error.message };
@@ -712,9 +766,9 @@ export async function convertUsersWithoutSubscriptionToAlumni() {
     const database = client.db();
     const usersCollection = database.collection("users");
     const alumniUsersCollection = database.collection("alumniusers");
-    
+
     // Find all users without subscription
-    const query = { 
+    const query = {
       $or: [
         { subscription: { $exists: false } },
         { subscription: null },
@@ -723,14 +777,14 @@ export async function convertUsersWithoutSubscriptionToAlumni() {
         { "subscription.id": "" },
         { "subscription.customerId": { $exists: false } },
         { "subscription.customerId": null },
-        { "subscription.customerId": "" }
-      ]
+        { "subscription.customerId": "" },
+      ],
     };
-    
+
     const cursor = usersCollection.find(query);
     const results = [];
     let count = 0;
-    
+
     // Iterate over all users without subscription
     for await (const user of cursor) {
       try {
@@ -739,15 +793,17 @@ export async function convertUsersWithoutSubscriptionToAlumni() {
           console.log(`User ${user._id} has no email, skipping...`);
           continue;
         }
-        
+
         if (user.status === USER_STATUSES[ALUMNI_STATUS]) {
-          console.log(`User ${user.email} is already marked as alumni, skipping...`);
+          console.log(
+            `User ${user.email} is already marked as alumni, skipping...`
+          );
           continue;
         }
-        
+
         // Extract the ObjectId part if the user has a prefixed ID
         let objectIdPart;
-        if (typeof user._id === 'string' && user._id.includes('member_')) {
+        if (typeof user._id === "string" && user._id.includes("member_")) {
           const idMatch = user._id.match(/member_(.*)/);
           if (idMatch && idMatch[1]) {
             objectIdPart = idMatch[1];
@@ -759,26 +815,26 @@ export async function convertUsersWithoutSubscriptionToAlumni() {
           // If the user has a regular ObjectId, convert it to string
           objectIdPart = user._id.toString();
         }
-        
+
         // Create the alumni ID with the same ObjectId part
         const alumniId = `alumni_${objectIdPart}`;
-        
+
         // Check if an alumni user already exists with this ID or email
         let existingAlumni;
         try {
-          existingAlumni = await alumniUsersCollection.findOne({ 
-            $or: [
-              { _id: alumniId },
-              { email: user.email }
-            ]
+          existingAlumni = await alumniUsersCollection.findOne({
+            $or: [{ _id: alumniId }, { email: user.email }],
           });
         } catch (err) {
-          console.error(`Error checking existing alumni for user ${user.email}:`, err);
+          console.error(
+            `Error checking existing alumni for user ${user.email}:`,
+            err
+          );
           continue;
         }
-        
+
         let result = {};
-        
+
         if (existingAlumni) {
           // Update existing alumni user with data from regular user
           const updatedAlumni = { ...existingAlumni };
@@ -789,24 +845,26 @@ export async function convertUsersWithoutSubscriptionToAlumni() {
           updatedAlumni.password = user.password;
           updatedAlumni.status = user.status || "active";
           updatedAlumni.purchaseDate = user.purchaseDate || new Date();
-          updatedAlumni.expireDate = user.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1));
-          
+          updatedAlumni.expireDate =
+            user.expireDate ||
+            new Date(new Date().setFullYear(new Date().getFullYear() + 1));
+
           // Make sure the alumni role is set
           if (!updatedAlumni.roles.includes(ALUMNI)) {
             updatedAlumni.roles = [...(updatedAlumni.roles || []), ALUMNI];
           }
-          
+
           // First delete the original alumni document
           await alumniUsersCollection.deleteOne({ _id: existingAlumni._id });
-          
+
           // Then insert the updated document
           await alumniUsersCollection.insertOne(updatedAlumni);
-          
+
           result = {
             action: "updated",
             alumniId: existingAlumni._id,
             userId: user._id,
-            email: user.email
+            email: user.email,
           };
         } else {
           // Create new alumni user with data from regular user
@@ -821,42 +879,51 @@ export async function convertUsersWithoutSubscriptionToAlumni() {
             tier: 0, // Default tier
             roles: [ALUMNI],
             purchaseDate: user.purchaseDate || new Date(),
-            expireDate: user.expireDate || new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+            expireDate:
+              user.expireDate ||
+              new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
             tickets: user.tickets || [],
-            christmas: user.christmas || []
+            christmas: user.christmas || [],
           };
-          
+
           // Insert the new alumni user document
           await alumniUsersCollection.insertOne(newAlumniUser);
-          
+
           result = {
             action: "created",
             alumniId: alumniId,
             userId: user._id,
-            email: user.email
+            email: user.email,
           };
         }
-        
+
         // Update the regular user's status to alumni
         await usersCollection.updateOne(
           { _id: user._id },
           { $set: { status: USER_STATUSES[ALUMNI_STATUS] } }
         );
-        
+
         results.push(result);
         count++;
-        console.log(`Processed user ${count}: ${user.email} - ${result.action} alumni user`);
+        console.log(
+          `Processed user ${count}: ${user.email} - ${result.action} alumni user`
+        );
       } catch (userError) {
-        console.error(`Error processing user ${user._id || user.email}:`, userError);
+        console.error(
+          `Error processing user ${user._id || user.email}:`,
+          userError
+        );
         // Continue with next user despite error
       }
     }
-    
+
     console.log(`Successfully processed ${count} users`);
     return results;
-    
   } catch (error) {
-    console.error("Error converting users without subscription to alumni:", error);
+    console.error(
+      "Error converting users without subscription to alumni:",
+      error
+    );
     return null;
   } finally {
     // Don't close the client here as it might be reused
