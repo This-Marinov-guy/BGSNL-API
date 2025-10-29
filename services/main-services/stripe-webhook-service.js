@@ -393,13 +393,6 @@ export const handleAlumniMigration = async (metadata, paymentData) => {
         message: "User not found for migration",
       };
     }
-
-    if (regularUser?.subscription?.id !== undefined) {
-      return {
-        success: false,
-        message: "User already has a subscription",
-      };
-    }
   } catch (err) {
     console.error(`Error finding user: ${err.message}`);
     return {
