@@ -52,6 +52,7 @@ import {
   LOCKED,
   PAYMENT_AWAITING,
   USER_STATUSES,
+  MEMBERSHIP_ACTIVE,
 } from "../../util/config/enums.js";
 import { createStripeClient } from "../../util/config/stripe.js";
 

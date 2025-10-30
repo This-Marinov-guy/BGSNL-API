@@ -4,6 +4,7 @@ export const LOCKED = 'locked';
 export const SUSPENDED = 'frozen';
 export const ALUMNI_MIGRATED = 'alumni-migrated';
 export const PAYMENT_AWAITING = "payment_awaiting";
+export const MEMBERSHIP_ACTIVE = "membership_active";
 
 export const USER_STATUSES = {
   [ACTIVE]: ACTIVE,
@@ -11,6 +12,7 @@ export const USER_STATUSES = {
   [SUSPENDED]: SUSPENDED,
   [ALUMNI_MIGRATED]: ALUMNI_MIGRATED,
   [PAYMENT_AWAITING]: PAYMENT_AWAITING,
+  [MEMBERSHIP_ACTIVE]: MEMBERSHIP_ACTIVE,
 };
 
 // Ticket types

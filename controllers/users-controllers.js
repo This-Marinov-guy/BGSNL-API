@@ -12,6 +12,7 @@ import {
   ACTIVE,
   ALUMNI_MIGRATED,
   USER_STATUSES,
+  MEMBERSHIP_ACTIVE,
 } from "../util/config/enums.js";
 import { generateAnonymizedUserStatsXls } from "../services/main-services/user-stats-service.js";
 import fs from "fs/promises";

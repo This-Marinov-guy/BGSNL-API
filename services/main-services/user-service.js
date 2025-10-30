@@ -1,5 +1,6 @@
 import AlumniUser from "../../models/AlumniUser.js";
 import User from "../../models/User.js";
+import { USER_STATUSES, MEMBERSHIP_ACTIVE } from "../../util/config/enums.js";
 import { extractUserFromRequest } from "../../util/functions/security.js";
 
 export const getFingerprintLite = (req) => {
@@ -24,8 +25,9 @@ export const findUserByEmail = async (email) => {
   }
 
   try {
-    const userQuery = User.findOne({ email });
-    const alumniQuery = AlumniUser.findOne({ email });
+    const excludeMembershipActive = { status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] } };
+    const userQuery = User.findOne({ email, ...excludeMembershipActive });
+    const alumniQuery = AlumniUser.findOne({ email, ...excludeMembershipActive });
 
     const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
 
@@ -43,8 +45,9 @@ export const findUserById = async (id) => {
   }
 
   try {
-    const userQuery = User.findOne({_id: id});
-    const alumniQuery = AlumniUser.findOne({_id: id});
+    const excludeMembershipActive = { status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] } };
+    const userQuery = User.findOne({ _id: id, ...excludeMembershipActive });
+    const alumniQuery = AlumniUser.findOne({ _id: id, ...excludeMembershipActive });
 
     const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
 
@@ -57,8 +60,9 @@ export const findUserById = async (id) => {
 
 export const findUserByName = async (name, surname) => {
   try {
-    const userQuery = User.findOne({ name, surname });
-    const alumniQuery = AlumniUser.findOne({ name, surname });
+    const excludeMembershipActive = { status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] } };
+    const userQuery = User.findOne({ name, surname, ...excludeMembershipActive });
+    const alumniQuery = AlumniUser.findOne({ name, surname, ...excludeMembershipActive });
 
     const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
 
@@ -77,8 +81,9 @@ export const findUserByQuery = async (query) => {
   }
 
   try {
-    const userQuery = User.findOne(query);
-    const alumniQuery = AlumniUser.findOne(query);
+    const excludeMembershipActive = { status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] } };
+    const userQuery = User.findOne({ ...query, ...excludeMembershipActive });
+    const alumniQuery = AlumniUser.findOne({ ...query, ...excludeMembershipActive });
 
     const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
 
