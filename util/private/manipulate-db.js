@@ -930,3 +930,95 @@ export async function convertUsersWithoutSubscriptionToAlumni() {
     console.log("Conversion process completed");
   }
 }
+
+/**
+ * Adds a role to users found by their email addresses
+ * @param {Array<string>} emails - Array of email addresses to search for
+ * @param {string} role - The role to add to the users
+ * @returns {Array|null} - Array of updated users, or null if operation failed
+ */
+export async function addRoleToUsersByEmail(emails, role) {
+  try {
+    // Connect to the MongoDB server
+    await client.connect();
+    console.log("Connected successfully to server");
+
+    // Get the database and collection
+    const database = client.db();
+    const usersCollection = database.collection("users");
+
+    // Validate inputs
+    if (!Array.isArray(emails) || emails.length === 0) {
+      console.log("No emails provided");
+      return { success: false, message: "No emails provided" };
+    }
+
+    if (!role || typeof role !== "string") {
+      console.log("Invalid role provided");
+      return { success: false, message: "Invalid role provided" };
+    }
+
+    // Find users by email
+    const query = { email: { $in: emails } };
+    const cursor = usersCollection.find(query);
+    const results = [];
+    let count = 0;
+    let notFoundEmails = [...emails];
+
+    // Iterate over found users
+    for await (const user of cursor) {
+      try {
+        // Check if user already has the role
+        const currentRoles = user.roles || [];
+        if (currentRoles.includes(role)) {
+          console.log(
+            `User ${user.email} already has role ${role}, skipping...`
+          );
+          notFoundEmails = notFoundEmails.filter((e) => e !== user.email);
+          continue;
+        }
+
+        // Add the role using $addToSet (prevents duplicates)
+        const updateResult = await usersCollection.updateOne(
+          { _id: user._id },
+          { $addToSet: { roles: role } }
+        );
+
+        if (updateResult.modifiedCount > 0) {
+          results.push({
+            userId: user._id,
+            email: user.email,
+            name: user.name,
+            surname: user.surname,
+            addedRole: role,
+          });
+          count++;
+          console.log(`Added role ${role} to user ${user.email}`);
+          notFoundEmails = notFoundEmails.filter((e) => e !== user.email);
+        }
+      } catch (userError) {
+        console.error(`Error processing user ${user.email}:`, userError);
+        // Continue with next user despite error
+      }
+    }
+
+    // Report emails that were not found
+    if (notFoundEmails.length > 0) {
+      console.log(`Users not found for emails: ${notFoundEmails.join(", ")}`);
+    }
+
+    console.log(`Successfully added role ${role} to ${count} user(s)`);
+    return {
+      success: true,
+      updatedCount: count,
+      results,
+      notFoundEmails,
+    };
+  } catch (error) {
+    console.error("Error adding role to users:", error);
+    return { success: false, message: error.message };
+  } finally {
+    // Don't close the client here as it might be reused
+    console.log("Role addition process completed");
+  }
+}
