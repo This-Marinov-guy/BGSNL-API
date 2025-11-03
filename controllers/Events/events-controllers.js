@@ -79,7 +79,7 @@ export const getEventById = async (req, res, next) => {
 
     if (ticketsRemaining <= 0 || expired) {
       status = false;
-    }
+    }    
 
     event = checkDiscountsOnEvents(event);
     event = removeModelProperties(event, [

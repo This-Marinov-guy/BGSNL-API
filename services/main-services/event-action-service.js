@@ -188,109 +188,128 @@ export const checkDiscountsOnEvents = (event) => {
     return event;
   }
 
-  let guestCount = event?.guestList?.length ?? 0;
+  // Helper function to check if a bird condition is met
+  const checkBirdCondition = (bird, event) => {
+    if (!bird || !bird.isEnabled) {
+      return false;
+    }
+
+    // Calculate guest count (considering excludeMembers)
+    let guestCount = event?.guestList?.length ?? 0;
+    if (bird.excludeMembers && guestCount > 0) {
+      guestCount = event.guestList.filter((g) => g.type !== "member").length;
+    }
+
+    // Check timer condition
+    const startTimer = bird.startTimer;
+    const ticketTimer = bird.ticketTimer; // This is the end timer
+    const now = moment();
+
+    // Check if both timers are empty/null/undefined
+    const hasStartTimer =
+      startTimer && startTimer !== "" && startTimer !== null;
+    const hasTicketTimer =
+      ticketTimer && ticketTimer !== null && ticketTimer !== undefined;
+    const hasNoTimerValues = !hasStartTimer && !hasTicketTimer;
+
+    // Check if timer condition is met
+    let timerMet = false;
+    if (hasNoTimerValues) {
+      // If both timers have no values, timer condition is met (no restrictions)
+      timerMet = true;
+    } else {
+      let startTimerMet = true; // Default to true if not provided
+      let ticketTimerMet = true; // Default to true if not provided
+
+      if (hasStartTimer) {
+        // startTimer should be in the past (event has started)
+        startTimerMet = moment(startTimer).isBefore(now);
+      }
+
+      if (hasTicketTimer) {
+        // ticketTimer (end timer) should be in the future (event hasn't ended)
+        ticketTimerMet = moment(ticketTimer).isAfter(now);
+      }
+
+      // At least one timer conditions must be met
+      timerMet = startTimerMet || ticketTimerMet;
+    }
+
+    // Check limit condition
+    const ticketLimit = bird.ticketLimit;
+    const hasNoLimitValue =
+      ticketLimit === null || ticketLimit === undefined || ticketLimit === "";
+
+    // Check if limit condition is met
+    let limitMet = false;
+    if (hasNoLimitValue) {
+      // If no limit value, limit condition is met (no restrictions)
+      limitMet = true;
+    } else if (ticketLimit > guestCount) {
+      // If limit exists and is greater than guest count, condition is met
+      limitMet = true;
+    }
+
+    // Special case: If both timer and limit have no values, condition is NOT met
+    if (hasNoTimerValues && hasNoLimitValue) {
+      return false;
+    }
+
+    // Both conditions must be met
+    return timerMet && limitMet;
+  };
+
+  // Check early bird first (priority if both are met)
+  let earlyBirdMet = false;
+  let lateBirdMet = false;
+
+  if (event?.earlyBird) {
+    earlyBirdMet = checkBirdCondition(event.earlyBird, event);
+  }
+
+  if (event?.lateBird) {
+    lateBirdMet = checkBirdCondition(event.lateBird, event);
+  }
+
+  // Apply early bird if condition is met (priority over late bird)
+  if (earlyBirdMet) {
+    const earlyBird = event.earlyBird;
+    event.product["earlyBird"] = true;
+    event.product["lateBird"] = false;
+
+    event.product["guest"] = {
+      price: earlyBird.price,
+      priceId: earlyBird.priceId,
+    };
+    event.product["member"] = {
+      price: earlyBird.memberPrice,
+      priceId: earlyBird.memberPriceId,
+    };
+
+    return event;
+  }
+
+  // Apply late bird if condition is met
+  if (lateBirdMet) {
+    const lateBird = event.lateBird;
+    event.product["earlyBird"] = false;
+    event.product["lateBird"] = true;
+
+    event.product["guest"] = {
+      price: lateBird.price,
+      priceId: lateBird.priceId,
+    };
+    event.product["member"] = {
+      price: lateBird.memberPrice,
+      priceId: lateBird.memberPriceId,
+    };
+
+    return event;
+  }
+
+  // Neither condition is met
   event.product["earlyBird"] = false;
   event.product["lateBird"] = false;
-
-  if (event?.lateBird && event.lateBird.isEnabled) {
-    const lateBird = event.lateBird;
-    const isLateBird = {
-      limit: !Object.prototype.hasOwnProperty.call(lateBird, "ticketLimit"),
-      timer:
-        !Object.prototype.hasOwnProperty.call(lateBird, "ticketTimer") ||
-        !Object.prototype.hasOwnProperty.call(lateBird, "startTimer"),
-    };
-
-    if (guestCount > 0 && lateBird.excludeMembers) {
-      guestCount = event.guestList.filter((g) => g.type !== "member").length;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(lateBird, "ticketLimit") &&
-      lateBird.ticketLimit > guestCount
-    ) {
-      isLateBird["limit"] = true;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(lateBird, "ticketTimer") &&
-      moment(lateBird.ticketTimer).isAfter(moment())
-    ) {
-      isLateBird["timer"] = true;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(lateBird, "startTimer") &&
-      moment(lateBird.startTimer).isBefore(moment())
-    ) {
-      isLateBird["timer"] = true;
-    }
-
-    if (isLateBird.limit && isLateBird.timer) {
-      event.product["lateBird"] = true;
-
-      event.product["guest"] = {
-        price: lateBird.price,
-        priceId: lateBird.priceId,
-      };
-      event.product["member"] = {
-        price: lateBird.memberPrice,
-        priceId: lateBird.memberPriceId,
-      };
-
-      return event;
-    }
-  }
-
-  if (event?.earlyBird && event.earlyBird.isEnabled) {
-    const earlyBird = event.earlyBird;
-    const isEarlyBird = {
-      limit: !Object.prototype.hasOwnProperty.call(earlyBird, "ticketLimit"),
-      timer:
-        !Object.prototype.hasOwnProperty.call(earlyBird, "ticketTimer") &&
-        !Object.prototype.hasOwnProperty.call(earlyBird, "startTimer"),
-    };
-
-    if (guestCount > 0 && earlyBird.excludeMembers) {
-      guestCount = event.guestList.filter((g) => g.type !== "member").length;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(earlyBird, "ticketLimit") &&
-      earlyBird.ticketLimit > guestCount
-    ) {
-      isEarlyBird["limit"] = true;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(earlyBird, "ticketTimer") &&
-      moment(earlyBird.ticketTimer).isAfter(moment())
-    ) {
-      isEarlyBird["timer"] = true;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(earlyBird, "startTimer") &&
-      moment(earlyBird.startTimer).isBefore(moment())
-    ) {
-      isEarlyBird["timer"] = true;
-    }
-
-    if (isEarlyBird.limit && isEarlyBird.timer) {
-      event.product["earlyBird"] = true;
-
-      event.product["guest"] = {
-        price: earlyBird.price,
-        priceId: earlyBird.priceId,
-      };
-      event.product["member"] = {
-        price: earlyBird.memberPrice,
-        priceId: earlyBird.memberPriceId,
-      };
-
-      return event;
-    }
-  }
 
   return event;
 };
