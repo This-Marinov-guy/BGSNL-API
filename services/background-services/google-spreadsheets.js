@@ -321,6 +321,7 @@ const eventToSpreadsheet = (id) => {
             .join(" + ")
         : "N/A",
       obj.ticket,
+      obj.transactionId ?? "-",
     ]);
 
     const values = [
@@ -613,6 +614,7 @@ const specialEventsToSpreadsheet = (id) => {
       obj.extraData ?? "N/A",
       obj.course ?? "-",
       obj.ticket,
+      obj.transactionId ?? "-",
     ]);
 
     const values = [
@@ -1155,6 +1157,7 @@ export const addEventToDataPool = (eventId, sheetName = "2024-2025") => {
       guest.phone ?? "-",
       guest.preferences ? refactorToKeyValuePairs(guest.preferences) : "N/A",
       guest.ticket ?? "-",
+      guest.transactionId ?? "-",
       event.sheetName ?? "-",
       event.id ?? "-",
       event.status ?? "-",
