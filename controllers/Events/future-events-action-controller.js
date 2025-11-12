@@ -598,7 +598,20 @@ export const editEvent = async (req, res, next) => {
 
   if (earlyBird.isEnabled && event?.product) {
     try {
-      if (earlyBird["price"] != event?.earlyBird?.price) {
+      // Handle guest price
+      if (earlyBird["price"] && earlyBird["price"] != event?.earlyBird?.price) {
+        // Price changed, create new price
+        earlyBird["priceId"] = await addPrice(
+          region,
+          event.product.id,
+          earlyBird["price"],
+          "early bird guest"
+        );
+      } else if (event?.earlyBird?.priceId) {
+        // Price unchanged, preserve existing priceId
+        earlyBird["priceId"] = event.earlyBird.priceId;
+      } else if (earlyBird["price"] && !earlyBird["priceId"]) {
+        // Price exists but no priceId, create it
         earlyBird["priceId"] = await addPrice(
           region,
           event.product.id,
@@ -607,7 +620,20 @@ export const editEvent = async (req, res, next) => {
         );
       }
 
-      if (earlyBird["memberPrice"] != event?.earlyBird?.memberPrice) {
+      // Handle member price
+      if (earlyBird["memberPrice"] && earlyBird["memberPrice"] != event?.earlyBird?.memberPrice) {
+        // Price changed, create new price
+        earlyBird["memberPriceId"] = await addPrice(
+          region,
+          event.product.id,
+          earlyBird["memberPrice"],
+          "early bird member"
+        );
+      } else if (event?.earlyBird?.memberPriceId) {
+        // Price unchanged, preserve existing memberPriceId
+        earlyBird["memberPriceId"] = event.earlyBird.memberPriceId;
+      } else if (earlyBird["memberPrice"] && !earlyBird["memberPriceId"]) {
+        // Price exists but no memberPriceId, create it
         earlyBird["memberPriceId"] = await addPrice(
           region,
           event.product.id,
@@ -622,7 +648,20 @@ export const editEvent = async (req, res, next) => {
 
   if (lateBird.isEnabled && event?.product) {
     try {
-      if (lateBird["price"] != event?.lateBird?.price) {
+      // Handle guest price
+      if (lateBird["price"] && lateBird["price"] != event?.lateBird?.price) {
+        // Price changed, create new price
+        lateBird["priceId"] = await addPrice(
+          region,
+          event.product.id,
+          lateBird["price"],
+          "late bird guest"
+        );
+      } else if (event?.lateBird?.priceId) {
+        // Price unchanged, preserve existing priceId
+        lateBird["priceId"] = event.lateBird.priceId;
+      } else if (lateBird["price"] && !lateBird["priceId"]) {
+        // Price exists but no priceId, create it
         lateBird["priceId"] = await addPrice(
           region,
           event.product.id,
@@ -631,7 +670,20 @@ export const editEvent = async (req, res, next) => {
         );
       }
 
-      if (lateBird["memberPrice"] != event?.lateBird?.memberPrice) {
+      // Handle member price
+      if (lateBird["memberPrice"] && lateBird["memberPrice"] != event?.lateBird?.memberPrice) {
+        // Price changed, create new price
+        lateBird["memberPriceId"] = await addPrice(
+          region,
+          event.product.id,
+          lateBird["memberPrice"],
+          "late bird member"
+        );
+      } else if (event?.lateBird?.memberPriceId) {
+        // Price unchanged, preserve existing memberPriceId
+        lateBird["memberPriceId"] = event.lateBird.memberPriceId;
+      } else if (lateBird["memberPrice"] && !lateBird["memberPriceId"]) {
+        // Price exists but no memberPriceId, create it
         lateBird["memberPriceId"] = await addPrice(
           region,
           event.product.id,
