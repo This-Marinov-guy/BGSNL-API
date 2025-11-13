@@ -218,8 +218,8 @@ export const checkDiscountsOnEvents = (event) => {
       // If both timers have no values, timer condition is met (no restrictions)
       timerMet = true;
     } else {
-      let startTimerMet = true; // Default to true if not provided
-      let ticketTimerMet = true; // Default to true if not provided
+      let startTimerMet = false; // Default to true if not provided
+      let ticketTimerMet = false; // Default to true if not provided
 
       if (hasStartTimer) {
         // startTimer should be in the past (event has started)
