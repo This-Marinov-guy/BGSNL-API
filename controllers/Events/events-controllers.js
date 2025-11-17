@@ -364,7 +364,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
     societyEvent.title,
     societyEvent.date,
     guestName,
-    req.file.location
+    Array(quantity ?? 1).fill(req.file.location),
   );
 
   eventToSpreadsheet(societyEvent.id);

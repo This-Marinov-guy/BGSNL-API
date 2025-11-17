@@ -157,10 +157,10 @@ mongoose
 // }
 
 // usersToSpreadsheet();
-// alumniToSpreadsheet();
 
 // addRoleToUsersByEmail(
 //   [
 //   ],
 //   "active_member"
 // );
+

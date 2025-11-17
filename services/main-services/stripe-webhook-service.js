@@ -236,6 +236,7 @@ export const handleAccountUnlock = async (metadata, paymentData) => {
 
   usersToSpreadsheet(user.region);
   usersToSpreadsheet();
+  alumniToSpreadsheet();
 
   return { success: true };
 };
@@ -297,7 +298,7 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
     societyEvent.title,
     societyEvent.date,
     guestName,
-    metadata.file
+    Array(quantity ?? 1).fill(metadata.file)
   );
 
   eventToSpreadsheet(societyEvent.id);
@@ -650,6 +651,7 @@ export const handleInvoicePaid = async (paymentData, event) => {
 
   usersToSpreadsheet(user.region);
   usersToSpreadsheet();
+  alumniToSpreadsheet();
 
   console.log(`Successfully processed invoice.paid for user: ${user.email}`);
   return {
@@ -720,6 +722,7 @@ export const handleInvoicePaymentFailed = async (paymentData) => {
     try {
       usersToSpreadsheet(user.region);
       usersToSpreadsheet();
+      alumniToSpreadsheet();
       paymentFailedEmail(user.email, USER_URL);
     } catch (err) {
       console.log(err);
