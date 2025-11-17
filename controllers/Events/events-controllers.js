@@ -358,13 +358,15 @@ export const postAddGuestToEvent = async (req, res, next) => {
     }
   }
 
+  const tickets = Array.from({ length: quantity }, () => req.file.location);
+
   sendTicketEmail(
     "guest",
     guestEmail,
     societyEvent.title,
     societyEvent.date,
     guestName,
-    Array(quantity ?? 1).fill(req.file.location),
+    tickets
   );
 
   eventToSpreadsheet(societyEvent.id);

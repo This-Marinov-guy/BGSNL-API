@@ -292,13 +292,15 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
     }
   }
 
+  const tickets = Array.from({ length: quantity }, () => metadata.file);
+
   sendTicketEmail(
     "guest",
     guestEmail,
     societyEvent.title,
     societyEvent.date,
     guestName,
-    Array(quantity ?? 1).fill(metadata.file)
+    tickets
   );
 
   eventToSpreadsheet(societyEvent.id);
