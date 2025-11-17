@@ -25,6 +25,21 @@ const eventSchema = new Schema({
     id: { type: String },
     earlyBird: { type: Boolean, default: false },
     lateBird: { type: Boolean, default: false },
+    promoCodes: {
+      type: [
+        {
+          id: { type: String, required: true },
+          code: { type: String, required: true },
+          discountType: { type: Number, required: true },
+          discount: { type: Number, required: true },
+          useLimit: { type: Number, required: false },
+          timeLimit: { type: Date, required: false },
+          minAmount: { type: Number, required: false },
+          redeemed: { type: Number, default: 0 },
+        },
+      ],
+      default: [],
+    },
     guest: {
       discount: { type: Number },
       originalPrice: { type: Number },
@@ -129,7 +144,7 @@ const eventSchema = new Schema({
       status: { type: Number, default: 0 },
       code: { type: Number },
       type: { type: String },
-      transactionId: { type: String, default: '-' },
+      transactionId: { type: String, default: "-" },
       timestamp: { type: Date, default: new Date() },
       name: { type: String, required: true },
       email: { type: String, required: true },

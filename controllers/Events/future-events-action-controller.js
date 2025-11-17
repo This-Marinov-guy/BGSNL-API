@@ -20,6 +20,8 @@ import moment from "moment/moment.js";
 import {
   addPrice,
   deleteProduct,
+  processPromocodesForCreate,
+  processPromocodesForUpdate,
 } from "../../services/side-services/stripe.js";
 import {
   checkDiscountsOnEvents,
@@ -143,6 +145,7 @@ export const addEvent = async (req, res, next) => {
   const guestPromotion = JSON.parse(req.body.guestPromotion);
   const memberPromotion = JSON.parse(req.body.memberPromotion);
   const addOns = JSON.parse(req.body.addOns);
+  const promoCodes = req.body.promoCodes ? JSON.parse(req.body.promoCodes) : [];
 
   const subEvent = JSON.parse(req.body.subEvent);
 
@@ -361,6 +364,12 @@ export const addEvent = async (req, res, next) => {
         }
       }
     }
+
+    // Process promoCodes if provided
+    const processedPromocodes = processPromocodesForCreate(promoCodes);
+    if (processedPromocodes.length > 0) {
+      product.promoCodes = processedPromocodes;
+    }
   }
 
   const sheetName = `${title}|${moment(validDate).format(
@@ -495,6 +504,7 @@ export const editEvent = async (req, res, next) => {
   const memberPromotion = JSON.parse(req.body.memberPromotion);
   const subEvent = JSON.parse(req.body.subEvent);
   const addOns = JSON.parse(req.body.addOns);
+  const promoCodes = req.body.promoCodes ? JSON.parse(req.body.promoCodes) : null;
 
   const poster = req.files["poster"]
     ? await uploadToCloudinary(req.files["poster"][0], {
@@ -776,6 +786,14 @@ export const editEvent = async (req, res, next) => {
         console.log(err.message);
       }
     }
+  }
+
+  // Process promoCodes if provided
+  if (event?.product) {
+    event.product.promoCodes = processPromocodesForUpdate(
+      promoCodes,
+      event.product.promoCodes
+    );
   }
 
   event.images = images;
