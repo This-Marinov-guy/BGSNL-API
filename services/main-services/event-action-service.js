@@ -313,3 +313,188 @@ export const checkDiscountsOnEvents = (event) => {
 
   return event;
 };
+
+/**
+ * Validates if a promocode can be applied to a purchase
+ * @param {object} promocode - The promocode object from the event
+ * @param {number} totalAmount - The purchase amount in euros
+ * @returns {object} - { valid: boolean, reason: string, discountedAmount: number }
+ */
+export const validatePromocodeForPurchase = (promocode, totalAmount) => {
+  // Check if promocode is active
+  if (!promocode.active) {
+    return {
+      valid: false,
+      reason: "This promocode is no longer active",
+      discountedAmount: totalAmount,
+    };
+  }
+
+  // Check if promocode has expired
+  if (promocode.timeLimit) {
+    const now = new Date();
+    const expirationDate = new Date(promocode.timeLimit);
+    if (now > expirationDate) {
+      return {
+        valid: false,
+        reason: "This promocode has expired",
+        discountedAmount: totalAmount,
+      };
+    }
+  }
+
+  // Check minimum amount requirement
+  if (promocode.minAmount && totalAmount < promocode.minAmount) {
+    return {
+      valid: false,
+      reason: `This promocode requires a minimum purchase of €${promocode.minAmount}`,
+      discountedAmount: totalAmount,
+    };
+  }
+
+  // Calculate discounted amount
+  let discountedAmount = totalAmount;
+  if (promocode.discountType === 1) {
+    // Fixed amount discount
+    discountedAmount = Math.max(0, totalAmount - promocode.discount);
+  } else if (promocode.discountType === 2) {
+    // Percentage discount
+    discountedAmount = totalAmount * (1 - promocode.discount / 100);
+  }
+
+  return {
+    valid: true,
+    reason: "",
+    discountedAmount: Math.round(discountedAmount * 100) / 100, // Round to 2 decimals
+    discountAmount: Math.round((totalAmount - discountedAmount) * 100) / 100,
+  };
+};
+
+/**
+ * Finds a promocode by code string in an event's promocodes array
+ * @param {object} event - The event object
+ * @param {string} code - The promocode string to find
+ * @returns {object|null} - The promocode object or null if not found
+ */
+export const findPromocodeByCode = (event, code) => {
+  if (!event?.product?.promoCodes || event.product.promoCodes.length === 0) {
+    return null;
+  }
+
+  const upperCode = code.trim().toUpperCase();
+  return event.product.promoCodes.find(
+    (promo) => promo.code === upperCode && promo.active !== false
+  ) || null;
+};
+
+/**
+ * Gets the applicable price for a user type, considering active discounts
+ * This includes early bird, late bird, and promotion discounts
+ * @param {object} event - The event object (after checkDiscountsOnEvents)
+ * @param {string} userType - 'guest', 'member', or 'activeMember'
+ * @returns {object} - { price: number, priceId: string, discountInfo: object }
+ */
+export const getApplicablePrice = (event, userType = 'guest') => {
+  if (!event?.product) {
+    return null;
+  }
+
+  const product = event.product;
+  
+  // Map userType to product properties
+  const typeMapping = {
+    guest: 'guest',
+    member: 'member',
+    activeMember: 'activeMember',
+  };
+
+  const priceType = typeMapping[userType] || 'guest';
+  const priceInfo = product[priceType];
+
+  if (!priceInfo) {
+    return null;
+  }
+
+  return {
+    price: priceInfo.price,
+    priceId: priceInfo.priceId,
+    discountInfo: {
+      hasDiscount: priceInfo.discount ? true : false,
+      originalPrice: priceInfo.originalPrice,
+      discountPercentage: priceInfo.discount,
+      isEarlyBird: product.earlyBird || false,
+      isLateBird: product.lateBird || false,
+    },
+  };
+};
+
+/**
+ * Calculates final price after applying promocode
+ * @param {object} event - The event object
+ * @param {string} userType - 'guest', 'member', or 'activeMember'
+ * @param {string} promocodeString - The promocode to apply (optional)
+ * @returns {object} - Complete pricing information
+ */
+export const calculateFinalPrice = (event, userType = 'guest', promocodeString = null) => {
+  // Get the base price (with early bird / late bird / promotion applied)
+  const eventWithDiscounts = checkDiscountsOnEvents(event);
+  const priceInfo = getApplicablePrice(eventWithDiscounts, userType);
+
+  if (!priceInfo) {
+    return {
+      valid: false,
+      error: "Price not available for this user type",
+    };
+  }
+
+  let finalPrice = priceInfo.price;
+  let priceId = priceInfo.priceId;
+  let promocodeInfo = null;
+
+  // Apply promocode if provided
+  if (promocodeString) {
+    const promocode = findPromocodeByCode(eventWithDiscounts, promocodeString);
+    
+    if (!promocode) {
+      return {
+        valid: false,
+        error: "Invalid promocode",
+        basePrice: priceInfo.price,
+        priceId: priceInfo.priceId,
+        discountInfo: priceInfo.discountInfo,
+      };
+    }
+
+    const validation = validatePromocodeForPurchase(promocode, priceInfo.price);
+    
+    if (!validation.valid) {
+      return {
+        valid: false,
+        error: validation.reason,
+        basePrice: priceInfo.price,
+        priceId: priceInfo.priceId,
+        discountInfo: priceInfo.discountInfo,
+      };
+    }
+
+    finalPrice = validation.discountedAmount;
+    promocodeInfo = {
+      code: promocode.code,
+      id: promocode.id,
+      couponId: promocode.couponId,
+      discountType: promocode.discountType,
+      discount: promocode.discount,
+      discountAmount: validation.discountAmount,
+    };
+  }
+
+  return {
+    valid: true,
+    basePrice: priceInfo.price,
+    finalPrice: finalPrice,
+    priceId: priceId,
+    discountInfo: priceInfo.discountInfo,
+    promocodeInfo: promocodeInfo,
+    currency: 'EUR',
+  };
+};

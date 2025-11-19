@@ -28,14 +28,15 @@ const eventSchema = new Schema({
     promoCodes: {
       type: [
         {
-          id: { type: String, required: true },
-          code: { type: String, required: true },
-          discountType: { type: Number, required: true },
-          discount: { type: Number, required: true },
-          useLimit: { type: Number, required: false },
-          timeLimit: { type: Date, required: false },
-          minAmount: { type: Number, required: false },
-          redeemed: { type: Number, default: 0 },
+          id: { type: String, required: true }, // Stripe promotion code ID
+          couponId: { type: String, required: true }, // Stripe coupon ID
+          code: { type: String, required: true }, // The actual code string
+          discountType: { type: Number, required: true }, // 1=fixed, 2=percentage
+          discount: { type: Number, required: true }, // Discount value
+          useLimit: { type: Number, required: false }, // Max redemptions
+          timeLimit: { type: Date, required: false }, // Expiration date
+          minAmount: { type: Number, required: false }, // Minimum purchase amount
+          active: { type: Boolean, default: true }, // Whether the code is active
         },
       ],
       default: [],

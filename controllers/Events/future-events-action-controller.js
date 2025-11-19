@@ -366,7 +366,7 @@ export const addEvent = async (req, res, next) => {
     }
 
     // Process promoCodes if provided
-    const processedPromocodes = processPromocodesForCreate(promoCodes);
+    const processedPromocodes = await processPromocodesForCreate(region, product.id, promoCodes);
     if (processedPromocodes.length > 0) {
       product.promoCodes = processedPromocodes;
     }
@@ -790,7 +790,9 @@ export const editEvent = async (req, res, next) => {
 
   // Process promoCodes if provided
   if (event?.product) {
-    event.product.promoCodes = processPromocodesForUpdate(
+    event.product.promoCodes = await processPromocodesForUpdate(
+      region,
+      event.product.id,
       promoCodes,
       event.product.promoCodes
     );
