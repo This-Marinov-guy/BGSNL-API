@@ -172,41 +172,36 @@ const checkPromocodeDuplicate = (promoCodes, code, excludeId = null) => {
 
 /**
  * Creates a Stripe Coupon restricted to a specific product
+ * According to Stripe API: https://docs.stripe.com/api/coupons
  * @param {string} region - Region for stripe client
  * @param {string} productId - Stripe product ID to restrict coupon to
  * @param {number} discountType - 1 for fixed amount, 2 for percentage
  * @param {number} discount - Discount value
- * @param {number} minAmount - Minimum amount in euros (optional)
  * @returns {string|null} - Coupon ID or null if failed
  */
-export const createStripeCoupon = async (region, productId, discountType, discount, minAmount = null) => {
+export const createStripeCoupon = async (region, productId, discountType, discount) => {
   const stripeClient = createStripeClient(region);
 
   try {
     const couponData = {
-      currency: 'eur',
+      duration: 'forever', // Coupons are reusable, duration on coupon not needed for our use case
     };
 
     // Set discount type (amount_off for fixed, percent_off for percentage)
     if (discountType === 1) {
       // Fixed amount - convert euros to cents
       couponData.amount_off = Math.round(discount * 100);
+      couponData.currency = 'eur'; // Required when using amount_off
     } else if (discountType === 2) {
       // Percentage
       couponData.percent_off = discount;
     }
 
-    // Restrict coupon to specific product
+    // Restrict coupon to specific product using applies_to
     if (productId) {
       couponData.applies_to = {
         products: [productId]
       };
-    }
-
-    // Add minimum amount restriction if provided (convert to cents)
-    if (minAmount !== null && minAmount !== undefined && minAmount > 0) {
-      couponData.min_amount = Math.round(minAmount * 100);
-      couponData.min_amount_currency = 'eur';
     }
 
     const coupon = await stripeClient.coupons.create(couponData);
@@ -219,20 +214,23 @@ export const createStripeCoupon = async (region, productId, discountType, discou
 
 /**
  * Creates a Stripe Promotion Code
+ * According to Stripe API: https://docs.stripe.com/api/promotion_codes
  * @param {string} region - Region for stripe client
  * @param {string} couponId - Stripe coupon ID
  * @param {string} code - The promocode string
  * @param {number} useLimit - Maximum redemptions (optional)
  * @param {Date} timeLimit - Expiration date (optional)
+ * @param {number} minAmount - Minimum amount in euros (optional)
  * @returns {object|null} - Promotion code object with id and code, or null if failed
  */
-export const createStripePromotionCode = async (region, couponId, code, useLimit = null, timeLimit = null) => {
+export const createStripePromotionCode = async (region, couponId, code, useLimit = null, timeLimit = null, minAmount = null) => {
   const stripeClient = createStripeClient(region);
 
   try {
     const promotionCodeData = {
       coupon: couponId,
-      code: code.trim().toUpperCase(),
+      code: code.trim(),
+      active: true,
     };
 
     // Add max redemptions if provided
@@ -244,6 +242,15 @@ export const createStripePromotionCode = async (region, couponId, code, useLimit
     if (timeLimit) {
       const expirationDate = new Date(timeLimit);
       promotionCodeData.expires_at = Math.floor(expirationDate.getTime() / 1000);
+    }
+
+    // Add minimum amount restriction if provided
+    // According to Stripe docs, this goes in restrictions, not on the coupon
+    if (minAmount !== null && minAmount !== undefined && minAmount > 0) {
+      promotionCodeData.restrictions = {
+        minimum_amount: Math.round(minAmount * 100), // Convert to cents
+        minimum_amount_currency: 'eur'
+      };
     }
 
     const promotionCode = await stripeClient.promotionCodes.create(promotionCodeData);
@@ -268,7 +275,8 @@ export const updateStripePromotionCode = async (
   newCode,
   newCouponId,
   useLimit = null,
-  timeLimit = null
+  timeLimit = null,
+  minAmount = null
 ) => {
   const stripeClient = createStripeClient(region);
 
@@ -284,7 +292,8 @@ export const updateStripePromotionCode = async (
       newCouponId,
       newCode,
       useLimit,
-      timeLimit
+      timeLimit,
+      minAmount
     );
   } catch (err) {
     console.error('Error updating Stripe promotion code:', err);
@@ -326,6 +335,8 @@ export const deleteStripeCoupon = async (region, couponId) => {
 
 /**
  * Creates a complete promocode in Stripe (coupon + promotion code)
+ * Step 1: Create coupon with discount and product restriction
+ * Step 2: Create promotion code with code string, limits, and restrictions
  * @param {string} region - Region for stripe client
  * @param {string} productId - Stripe product ID to restrict coupon to
  * @param {object} promoData - Promocode data
@@ -335,19 +346,22 @@ const createStripePromocodeComplete = async (region, productId, promoData) => {
   const { code, discountType, discount, useLimit, timeLimit, minAmount } = promoData;
 
   // Step 1: Create the coupon restricted to this product
-  const couponId = await createStripeCoupon(region, productId, discountType, discount, minAmount);
+  // Coupon defines: discount amount/percentage, product restriction
+  const couponId = await createStripeCoupon(region, productId, discountType, discount);
   if (!couponId) {
     console.error('Failed to create Stripe coupon');
     return null;
   }
 
   // Step 2: Create the promotion code
+  // Promotion code defines: code string, max redemptions, expiration, minimum amount
   const promotionCode = await createStripePromotionCode(
     region,
     couponId,
     code,
     useLimit,
-    timeLimit
+    timeLimit,
+    minAmount
   );
 
   if (!promotionCode) {
@@ -357,7 +371,7 @@ const createStripePromocodeComplete = async (region, productId, promoData) => {
     return null;
   }
 
-  // Step 3: Return the complete promocode object
+  // Step 3: Return the complete promocode object for database storage
   return {
     id: promotionCode.id, // Stripe promotion code ID
     couponId: couponId, // Stripe coupon ID
@@ -465,7 +479,7 @@ export const processPromocodesForUpdate = async (region, productId, promoCodes, 
         updatedPromoIds.add(promoData.id);
 
         // Check if any meaningful changes were made
-        const codeChanged = promoData.code && promoData.code.trim().toUpperCase() !== existingPromo.code;
+        const codeChanged = promoData.code && promoData.code.trim() !== existingPromo.code;
         const discountTypeChanged = promoData.discountType && promoData.discountType !== existingPromo.discountType;
         const discountChanged = promoData.discount !== undefined && promoData.discount !== existingPromo.discount;
         const minAmountChanged = promoData.minAmount !== undefined && promoData.minAmount !== existingPromo.minAmount;
@@ -522,11 +536,12 @@ export const processPromocodesForUpdate = async (region, productId, promoCodes, 
               processedPromocodes.push(existingPromo);
             }
           } else {
-            // Only code, useLimit, or timeLimit changed - need to create new promotion code
+            // Only code, useLimit, timeLimit, or minAmount changed - can reuse coupon
             const newCouponId = existingPromo.couponId;
             const newCode = promoData.code || existingPromo.code;
             const newUseLimit = promoData.useLimit !== undefined ? promoData.useLimit : existingPromo.useLimit;
             const newTimeLimit = promoData.timeLimit !== undefined ? promoData.timeLimit : existingPromo.timeLimit;
+            const newMinAmount = promoData.minAmount !== undefined ? promoData.minAmount : existingPromo.minAmount;
 
             const updatedPromotionCode = await updateStripePromotionCode(
               region,
@@ -534,7 +549,8 @@ export const processPromocodesForUpdate = async (region, productId, promoCodes, 
               newCode,
               newCouponId,
               newUseLimit,
-              newTimeLimit
+              newTimeLimit,
+              newMinAmount
             );
 
             if (updatedPromotionCode) {
@@ -544,6 +560,7 @@ export const processPromocodesForUpdate = async (region, productId, promoCodes, 
                 code: updatedPromotionCode.code,
                 useLimit: newUseLimit,
                 timeLimit: newTimeLimit ? new Date(newTimeLimit) : undefined,
+                minAmount: newMinAmount,
               });
             } else {
               console.log(`Failed to update promotion code in Stripe: ${existingPromo.code}`);

@@ -366,7 +366,11 @@ export const addEvent = async (req, res, next) => {
     }
 
     // Process promoCodes if provided
-    const processedPromocodes = await processPromocodesForCreate(region, product.id, promoCodes);
+    const processedPromocodes = await processPromocodesForCreate(
+      region,
+      product.id,
+      promoCodes
+    );
     if (processedPromocodes.length > 0) {
       product.promoCodes = processedPromocodes;
     }
@@ -504,7 +508,9 @@ export const editEvent = async (req, res, next) => {
   const memberPromotion = JSON.parse(req.body.memberPromotion);
   const subEvent = JSON.parse(req.body.subEvent);
   const addOns = JSON.parse(req.body.addOns);
-  const promoCodes = req.body.promoCodes ? JSON.parse(req.body.promoCodes) : null;
+  const promoCodes = req.body.promoCodes
+    ? JSON.parse(req.body.promoCodes)
+    : null;
 
   const poster = req.files["poster"]
     ? await uploadToCloudinary(req.files["poster"][0], {
@@ -572,7 +578,9 @@ export const editEvent = async (req, res, next) => {
   ticketImg && (event.ticketImg = ticketImg);
   bgImageExtra && (event.bgImageExtra = bgImageExtra);
 
-  (date && new Date(event.date).getTime() !== new Date(date).getTime()) && (event.correctedDate = date);
+  date &&
+    new Date(event.date).getTime() !== new Date(date).getTime() &&
+    (event.correctedDate = date);
 
   try {
     // if no product and prices are passed, we create a product. If we have product we update it
@@ -631,7 +639,10 @@ export const editEvent = async (req, res, next) => {
       }
 
       // Handle member price
-      if (earlyBird["memberPrice"] && earlyBird["memberPrice"] != event?.earlyBird?.memberPrice) {
+      if (
+        earlyBird["memberPrice"] &&
+        earlyBird["memberPrice"] != event?.earlyBird?.memberPrice
+      ) {
         // Price changed, create new price
         earlyBird["memberPriceId"] = await addPrice(
           region,
@@ -681,7 +692,10 @@ export const editEvent = async (req, res, next) => {
       }
 
       // Handle member price
-      if (lateBird["memberPrice"] && lateBird["memberPrice"] != event?.lateBird?.memberPrice) {
+      if (
+        lateBird["memberPrice"] &&
+        lateBird["memberPrice"] != event?.lateBird?.memberPrice
+      ) {
         // Price changed, create new price
         lateBird["memberPriceId"] = await addPrice(
           region,
@@ -789,12 +803,18 @@ export const editEvent = async (req, res, next) => {
   }
 
   // Process promoCodes if provided
-  if (event?.product) {
+  if (event?.product?.promoCodes?.length > 0) {
     event.product.promoCodes = await processPromocodesForUpdate(
       region,
       event.product.id,
       promoCodes,
       event.product.promoCodes
+    );
+  } else {
+    event.product.promoCodes = await processPromocodesForCreate(
+      region,
+      event.product.id,
+      promoCodes
     );
   }
 
