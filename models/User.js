@@ -53,6 +53,7 @@ const userSchema = new Schema({
     calendarSubscription: { type: Boolean, default: false },
     calendarImage: { type: String, default: "" },
   },
+  joinDate: { type: Date, default: new Date(), required: true },
 });
 
 userSchema.plugin(uniqueValidator);
