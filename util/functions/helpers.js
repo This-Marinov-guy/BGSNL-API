@@ -169,10 +169,6 @@ export const replaceSpecialSymbolsWithSpaces = (inputString) => {
   return inputString.replace(/[^a-zA-Z0-9\s]/g, " ");
 };
 
-export const capitalizeFirstLetter = (string) => {
-  return string.charAt(0).toUpperCase() + string.slice(1);
-};
-
 export const refactorToKeyValuePairs = (obj) => {
   obj = JSON.parse(obj);
   let result = "";
@@ -260,4 +256,20 @@ export const dateToUnix = (date = null) => {
   }
 
   return Math.floor(new Date(date).getTime() / 1000);
+};
+
+export const capitalizeFirstLetter = (string, replaceUnderscore = false) => {
+  if (!string) return "";
+
+  if (replaceUnderscore) {
+    string = string
+      .replace(/_/g, " ")
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+  } else {
+    string = string.charAt(0).toUpperCase() + string.slice(1);
+  }
+
+  return string;
 };

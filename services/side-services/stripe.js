@@ -11,7 +11,7 @@ export const stripeProductDescription = (region, name, date) => {
         return '';
     }
 
-    return `Event Ticket for ${capitalizeFirstLetter(region)}'s ${name} on ${moment(date).format(MOMENT_DATE_YEAR)}`
+    return `Event Ticket for ${capitalizeFirstLetter(region, true)}'s ${name} on ${moment(date).format(MOMENT_DATE_YEAR)}`
 }
 
 export const addProduct = async (data, priceData = []) => {
