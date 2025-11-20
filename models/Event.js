@@ -78,6 +78,7 @@ const eventSchema = new Schema({
   },
   addOns: {
     isEnabled: { type: Boolean, required: true, default: false },
+    isMandatory: { type: Boolean, required: true, default: false },
     multi: { type: Boolean },
     title: { type: String },
     description: { type: String },

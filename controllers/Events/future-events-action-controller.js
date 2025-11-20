@@ -778,7 +778,7 @@ export const editEvent = async (req, res, next) => {
       addOns.items[i]["id"] = i;
 
       if (
-        event?.addOns?.items[i] !== undefined &&
+        !event?.addOns?.items[i] &&
         addOns.items[i]?.price === event?.addOns?.items[i]?.price
       ) {
         continue;
