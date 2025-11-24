@@ -16,7 +16,7 @@ import {
   MOMENT_DATE_TIME,
   areDatesEqual,
 } from "../../util/functions/dateConvert.js";
-import moment from "moment/moment.js";
+import moment from "moment-timezone";
 import {
   addPrice,
   deleteProduct,
@@ -578,9 +578,24 @@ export const editEvent = async (req, res, next) => {
   ticketImg && (event.ticketImg = ticketImg);
   bgImageExtra && (event.bgImageExtra = bgImageExtra);
 
-  date &&
-    new Date(event.date).getTime() !== new Date(date).getTime() &&
-    (event.correctedDate = date);
+  // TODO: move to service
+  if (date) {
+    const frontend = moment.tz(date, "Europe/Amsterdam");
+    const stored = moment.tz(event.date, "Europe/Amsterdam");
+  
+    const sameDate =
+      frontend.year() === stored.year() &&
+      frontend.month() === stored.month() &&
+      frontend.date() === stored.date();
+  
+    const sameTime =
+      frontend.hour() === stored.hour() &&
+      frontend.minute() === stored.minute();
+  
+    if (!(sameDate && sameTime)) {
+      event.correctedDate = frontend.toISOString();
+    }
+  }
 
   try {
     // if no product and prices are passed, we create a product. If we have product we update it
@@ -915,3 +930,4 @@ export const deleteEvent = async (req, res, next) => {
   await deleteFolder(folder);
   res.status(200).json({ status: true, eventId });
 };
+
