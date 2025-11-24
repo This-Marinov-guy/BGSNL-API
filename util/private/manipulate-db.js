@@ -14,6 +14,7 @@ import {
 import {
   ALUMNI_MIGRATED,
   ALUMNI as ALUMNI_STATUS,
+  LOCKED,
   USER_STATUSES,
 } from "../config/enums.js";
 import User from "../../models/User.js";
@@ -571,7 +572,11 @@ export async function setJoinDateForAllAlumniUsers(defaultDate = new Date()) {
  * @param {number} options.subscription.period - Subscription period in months
  * @returns {Object|null} - Migration result object, or null if operation failed
  */
-export async function migrateUserByIdToAlumni(userId, options = {}, withCancellation = false) {
+export async function migrateUserByIdToAlumni(
+  userId,
+  options = {},
+  withCancellation = false
+) {
   try {
     // Connect to the MongoDB server
     await client.connect();
@@ -1020,5 +1025,23 @@ export async function addRoleToUsersByEmail(emails, role) {
   } finally {
     // Don't close the client here as it might be reused
     console.log("Role addition process completed");
+  }
+}
+
+export async function lockExpiredUsers() {
+  const users = await User.find({});
+  const today = new Date();
+
+  for (const user of users) {
+    if (today > user.expireDate && user?.tier !== 0) {
+      try {
+        user.status = USER_STATUSES[LOCKED];
+        await user.save();
+      } catch (err) {
+        console.error(`Error locking user ${user.email}:`, err);
+      }
+    } else {
+      console.log(`User ${user.email} is not expired, skipping...`);
+    }
   }
 }

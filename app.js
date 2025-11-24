@@ -24,6 +24,7 @@ import kokoAppRouter from "./routes/Integration/koko-app-data.js";
 import {
   addRoleToUsersByEmail,
   convertUsersWithoutSubscriptionToAlumni,
+  lockExpiredUsers,
   setJoinDateForAllAlumniUsers,
 } from "./util/private/manipulate-db.js";
 import {
@@ -163,4 +164,3 @@ mongoose
 //   ],
 //   "active_member"
 // );
-
