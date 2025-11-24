@@ -22,7 +22,7 @@ import {
   isBirthdayToday,
   jwtSign,
 } from "../util/functions/helpers.js";
-import { ADMIN, LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
+import { ADMIN, ALUMNI, LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
 import { calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
@@ -305,7 +305,7 @@ export const login = async (req, res, next) => {
     existingUser.subscription.customerId
   );
 
-  const isAlumni = existingUser?.tier !== undefined;
+  const isAlumni = existingUser.includes(ALUMNI);
   const alumniData = isAlumni
     ? {
         tier: existingUser.tier,
@@ -315,7 +315,7 @@ export const login = async (req, res, next) => {
   const existingUserData = {
     token,
     isSubscribed,
-    isAlumni: existingUser?.tier !== undefined,
+    isAlumni,
     ...alumniData,
     region: existingUser.region,
     roles: existingUser.roles,

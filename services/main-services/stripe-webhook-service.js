@@ -26,7 +26,6 @@ import {
   calculatePurchaseAndExpireDates,
 } from "../../util/functions/dateConvert.js";
 import {
-  ADMIN,
   ALUMNI,
   DEFAULT_REGION,
   LIMITLESS_ACCOUNT,
@@ -100,7 +99,7 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
     email,
     password: hashedPassword,
     tickets: [],
-    roles: [ADMIN],
+    roles: [ALUMNI],
   });
 
   try {
