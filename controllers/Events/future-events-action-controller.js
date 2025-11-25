@@ -28,10 +28,8 @@ import {
   createEventProductWithPrice,
   updateEventPrices,
 } from "../../services/main-services/event-action-service.js";
-import {
-  addEventToDataPool,
-  eventToSpreadsheet,
-} from "../../services/background-services/google-spreadsheets.js";
+import { addEventToDataPool } from "../../services/background-services/data-pool.js";
+import { eventToSpreadsheet } from "../../services/background-services/google-spreadsheets.js";
 import { getFingerprintLite } from "../../services/main-services/user-service.js";
 import {
   addOrUpdateEvent,
@@ -914,8 +912,6 @@ export const deleteEvent = async (req, res, next) => {
   await addEventToDataPool(eventId);
 
   try {
-    // TODO: 17.01 we will not delete events until we fill the calendar
-    // await deleteCalendarEvent(await Event.findById(event._id));
     event.status = "archived";
     await event.save();
   } catch (err) {

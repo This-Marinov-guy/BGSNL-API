@@ -2,7 +2,6 @@ import { MongoClient } from "mongodb";
 import { google } from "googleapis";
 import {
   CLONE_SHEETS,
-  DATA_POOL,
   SPREADSHEETS_ID,
 } from "../../util/config/SPREEDSHEATS.js";
 import dotenv from "dotenv";
@@ -43,7 +42,10 @@ function processQueue() {
       await Promise.race([
         next.jobFn(),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Job timeout: ${next.key}`)), JOB_TIMEOUT_MS)
+          setTimeout(
+            () => reject(new Error(`Job timeout: ${next.key}`)),
+            JOB_TIMEOUT_MS
+          )
         ),
       ]);
     } catch (e) {
@@ -168,360 +170,364 @@ const eventToSpreadsheet = (id) => {
   enqueueJob(`eventToSpreadsheet:${id}`, async () => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
-    const event = await Event.findById(id);
+      const event = await Event.findById(id);
 
-    if (!event) {
-      console.log("Event not found.");
-      return;
-    }
+      if (!event) {
+        console.log("Event not found.");
+        return;
+      }
 
-    const {
-      region,
-      date,
-      title,
-      correctedDate,
-      status,
-      location,
-      ticketTimer,
-      ticketLimit,
-      product,
-      sheetName,
-      createdAt = "-",
-    } = event;
+      const {
+        region,
+        date,
+        title,
+        correctedDate,
+        status,
+        location,
+        ticketTimer,
+        ticketLimit,
+        product,
+        sheetName,
+        createdAt = "-",
+      } = event;
 
-    let ticketLink = event.ticketLink ?? null;
+      let ticketLink = event.ticketLink ?? null;
 
-    if (!ticketLink) {
-      ticketLink = BGSNL_URL + region + "/event-details/" + event.id;
-    }
+      if (!ticketLink) {
+        ticketLink = BGSNL_URL + region + "/event-details/" + event.id;
+      }
 
-    const spreadsheetIds = [];
+      const spreadsheetIds = [];
 
-    // Always add the original spreadsheet ID based on region
-    if (SPREADSHEETS_ID[region]?.events) {
-      spreadsheetIds.push(SPREADSHEETS_ID[region].events);
-    } else {
-      console.log(`No spreadsheet ID found for region: ${region}`);
-    }
+      // Always add the original spreadsheet ID based on region
+      if (SPREADSHEETS_ID[region]?.events) {
+        spreadsheetIds.push(SPREADSHEETS_ID[region].events);
+      } else {
+        console.log(`No spreadsheet ID found for region: ${region}`);
+      }
 
-    // If the event ID exists in CLONE_SHEETS, add the cloned spreadsheet ID
-    if (CLONE_SHEETS[id]) {
-      spreadsheetIds.push(CLONE_SHEETS[id]);
-      console.log(`Also updating cloned spreadsheet for ID: ${id}`);
-    }
+      // If the event ID exists in CLONE_SHEETS, add the cloned spreadsheet ID
+      if (CLONE_SHEETS[id]) {
+        spreadsheetIds.push(CLONE_SHEETS[id]);
+        console.log(`Also updating cloned spreadsheet for ID: ${id}`);
+      }
 
-    if (spreadsheetIds.length === 0) {
-      console.log("No spreadsheets to update.");
-      return;
-    }
+      if (spreadsheetIds.length === 0) {
+        console.log("No spreadsheets to update.");
+        return;
+      }
 
-    // Sheets client comes from singleton
+      // Sheets client comes from singleton
 
-    // Fetch event data and guest list from the database
-    const result = await Event.aggregate([
-      { $match: { _id: mongoose.Types.ObjectId(id) } },
-      {
-        $project: {
-          _id: 0,
-          guests: {
-            $map: {
-              input: "$guestList",
-              as: "guest",
-              in: {
-                status: "$$guest.status",
-                type: "$$guest.type",
-                timestamp: "$$guest.timestamp",
-                name: "$$guest.name",
-                email: "$$guest.email",
-                phone: "$$guest.phone",
-                preferences: "$$guest.preferences",
-                addOns: "$$guest.addOns",
-                ticket: "$$guest.ticket",
-                transactionId: "$$guest.transactionId",
+      // Fetch event data and guest list from the database
+      const result = await Event.aggregate([
+        { $match: { _id: mongoose.Types.ObjectId(id) } },
+        {
+          $project: {
+            _id: 0,
+            guests: {
+              $map: {
+                input: "$guestList",
+                as: "guest",
+                in: {
+                  status: "$$guest.status",
+                  type: "$$guest.type",
+                  timestamp: "$$guest.timestamp",
+                  name: "$$guest.name",
+                  email: "$$guest.email",
+                  phone: "$$guest.phone",
+                  preferences: "$$guest.preferences",
+                  addOns: "$$guest.addOns",
+                  ticket: "$$guest.ticket",
+                  transactionId: "$$guest.transactionId",
+                },
               },
             },
           },
         },
-      },
-    ]);
+      ]);
 
-    if (result.length === 0) {
-      console.log("Event not found in database.");
-      return;
-    }
+      if (result.length === 0) {
+        console.log("Event not found in database.");
+        return;
+      }
 
-    // Prepare event and guest data
-    const eventDetails = [
-      [
-        "ID",
+      // Prepare event and guest data
+      const eventDetails = [
+        [
+          "ID",
+          "Status",
+          "Region",
+          "Title",
+          "Date",
+          "Location",
+          "Ticket Timer",
+          "Ticket Limit",
+          "Price",
+          "Member Price",
+          "Active Member Price",
+          "Ticket Link",
+          "Created At",
+        ],
+        [
+          id,
+          status,
+          region,
+          title,
+          moment(correctedDate ?? date)
+            .tz("Europe/Amsterdam")
+            .format(MOMENT_DATE_TIME_YEAR),
+          location,
+          moment(ticketTimer)
+            .tz("Europe/Amsterdam")
+            .format(MOMENT_DATE_TIME_YEAR),
+          ticketLimit,
+          product?.guest.price ?? "-",
+          product?.member.price ?? "-",
+          product?.activeMember.price ?? "-",
+          ticketLink,
+          createdAt != "-"
+            ? moment(createdAt)
+                .tz("Europe/Amsterdam")
+                .format(MOMENT_DATE_TIME_YEAR)
+            : "-",
+        ],
+      ];
+
+      const guestListHeaders = [
         "Status",
-        "Region",
-        "Title",
-        "Date",
-        "Location",
-        "Ticket Timer",
-        "Ticket Limit",
-        "Price",
-        "Member Price",
-        "Active Member Price",
-        "Ticket Link",
-        "Created At",
-      ],
-      [
-        id,
-        status,
-        region,
-        title,
-        moment(correctedDate ?? date)
-          .tz("Europe/Amsterdam")
-          .format(MOMENT_DATE_TIME_YEAR),
-        location,
-        moment(ticketTimer)
-          .tz("Europe/Amsterdam")
-          .format(MOMENT_DATE_TIME_YEAR),
-        ticketLimit,
-        product?.guest.price ?? "-",
-        product?.member.price ?? "-",
-        product?.activeMember.price ?? "-",
-        ticketLink,
-        createdAt != "-"
-          ? moment(createdAt)
-              .tz("Europe/Amsterdam")
-              .format(MOMENT_DATE_TIME_YEAR)
-          : "-",
-      ],
-    ];
+        "Type",
+        "Timestamp",
+        "Name",
+        "Email",
+        "Phone",
+        "Preferences",
+        "AddOns",
+        "Ticket",
+        "Transaction Id",
+      ];
+      const guests = result[0].guests.map((obj) => [
+        obj.status === 1 ? "present" : "missing",
+        obj.type,
+        moment(obj.timestamp).format(MOMENT_DATE_TIME_YEAR),
+        obj.name,
+        obj.email,
+        obj.phone,
+        obj.preferences ? refactorToKeyValuePairs(obj.preferences) : "N/A",
+        obj.addOns?.length
+          ? obj.addOns
+              .map(
+                (item) =>
+                  `${item.title} ${item.price ? item.price + " euro" : "Free"}`
+              )
+              .join(" + ")
+          : "N/A",
+        obj.ticket,
+        obj.transactionId ?? "-",
+      ]);
 
-    const guestListHeaders = [
-      "Status",
-      "Type",
-      "Timestamp",
-      "Name",
-      "Email",
-      "Phone",
-      "Preferences",
-      "AddOns",
-      "Ticket",
-      "Transaction Id",
-    ];
-    const guests = result[0].guests.map((obj) => [
-      obj.status === 1 ? "present" : "missing",
-      obj.type,
-      moment(obj.timestamp).format(MOMENT_DATE_TIME_YEAR),
-      obj.name,
-      obj.email,
-      obj.phone,
-      obj.preferences ? refactorToKeyValuePairs(obj.preferences) : "N/A",
-      obj.addOns?.length
-        ? obj.addOns
-            .map(
-              (item) =>
-                `${item.title} ${item.price ? item.price + " euro" : "Free"}`
-            )
-            .join(" + ")
-        : "N/A",
-      obj.ticket,
-      obj.transactionId ?? "-",
-    ]);
+      const values = [
+        ...eventDetails,
+        [],
+        ["Guest List", "Presence", guests.length],
+        guestListHeaders,
+        ...guests,
+      ];
 
-    const values = [
-      ...eventDetails,
-      [],
-      ["Guest List", "Presence", guests.length],
-      guestListHeaders,
-      ...guests,
-    ];
+      // Loop over each spreadsheetId (original and clone, if applicable) and update the spreadsheet
+      for (const spreadsheetId of spreadsheetIds) {
+        const metaData = await googleSheets.spreadsheets.get({
+          auth,
+          spreadsheetId,
+        });
 
-    // Loop over each spreadsheetId (original and clone, if applicable) and update the spreadsheet
-    for (const spreadsheetId of spreadsheetIds) {
-      const metaData = await googleSheets.spreadsheets.get({
-        auth,
-        spreadsheetId,
-      });
+        const sheetsList = metaData.data.sheets;
+        let sheetId = sheetsList.find(
+          (sheet) => sheet.properties.title === sheetName
+        )?.properties.sheetId;
 
-      const sheetsList = metaData.data.sheets;
-      let sheetId = sheetsList.find(
-        (sheet) => sheet.properties.title === sheetName
-      )?.properties.sheetId;
-
-      if (!sheetId) {
-        try {
-          // Create the sheet if it doesn't exist
-          // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
-          const newSheet = await googleSheets.spreadsheets.batchUpdate({
-            auth,
-            spreadsheetId,
-            resource: {
-              requests: [
-                {
-                  addSheet: {
-                    properties: {
-                      title: sheetName,
-                      index: 0,
+        if (!sheetId) {
+          try {
+            // Create the sheet if it doesn't exist
+            // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
+            const newSheet = await googleSheets.spreadsheets.batchUpdate({
+              auth,
+              spreadsheetId,
+              resource: {
+                requests: [
+                  {
+                    addSheet: {
+                      properties: {
+                        title: sheetName,
+                        index: 0,
+                      },
                     },
                   },
-                },
-              ],
-            },
-          });
+                ],
+              },
+            });
 
-          console.log(
-            `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
-          );
-          sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
-
-          // Explicitly update the sheet's position to ensure it's at the beginning
-          await googleSheets.spreadsheets.batchUpdate({
-            auth,
-            spreadsheetId,
-            resource: {
-              requests: [
-                {
-                  updateSheetProperties: {
-                    properties: {
-                      sheetId: sheetId,
-                      index: 0,
-                    },
-                    fields: "index",
-                  },
-                },
-              ],
-            },
-          });
-
-          console.log(
-            `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
-          );
-        } catch (createError) {
-          // Check if the error is because the sheet already exists
-          if (
-            createError.message &&
-            createError.message.includes("already exists")
-          ) {
             console.log(
-              `Sheet '${sheetName}' already exists, fetching its ID instead`
+              `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
             );
+            sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
 
-            try {
-              // Re-fetch the spreadsheet metadata to get the existing sheet ID
-              const updatedMetaData = await googleSheets.spreadsheets.get({
-                auth,
-                spreadsheetId,
-              });
+            // Explicitly update the sheet's position to ensure it's at the beginning
+            await googleSheets.spreadsheets.batchUpdate({
+              auth,
+              spreadsheetId,
+              resource: {
+                requests: [
+                  {
+                    updateSheetProperties: {
+                      properties: {
+                        sheetId: sheetId,
+                        index: 0,
+                      },
+                      fields: "index",
+                    },
+                  },
+                ],
+              },
+            });
 
-              const updatedSheetsList = updatedMetaData.data.sheets;
+            console.log(
+              `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
+            );
+          } catch (createError) {
+            // Check if the error is because the sheet already exists
+            if (
+              createError.message &&
+              createError.message.includes("already exists")
+            ) {
               console.log(
-                `Available sheets in spreadsheet:`,
-                updatedSheetsList.map((s) => s.properties.title)
+                `Sheet '${sheetName}' already exists, fetching its ID instead`
               );
 
-              // Try exact match first
-              let existingSheet = updatedSheetsList.find(
-                (sheet) => sheet.properties.title === sheetName
-              );
+              try {
+                // Re-fetch the spreadsheet metadata to get the existing sheet ID
+                const updatedMetaData = await googleSheets.spreadsheets.get({
+                  auth,
+                  spreadsheetId,
+                });
 
-              // If exact match fails, try case-insensitive match
-              if (!existingSheet) {
-                existingSheet = updatedSheetsList.find(
-                  (sheet) =>
-                    sheet.properties.title.toLowerCase() ===
-                    sheetName.toLowerCase()
-                );
-              }
-
-              // If still no match, try trimming whitespace
-              if (!existingSheet) {
-                existingSheet = updatedSheetsList.find(
-                  (sheet) => sheet.properties.title.trim() === sheetName.trim()
-                );
-              }
-
-              if (existingSheet) {
-                sheetId = existingSheet.properties.sheetId;
+                const updatedSheetsList = updatedMetaData.data.sheets;
                 console.log(
-                  `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
-                );
-              } else {
-                console.error(
-                  `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
+                  `Available sheets in spreadsheet:`,
                   updatedSheetsList.map((s) => s.properties.title)
+                );
+
+                // Try exact match first
+                let existingSheet = updatedSheetsList.find(
+                  (sheet) => sheet.properties.title === sheetName
+                );
+
+                // If exact match fails, try case-insensitive match
+                if (!existingSheet) {
+                  existingSheet = updatedSheetsList.find(
+                    (sheet) =>
+                      sheet.properties.title.toLowerCase() ===
+                      sheetName.toLowerCase()
+                  );
+                }
+
+                // If still no match, try trimming whitespace
+                if (!existingSheet) {
+                  existingSheet = updatedSheetsList.find(
+                    (sheet) =>
+                      sheet.properties.title.trim() === sheetName.trim()
+                  );
+                }
+
+                if (existingSheet) {
+                  sheetId = existingSheet.properties.sheetId;
+                  console.log(
+                    `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
+                  );
+                } else {
+                  console.error(
+                    `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
+                    updatedSheetsList.map((s) => s.properties.title)
+                  );
+                  continue; // Skip this spreadsheet and continue with the next one
+                }
+              } catch (fetchError) {
+                console.error(
+                  `Error fetching spreadsheet metadata after creation error:`,
+                  fetchError
                 );
                 continue; // Skip this spreadsheet and continue with the next one
               }
-            } catch (fetchError) {
+            } else {
               console.error(
-                `Error fetching spreadsheet metadata after creation error:`,
-                fetchError
+                `Error creating sheet '${sheetName}':`,
+                createError
               );
               continue; // Skip this spreadsheet and continue with the next one
             }
-          } else {
-            console.error(`Error creating sheet '${sheetName}':`, createError);
-            continue; // Skip this spreadsheet and continue with the next one
           }
         }
-      }
 
-      // Clear the existing data in the sheet
-      await googleSheets.spreadsheets.values.clear({
-        auth,
-        spreadsheetId,
-        range: sheetName,
-      });
-
-      // Append the new event and guest data
-      await googleSheets.spreadsheets.values.append({
-        auth,
-        spreadsheetId,
-        range: sheetName,
-        valueInputOption: "RAW",
-        resource: { values },
-      });
-
-      console.log(`Event data updated in spreadsheet: ${spreadsheetId}`);
-
-      // Apply conditional formatting if there are guests
-      if (guests.length > 0) {
-        const startRow = 5; // Row number where guest list starts (1-based index)
-        const endRow = startRow + guests.length; // End row number (1-based index)
-
-        const formattingRequest = {
+        // Clear the existing data in the sheet
+        await googleSheets.spreadsheets.values.clear({
+          auth,
           spreadsheetId,
-          resource: {
-            requests: [
-              {
-                addConditionalFormatRule: {
-                  rule: {
-                    ranges: [
-                      {
-                        sheetId: sheetId,
-                        startRowIndex: startRow - 1,
-                        endRowIndex: endRow,
-                      },
-                    ],
-                    booleanRule: {
-                      condition: {
-                        type: "CUSTOM_FORMULA",
-                        values: [{ userEnteredValue: '=$A$5:$A="present"' }],
-                      },
-                      format: {
-                        backgroundColor: { red: 0.0, green: 1.0, blue: 0.0 },
+          range: sheetName,
+        });
+
+        // Append the new event and guest data
+        await googleSheets.spreadsheets.values.append({
+          auth,
+          spreadsheetId,
+          range: sheetName,
+          valueInputOption: "RAW",
+          resource: { values },
+        });
+
+        console.log(`Event data updated in spreadsheet: ${spreadsheetId}`);
+
+        // Apply conditional formatting if there are guests
+        if (guests.length > 0) {
+          const startRow = 5; // Row number where guest list starts (1-based index)
+          const endRow = startRow + guests.length; // End row number (1-based index)
+
+          const formattingRequest = {
+            spreadsheetId,
+            resource: {
+              requests: [
+                {
+                  addConditionalFormatRule: {
+                    rule: {
+                      ranges: [
+                        {
+                          sheetId: sheetId,
+                          startRowIndex: startRow - 1,
+                          endRowIndex: endRow,
+                        },
+                      ],
+                      booleanRule: {
+                        condition: {
+                          type: "CUSTOM_FORMULA",
+                          values: [{ userEnteredValue: '=$A$5:$A="present"' }],
+                        },
+                        format: {
+                          backgroundColor: { red: 0.0, green: 1.0, blue: 0.0 },
+                        },
                       },
                     },
+                    index: 0,
                   },
-                  index: 0,
                 },
-              },
-            ],
-          },
-        };
+              ],
+            },
+          };
 
-        await googleSheets.spreadsheets.batchUpdate(formattingRequest);
-        console.log(
-          `Conditional formatting applied successfully in spreadsheet: ${spreadsheetId}`
-        );
+          await googleSheets.spreadsheets.batchUpdate(formattingRequest);
+          console.log(
+            `Conditional formatting applied successfully in spreadsheet: ${spreadsheetId}`
+          );
+        }
       }
-    }
     } catch (error) {
       console.error("Error in eventToSpreadsheet:", error);
     }
@@ -532,247 +538,251 @@ const specialEventsToSpreadsheet = (id) => {
   enqueueJob(`specialEventsToSpreadsheet:${id}`, async () => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
-    const nonSocietyEvent = await NonSocietyEvent.findById(id);
+      const nonSocietyEvent = await NonSocietyEvent.findById(id);
 
-    if (!nonSocietyEvent) {
-      console.log("Event not found.");
-      return;
-    }
+      if (!nonSocietyEvent) {
+        console.log("Event not found.");
+        return;
+      }
 
-    const { event, date } = nonSocietyEvent;
+      const { event, date } = nonSocietyEvent;
 
-    const sheetName = `${event} | ${moment(date)
-      .tz("Europe/Amsterdam")
-      .format(MOMENT_DATE_YEAR)}`;
+      const sheetName = `${event} | ${moment(date)
+        .tz("Europe/Amsterdam")
+        .format(MOMENT_DATE_YEAR)}`;
 
-    const spreadsheetIds = [SPREADSHEETS_ID["netherlands"].events];
+      const spreadsheetIds = [SPREADSHEETS_ID["netherlands"].events];
 
-    // Sheets client comes from singleton
+      // Sheets client comes from singleton
 
-    // Fetch event data and guest list from the database
-    const result = await NonSocietyEvent.aggregate([
-      { $match: { _id: mongoose.Types.ObjectId(id) } },
-      {
-        $project: {
-          _id: 0,
-          guests: {
-            $map: {
-              input: "$guestList",
-              as: "guest",
-              in: {
-                user: "$$guest.user",
-                userId: "$$guest.userId",
-                timestamp: "$$guest.timestamp",
-                name: "$$guest.name",
-                email: "$$guest.email",
-                phone: "$$guest.phone",
-                extraData: "$$guest.extraData",
-                course: "$$guest.course",
-                ticket: "$$guest.ticket",
-                transactionId: "$$guest.transactionId",
+      // Fetch event data and guest list from the database
+      const result = await NonSocietyEvent.aggregate([
+        { $match: { _id: mongoose.Types.ObjectId(id) } },
+        {
+          $project: {
+            _id: 0,
+            guests: {
+              $map: {
+                input: "$guestList",
+                as: "guest",
+                in: {
+                  user: "$$guest.user",
+                  userId: "$$guest.userId",
+                  timestamp: "$$guest.timestamp",
+                  name: "$$guest.name",
+                  email: "$$guest.email",
+                  phone: "$$guest.phone",
+                  extraData: "$$guest.extraData",
+                  course: "$$guest.course",
+                  ticket: "$$guest.ticket",
+                  transactionId: "$$guest.transactionId",
+                },
               },
             },
           },
         },
-      },
-    ]);
+      ]);
 
-    if (result.length === 0) {
-      console.log("Event not found in database.");
-      return;
-    }
+      if (result.length === 0) {
+        console.log("Event not found in database.");
+        return;
+      }
 
-    // Prepare event and guest data
-    const eventDetails = [
-      ["ID", "Title", "Date"],
-      [
-        id,
-        event,
-        moment(date).tz("Europe/Amsterdam").format(MOMENT_DATE_TIME_YEAR),
-      ],
-    ];
+      // Prepare event and guest data
+      const eventDetails = [
+        ["ID", "Title", "Date"],
+        [
+          id,
+          event,
+          moment(date).tz("Europe/Amsterdam").format(MOMENT_DATE_TIME_YEAR),
+        ],
+      ];
 
-    const guestListHeaders = [
-      "ID",
-      "Timestamp",
-      "Name",
-      "Email",
-      "Phone",
-      "Extra Data",
-      "Course",
-      "Ticket",
-      "Transaction Id",
-    ];
-    const guests = result[0].guests.map((obj) => [
-      obj.userId ?? "-",
-      moment(obj.timestamp)
-        .tz("Europe/Amsterdam")
-        .format(MOMENT_DATE_TIME_YEAR),
-      obj.name,
-      obj.email,
-      obj.phone,
-      obj.extraData ?? "N/A",
-      obj.course ?? "-",
-      obj.ticket,
-      obj.transactionId ?? "-",
-    ]);
+      const guestListHeaders = [
+        "ID",
+        "Timestamp",
+        "Name",
+        "Email",
+        "Phone",
+        "Extra Data",
+        "Course",
+        "Ticket",
+        "Transaction Id",
+      ];
+      const guests = result[0].guests.map((obj) => [
+        obj.userId ?? "-",
+        moment(obj.timestamp)
+          .tz("Europe/Amsterdam")
+          .format(MOMENT_DATE_TIME_YEAR),
+        obj.name,
+        obj.email,
+        obj.phone,
+        obj.extraData ?? "N/A",
+        obj.course ?? "-",
+        obj.ticket,
+        obj.transactionId ?? "-",
+      ]);
 
-    const values = [
-      ...eventDetails,
-      [],
-      ["Guest List", "Presence", guests.length],
-      guestListHeaders,
-      ...guests,
-    ];
+      const values = [
+        ...eventDetails,
+        [],
+        ["Guest List", "Presence", guests.length],
+        guestListHeaders,
+        ...guests,
+      ];
 
-    // Loop over each spreadsheetId (original and clone, if applicable) and update the spreadsheet
-    for (const spreadsheetId of spreadsheetIds) {
-      const metaData = await googleSheets.spreadsheets.get({
-        auth,
-        spreadsheetId,
-      });
+      // Loop over each spreadsheetId (original and clone, if applicable) and update the spreadsheet
+      for (const spreadsheetId of spreadsheetIds) {
+        const metaData = await googleSheets.spreadsheets.get({
+          auth,
+          spreadsheetId,
+        });
 
-      const sheetsList = metaData.data.sheets;
-      let sheetId = sheetsList.find(
-        (sheet) => sheet.properties.title === sheetName
-      )?.properties.sheetId;
+        const sheetsList = metaData.data.sheets;
+        let sheetId = sheetsList.find(
+          (sheet) => sheet.properties.title === sheetName
+        )?.properties.sheetId;
 
-      if (!sheetId) {
-        try {
-          // Create the sheet if it doesn't exist
-          // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
-          const newSheet = await googleSheets.spreadsheets.batchUpdate({
-            auth,
-            spreadsheetId,
-            resource: {
-              requests: [
-                {
-                  addSheet: {
-                    properties: {
-                      title: sheetName,
-                      index: 0,
+        if (!sheetId) {
+          try {
+            // Create the sheet if it doesn't exist
+            // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
+            const newSheet = await googleSheets.spreadsheets.batchUpdate({
+              auth,
+              spreadsheetId,
+              resource: {
+                requests: [
+                  {
+                    addSheet: {
+                      properties: {
+                        title: sheetName,
+                        index: 0,
+                      },
                     },
                   },
-                },
-              ],
-            },
-          });
+                ],
+              },
+            });
 
-          console.log(
-            `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
-          );
-          sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
-
-          // Explicitly update the sheet's position to ensure it's at the beginning
-          await googleSheets.spreadsheets.batchUpdate({
-            auth,
-            spreadsheetId,
-            resource: {
-              requests: [
-                {
-                  updateSheetProperties: {
-                    properties: {
-                      sheetId: sheetId,
-                      index: 0,
-                    },
-                    fields: "index",
-                  },
-                },
-              ],
-            },
-          });
-
-          console.log(
-            `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
-          );
-        } catch (createError) {
-          // Check if the error is because the sheet already exists
-          if (
-            createError.message &&
-            createError.message.includes("already exists")
-          ) {
             console.log(
-              `Sheet '${sheetName}' already exists, fetching its ID instead`
+              `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
             );
+            sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
 
-            try {
-              // Re-fetch the spreadsheet metadata to get the existing sheet ID
-              const updatedMetaData = await googleSheets.spreadsheets.get({
-                auth,
-                spreadsheetId,
-              });
+            // Explicitly update the sheet's position to ensure it's at the beginning
+            await googleSheets.spreadsheets.batchUpdate({
+              auth,
+              spreadsheetId,
+              resource: {
+                requests: [
+                  {
+                    updateSheetProperties: {
+                      properties: {
+                        sheetId: sheetId,
+                        index: 0,
+                      },
+                      fields: "index",
+                    },
+                  },
+                ],
+              },
+            });
 
-              const updatedSheetsList = updatedMetaData.data.sheets;
+            console.log(
+              `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
+            );
+          } catch (createError) {
+            // Check if the error is because the sheet already exists
+            if (
+              createError.message &&
+              createError.message.includes("already exists")
+            ) {
               console.log(
-                `Available sheets in spreadsheet:`,
-                updatedSheetsList.map((s) => s.properties.title)
+                `Sheet '${sheetName}' already exists, fetching its ID instead`
               );
 
-              // Try exact match first
-              let existingSheet = updatedSheetsList.find(
-                (sheet) => sheet.properties.title === sheetName
-              );
+              try {
+                // Re-fetch the spreadsheet metadata to get the existing sheet ID
+                const updatedMetaData = await googleSheets.spreadsheets.get({
+                  auth,
+                  spreadsheetId,
+                });
 
-              // If exact match fails, try case-insensitive match
-              if (!existingSheet) {
-                existingSheet = updatedSheetsList.find(
-                  (sheet) =>
-                    sheet.properties.title.toLowerCase() ===
-                    sheetName.toLowerCase()
-                );
-              }
-
-              // If still no match, try trimming whitespace
-              if (!existingSheet) {
-                existingSheet = updatedSheetsList.find(
-                  (sheet) => sheet.properties.title.trim() === sheetName.trim()
-                );
-              }
-
-              if (existingSheet) {
-                sheetId = existingSheet.properties.sheetId;
+                const updatedSheetsList = updatedMetaData.data.sheets;
                 console.log(
-                  `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
-                );
-              } else {
-                console.error(
-                  `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
+                  `Available sheets in spreadsheet:`,
                   updatedSheetsList.map((s) => s.properties.title)
+                );
+
+                // Try exact match first
+                let existingSheet = updatedSheetsList.find(
+                  (sheet) => sheet.properties.title === sheetName
+                );
+
+                // If exact match fails, try case-insensitive match
+                if (!existingSheet) {
+                  existingSheet = updatedSheetsList.find(
+                    (sheet) =>
+                      sheet.properties.title.toLowerCase() ===
+                      sheetName.toLowerCase()
+                  );
+                }
+
+                // If still no match, try trimming whitespace
+                if (!existingSheet) {
+                  existingSheet = updatedSheetsList.find(
+                    (sheet) =>
+                      sheet.properties.title.trim() === sheetName.trim()
+                  );
+                }
+
+                if (existingSheet) {
+                  sheetId = existingSheet.properties.sheetId;
+                  console.log(
+                    `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
+                  );
+                } else {
+                  console.error(
+                    `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
+                    updatedSheetsList.map((s) => s.properties.title)
+                  );
+                  continue; // Skip this spreadsheet and continue with the next one
+                }
+              } catch (fetchError) {
+                console.error(
+                  `Error fetching spreadsheet metadata after creation error:`,
+                  fetchError
                 );
                 continue; // Skip this spreadsheet and continue with the next one
               }
-            } catch (fetchError) {
+            } else {
               console.error(
-                `Error fetching spreadsheet metadata after creation error:`,
-                fetchError
+                `Error creating sheet '${sheetName}':`,
+                createError
               );
               continue; // Skip this spreadsheet and continue with the next one
             }
-          } else {
-            console.error(`Error creating sheet '${sheetName}':`, createError);
-            continue; // Skip this spreadsheet and continue with the next one
           }
         }
+
+        // Clear the existing data in the sheet
+        await googleSheets.spreadsheets.values.clear({
+          auth,
+          spreadsheetId,
+          range: sheetName,
+        });
+
+        // Append the new event and guest data
+        await googleSheets.spreadsheets.values.append({
+          auth,
+          spreadsheetId,
+          range: sheetName,
+          valueInputOption: "RAW",
+          resource: { values },
+        });
+
+        console.log(`Event data updated in spreadsheet: ${spreadsheetId}`);
       }
-
-      // Clear the existing data in the sheet
-      await googleSheets.spreadsheets.values.clear({
-        auth,
-        spreadsheetId,
-        range: sheetName,
-      });
-
-      // Append the new event and guest data
-      await googleSheets.spreadsheets.values.append({
-        auth,
-        spreadsheetId,
-        range: sheetName,
-        valueInputOption: "RAW",
-        resource: { values },
-      });
-
-      console.log(`Event data updated in spreadsheet: ${spreadsheetId}`);
-    }
     } catch (err) {
       console.log(err);
     }
@@ -783,140 +793,141 @@ const usersToSpreadsheet = (region = null) => {
   enqueueJob(`usersToSpreadsheet:${region ?? "all"}`, async () => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
-    let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.users;
-    const filterByRegion = IS_PROD && region && SPREADSHEETS_ID[region]?.users;
+      let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.users;
+      const filterByRegion =
+        IS_PROD && region && SPREADSHEETS_ID[region]?.users;
 
-    if (filterByRegion) {
-      spreadsheetId = SPREADSHEETS_ID[region].users;
-    }
+      if (filterByRegion) {
+        spreadsheetId = SPREADSHEETS_ID[region].users;
+      }
 
-    const sheetName = "Members";
+      const sheetName = "Members";
 
-    // Sheets client comes from singleton
+      // Sheets client comes from singleton
 
-    // Fetch users from MongoDB using Mongoose
-    const query = {
-      ...(filterByRegion && { region }),
-      status: { $ne: ALUMNI_MIGRATED },
-    };
-
-    const users = await User.find(query)
-      .sort({
-        purchaseDate: 1,
-        _id: -1,
-      })
-      .lean();
-
-    const values = users.map((user) => {
-      const {
-        _id,
-        image,
-        university,
-        otherUniversityName,
-        course,
-        studentNumber,
-        graduationDate,
-        password,
-        notificationTypeTerms,
-        tickets,
-        registrationKey,
-        __v,
-        christmas,
-        mmmCampaign2025,
-        region,
-        subscription,
-        status,
-        name,
-        surname,
-        birth,
-        roles,
-        ...rest
-      } = user;
-
-      const formattedBirth = moment(new Date(birth)).format(MOMENT_DATE_YEAR);
-      const formattedPurchaseDate = moment(rest.purchaseDate).format(
-        MOMENT_DATE_YEAR
-      );
-      const formattedExpireDate = moment(rest.expireDate).format(
-        MOMENT_DATE_YEAR
-      );
-
-      const dataFields = {
-        ...(filterByRegion ? {} : { region }),
-        status,
-        type:
-          subscription && subscription.id
-            ? `Subscription ${subscription.id} | Customer ${
-                subscription.customerId ?? ""
-              }`
-            : "One-time (old)",
-        name,
-        surname,
-        ...rest,
-        birth: formattedBirth,
-        purchaseDate: formattedPurchaseDate,
-        expireDate: formattedExpireDate,
-        university: university === "other" ? otherUniversityName : university,
-        course,
-        studentNumber,
-        graduationDate: graduationDate || "not specified",
-        ...(filterByRegion ? {} : { roles: roles.join(", ") }),
+      // Fetch users from MongoDB using Mongoose
+      const query = {
+        ...(filterByRegion && { region }),
+        status: { $ne: ALUMNI_MIGRATED },
       };
 
-      return Object.values(dataFields);
-    });
+      const users = await User.find(query)
+        .sort({
+          purchaseDate: 1,
+          _id: -1,
+        })
+        .lean();
 
-    const nameOfValues = filterByRegion
-      ? [
-          "Status",
-          "Type",
-          "Name",
-          "Surname",
-          "Purchase Date",
-          "Expire/Renew Date",
-          "Phone",
-          "Email",
-          "Birth",
-          "University",
-          "Course",
-          "Student Number",
-          "Graduation Date",
-        ]
-      : [
-          "Region",
-          "Status",
-          "Type",
-          "Name",
-          "Surname",
-          "Purchase Date",
-          "Expire/Renew Date",
-          "Phone",
-          "Email",
-          "Birth",
-          "University",
-          "Course",
-          "Student Number",
-          "Graduation Date",
-          "Roles",
-        ];
+      const values = users.map((user) => {
+        const {
+          _id,
+          image,
+          university,
+          otherUniversityName,
+          course,
+          studentNumber,
+          graduationDate,
+          password,
+          notificationTypeTerms,
+          tickets,
+          registrationKey,
+          __v,
+          christmas,
+          mmmCampaign2025,
+          region,
+          subscription,
+          status,
+          name,
+          surname,
+          birth,
+          roles,
+          ...rest
+        } = user;
 
-    await googleSheets.spreadsheets.values.clear({
-      auth,
-      spreadsheetId,
-      range: sheetName,
-    });
+        const formattedBirth = moment(new Date(birth)).format(MOMENT_DATE_YEAR);
+        const formattedPurchaseDate = moment(rest.purchaseDate).format(
+          MOMENT_DATE_YEAR
+        );
+        const formattedExpireDate = moment(rest.expireDate).format(
+          MOMENT_DATE_YEAR
+        );
 
-    await googleSheets.spreadsheets.values.append({
-      auth,
-      spreadsheetId,
-      range: sheetName,
-      valueInputOption: "RAW",
-      resource: {
-        values: [["Members of:", sheetName], nameOfValues, ...values],
-      },
-    });
+        const dataFields = {
+          ...(filterByRegion ? {} : { region }),
+          status,
+          type:
+            subscription && subscription.id
+              ? `Subscription ${subscription.id} | Customer ${
+                  subscription.customerId ?? ""
+                }`
+              : "One-time (old)",
+          name,
+          surname,
+          ...rest,
+          birth: formattedBirth,
+          purchaseDate: formattedPurchaseDate,
+          expireDate: formattedExpireDate,
+          university: university === "other" ? otherUniversityName : university,
+          course,
+          studentNumber,
+          graduationDate: graduationDate || "not specified",
+          ...(filterByRegion ? {} : { roles: roles.join(", ") }),
+        };
 
-    console.log(`Member Sheet updated for: ${region ?? "Netherlands"}`);
+        return Object.values(dataFields);
+      });
+
+      const nameOfValues = filterByRegion
+        ? [
+            "Status",
+            "Type",
+            "Name",
+            "Surname",
+            "Purchase Date",
+            "Expire/Renew Date",
+            "Phone",
+            "Email",
+            "Birth",
+            "University",
+            "Course",
+            "Student Number",
+            "Graduation Date",
+          ]
+        : [
+            "Region",
+            "Status",
+            "Type",
+            "Name",
+            "Surname",
+            "Purchase Date",
+            "Expire/Renew Date",
+            "Phone",
+            "Email",
+            "Birth",
+            "University",
+            "Course",
+            "Student Number",
+            "Graduation Date",
+            "Roles",
+          ];
+
+      await googleSheets.spreadsheets.values.clear({
+        auth,
+        spreadsheetId,
+        range: sheetName,
+      });
+
+      await googleSheets.spreadsheets.values.append({
+        auth,
+        spreadsheetId,
+        range: sheetName,
+        valueInputOption: "RAW",
+        resource: {
+          values: [["Members of:", sheetName], nameOfValues, ...values],
+        },
+      });
+
+      console.log(`Member Sheet updated for: ${region ?? "Netherlands"}`);
     } catch (error) {
       console.error("Error in usersToSpreadsheet:", error);
     }
@@ -927,144 +938,144 @@ export const alumniToSpreadsheet = () => {
   enqueueJob("alumniToSpreadsheet", async () => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
-    let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.alumni;
-    const sheetName = "Alumnis";
+      let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.alumni;
+      const sheetName = "Alumnis";
 
-    // Sheets client comes from singleton
+      // Sheets client comes from singleton
 
-    // Fetch users from MongoDB using Mongoose
-    const query = {};
-    const users = await AlumniUser.find(query)
-      .sort({
-        purchaseDate: 1,
-        _id: -1,
-      })
-      .lean();
+      // Fetch users from MongoDB using Mongoose
+      const query = {};
+      const users = await AlumniUser.find(query)
+        .sort({
+          purchaseDate: 1,
+          _id: -1,
+        })
+        .lean();
 
-    const rows = users.map((user) => {
-      const {
-        _id,
-        image,
-        password,
-        tickets,
-        registrationKey,
-        __v,
-        christmas,
-        mmmCampaign2025,
-        subscription,
-        email,
-        tier,
-        status,
-        name,
-        surname,
-        ...rest
-      } = user;
+      const rows = users.map((user) => {
+        const {
+          _id,
+          image,
+          password,
+          tickets,
+          registrationKey,
+          __v,
+          christmas,
+          mmmCampaign2025,
+          subscription,
+          email,
+          tier,
+          status,
+          name,
+          surname,
+          ...rest
+        } = user;
 
-      const formattedPurchaseDate = moment(rest.purchaseDate).format(
-        MOMENT_DATE_YEAR
-      );
-      const formattedExpireDate = moment(rest.expireDate).format(
-        MOMENT_DATE_YEAR
-      );
+        const formattedPurchaseDate = moment(rest.purchaseDate).format(
+          MOMENT_DATE_YEAR
+        );
+        const formattedExpireDate = moment(rest.expireDate).format(
+          MOMENT_DATE_YEAR
+        );
 
-      const dataFields = {
-        status,
-        subscription: subscription?.id
-          ? `Subscription ${subscription.id} | Customer ${
-              subscription.customerId ?? ""
-            }`
-          : "Migrated Free tier",
-        tier: `${tier}`,
-        name,
-        surname,
-        purchaseDate: formattedPurchaseDate,
-        expireDate: formattedExpireDate,
-        email,
-      };
+        const dataFields = {
+          status,
+          subscription: subscription?.id
+            ? `Subscription ${subscription.id} | Customer ${
+                subscription.customerId ?? ""
+              }`
+            : "Migrated Free tier",
+          tier: `${tier}`,
+          name,
+          surname,
+          purchaseDate: formattedPurchaseDate,
+          expireDate: formattedExpireDate,
+          email,
+        };
 
-      const values = Object.values(dataFields).map((value) => {
-        if (Array.isArray(value)) {
-          return value.join(", ");
-        }
-        return String(value || "");
+        const values = Object.values(dataFields).map((value) => {
+          if (Array.isArray(value)) {
+            return value.join(", ");
+          }
+          return String(value || "");
+        });
+
+        const isFree = !(subscription && subscription.id);
+        return { values, isFree };
       });
 
-      const isFree = !(subscription && subscription.id);
-      return { values, isFree };
-    });
+      const freeRows = rows.filter((r) => r.isFree).map((r) => r.values);
+      const paidRows = rows.filter((r) => !r.isFree).map((r) => r.values);
+      const values = [...freeRows, ...paidRows];
 
-    const freeRows = rows.filter((r) => r.isFree).map((r) => r.values);
-    const paidRows = rows.filter((r) => !r.isFree).map((r) => r.values);
-    const values = [...freeRows, ...paidRows];
+      const nameOfValues = [
+        "Status",
+        "Subscription",
+        "Tier",
+        "Name",
+        "Surname",
+        "Purchase Date",
+        "Expire/Renew Date",
+        "Email",
+      ];
 
-    const nameOfValues = [
-      "Status",
-      "Subscription",
-      "Tier",
-      "Name",
-      "Surname",
-      "Purchase Date",
-      "Expire/Renew Date",
-      "Email",
-    ];
-
-    await googleSheets.spreadsheets.values.clear({
-      auth,
-      spreadsheetId,
-      range: sheetName,
-    });
-
-    await googleSheets.spreadsheets.values.append({
-      auth,
-      spreadsheetId,
-      range: sheetName,
-      valueInputOption: "RAW",
-      resource: {
-        values: [["Members of:", sheetName], nameOfValues, ...values],
-      },
-    });
-
-    const meta = await googleSheets.spreadsheets.get({
-      auth,
-      spreadsheetId,
-    });
-    const sheetId = meta.data.sheets.find(
-      (s) => s.properties.title === sheetName
-    )?.properties.sheetId;
-
-    if (sheetId && freeRows.length > 0) {
-      const startRowIndex = 2;
-      const endRowIndex = startRowIndex + freeRows.length;
-      const endColumnIndex = nameOfValues.length;
-
-      await googleSheets.spreadsheets.batchUpdate({
+      await googleSheets.spreadsheets.values.clear({
         auth,
         spreadsheetId,
+        range: sheetName,
+      });
+
+      await googleSheets.spreadsheets.values.append({
+        auth,
+        spreadsheetId,
+        range: sheetName,
+        valueInputOption: "RAW",
         resource: {
-          requests: [
-            {
-              repeatCell: {
-                range: {
-                  sheetId,
-                  startRowIndex,
-                  endRowIndex,
-                  startColumnIndex: 0,
-                  endColumnIndex,
-                },
-                cell: {
-                  userEnteredFormat: {
-                    backgroundColor: { red: 0.7, green: 0.7, blue: 0.7 },
-                  },
-                },
-                fields: "userEnteredFormat.backgroundColor",
-              },
-            },
-          ],
+          values: [["Members of:", sheetName], nameOfValues, ...values],
         },
       });
-    }
 
-    console.log(`Member Sheet updated for Alumnis`);
+      const meta = await googleSheets.spreadsheets.get({
+        auth,
+        spreadsheetId,
+      });
+      const sheetId = meta.data.sheets.find(
+        (s) => s.properties.title === sheetName
+      )?.properties.sheetId;
+
+      if (sheetId && freeRows.length > 0) {
+        const startRowIndex = 2;
+        const endRowIndex = startRowIndex + freeRows.length;
+        const endColumnIndex = nameOfValues.length;
+
+        await googleSheets.spreadsheets.batchUpdate({
+          auth,
+          spreadsheetId,
+          resource: {
+            requests: [
+              {
+                repeatCell: {
+                  range: {
+                    sheetId,
+                    startRowIndex,
+                    endRowIndex,
+                    startColumnIndex: 0,
+                    endColumnIndex,
+                  },
+                  cell: {
+                    userEnteredFormat: {
+                      backgroundColor: { red: 0.7, green: 0.7, blue: 0.7 },
+                    },
+                  },
+                  fields: "userEnteredFormat.backgroundColor",
+                },
+              },
+            ],
+          },
+        });
+      }
+
+      console.log(`Member Sheet updated for Alumnis`);
     } catch (error) {
       console.error("Error in alumniToSpreadsheet:", error);
     }
@@ -1132,86 +1143,6 @@ export const readSpreadsheetRows = async (
     console.error("Error reading spreadsheet:", error);
     throw error;
   }
-};
-
-// change name to reflect the current data pool
-// NOTE from Vladi: I would like this to be a background job but I am not confident that the event fetch will be possible as it can be already deleted
-export const addEventToDataPool = (eventId, sheetName = "2024-2025") => {
-  enqueueJob(`addEventToDataPool:${eventId}:${sheetName}`, async () => {
-    const { auth, googleSheets } = await getSheetsClient();
-    try {
-    const event = await Event.findById(eventId);
-    if (!event) {
-      console.log("Event not found in data pool fetching.");
-      return;
-    }
-
-    const rows = event.guestList.map((guest) => [
-      guest.status === 0 ? "missing" : "present",
-      guest.type ?? "-",
-      guest.timestamp
-        ? moment(guest.timestamp).format(MOMENT_DATE_TIME_YEAR)
-        : "-",
-      guest.name ?? "-",
-      guest.email ?? "-",
-      guest.phone ?? "-",
-      guest.preferences ? refactorToKeyValuePairs(guest.preferences) : "N/A",
-      guest.ticket ?? "-",
-      guest.transactionId ?? "-",
-      event.sheetName ?? "-",
-      event.id ?? "-",
-      event.status ?? "-",
-      event.region ?? "-",
-      event.title ?? "-",
-      event.date
-        ? moment(event.correctedDate ?? event.date).format(
-            MOMENT_DATE_TIME_YEAR
-          )
-        : "-",
-      event.location ?? "-",
-      event.ticketTimer
-        ? moment(event.ticketTimer).format(MOMENT_DATE_TIME_YEAR)
-        : "-",
-      event.ticketLimit ?? "-",
-      event.product?.guest.price ?? "-",
-      event.product?.member.price ?? "-",
-      event.product?.activeMember.price ?? event.product?.member.price ?? "-",
-      event.ticketLink ?? "-",
-      event.createdAt
-        ? moment(event.createdAt).format(MOMENT_DATE_TIME_YEAR)
-        : "-",
-    ]);
-
-    if (rows.length === 0) {
-      console.log("No tickets to add.");
-      return;
-    }
-
-    // Sheets client comes from singleton
-    const sheets = googleSheets;
-
-    // Find the first empty row
-    const { data } = await sheets.spreadsheets.values.get({
-      spreadsheetId: DATA_POOL,
-      range: `${sheetName}!A:A`,
-    });
-
-    const nextRow = (data.values?.length || 1) + 1;
-
-    // Append new rows
-    // might not need to check the first empty row
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: DATA_POOL,
-      range: `${sheetName}!A${nextRow}`,
-      valueInputOption: "RAW",
-      resource: { values: rows },
-    });
-
-    console.log(`Tickets for event "${event.title}" added successfully!`);
-    } catch (error) {
-      console.error("Error adding tickets:", error);
-    }
-  });
 };
 
 export const getPresenceStatsOfCity = async (spreadsheetId) => {
@@ -1283,4 +1214,6 @@ export {
   eventToSpreadsheet,
   specialEventsToSpreadsheet,
   usersToSpreadsheet,
+  enqueueJob,
+  getSheetsClient,
 };

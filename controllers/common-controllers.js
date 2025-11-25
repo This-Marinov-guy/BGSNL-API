@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import { usersCountCache } from "../util/config/caches.js";
 import { readSpreadsheetRows } from "../services/background-services/google-spreadsheets.js";
 import { STATISTICS_ABOUT_US_SHEET } from "../util/config/SPREEDSHEATS.js";
+import Statistics from "../models/Statistics.js";
 
 export const getTotalMemberCount = async (req, res, next) => {
   let userCount = usersCountCache.get("total");
@@ -76,19 +77,19 @@ export const getActiveMemberCount = async (req, res, next) => {
 
 export const getAboutUsData = async (req, res, next) => {
   try {
-    const data = await readSpreadsheetRows(
-      STATISTICS_ABOUT_US_SHEET,
-      "Dashboard",
-      "B2",
-      "B6"
-    );
+    const [eventStatistics, memberStatistics, alumniStatistics] =
+      await Promise.all([
+        Statistics.findOne({ type: "event" }),
+        Statistics.findOne({ type: "member" }),
+        Statistics.findOne({ type: "alumni" }),
+      ]);
 
     return res.status(200).json({
-      cities: data[0],
-      events: data[1],
-      members: data[2],
-      activeMembers: data[3],
-      tickets: data[4],
+      cities: eventStatistics?.data?.regions ?? [],
+      events: eventStatistics?.data?.count ?? 0,
+      members: memberStatistics?.data?.total ?? 0,
+      tickets: eventStatistics?.data?.totalTickets ?? 0,
+      alumni: alumniStatistics?.data?.total ?? 0,
     });
   } catch (err) {
     console.log(err);
