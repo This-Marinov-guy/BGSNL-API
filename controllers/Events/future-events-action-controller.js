@@ -909,7 +909,7 @@ export const deleteEvent = async (req, res, next) => {
   const productId = event.product.id ?? "";
 
   // feed the event to the data pool
-  await addEventToDataPool(eventId);
+  addEventToDataPool(eventId);
 
   try {
     event.status = "archived";
