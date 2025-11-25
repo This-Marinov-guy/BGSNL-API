@@ -10,16 +10,19 @@ import { enqueueJob, getSheetsClient } from "./google-spreadsheets.js";
  * Appends guest data for a specific event to the shared data pool spreadsheet.
  * Runs inside the existing background job queue defined in google-spreadsheets.js.
  */
-export const addEventToDataPool = (
-  eventId,
-  sheetName = "2024-2025"
-) => {
+export const addEventToDataPool = (eventId, sheetName = "2024-2025") => {
   enqueueJob(`addEventToDataPool:${eventId}:${sheetName}`, async () => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       const event = await Event.findById(eventId);
+
       if (!event) {
         console.log("Event not found in data pool fetching.");
+        return;
+      }
+
+      if (!event?.guestList || event?.guestList?.length === 0) {
+        console.log("No tickets to add.");
         return;
       }
 
@@ -97,4 +100,3 @@ export const addEventToDataPool = (
     }
   });
 };
-
