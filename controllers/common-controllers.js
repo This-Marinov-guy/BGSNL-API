@@ -89,7 +89,7 @@ export const getAboutUsData = async (req, res, next) => {
       events: eventStatistics?.data?.count ?? 0,
       members: memberStatistics?.data?.total ?? 0,
       tickets: eventStatistics?.data?.totalTickets ?? 0,
-      alumni: alumniStatistics?.data?.total ?? 0,
+      alumnis: alumniStatistics?.data?.total ?? 0,
     });
   } catch (err) {
     console.log(err);
