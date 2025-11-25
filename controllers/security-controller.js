@@ -305,7 +305,7 @@ export const login = async (req, res, next) => {
     existingUser.subscription.customerId
   );
 
-  const isAlumni = existingUser.includes(ALUMNI);
+  const isAlumni = existingUser.id.includes(ALUMNI);
   const alumniData = isAlumni
     ? {
         tier: existingUser.tier,
