@@ -6,6 +6,7 @@ export const REGIONS = [
   "leeuwarden",
   "maastricht",
   "rotterdam",
+  "leiden_hague",
 ];
 
 export const DEFAULT_REGION = "netherlands";
