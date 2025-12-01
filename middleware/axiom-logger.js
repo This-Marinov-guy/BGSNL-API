@@ -2,169 +2,138 @@ import dotenv from 'dotenv';
 dotenv.config();
 import { Axiom } from '@axiomhq/js';
 
-// Create and initialize Axiom client
+const MAX_BODY_SIZE = 128 * 1024; // 128KB
+const DATASET = process.env.AXIOM_DATASET || 'api-logs';
+
 let axiom;
 try {
   axiom = new Axiom({
     token: process.env.AXIOM_TOKEN,
     orgId: process.env.AXIOM_ORG_ID,
   });
-} catch (error) {
-  console.error('Failed to initialize Axiom client:', error);
+} catch (err) {
+  console.error('[axiom] client init failed:', err);
 }
 
-// Define the dataset to use
-const DATASET = process.env.AXIOM_DATASET || 'api-logs';
-
-/**
- * Format request details for logging
- */
-const formatRequest = (req) => {
-  return {
-    method: req.method,
-    url: req.originalUrl || req.url,
-    path: req.path,
-    params: req.params,
-    query: req.query,
-    headers: {
-      'user-agent': req.headers['user-agent'],
-      'content-type': req.headers['content-type'],
-      'accept': req.headers['accept'],
-      'host': req.headers['host'],
-      'referer': req.headers['referer'],
-      'origin': req.headers['origin'],
-    },
-    ip: req.ip,
-    timestamp: new Date().toISOString(),
-  };
+const safeJsonParse = (str) => {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return str;
+  }
 };
 
+const truncateIfNeeded = (buffer) => {
+  if (buffer.length <= MAX_BODY_SIZE) return buffer;
+
+  return Buffer.concat([
+    buffer.subarray(0, MAX_BODY_SIZE),
+    Buffer.from('\n/* truncated */'),
+  ]);
+};
+
+const formatRequest = (req) => ({
+  method: req.method,
+  url: req.originalUrl || req.url,
+  path: req.path,
+  params: req.params,
+  query: req.query,
+  ip: req.ip,
+  headers: {
+    'user-agent': req.headers['user-agent'],
+    'content-type': req.headers['content-type'],
+    accept: req.headers.accept,
+    host: req.headers.host,
+  },
+  timestamp: new Date().toISOString(),
+});
+
 /**
- * Middleware to log API requests and responses to Axiom
+ * Production-safe Axiom logger
  */
 export const axiomLogger = (req, res, next) => {
-  // Skip logging in development environment
-  if (!axiom || process.env.APP_ENV === "dev") {
+  if (
+    !axiom ||
+    process.env.APP_ENV === 'dev' ||
+    !process.env.AXIOM_TOKEN ||
+    !process.env.AXIOM_ORG_ID
+  ) {
     return next();
   }
 
-  if (!process.env.AXIOM_TOKEN || !process.env.AXIOM_ORG_ID || !process.env.AXIOM_DATASET) {
-    return next();
-  }
-
-  // Record start time
   const startTime = Date.now();
-  
-  // Capture original request
   const requestData = formatRequest(req);
-  
-  // Add request body to request data if it exists
-  if (req.body) {
-    requestData.body = req.body;
-  }
-  
-  // Create a reference to the original end method
-  const originalEnd = res.end;
+  if (req.body) requestData.body = req.body;
+
   const chunks = [];
-  
-  // Capture response body
-  res.write = function (chunk) {
-    chunks.push(Buffer.from(chunk));
-    return res.constructor.prototype.write.apply(this, arguments);
-  };
+  let totalSize = 0;
 
-  // Override the end method to log the response
-  res.end = function (chunk) {
-    // If there's a chunk, add it to the array
-    if (chunk) {
-      chunks.push(Buffer.from(chunk));
-    }
-    
-    // Execute the original end method
-    originalEnd.apply(res, arguments);
-    
-    // Calculate response time
-    const responseTime = Date.now() - startTime;
+  const originalWrite = res.write;
+  const originalEnd = res.end;
 
-    // Log to Axiom
+  res.write = function (chunk, ...args) {
     try {
-      const logData = {
-        request: requestData,
-        response: {
-          statusCode: res.statusCode,
-          statusMessage: res.statusMessage,
-          headers: res._header,
-          time: responseTime,
-          size: res.getHeader('content-length') || 0,
-        },
-        meta: {
-          environment: process.env.NODE_ENV || 'development',
-          service: 'bgsnl-api',
-        }
-      };
-      
-      // Add response body to all routes
-      if (chunks.length > 0) {
-        try {
-          const responseBody = Buffer.concat(chunks).toString('utf8');
-          if (responseBody) {
-            const parsedResponse = JSON.parse(responseBody);
-            logData.response.body = parsedResponse;
-          }
-        } catch (err) {
-          // If response is not JSON, just log as is
-          logData.response.body = Buffer.concat(chunks).toString('utf8');
+      if (chunk) {
+        totalSize += chunk.length;
+        if (totalSize <= MAX_BODY_SIZE) {
+          chunks.push(Buffer.from(chunk));
         }
       }
-      
-      // Filter out password fields from request and response bodies for sensitive routes
-      if (req.path.startsWith('/api/security') || req.path.startsWith('/api/user')) {
-        if (logData.request.body) {
-          logData.request.body = filterPasswordFields(logData.request.body);
-        }
-        if (logData.response.body) {
-          logData.response.body = filterPasswordFields(logData.response.body);
-        }
-      }
-      
-      axiom.ingest(DATASET, logData)
-        .catch(err => console.error('Failed to send logs to Axiom:', err));
     } catch (err) {
-      console.error('Error logging to Axiom:', err);
+      console.error('[axiom] capture write failed:', err);
     }
+    return originalWrite.apply(res, [chunk, ...args]);
   };
-  
+
+  res.end = function (chunk, ...args) {
+    try {
+      if (chunk) {
+        totalSize += chunk.length;
+        if (totalSize <= MAX_BODY_SIZE) {
+          chunks.push(Buffer.from(chunk));
+        }
+      }
+    } catch (err) {
+      console.error('[axiom] capture end failed:', err);
+    }
+
+    originalEnd.apply(res, [chunk, ...args]);
+
+    // Fire-and-forget logging
+    (async () => {
+      try {
+        const responseTime = Date.now() - startTime;
+
+        let responseBody;
+        if (chunks.length) {
+          const bodyBuffer = truncateIfNeeded(Buffer.concat(chunks));
+          responseBody = safeJsonParse(bodyBuffer.toString('utf8'));
+        }
+
+        const logEvent = {
+          request: requestData,
+          response: {
+            statusCode: res.statusCode,
+            headersSent: res.headersSent,
+            timeMs: responseTime,
+            sizeBytes: totalSize,
+            ...(responseBody && { body: responseBody }),
+          },
+          meta: {
+            env: process.env.NODE_ENV || 'development',
+            service: 'bgsnl-api',
+          },
+        };
+
+        await axiom.ingestEvents(DATASET, [logEvent]);
+      } catch (err) {
+        console.error('[axiom] ingestion failed:', {
+          message: err?.message,
+          stack: err?.stack,
+        });
+      }
+    })();
+  };
+
   next();
 };
-
-/**
- * Recursively filter out password fields from objects
- */
-const filterPasswordFields = (obj) => {
-  if (obj === null || typeof obj !== 'object') {
-    return obj;
-  }
-  
-  if (Array.isArray(obj)) {
-    return obj.map(item => filterPasswordFields(item));
-  }
-  
-  const filtered = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (typeof key === 'string' && 
-        (key.toLowerCase().includes('password') || 
-         key.toLowerCase().includes('passwd') || 
-         key.toLowerCase().includes('pwd') ||
-         key.toLowerCase().includes('secret') ||
-         key.toLowerCase().includes('token') ||
-         key.toLowerCase().includes('key'))) {
-      filtered[key] = '<redacted>';
-    } else {
-      filtered[key] = filterPasswordFields(value);
-    }
-  }
-  
-  return filtered;
-};
-
-export default axiomLogger;
