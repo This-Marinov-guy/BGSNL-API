@@ -51,7 +51,7 @@ const formatRequest = (req) => ({
 /**
  * Production-safe Axiom logger
  */
-export const axiomLogger = (req, res, next) => {
+const axiomLogger = (req, res, next) => {
   if (
     !axiom ||
     process.env.APP_ENV === 'dev' ||
@@ -137,3 +137,6 @@ export const axiomLogger = (req, res, next) => {
 
   next();
 };
+
+export default axiomLogger;
+
