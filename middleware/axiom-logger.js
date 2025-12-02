@@ -158,9 +158,7 @@ export const axiomLogger = (req, res, next) => {
       .catch((err) => console.error("[axiom] ingest failed:", err));
   };
 
-
   next();
 };
 
 export default axiomLogger;
-
