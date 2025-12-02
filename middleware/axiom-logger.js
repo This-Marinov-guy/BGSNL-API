@@ -153,9 +153,11 @@ export const axiomLogger = (req, res, next) => {
     }
 
     // Fire and forget (do NOT block response)
-    axiom
-      .ingest(DATASET, log)
-      .catch((err) => console.error("[axiom] ingest failed:", err));
+    try {
+      axiom.ingest(DATASET, log);
+    } catch (err) {
+      console.error("[axiom] ingest failed:", err);
+    }
   };
 
   next();
