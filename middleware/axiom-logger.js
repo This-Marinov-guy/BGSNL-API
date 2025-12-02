@@ -1,139 +1,163 @@
-import dotenv from 'dotenv';
+import dotenv from "dotenv";
 dotenv.config();
-import { Axiom } from '@axiomhq/js';
 
-const MAX_BODY_SIZE = 128 * 1024; // 128KB
-const DATASET = process.env.AXIOM_DATASET || 'api-logs';
+import { Axiom } from "@axiomhq/js";
 
-let axiom;
-try {
-  axiom = new Axiom({
-    token: process.env.AXIOM_TOKEN,
-    orgId: process.env.AXIOM_ORG_ID,
-  });
-} catch (err) {
-  console.error('[axiom] client init failed:', err);
+/**
+ * Initialize Axiom client
+ */
+let axiom = null;
+
+if (
+  process.env.AXIOM_TOKEN &&
+  process.env.AXIOM_ORG_ID &&
+  process.env.AXIOM_DATASET
+) {
+  try {
+    axiom = new Axiom({
+      token: process.env.AXIOM_TOKEN,
+      orgId: process.env.AXIOM_ORG_ID,
+    });
+  } catch (err) {
+    console.error("[axiom] failed to initialize client:", err);
+  }
+} else {
+  console.warn("[axiom] missing environment variables, logging disabled");
 }
 
-const safeJsonParse = (str) => {
+/**
+ * Dataset name
+ */
+const DATASET = process.env.AXIOM_DATASET || "api-logs";
+
+/**
+ * Graceful shutdown (important for Docker / K8s)
+ */
+const flushAxiom = async () => {
+  if (!axiom) return;
   try {
-    return JSON.parse(str);
-  } catch {
-    return str;
+    await axiom.flush();
+    // eslint-disable-next-line no-console
+    console.log("[axiom] flush complete");
+  } catch (err) {
+    console.error("[axiom] flush failed:", err);
   }
 };
 
-const truncateIfNeeded = (buffer) => {
-  if (buffer.length <= MAX_BODY_SIZE) return buffer;
+process.on("SIGTERM", flushAxiom);
+process.on("SIGINT", flushAxiom);
 
-  return Buffer.concat([
-    buffer.subarray(0, MAX_BODY_SIZE),
-    Buffer.from('\n/* truncated */'),
-  ]);
+/**
+ * Scrub sensitive fields recursively
+ */
+const redactSensitive = (value) => {
+  if (value === null || typeof value !== "object") return value;
+
+  if (Array.isArray(value)) {
+    return value.map(redactSensitive);
+  }
+
+  const out = {};
+  for (const [key, val] of Object.entries(value)) {
+    if (/password|passwd|pwd|secret|token|key/i.test(key)) {
+      out[key] = "<redacted>";
+    } else {
+      out[key] = redactSensitive(val);
+    }
+  }
+  return out;
 };
 
+/**
+ * Format request details
+ */
 const formatRequest = (req) => ({
   method: req.method,
   url: req.originalUrl || req.url,
   path: req.path,
   params: req.params,
   query: req.query,
-  ip: req.ip,
   headers: {
-    'user-agent': req.headers['user-agent'],
-    'content-type': req.headers['content-type'],
+    "user-agent": req.headers["user-agent"],
+    "content-type": req.headers["content-type"],
     accept: req.headers.accept,
     host: req.headers.host,
+    referer: req.headers.referer,
+    origin: req.headers.origin,
   },
-  timestamp: new Date().toISOString(),
+  ip: req.ip,
 });
 
 /**
- * Production-safe Axiom logger
+ * Express middleware
  */
-const axiomLogger = (req, res, next) => {
-  if (
-    !axiom ||
-    process.env.APP_ENV === 'dev' ||
-    !process.env.AXIOM_TOKEN ||
-    !process.env.AXIOM_ORG_ID
-  ) {
+export const axiomLogger = (req, res, next) => {
+  if (!axiom || process.env.APP_ENV === "dev") {
     return next();
   }
 
   const startTime = Date.now();
-  const requestData = formatRequest(req);
-  if (req.body) requestData.body = req.body;
+  const request = formatRequest(req);
+
+  if (req.body) {
+    request.body = redactSensitive(req.body);
+  }
 
   const chunks = [];
-  let totalSize = 0;
 
-  const originalWrite = res.write;
-  const originalEnd = res.end;
-
-  res.write = function (chunk, ...args) {
-    try {
-      if (chunk) {
-        totalSize += chunk.length;
-        if (totalSize <= MAX_BODY_SIZE) {
-          chunks.push(Buffer.from(chunk));
-        }
-      }
-    } catch (err) {
-      console.error('[axiom] capture write failed:', err);
+  /**
+   * Patch res.write safely
+   */
+  const originalWrite = res.write.bind(res);
+  res.write = (chunk, encoding, callback) => {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
-    return originalWrite.apply(res, [chunk, ...args]);
+    return originalWrite(chunk, encoding, callback);
   };
 
-  res.end = function (chunk, ...args) {
-    try {
-      if (chunk) {
-        totalSize += chunk.length;
-        if (totalSize <= MAX_BODY_SIZE) {
-          chunks.push(Buffer.from(chunk));
-        }
-      }
-    } catch (err) {
-      console.error('[axiom] capture end failed:', err);
+  /**
+   * Patch res.end safely
+   */
+  const originalEnd = res.end.bind(res);
+  res.end = (chunk, encoding, callback) => {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
 
-    originalEnd.apply(res, [chunk, ...args]);
+    originalEnd(chunk, encoding, callback);
 
-    // Fire-and-forget logging
-    (async () => {
+    const durationMs = Date.now() - startTime;
+
+    const log = {
+      timestamp: new Date().toISOString(),
+      request,
+      response: {
+        statusCode: res.statusCode,
+        statusMessage: res.statusMessage,
+        durationMs,
+      },
+      meta: {
+        service: "bgsnl-api",
+        environment: process.env.NODE_ENV || "development",
+      },
+    };
+
+    if (chunks.length) {
+      const raw = Buffer.concat(chunks).toString("utf8");
       try {
-        const responseTime = Date.now() - startTime;
-
-        let responseBody;
-        if (chunks.length) {
-          const bodyBuffer = truncateIfNeeded(Buffer.concat(chunks));
-          responseBody = safeJsonParse(bodyBuffer.toString('utf8'));
-        }
-
-        const logEvent = {
-          request: requestData,
-          response: {
-            statusCode: res.statusCode,
-            headersSent: res.headersSent,
-            timeMs: responseTime,
-            sizeBytes: totalSize,
-            ...(responseBody && { body: responseBody }),
-          },
-          meta: {
-            env: process.env.NODE_ENV || 'development',
-            service: 'bgsnl-api',
-          },
-        };
-
-        await axiom.ingestEvents(DATASET, [logEvent]);
-      } catch (err) {
-        console.error('[axiom] ingestion failed:', {
-          message: err?.message,
-          stack: err?.stack,
-        });
+        log.response.body = redactSensitive(JSON.parse(raw));
+      } catch {
+        log.response.body = raw;
       }
-    })();
+    }
+
+    // Fire and forget (do NOT block response)
+    axiom
+      .ingest(DATASET, log)
+      .catch((err) => console.error("[axiom] ingest failed:", err));
   };
+
 
   next();
 };
