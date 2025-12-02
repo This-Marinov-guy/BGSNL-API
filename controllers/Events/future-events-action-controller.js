@@ -28,7 +28,10 @@ import {
   createEventProductWithPrice,
   updateEventPrices,
 } from "../../services/main-services/event-action-service.js";
-import { addEventToDataPool } from "../../services/background-services/data-pool.js";
+import {
+  addEventToDataPool,
+  updateEventStatistics,
+} from "../../services/background-services/data-pool.js";
 import { eventToSpreadsheet } from "../../services/background-services/google-spreadsheets.js";
 import { getFingerprintLite } from "../../services/main-services/user-service.js";
 import {
@@ -908,8 +911,11 @@ export const deleteEvent = async (req, res, next) => {
   const region = event.region ?? "";
   const productId = event.product.id ?? "";
 
-  // feed the event to the data pool
-  addEventToDataPool(eventId);
+  // Increment event statistics before archiving
+  await updateEventStatistics(event);
+
+  // feed the event to the data pool (for archival purposes, skip statistics update)
+  addEventToDataPool(eventId, "2024-2025", false);
 
   try {
     event.status = "archived";
