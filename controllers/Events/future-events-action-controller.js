@@ -212,8 +212,32 @@ export const addEvent = async (req, res, next) => {
 
   let images = [];
 
+  // Parse the order array from the frontend (for new events, this will only contain new images)
+  let imagesOrder = [];
+  if (req.body.imagesOrder) {
+    try {
+      imagesOrder =
+        typeof req.body.imagesOrder === "string"
+          ? JSON.parse(req.body.imagesOrder)
+          : req.body.imagesOrder;
+    } catch (err) {
+      console.error("Error parsing imagesOrder:", err);
+    }
+  }
+
   if (req.files && req.files["images"] && req.files["images"]?.length > 0) {
-    const uploadPromises = req.files["images"].map(async (img) => {
+    // Create a map of fileName to uploaded file for quick lookup
+    const uploadedFilesMap = {};
+    req.files["images"].forEach((file) => {
+      // Extract index from filename (e.g., "image_0" -> 0)
+      const match = file.originalname.match(/^image_(\d+)$/);
+      if (match) {
+        uploadedFilesMap[file.originalname] = file;
+      }
+    });
+
+    // Upload all new images to Cloudinary
+    const uploadPromises = Object.values(uploadedFilesMap).map(async (img) => {
       try {
         const link = await uploadToCloudinary(img, {
           folder,
@@ -223,17 +247,42 @@ export const addEvent = async (req, res, next) => {
           crop: "fit",
           format: "jpg",
         });
-        return link;
+        return { fileName: img.originalname, link };
       } catch (err) {
         console.error(`Error uploading image ${img.originalname}:`, err);
-        return null; // or handle the error as appropriate for your use case
+        return { fileName: img.originalname, link: null };
       }
     });
 
-    const uploadedImages = await Promise.all(uploadPromises);
-    images = images.concat(uploadedImages.filter((link) => link !== null));
+    const uploadedResults = await Promise.all(uploadPromises);
+
+    // Create a map of fileName to uploaded link
+    const uploadedLinksMap = {};
+    uploadedResults.forEach(({ fileName, link }) => {
+      if (link) {
+        uploadedLinksMap[fileName] = link;
+      }
+    });
+
+    // Reconstruct the ordered array based on imagesOrder
+    if (imagesOrder.length > 0) {
+      images = imagesOrder
+        .filter((item) => item.type === "new") // For new events, only new images exist
+        .map((item) => {
+          // Get uploaded image link by fileName
+          return uploadedLinksMap[item.fileName] || null;
+        })
+        .filter((link) => link !== null); // Remove any null values
+    } else {
+      // Fallback: if no order is provided, use old behavior
+      const uploadedImages = uploadedResults
+        .map((result) => result.link)
+        .filter((link) => link !== null);
+      images = uploadedImages;
+    }
   }
 
+  // Add poster at the beginning
   images.unshift(poster);
 
   //create product
@@ -547,8 +596,40 @@ export const editEvent = async (req, res, next) => {
 
   let images = [];
 
+  // Parse the order array from the frontend
+  let imagesOrder = [];
+  if (req.body.imagesOrder) {
+    try {
+      imagesOrder =
+        typeof req.body.imagesOrder === "string"
+          ? JSON.parse(req.body.imagesOrder)
+          : req.body.imagesOrder;
+    } catch (err) {
+      console.error("Error parsing imagesOrder:", err);
+    }
+  }
+
+  // Get existing images from request
+  const existingImages = req.body.existingImages
+    ? typeof req.body.existingImages === "string"
+      ? JSON.parse(req.body.existingImages)
+      : req.body.existingImages
+    : [];
+
+  // Handle new uploaded images
   if (req.files && req.files["images"] && req.files["images"]?.length > 0) {
-    const uploadPromises = req.files["images"].map(async (img) => {
+    // Create a map of fileName to uploaded file for quick lookup
+    const uploadedFilesMap = {};
+    req.files["images"].forEach((file) => {
+      // Extract index from filename (e.g., "image_0" -> 0)
+      const match = file.originalname.match(/^image_(\d+)$/);
+      if (match) {
+        uploadedFilesMap[file.originalname] = file;
+      }
+    });
+
+    // Upload all new images to Cloudinary
+    const uploadPromises = Object.values(uploadedFilesMap).map(async (img) => {
       try {
         const link = await uploadToCloudinary(img, {
           folder,
@@ -558,18 +639,55 @@ export const editEvent = async (req, res, next) => {
           crop: "fit",
           format: "jpg",
         });
-        return link;
+        return { fileName: img.originalname, link };
       } catch (err) {
         console.error(`Error uploading image ${img.originalname}:`, err);
-        return null; // or handle the error as appropriate for your use case
+        return { fileName: img.originalname, link: null };
       }
     });
 
-    const uploadedImages = await Promise.all(uploadPromises);
-    images = images.concat(uploadedImages.filter((link) => link !== null));
+    const uploadedResults = await Promise.all(uploadPromises);
+
+    // Create a map of fileName to uploaded link
+    const uploadedLinksMap = {};
+    uploadedResults.forEach(({ fileName, link }) => {
+      if (link) {
+        uploadedLinksMap[fileName] = link;
+      }
+    });
+
+    // Reconstruct the ordered array based on imagesOrder
+    if (imagesOrder.length > 0) {
+      images = imagesOrder
+        .map((item) => {
+          if (item.type === "existing") {
+            // Use existing image URL
+            return item.url;
+          } else if (item.type === "new") {
+            // Get uploaded image link by fileName
+            return uploadedLinksMap[item.fileName] || null;
+          }
+          return null;
+        })
+        .filter((link) => link !== null); // Remove any null values
+    } else {
+      // Fallback: if no order is provided, use old behavior
+      const uploadedImages = uploadedResults
+        .map((result) => result.link)
+        .filter((link) => link !== null);
+      images = [...existingImages, ...uploadedImages];
+    }
+  } else {
+    // No new files uploaded, just use existing images in order
+    if (imagesOrder.length > 0) {
+      images = imagesOrder
+        .filter((item) => item.type === "existing")
+        .map((item) => item.url);
+    } else {
+      images = existingImages;
+    }
   }
 
-  images.unshift(poster || event.poster);
 
   event.lastUpdate = getFingerprintLite(req);
   event.extraInputsForm = extraInputsForm;
