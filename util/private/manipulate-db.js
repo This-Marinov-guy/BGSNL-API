@@ -19,6 +19,7 @@ import {
 } from "../config/enums.js";
 import User from "../../models/User.js";
 import AlumniUser from "../../models/AlumniUser.js";
+import Event from "../../models/Event.js";
 import { sendMarketingEmail } from "../../services/background-services/email-transporter.js";
 import { createStripeClient } from "../config/stripe.js";
 
@@ -1043,5 +1044,105 @@ export async function lockExpiredUsers() {
     } else {
       console.log(`User ${user.email} is not expired, skipping...`);
     }
+  }
+}
+
+/**
+ * Adds an addOn object to all guests in an event that have empty addOns arrays
+ * @param {string} eventId - The ID of the event
+ * @param {Object} addOnObject - The addOn object to add to guests (should have id, title, price properties)
+ * @returns {Object|null} - Object with success status and results, or null if operation failed
+ */
+export async function addAddOnToGuestsWithEmptyAddOns(eventId, addOnObject) {
+  try {
+    // Validate inputs
+    if (!eventId) {
+      console.log("No eventId provided");
+      return { success: false, message: "No eventId provided" };
+    }
+
+    if (!addOnObject || typeof addOnObject !== "object") {
+      console.log("Invalid addOnObject provided");
+      return { success: false, message: "Invalid addOnObject provided" };
+    }
+
+    // Find the event
+    const event = await Event.findById(eventId);
+
+    if (!event) {
+      console.log(`No event found with ID: ${eventId}`);
+      return { success: false, message: "Event not found" };
+    }
+
+    console.log(`Found event: ${event.title || eventId}`);
+
+    // Check if event has guestList
+    if (!event.guestList || !Array.isArray(event.guestList)) {
+      console.log("Event has no guestList or guestList is not an array");
+      return { success: false, message: "Event has no guestList" };
+    }
+
+    const results = [];
+    let count = 0;
+    let updated = false;
+
+    // Iterate over all guests
+    for (let i = 0; i < event.guestList.length; i++) {
+      const guest = event.guestList[i];
+
+      // Check if guest has empty addOns or no addOns field
+      const hasEmptyAddOns =
+        !guest.addOns ||
+        !Array.isArray(guest.addOns) ||
+        guest.addOns.length === 0;
+
+      if (hasEmptyAddOns) {
+        // Initialize addOns array if it doesn't exist
+        if (!event.guestList[i].addOns) {
+          event.guestList[i].addOns = [];
+        }
+        
+        // Push the addOn object to the guest's addOns array
+        event.guestList[i].addOns.push(addOnObject);
+        updated = true;
+        count++;
+
+        results.push({
+          guestIndex: i,
+          guestName: guest.name || "Unknown",
+          guestEmail: guest.email || "Unknown",
+          addedAddOn: addOnObject,
+        });
+
+        console.log(
+          `Added addOn to guest ${count}: ${guest.name || guest.email} (index ${i})`
+        );
+      }
+    }
+
+    // Update the event if any guests were modified
+    if (updated) {
+      // Mark the guestList array as modified for Mongoose
+      event.markModified("guestList");
+      await event.save();
+      console.log(`Successfully updated event with ${count} guest(s) modified`);
+    } else {
+      console.log("No guests with empty addOns found");
+    }
+
+    return {
+      success: true,
+      updatedCount: count,
+      results,
+      message: updated
+        ? `Successfully added addOn to ${count} guest(s)`
+        : "No guests with empty addOns found",
+    };
+  } catch (error) {
+    console.error("Error adding addOn to guests:", error);
+    return { success: false, message: error.message };
+  } finally {
+    // Don't close the client here as it might be reused
+    console.log("AddOn addition process completed");
   }
 }

@@ -14,7 +14,7 @@ import securityRouter from "./routes/security-routes.js";
 import specialEventsRouter from "./routes/special-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
-import axiomLogger from "./middleware/axiom-logger.js";
+import axiomLogger, { flushAxiom } from "./middleware/axiom-logger.js";
 import { REGIONS, STRIPE_WEBHOOK_ROUTE } from "./util/config/defines.js";
 import futureEventRouter from "./routes/Events/future-events-routes.js";
 import wordpressRouter from "./routes/Integration/wordpress-routes.js";
@@ -22,6 +22,7 @@ import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
 import kokoAppRouter from "./routes/Integration/koko-app-data.js";
 import {
+  addAddOnToGuestsWithEmptyAddOns,
   addRoleToUsersByEmail,
   convertUsersWithoutSubscriptionToAlumni,
   lockExpiredUsers,
@@ -125,16 +126,48 @@ app.use((error, req, res, next) => {
 
 //db connection
 mongoose.set("strictQuery", true);
+let server;
+
 mongoose
   .connect(
     `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`
   )
   .then(() => {
     console.log("Connected to DB");
-    app.listen(process.env.PORT || 80);
+    server = app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
   .catch((err) => console.log("Failed to Connect ", err));
+
+// Graceful shutdown handler
+const gracefulShutdown = async (signal) => {
+  console.log(`\n${signal} received. Starting graceful shutdown...`);
+  
+  // Stop accepting new connections
+  if (server) {
+    server.close(() => {
+      console.log("HTTP server closed");
+    });
+  }
+
+  // Flush Axiom logs
+  await flushAxiom();
+
+  // Close MongoDB connection
+  try {
+    await mongoose.connection.close();
+    console.log("MongoDB connection closed");
+  } catch (err) {
+    console.error("Error closing MongoDB connection:", err);
+  }
+
+  console.log("Graceful shutdown complete");
+  process.exit(0);
+};
+
+// Override existing signal handlers for proper shutdown
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // instantly update all user spreadsheets (do not leave uncommented)
 

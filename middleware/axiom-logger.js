@@ -32,8 +32,9 @@ const DATASET = process.env.AXIOM_DATASET || "api-logs";
 
 /**
  * Graceful shutdown (important for Docker / K8s)
+ * Export flushAxiom to be called by app.js during graceful shutdown
  */
-const flushAxiom = async () => {
+export const flushAxiom = async () => {
   if (!axiom) return;
   try {
     await axiom.flush();
@@ -43,9 +44,6 @@ const flushAxiom = async () => {
     console.error("[axiom] flush failed:", err);
   }
 };
-
-process.on("SIGTERM", flushAxiom);
-process.on("SIGINT", flushAxiom);
 
 /**
  * Scrub sensitive fields recursively
