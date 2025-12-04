@@ -39,7 +39,7 @@ export const postCard = async (req, res, next) => {
 
     let targetUser;
     try {
-      targetUser = await findUserByName({ name: firstName, surname: lastName });
+      targetUser = await findUserByName(firstName, lastName);
     } catch (err) {
       return next(new HttpError('Could not find a user with that name <;(', 404));
     }
