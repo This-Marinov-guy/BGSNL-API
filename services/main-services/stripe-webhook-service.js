@@ -54,6 +54,10 @@ import {
   MEMBERSHIP_ACTIVE,
 } from "../../util/config/enums.js";
 import { createStripeClient } from "../../util/config/stripe.js";
+import {
+  recountMemberStatistics,
+  recountAlumniStatistics,
+} from "../background-services/statistics-service.js";
 
 /**
  * Handle alumni signup checkout session
@@ -110,6 +114,9 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
 
   alumniToSpreadsheet();
   alumniWelcomeEmail(email, name);
+
+  // Update alumni statistics (background job, non-blocking)
+  recountAlumniStatistics();
 
   return { success: true };
 };
@@ -192,6 +199,9 @@ export const handleUserSignup = async (metadata, paymentData) => {
   welcomeEmail(email, name, region);
   usersToSpreadsheet(region);
   usersToSpreadsheet();
+
+  // Update member statistics (background job, non-blocking)
+  recountMemberStatistics();
 
   return { success: true };
 };
@@ -537,6 +547,11 @@ export const handleAlumniMigration = async (metadata, paymentData) => {
 
     // Send welcome email
     alumniWelcomeEmail(regularUser.email, regularUser.name);
+
+    // Update statistics (background jobs, non-blocking)
+    // Member count decreases, alumni count increases
+    recountMemberStatistics();
+    recountAlumniStatistics();
 
     return {
       success: true,
