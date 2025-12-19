@@ -1,7 +1,9 @@
 import mongoose from "mongoose";
+import dotenv from "dotenv";
+dotenv.config();
 
 export const accessCollectionDirectly = async () => {
-  const uri = `mongodb+srv://spreadsheet_lazar:IAXWyCTEydKEzcm4@bgsnl.bskvjhq.mongodb.net`;
+  const uri = process.env.DB_READ_ACCESS_URI;
 
   try {
     await mongoose.connect(uri, {
