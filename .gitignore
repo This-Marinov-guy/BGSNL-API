@@ -6,3 +6,4 @@
 .env.*
 
 reports/
+util/private/
