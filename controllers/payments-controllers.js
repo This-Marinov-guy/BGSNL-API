@@ -21,7 +21,7 @@ export const cancelSubscription = async (req, res, next) => {
     );
   }
 
-  const stripeClient = createStripeClient(user.region);
+  const stripeClient = createStripeClient(DEFAULT_REGION);
 
   try {
     await stripeClient.subscriptions.update(user.subscription.id, {

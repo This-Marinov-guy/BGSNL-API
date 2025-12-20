@@ -445,9 +445,7 @@ export const handleAlumniMigration = async (metadata, paymentData) => {
 
     // Cancel old subscription
     try {
-      const stripeClient = createStripeClient(
-        regularUser.region || DEFAULT_REGION
-      );
+      const stripeClient = createStripeClient(DEFAULT_REGION);
       await stripeClient.subscriptions.cancel(oldSubscriptionId);
       console.log(
         `Cancelled subscription ${oldSubscriptionId} for user ${userId}`
