@@ -18,11 +18,17 @@ import {
   chooseRandomAvatar,
   compareIntStrings,
   decryptData,
+  encryptData,
   hasOverlap,
   isBirthdayToday,
   jwtSign,
 } from "../util/functions/helpers.js";
-import { ADMIN, ALUMNI, LIMITLESS_ACCOUNT, MEMBER } from "../util/config/defines.js";
+import {
+  ADMIN,
+  ALUMNI,
+  LIMITLESS_ACCOUNT,
+  MEMBER,
+} from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
 import { calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
@@ -370,7 +376,7 @@ export const postSendPasswordResetEmail = async (req, res, next) => {
 
 export const postVerifyToken = async (req, res, next) => {
   const { token, email } = req.body;
-  let user;  
+  let user;
 
   try {
     user = await findUserByEmail(email);
@@ -381,12 +387,12 @@ export const postVerifyToken = async (req, res, next) => {
 
   if (!user) {
     return next(new HttpError("Invalid code, please try again", 400));
-  }  
+  }
 
   try {
     const temporaryCode = await TemporaryCode.findOne({
       userId: user?.id,
-    }).sort({ _id: -1 });    
+    }).sort({ _id: -1 });
 
     if (temporaryCode.code != token) {
       if (temporaryCode.life < 1) {
@@ -515,4 +521,10 @@ export const adminPatchUserPassword = async (req, res, next) => {
   return res
     .status(200)
     .json({ status: true, message: "Password changed successfully" });
+};
+
+export const encryptDataController = async (req, res, next) => {
+  const { data } = req.body;
+  const encryptedData = encryptData(data);
+  return res.status(200).json({ status: true, encryptedData });
 };

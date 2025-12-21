@@ -121,6 +121,20 @@ export const isBirthdayToday = (birthdayStr) => {
   );
 };
 
+export const encryptData = (data) => {
+  if (!data) {
+    return "";
+  }
+
+  const stringifiedData = JSON.stringify(data);
+  const encryptedData = CryptoJS.AES.encrypt(
+    stringifiedData,
+    process.env.CRYPTO_ENCRYPTION_KEY
+  ).toString();
+
+  return encryptedData;
+};
+
 export const decryptData = (string) => {
   if (!string) {
     return {};

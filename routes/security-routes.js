@@ -10,6 +10,7 @@ import {
   postVerifyToken,
   adminPatchUserPassword,
   alumniSignup,
+  encryptDataController,
 } from "../controllers/security-controller.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
@@ -78,5 +79,7 @@ securityRouter.patch(
 );
 
 securityRouter.patch("/force-change-password", adminPatchUserPassword);
+
+securityRouter.post("/encrypt-data", encryptDataController);
 
 export default securityRouter;

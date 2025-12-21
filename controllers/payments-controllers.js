@@ -94,9 +94,8 @@ export const postSubscriptionNoFile = async (req, res, next) => {
 
   const stripeClient = createStripeClient(DEFAULT_REGION);
 
-  const session = await stripeClient.checkout.sessions.create({
+  const checkoutData = {
     mode: "subscription",
-    customer: customerId,
     allow_promotion_codes: true,
     line_items: [{ price: itemId, quantity: 1 }],
     success_url: `${origin_url}/success`,
@@ -105,7 +104,13 @@ export const postSubscriptionNoFile = async (req, res, next) => {
       ...req.body,
       userId: userId || "",
     },
-  });
+  };
+
+  if (customerId) {
+    checkoutData.customer = customerId;
+  }
+
+  const session = await stripeClient.checkout.sessions.create(checkoutData);
 
   res.status(200).json({ url: session.url });
 };
@@ -120,19 +125,25 @@ export const postSubscriptionFile = async (req, res, next) => {
   if (req.file) {
     fileLocation = req.file.Location ? req.file.Location : req.file.location;
   }
-  const session = await stripeClient.checkout.sessions.create({
+
+  const checkoutData = {
     mode: "subscription",
-    customer: customerId,
     allow_promotion_codes: true,
     line_items: [{ price: itemId, quantity: 1 }],
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
       file: fileLocation ? fileLocation : null,
-      userId: userId || '',
+      userId: userId || "",
       ...req.body,
     },
-  });
+  };
+
+  if (customerId) {
+    checkoutData.customer = customerId;
+  }
+
+  const session = await stripeClient.checkout.sessions.create(checkoutData);
 
   res.status(200).json({ url: session.url });
 };
@@ -164,18 +175,23 @@ export const postCheckoutNoFile = async (req, res, next) => {
     }
   }
 
-  const session = await stripeClient.checkout.sessions.create({
+  const checkoutData = {
     mode: "payment",
-    customer: customerId,
     allow_promotion_codes: true,
     line_items: lineItems,
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
-      userId: userId || '',
+      userId: userId || "",
       ...req.body,
     },
-  });
+  };
+
+  if (customerId) {
+    checkoutData.customer = customerId;
+  }
+
+  const session = await stripeClient.checkout.sessions.create(checkoutData);
 
   res.status(200).json({ url: session.url });
 };
@@ -213,19 +229,24 @@ export const postCheckoutFile = async (req, res, next) => {
     fileLocation = req.file.Location ? req.file.Location : req.file.location;
   }
 
-  const session = await stripeClient.checkout.sessions.create({
+  const checkoutData = {
     mode: "payment",
-    customer: customerId,
     allow_promotion_codes: true,
     line_items: lineItems,
     success_url: `${origin_url}/success`,
     cancel_url: `${origin_url}/fail`,
     metadata: {
       file: fileLocation ? fileLocation : null,
-      userId: userId || '',
+      userId: userId || "",
       ...req.body,
     },
-  });
+  };
+
+  if (customerId) {
+    checkoutData.customer = customerId;
+  }
+
+  const session = await stripeClient.checkout.sessions.create(checkoutData);
 
   res.status(200).json({ url: session.url });
 };
