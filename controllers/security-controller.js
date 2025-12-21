@@ -370,7 +370,7 @@ export const postSendPasswordResetEmail = async (req, res, next) => {
 
 export const postVerifyToken = async (req, res, next) => {
   const { token, email } = req.body;
-  let user;
+  let user;  
 
   try {
     user = await findUserByEmail(email);
@@ -381,12 +381,12 @@ export const postVerifyToken = async (req, res, next) => {
 
   if (!user) {
     return next(new HttpError("Invalid code, please try again", 400));
-  }
+  }  
 
   try {
     const temporaryCode = await TemporaryCode.findOne({
       userId: user?.id,
-    });
+    }).sort({ _id: -1 });    
 
     if (temporaryCode.code != token) {
       if (temporaryCode.life < 1) {
@@ -440,7 +440,7 @@ export const patchUserPassword = async (req, res, next) => {
     temporaryCode = await TemporaryCode.findOne({
       userId: existingUser?._id,
       code: token,
-    });
+    }).sort({ _id: -1 });
   } catch (err) {
     console.log(err);
     return next(new HttpError("Invalid code, please try again", 400));
