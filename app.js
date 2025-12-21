@@ -21,18 +21,6 @@ import wordpressRouter from "./routes/Integration/wordpress-routes.js";
 import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
 import kokoAppRouter from "./routes/Integration/koko-app-data.js";
-import {
-  addAddOnToGuestsWithEmptyAddOns,
-  addRoleToUsersByEmail,
-  convertUsersWithoutSubscriptionToAlumni,
-  lockExpiredUsers,
-  setJoinDateForAllAlumniUsers,
-} from "./util/private/manipulate-db.js";
-import {
-  alumniToSpreadsheet,
-  eventToSpreadsheet,
-  usersToSpreadsheet,
-} from "./services/background-services/google-spreadsheets.js";
 
 const app = express();
 
