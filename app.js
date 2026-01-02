@@ -36,7 +36,11 @@ if (app.get("env") !== "development") {
   app.use(rateLimiter);
   app.use(firewall);
 } else {
-  allowedOrigins.push("http://localhost:3000");
+  allowedOrigins.push(
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002"
+  );
 }
 
 app.use(
