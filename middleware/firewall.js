@@ -34,7 +34,7 @@ export const rateLimiter = (req, res, next) => {
 };
 
 export const firewall = async (req, res, next) => {
-  const origin = req.headers.origin || "unknown origin";
+  const origin = req.headers.origin || req.headers.referer || "unknown origin";
   const connectingIp =
     req.headers["do-connecting-ip"] ??
     req.ip ??
