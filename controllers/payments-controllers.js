@@ -106,9 +106,9 @@ export const postSubscriptionNoFile = async (req, res, next) => {
     },
   };
 
-  if (customerId) {
-    checkoutData.customer = customerId;
-  }
+  // if (customerId) {
+  //   checkoutData.customer = customerId;
+  // }
 
   const session = await stripeClient.checkout.sessions.create(checkoutData);
 
@@ -139,9 +139,9 @@ export const postSubscriptionFile = async (req, res, next) => {
     },
   };
 
-  if (customerId) {
-    checkoutData.customer = customerId;
-  }
+  // if (customerId) {
+  //   checkoutData.customer = customerId;
+  // }
 
   const session = await stripeClient.checkout.sessions.create(checkoutData);
 
@@ -187,9 +187,9 @@ export const postCheckoutNoFile = async (req, res, next) => {
     },
   };
 
-  if (customerId) {
-    checkoutData.customer = customerId;
-  }
+  // if (customerId) {
+  //   checkoutData.customer = customerId;
+  // }
 
   const session = await stripeClient.checkout.sessions.create(checkoutData);
 
@@ -242,9 +242,9 @@ export const postCheckoutFile = async (req, res, next) => {
     },
   };
 
-  if (customerId) {
-    checkoutData.customer = customerId;
-  }
+  // if (customerId) {
+  //   checkoutData.customer = customerId;
+  // }
 
   const session = await stripeClient.checkout.sessions.create(checkoutData);
 
@@ -291,3 +291,4 @@ export const postCustomerPortal = async (req, res, next) => {
 
   res.status(200).json({ url: session.url });
 };
+
