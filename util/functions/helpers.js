@@ -45,7 +45,7 @@ export const removeModelProperties = (obj, properties) => {
 export const jwtSign = (user) => {
   return jwt.sign(
     {
-      version: Number(process.env.APP_VERSION ?? 1),
+      version: Number(process.env.AUTH_VERSION ?? 1),
       image: user.image,
       userId: user.id,
       customerId: user.subscription.customerId ?? '',
@@ -67,7 +67,7 @@ export const jwtRefresh = (token) => {
 
     const newToken = jwt.sign(
       {
-        version: Numbwe(process.env.APP_VERSION ?? 1),
+        version: Numbwe(process.env.AUTH_VERSION ?? 1),
         image: decoded.image,
         userId: decoded.userId,
         customerId: decoded.customerId ?? '',
