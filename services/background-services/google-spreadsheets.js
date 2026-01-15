@@ -844,6 +844,8 @@ const usersToSpreadsheet = (region = null) => {
           birth,
           roles,
           joinDate,
+          documents,
+          internshipApplications,
           ...rest
         } = user;
 
@@ -877,7 +879,16 @@ const usersToSpreadsheet = (region = null) => {
           ...(filterByRegion ? {} : { roles: roles.join(", ") }),
         };
 
-        return Object.values(dataFields);
+        // Convert all values to strings to avoid Google Sheets errors with objects/arrays
+        return Object.values(dataFields).map((value) => {
+          if (value === null || value === undefined) {
+            return "";
+          }
+          if (typeof value === "object") {
+            return JSON.stringify(value);
+          }
+          return String(value);
+        });
       });
 
       const nameOfValues = filterByRegion
