@@ -11,7 +11,10 @@ const fileFilter = (req, file, cb) => {
     file.mimetype === "image/jpeg" ||
     file.mimetype === "image/jpg" ||
     file.mimetype === "image/webp" ||
-    file.mimetype === "image/png"
+    file.mimetype === "image/png" ||
+    file.mimetype === "application/pdf" ||
+    file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    file.mimetype === "application/msword"
   ) {
     cb(null, true);
   } else {
@@ -28,13 +31,31 @@ const multerS3Config = (bucketName) =>
     }),
     bucket: bucketName,
     contentType: function (req, file, cb) {
-      cb(null, "image/webp");
+      // Preserve original content type for documents, convert images to webp
+      if (
+        file.mimetype === "application/pdf" ||
+        file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        file.mimetype === "application/msword"
+      ) {
+        cb(null, file.mimetype);
+      } else {
+        cb(null, "image/webp");
+      }
     },
     metadata: function (req, file, cb) {
       cb(null, { fieldName: file.fieldname });
     },
     key: function (req, file, cb) {
-      cb(null, file.originalname + ".webp");
+      // Preserve original filename for documents, append .webp for images
+      if (
+        file.mimetype === "application/pdf" ||
+        file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        file.mimetype === "application/msword"
+      ) {
+        cb(null, file.originalname);
+      } else {
+        cb(null, file.originalname + ".webp");
+      }
     },
   });
 

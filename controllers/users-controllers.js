@@ -23,8 +23,10 @@ import {
 } from "../services/main-services/user-service.js";
 import AlumniUser from "../models/AlumniUser.js";
 import User from "../models/User.js";
+import Document from "../models/Document.js";
 import mongoose from "mongoose";
 import { ALUMNI } from "../util/config/defines.js";
+import { DOCUMENT_TYPES } from "../util/config/enums.js";
 
 export const refreshToken = async (req, res, next) => {
   let newToken = null;
@@ -57,6 +59,11 @@ export const getCurrentUser = async (req, res, next) => {
   if (!user) {
     const error = new HttpError("User not found", 404);
     return next(error);
+  }
+
+  // Populate documents if user has documents
+  if (user.documents && user.documents.length > 0) {
+    await user.populate('documents');
   }
 
   user = user.toObject({ getters: true });
@@ -523,5 +530,220 @@ export const updateAlumniQuote = async (req, res, next) => {
   } catch (err) {
     console.error(err);
     return next(new HttpError("Error updating quote", 500));
+  }
+};
+
+export const postAddDocument = async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return next(new HttpError("Invalid inputs passed", 422));
+  }
+
+  const { userId } = extractUserFromRequest(req);
+  const { type, content } = req.body;
+
+  let user;
+  try {
+    user = await findUserById(userId);
+  } catch (err) {
+    const error = new HttpError("Could not find user", 500);
+    return next(error);
+  }
+
+  if (!user) {
+    const error = new HttpError("User not found", 404);
+    return next(error);
+  }  
+
+  // Get content from file upload if available, otherwise use the content from body
+  let documentContent = content;
+  let documentName = req.body?.name;
+  
+  if (req.file) {
+    documentContent = req.file.location || req.file.Location;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    documentName = user.name + " " + user.surname + " - " + timestamp + " - " + req.file.originalname;
+  }
+
+  if (!documentContent) {
+    const error = new HttpError("Content is required (either as file or link)", 422);
+    return next(error);
+  }
+
+  if (!documentName) {
+    const error = new HttpError("Name is required", 422);
+    return next(error);
+  }
+
+  // Validate document type (already validated in route, but double-check)
+  const documentType = parseInt(type);
+  if (documentType !== DOCUMENT_TYPES.CV && documentType !== DOCUMENT_TYPES.COVER_LETTER) {
+    const error = new HttpError("Invalid document type", 422);
+    return next(error);
+  }
+
+  try {
+    // Create the document
+    const document = new Document({
+      type: documentType,
+      name: documentName,
+      content: documentContent,
+    });
+
+    await document.save();
+
+    // Add document ID to user's documents array
+    if (!user.documents) {
+      user.documents = [];
+    }
+    user.documents.push(document);
+    
+    await user.save();
+
+    return res.status(201).json({
+      status: true,
+      message: "Document added successfully",
+      documentId: document._id,
+    });
+  } catch (err) {
+    console.log(err);
+    const error = new HttpError("Failed to add document", 500);
+    return next(error);
+  }
+};
+
+export const patchEditDocument = async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return next(new HttpError("Invalid inputs passed", 422));
+  }
+
+  const { userId } = extractUserFromRequest(req);
+  const { documentId } = req.params;
+  const { type, name, content } = req.body;
+
+  let user;
+  try {
+    user = await findUserById(userId);
+  } catch (err) {
+    const error = new HttpError("Could not find user", 500);
+    return next(error);
+  }
+
+  if (!user) {
+    const error = new HttpError("User not found", 404);
+    return next(error);
+  }
+
+  // Verify that the document belongs to the user
+  if (!user.documents.some((docId) => docId.toString() === documentId)) {
+    const error = new HttpError("Document not found or access denied", 404);
+    return next(error);
+  }
+
+  // Find the document
+  let document;
+  try {
+    document = await Document.findById(documentId);
+  } catch (err) {
+    const error = new HttpError("Could not find document", 500);
+    return next(error);
+  }
+
+  if (!document) {
+    const error = new HttpError("Document not found", 404);
+    return next(error);
+  }
+
+  if (!req.file) {
+    const error = new HttpError("File is required", 422);
+    return next(error);
+  }
+
+  // Get content from file upload if available, otherwise use the content from body, or keep existing
+  let documentContent = document.content;
+
+  if (req.file) {
+    documentContent = req.file.location || req.file.Location;
+  } else if (content !== undefined) {
+    documentContent = content;
+  }
+
+  // Update content
+  document.content = documentContent;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+  document.name = user.name + " " + user.surname + " - " + timestamp + " - " + req.file.originalname;
+  document.lastUpdated = new Date();
+
+  try {
+    await document.save();
+
+    return res.status(200).json({
+      status: true,
+      message: "Document updated successfully",
+      documentId: document._id,
+    });
+  } catch (err) {
+    console.log(err);
+    const error = new HttpError("Failed to update document", 500);
+    return next(error);
+  }
+};
+
+export const deleteDocument = async (req, res, next) => {
+  const { userId } = extractUserFromRequest(req);
+  const { documentId } = req.params;
+
+  let user;
+  try {
+    user = await findUserById(userId);
+  } catch (err) {
+    const error = new HttpError("Could not find user", 500);
+    return next(error);
+  }
+
+  if (!user) {
+    const error = new HttpError("User not found", 404);
+    return next(error);
+  }
+
+  // Verify that the document belongs to the user
+  if (!user.documents.some((docId) => docId.toString() === documentId)) {
+    const error = new HttpError("Document not found or access denied", 404);
+    return next(error);
+  }
+
+  // Find the document
+  let document;
+  try {
+    document = await Document.findById(documentId);
+  } catch (err) {
+    const error = new HttpError("Could not find document", 500);
+    return next(error);
+  }
+
+  if (!document) {
+    const error = new HttpError("Document not found", 404);
+    return next(error);
+  }
+
+  try {
+    // Remove document ID from user's documents array
+    user.documents = user.documents.filter(
+      (docId) => docId.toString() !== documentId
+    );
+    await user.save();
+
+    // Delete the document
+    await Document.deleteOne({ _id: documentId });
+
+    return res.status(200).json({
+      status: true,
+      message: "Document deleted successfully",
+    });
+  } catch (err) {
+    console.log(err);
+    const error = new HttpError("Failed to delete document", 500);
+    return next(error);
   }
 };

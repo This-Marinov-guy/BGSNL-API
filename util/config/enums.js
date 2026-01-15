@@ -33,3 +33,12 @@ export const BILLING_PORTAL_CONFIGURATIONS = {
   [MEMBER]: "bpc_1SGDq4AShinXgMFZfac1vY22",
   [ALUMNI]: "bpc_1SGDptAShinXgMFZ4yLZnEOC",
 };
+
+// Document types
+export const CV = 1;
+export const COVER_LETTER = 2;
+
+export const DOCUMENT_TYPES = {
+  CV: CV,
+  COVER_LETTER: COVER_LETTER,
+};

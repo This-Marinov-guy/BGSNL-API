@@ -90,3 +90,5 @@ export const CLONE_SHEETS = {
   //amsterdam
   ["67bf7f7e46918f8ec1cc2712"]: "12hG3IQJq9A7SdWBL4n2aKBq6ddg16iQ9T2um68iBFy4",
 };
+
+export const INTERNSHIP_SHEET = "1-pihyWq1151bR_tFcrZ81OxRC4svqNbMHbu9Wg340FU";

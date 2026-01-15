@@ -21,7 +21,9 @@ import {
 } from "../../util/functions/dateConvert.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
 import AlumniUser from "../../models/AlumniUser.js";
+import InternshipApplication from "../../models/InternshipApplication.js";
 import { ALUMNI_MIGRATED } from "../../util/config/enums.js";
+import { INTERNSHIP_SHEET } from "../../util/config/SPREEDSHEATS.js";
 
 // Lightweight background job queue with concurrency limit and de-duplication
 const MAX_CONCURRENCY = 1;
@@ -1207,6 +1209,91 @@ export const getPresenceStatsOfCity = async (spreadsheetId) => {
     totalPresence,
     avgPresence,
   };
+};
+
+export const internshipApplicationsToSpreadsheet = () => {
+  enqueueJob("internshipApplicationsToSpreadsheet", async () => {
+    const { auth, googleSheets } = await getSheetsClient();
+    try {
+      const spreadsheetId = INTERNSHIP_SHEET;
+      const sheetName = "Applications";
+
+      // Fetch all internship applications from MongoDB
+      const applications = await InternshipApplication.find({})
+        .sort({
+          createdAt: -1,
+        })
+        .lean();
+
+      const values = applications.map((application) => {
+        const {
+          _id,
+          userId,
+          email,
+          name,
+          phone,
+          companyId,
+          companyName,
+          position,
+          cv,
+          coverLetter,
+          createdAt,
+        } = application;
+
+        const formattedCreatedAt = moment(createdAt).format(
+          MOMENT_DATE_TIME_YEAR
+        );
+
+        return [
+          _id.toString(),
+          userId || "-",
+          email,
+          name,
+          phone,
+          companyId,
+          companyName,
+          position,
+          cv || "-",
+          coverLetter || "-",
+          formattedCreatedAt,
+        ];
+      });
+
+      const headers = [
+        "ID",
+        "User ID",
+        "Email",
+        "Name",
+        "Phone",
+        "Company ID",
+        "Company Name",
+        "Position",
+        "CV",
+        "Cover Letter",
+        "Created At",
+      ];
+
+      await googleSheets.spreadsheets.values.clear({
+        auth,
+        spreadsheetId,
+        range: sheetName,
+      });
+
+      await googleSheets.spreadsheets.values.append({
+        auth,
+        spreadsheetId,
+        range: sheetName,
+        valueInputOption: "RAW",
+        resource: {
+          values: [["Internship Applications"], headers, ...values],
+        },
+      });
+
+      console.log(`Internship applications sheet updated`);
+    } catch (error) {
+      console.error("Error in internshipApplicationsToSpreadsheet:", error);
+    }
+  });
 };
 
 export {

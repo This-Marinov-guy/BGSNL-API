@@ -12,6 +12,7 @@ const userSchema = new Schema({
   },
   status: { type: String, required: true, default: USER_STATUSES[ACTIVE] },
   roles: { type: Array, required: true, default: [MEMBER] },
+  documents: [{ type: Schema.Types.ObjectId, ref: "Document" }],
   subscription: {
     period: { type: Number },
     id: { type: String },

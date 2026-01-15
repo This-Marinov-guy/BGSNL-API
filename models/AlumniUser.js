@@ -13,6 +13,7 @@ const alumniUserSchema = new Schema({
   status: { type: String, required: true, default: USER_STATUSES[ACTIVE] },
   tier: { type: Number, required: true, default: 0 },
   roles: { type: Array, required: true, default: [ALUMNI] },
+  documents: [{ type: Schema.Types.ObjectId, ref: "Document" }],
   subscription: {
     period: { type: Number },
     id: { type: String },

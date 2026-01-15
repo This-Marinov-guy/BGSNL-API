@@ -21,6 +21,7 @@ import wordpressRouter from "./routes/Integration/wordpress-routes.js";
 import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
 import kokoAppRouter from "./routes/Integration/koko-app-data.js";
+import internshipRouter from "./routes/internship-routes.js";
 
 const app = express();
 
@@ -64,6 +65,9 @@ app.use(
 app.use((req, res, next) => {
   if (req.path === `/api/payment${STRIPE_WEBHOOK_ROUTE}`) {
     next();
+  } else if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+    // Skip JSON parsing for multipart/form-data (let multer handle it)
+    next();
   } else {
     bodyParser.json()(req, res, next);
   }
@@ -97,6 +101,7 @@ app.use("/api/payment", paymentRouter);
 app.use("/api/contest", contestRouter);
 app.use("/api/special", specialEventsRouter);
 app.use("/api/wordpress", wordpressRouter);
+app.use("/api/internship", internshipRouter);
 
 //no page found
 app.use((req, res, next) => {

@@ -1,5 +1,5 @@
 import express from "express";
-import { check } from "express-validator";
+import { check, body } from "express-validator";
 import {
   getCurrentUser,
   patchUserInfo,
@@ -12,6 +12,9 @@ import {
   convertUserToAlumni,
   getActiveAlumniMembers,
   updateAlumniQuote,
+  postAddDocument,
+  patchEditDocument,
+  deleteDocument,
 } from "../controllers/users-controllers.js";
 import { cancelSubscription } from "../controllers/payments-controllers.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
@@ -93,5 +96,53 @@ userRouter.patch("/alumni-quote", authMiddleware, updateAlumniQuote);
 
 // Get active alumni members with basic info
 userRouter.get("/active-alumni", getActiveAlumniMembers);
+
+userRouter.post(
+  "/add-document",
+  authMiddleware,
+  fileUpload(process.env.BUCKET_DOCUMENTS).single(
+    "content"
+  ),
+  [
+    body("type")
+      .custom((value) => {
+        const numValue = parseInt(value);
+        return numValue === 1 || numValue === 2;
+      })
+      .withMessage("Wrong type of document"),
+    check("content")
+      .optional()
+      .isString()
+      .withMessage("Content must be a string (link) if not uploading a file"),
+  ],
+  postAddDocument
+);
+
+userRouter.patch(
+  "/edit-document/:documentId",
+  authMiddleware,
+  fileUpload(process.env.BUCKET_DOCUMENTS).single("content"),
+  [
+    body("type")
+      .optional()
+      .custom((value) => {
+        if (value === undefined) return true;
+        const numValue = parseInt(value);
+        return numValue === 1 || numValue === 2;
+      })
+      .withMessage("Type must be 1 (CV) or 2 (Cover Letter)"),
+    check("name")
+      .optional()
+      .notEmpty()
+      .withMessage("Name cannot be empty if provided"),
+    check("content")
+      .optional()
+      .isString()
+      .withMessage("Content must be a string (link) if not uploading a file"),
+  ],
+  patchEditDocument
+);
+
+userRouter.delete("/delete-document/:documentId", authMiddleware, deleteDocument);
 
 export default userRouter;
