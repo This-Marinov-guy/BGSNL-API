@@ -44,6 +44,7 @@ const alumniUserSchema = new Schema({
       gif: { type: String },
     },
   ],
+  internshipApplications: [{ type: Schema.Types.ObjectId, ref: "InternshipApplication" }],
 });
 
 alumniUserSchema.plugin(uniqueValidator);

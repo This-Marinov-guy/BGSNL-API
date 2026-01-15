@@ -843,6 +843,7 @@ const usersToSpreadsheet = (region = null) => {
           surname,
           birth,
           roles,
+          joinDate,
           ...rest
         } = user;
 

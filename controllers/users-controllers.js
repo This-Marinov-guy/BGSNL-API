@@ -590,21 +590,33 @@ export const postAddDocument = async (req, res, next) => {
       content: documentContent,
     });
 
-    await document.save();
+    const sess = await mongoose.startSession();
+    sess.startTransaction();
 
-    // Add document ID to user's documents array
-    if (!user.documents) {
-      user.documents = [];
+    try {
+      await document.save({ session: sess });
+
+      // Add document ID to user's documents array
+      if (!user.documents) {
+        user.documents = [];
+      }
+      user.documents.push(document);
+      
+      await user.save({ session: sess });
+
+      await sess.commitTransaction();
+
+      return res.status(201).json({
+        status: true,
+        message: "Document added successfully",
+        documentId: document._id,
+      });
+    } catch (err) {
+      await sess.abortTransaction();
+      throw err;
+    } finally {
+      sess.endSession();
     }
-    user.documents.push(document);
-    
-    await user.save();
-
-    return res.status(201).json({
-      status: true,
-      message: "Document added successfully",
-      documentId: document._id,
-    });
   } catch (err) {
     console.log(err);
     const error = new HttpError("Failed to add document", 500);

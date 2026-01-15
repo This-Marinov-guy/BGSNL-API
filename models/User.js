@@ -55,6 +55,9 @@ const userSchema = new Schema({
     calendarImage: { type: String, default: "" },
   },
   joinDate: { type: Date, default: new Date(), required: true },
+  internshipApplications: [
+    { type: Schema.Types.ObjectId, ref: "InternshipApplication" },
+  ],
 });
 
 userSchema.plugin(uniqueValidator);
