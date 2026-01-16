@@ -67,7 +67,7 @@ export const jwtRefresh = (token) => {
 
     const newToken = jwt.sign(
       {
-        version: Numbwe(process.env.AUTH_VERSION ?? 1),
+        version: Number(process.env.AUTH_VERSION ?? 1),
         image: decoded.image,
         userId: decoded.userId,
         customerId: decoded.customerId ?? '',
