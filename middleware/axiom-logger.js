@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { Axiom } from "@axiomhq/js";
+import { createInfoEvent } from "../util/logging/axiom-log-models.js";
 
 /**
  * Initialize Axiom client
@@ -46,9 +47,9 @@ export const flushAxiom = async () => {
 };
 
 /**
- * Scrub sensitive fields recursively
+ * Scrub sensitive fields recursively. Exported for use with createErrorEvent / createWarningEvent.
  */
-const redactSensitive = (value) => {
+export const redactSensitive = (value) => {
   if (value === null || typeof value !== "object") return value;
 
   if (Array.isArray(value)) {
@@ -67,27 +68,19 @@ const redactSensitive = (value) => {
 };
 
 /**
- * Format request details
+ * Ingest a log event (info/warning/error model). No-op if Axiom is disabled or in dev.
  */
-const formatRequest = (req) => ({
-  method: req.method,
-  url: req.originalUrl || req.url,
-  path: req.path,
-  params: req.params,
-  query: req.query,
-  headers: {
-    "user-agent": req.headers["user-agent"],
-    "content-type": req.headers["content-type"],
-    accept: req.headers.accept,
-    host: req.headers.host,
-    referer: req.headers.referer,
-    origin: req.headers.origin,
-  },
-  ip: req.ip,
-});
+export const ingestLog = (log) => {
+  if (!axiom || process.env.APP_ENV === "dev") return;
+  try {
+    axiom.ingest(DATASET, log);
+  } catch (err) {
+    console.error("[axiom] ingest failed:", err);
+  }
+};
 
 /**
- * Express middleware
+ * Express middleware – logs API requests using fixed-field info model (req, res, headers).
  */
 export const axiomLogger = (req, res, next) => {
   if (!axiom || process.env.APP_ENV === "dev") {
@@ -95,17 +88,8 @@ export const axiomLogger = (req, res, next) => {
   }
 
   const startTime = Date.now();
-  const request = formatRequest(req);
-
-  if (req.body) {
-    request.body = redactSensitive(req.body);
-  }
-
   const chunks = [];
 
-  /**
-   * Patch res.write safely
-   */
   const originalWrite = res.write.bind(res);
   res.write = (chunk, encoding, callback) => {
     if (chunk) {
@@ -114,9 +98,6 @@ export const axiomLogger = (req, res, next) => {
     return originalWrite(chunk, encoding, callback);
   };
 
-  /**
-   * Patch res.end safely
-   */
   const originalEnd = res.end.bind(res);
   res.end = (chunk, encoding, callback) => {
     if (chunk) {
@@ -127,35 +108,29 @@ export const axiomLogger = (req, res, next) => {
 
     const durationMs = Date.now() - startTime;
 
-    const log = {
-      timestamp: new Date().toISOString(),
-      request,
-      response: {
-        statusCode: res.statusCode,
-        statusMessage: res.statusMessage,
-        durationMs,
-      },
-      meta: {
-        service: "bgsnl-api",
-        environment: process.env.NODE_ENV || "development",
-      },
-    };
-
+    let responseBody;
     if (chunks.length) {
       const raw = Buffer.concat(chunks).toString("utf8");
       try {
-        log.response.body = redactSensitive(JSON.parse(raw));
+        responseBody = redactSensitive(JSON.parse(raw));
       } catch {
-        log.response.body = raw;
+        responseBody = raw;
       }
     }
 
-    // Fire and forget (do NOT block response)
-    try {
-      axiom.ingest(DATASET, log);
-    } catch (err) {
-      console.error("[axiom] ingest failed:", err);
-    }
+    const log = createInfoEvent({
+      req,
+      res: {
+        statusCode: res.statusCode,
+        statusMessage: res.statusMessage,
+        durationMs,
+        body: responseBody,
+      },
+      meta: {},
+      redact: redactSensitive,
+    });
+
+    ingestLog(log);
   };
 
   next();

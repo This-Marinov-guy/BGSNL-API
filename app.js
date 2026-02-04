@@ -14,7 +14,8 @@ import securityRouter from "./routes/security-routes.js";
 import specialEventsRouter from "./routes/special-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
-import axiomLogger, { flushAxiom } from "./middleware/axiom-logger.js";
+import axiomLogger, { flushAxiom, ingestLog, redactSensitive } from "./middleware/axiom-logger.js";
+import { createErrorEvent } from "./util/logging/axiom-log-models.js";
 import { REGIONS, STRIPE_WEBHOOK_ROUTE } from "./util/config/defines.js";
 import futureEventRouter from "./routes/Events/future-events-routes.js";
 import wordpressRouter from "./routes/Integration/wordpress-routes.js";
@@ -118,6 +119,17 @@ app.use((error, req, res, next) => {
   const status = error.statusCode || 500;
   const message = error.message;
   const data = error.data;
+
+  const logEvent = createErrorEvent({
+    req,
+    res: { statusCode: status, statusMessage: message, durationMs: 0 },
+    meta: {},
+    error: error,
+    payload: data !== undefined ? { data } : undefined,
+    redact: redactSensitive,
+  });
+  ingestLog(logEvent);
+
   res.status(status).json({ message: message, data: data });
 });
 
