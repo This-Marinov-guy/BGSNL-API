@@ -43,10 +43,10 @@ export const refreshToken = async (req, res, next) => {
 };
 
 export const getCurrentUser = async (req, res, next) => {
-  const { userId } = extractUserFromRequest(req);
+  const { userId } = extractUserFromRequest(req);  
 
-  const withTickets = req.query.withTickets ?? false;
-  const withChristmas = req.query.withChristmas ?? false;
+  const withTickets = (req.query.withTickets ?? 'true') === 'true';
+  const withChristmas = (req.query.withChristmas ?? 'true') === 'true';
 
   let user;
   try {
