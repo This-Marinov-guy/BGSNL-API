@@ -27,6 +27,8 @@ import Document from "../models/Document.js";
 import mongoose from "mongoose";
 import { ALUMNI } from "../util/config/defines.js";
 import { DOCUMENT_TYPES } from "../util/config/enums.js";
+import { createStripeClient } from "../util/config/stripe.js";
+import { DEFAULT_REGION } from "../util/config/defines.js";
 
 export const refreshToken = async (req, res, next) => {
   let newToken = null;
@@ -116,17 +118,55 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
       }
     : {};
 
-  const isSubscribed = !!(
+  const hasSubscriptionData = !!(
     user.subscription &&
     user.subscription.id &&
     user.subscription.customerId
   );
+
+  let stripeSubscription = null;
+  let stripeSubscriptionError = null;
+
+  if (hasSubscriptionData) {
+    try {
+      const stripeClient = createStripeClient(DEFAULT_REGION);
+      const sub = await stripeClient.subscriptions.retrieve(
+        "sub_1Qdp74AShinXgMFZH20uFakc",
+      );
+
+      stripeSubscription = {
+        id: sub.id,
+        status: sub.status, // e.g. active, canceled, past_due, unpaid, trialing
+        cancelAtPeriodEnd: !!sub.cancel_at_period_end,
+        canceledAt: sub.canceled_at ?? null,
+        cancelAt: sub.cancel_at ?? null,
+        currentPeriodStart: sub.current_period_start ?? null,
+        currentPeriodEnd: sub.current_period_end ?? null,
+      };
+
+      console.log(stripeSubscription);
+    } catch (err) {
+      stripeSubscriptionError =
+        err?.message || "Failed to fetch subscription from Stripe";
+    }
+  }
+
+  const isCancelledInStripe = !!(
+    stripeSubscription &&
+    (stripeSubscription.status === "canceled" || stripeSubscription.cancelAtPeriodEnd)
+  );
+
+  // TODO: optimize this and send subscription data to the frontend
+  const isSubscribed = hasSubscriptionData && !isCancelledInStripe;
 
   return res.status(200).json({
     isSubscribed,
     isAlumni,
     ...alumniData,
     status: user.status,
+    subscription: user.subscription || null,
+    stripeSubscription,
+    stripeSubscriptionError,
   });
 };
 
