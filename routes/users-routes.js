@@ -15,6 +15,7 @@ import {
   postAddDocument,
   patchEditDocument,
   deleteDocument,
+  getTreeLayout,
 } from "../controllers/users-controllers.js";
 import { cancelSubscription } from "../controllers/payments-controllers.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
@@ -96,6 +97,9 @@ userRouter.patch("/alumni-quote", authMiddleware, updateAlumniQuote);
 
 // Get active alumni members with basic info
 userRouter.get("/active-alumni", getActiveAlumniMembers);
+
+// Pre-computed tree layout for the alumni tree visualisation
+userRouter.get("/tree-layout", getTreeLayout);
 
 userRouter.post(
   "/add-document",

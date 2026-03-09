@@ -20,6 +20,7 @@ import path from "path";
 import {
   findUserById,
   findUserByEmail,
+  computeAlumniTreeLayout,
 } from "../services/main-services/user-service.js";
 import AlumniUser from "../models/AlumniUser.js";
 import User from "../models/User.js";
@@ -572,6 +573,21 @@ export const updateAlumniQuote = async (req, res, next) => {
     return next(new HttpError("Error updating quote", 500));
   }
 };
+
+/**
+ * Returns pre-computed tree layout for the alumni tree visualisation.
+ * GET /api/user/tree-layout
+ */
+export const getTreeLayout = async (req, res, next) => {
+  try {
+    const nodes = await computeAlumniTreeLayout();
+    return res.status(200).json({ nodes });
+  } catch (err) {
+    console.error(err);
+    return next(new HttpError("Error computing tree layout", 500));
+  }
+};
+
 
 export const postAddDocument = async (req, res, next) => {
   const errors = validationResult(req);
