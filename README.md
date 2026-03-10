@@ -1,4 +1,4 @@
-# BGSNL API
+# BGSNL API (Kanatitsa)
 
 Express.js 4 REST API for Bulgarian Society Netherlands platform.
 
