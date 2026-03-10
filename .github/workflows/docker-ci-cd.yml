@@ -43,6 +43,22 @@ jobs:
       - name: Build Docker image
         run: docker build -t bgsnl-api .
 
-      # REPLACE DOCKER IMAGE 
-
-      # DELETE THE LAST VERSION OF THE APP
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    steps:
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd /root/bgsnl-api
+            git pull origin master
+            cd /root
+            docker compose build --no-cache bgsnl-api
+            docker compose up -d --build bgsnl-api
+            docker system prune -f
