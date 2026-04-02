@@ -23,6 +23,7 @@ import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
 import kokoAppRouter from "./routes/Integration/koko-app-data.js";
 import internshipRouter from "./routes/internship-routes.js";
+import { convertAlumniToUser, convertUserToAlumni } from "./services/main-services/user-service.js";
 
 const app = express();
 

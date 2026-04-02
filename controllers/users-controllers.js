@@ -21,6 +21,8 @@ import {
   findUserById,
   findUserByEmail,
   computeAlumniTreeLayout,
+  convertAlumniToUser as convertAlumniToUserService,
+  convertUserToAlumni as convertUserToAlumniService,
 } from "../services/main-services/user-service.js";
 import AlumniUser from "../models/AlumniUser.js";
 import User from "../models/User.js";
@@ -370,6 +372,10 @@ export const exportVitalStatsXls = async (req, res, next) => {
  * @param {string} email - Email of the user to convert
  * @returns {object} - Information about the created/updated alumni user
  */
+/**
+ * POST /api/user/convert-to-alumni
+ * Thin HTTP wrapper around the convertUserToAlumni service function.
+ */
 export const convertUserToAlumni = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -378,117 +384,18 @@ export const convertUserToAlumni = async (req, res, next) => {
 
   const { userId } = extractUserFromRequest(req);
 
-  // Find the regular user
-  let regularUser;
   try {
-    regularUser = await User.findOne({ _id: userId });
-
-    if (!regularUser) {
-      return next(new HttpError("User not found with provided email", 404));
-    }
-  } catch (err) {
-    console.error(err);
-    return next(new HttpError("Error finding user", 500));
-  }
-
-  // Extract the ObjectId part if the user already has a prefixed ID
-  let objectIdPart;
-  if (
-    typeof regularUser._id === "string" &&
-    regularUser._id.includes("member_")
-  ) {
-    const idMatch = regularUser._id.match(/member_(.*)/);
-    if (idMatch && idMatch[1]) {
-      objectIdPart = idMatch[1];
-    } else {
-      return next(new HttpError("User ID format is invalid", 400));
-    }
-  } else {
-    // If the user has a regular ObjectId, convert it to string
-    objectIdPart = regularUser._id.toString();
-  }
-
-  // Create the alumni ID with the same ObjectId part
-  const alumniId = `alumni_${objectIdPart}`;
-
-  // Check if an alumni user already exists with this ID or email
-  let existingAlumni;
-  try {
-    existingAlumni = await AlumniUser.findOne({
-      $or: [{ _id: alumniId }, { email: regularUser.email }],
-    });
-  } catch (err) {
-    console.error(err);
-    return next(new HttpError("Error checking for existing alumni user", 500));
-  }
-
-  let result;
-
-  try {
-    if (existingAlumni) {
-      // Update existing alumni user with data from regular user
-      existingAlumni.name = regularUser.name;
-      existingAlumni.surname = regularUser.surname;
-      existingAlumni.email = regularUser.email;
-      existingAlumni.image = regularUser.image;
-      existingAlumni.password = regularUser.password;
-      existingAlumni.status = regularUser.status || "active";
-      existingAlumni.purchaseDate = regularUser.purchaseDate || new Date();
-      existingAlumni.expireDate =
-        regularUser.expireDate ||
-        new Date(new Date().setFullYear(new Date().getFullYear() + 1));
-
-      // Make sure the alumni role is set
-      if (!existingAlumni.roles.includes(ALUMNI)) {
-        existingAlumni.roles.push(ALUMNI);
-      }
-
-      await existingAlumni.save();
-      result = {
-        action: "updated",
-        alumniId: existingAlumni._id,
-        userId: regularUser._id,
-        email: regularUser.email,
-      };
-    } else {
-      // Create new alumni user with data from regular user
-      const newAlumniUser = new AlumniUser({
-        _id: alumniId,
-        name: regularUser.name,
-        surname: regularUser.surname,
-        email: regularUser.email,
-        password: regularUser.password,
-        image: regularUser.image || "",
-        status: regularUser.status || "active",
-        tier: 0, // Default tier
-        roles: [ALUMNI],
-        purchaseDate: regularUser.purchaseDate || new Date(),
-        expireDate:
-          regularUser.expireDate ||
-          new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
-        tickets: regularUser.tickets || [],
-        christmas: regularUser.christmas || [],
-      });
-
-      await newAlumniUser.save();
-      result = {
-        action: "created",
-        alumniId: newAlumniUser._id,
-        userId: regularUser._id,
-        email: regularUser.email,
-      };
-    }
-
-    regularUser.status = USER_STATUSES[ALUMNI_MIGRATED];
-    await regularUser.save();
-
+    const result = await convertUserToAlumniService(userId);
     return res.status(200).json({
       message: `User successfully ${result.action} as alumni`,
       result,
     });
   } catch (err) {
     console.error(err);
-    return next(new HttpError("Error converting user to alumni", 500));
+    const status = err.message?.includes("not found") ? 404
+      : err.message?.includes("invalid") ? 400
+      : 500;
+    return next(new HttpError(err.message || "Error converting user to alumni", status));
   }
 };
 
@@ -588,6 +495,33 @@ export const getTreeLayout = async (req, res, next) => {
   }
 };
 
+
+/**
+ * POST /api/user/convert-alumni-to-user
+ * Thin HTTP wrapper around the convertAlumniToUser service function.
+ */
+export const convertAlumniToUser = async (req, res, next) => {
+  const { alumniId } = req.body;
+
+  if (!alumniId) {
+    return next(new HttpError("alumniId is required", 422));
+  }
+
+  try {
+    const result = await convertAlumniToUserService(alumniId);
+    return res.status(201).json({
+      message: "Alumni successfully converted to user",
+      ...result,
+    });
+  } catch (err) {
+    console.error(err);
+    const status = err.message?.includes("not found") ? 404
+      : err.message?.includes("already exists") ? 409
+      : err.message?.includes("invalid") ? 400
+      : 500;
+    return next(new HttpError(err.message || "Error converting alumni to user", status));
+  }
+};
 
 export const postAddDocument = async (req, res, next) => {
   const errors = validationResult(req);

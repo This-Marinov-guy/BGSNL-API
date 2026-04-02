@@ -10,6 +10,7 @@ import {
   submitCalendarVerification,
   exportVitalStatsXls,
   convertUserToAlumni,
+  convertAlumniToUser,
   getActiveAlumniMembers,
   updateAlumniQuote,
   postAddDocument,
@@ -91,6 +92,14 @@ userRouter.post(
   adminMiddleware(ACCESS_2), // Restrict to admin access
   [check("email").isEmail().withMessage("Please provide a valid email")],
   convertUserToAlumni
+);
+
+// Convert an alumni user back to a regular user
+userRouter.post(
+  "/convert-alumni-to-user",
+  adminMiddleware(ACCESS_2),
+  [check("alumniId").notEmpty().withMessage("alumniId is required")],
+  convertAlumniToUser
 );
 
 userRouter.patch("/alumni-quote", authMiddleware, updateAlumniQuote);

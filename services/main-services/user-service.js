@@ -58,7 +58,7 @@ function _addChild(parent, count, levelCounts, users, userIndexRef, nodeIdRef) {
     count,
     canAddLevel,
     canAddParent,
-    users.length - userIndexRef.current
+    users.length - userIndexRef.current,
   );
 
   for (let i = 0; i < toAdd; i++) {
@@ -81,7 +81,14 @@ function _addChild(parent, count, levelCounts, users, userIndexRef, nodeIdRef) {
   return toAdd;
 }
 
-function _distributeChildren(parents, count, childDepth, users, userIndexRef, nodeIdRef) {
+function _distributeChildren(
+  parents,
+  count,
+  childDepth,
+  users,
+  userIndexRef,
+  nodeIdRef,
+) {
   let remaining = count;
   if (parents.length === 0 || remaining <= 0) return remaining;
 
@@ -113,24 +120,52 @@ function _seedTree(root, users, nodeIdRef) {
   let remaining = Math.max(0, users.length - 1);
 
   const wantL2 = Math.min(_levelCap(2), remaining);
-  const remL2 = _distributeChildren([root], wantL2, 1, users, userIndexRef, nodeIdRef);
+  const remL2 = _distributeChildren(
+    [root],
+    wantL2,
+    1,
+    users,
+    userIndexRef,
+    nodeIdRef,
+  );
   remaining -= wantL2 - remL2;
 
   const L2nodes = root.children || [];
   const wantL3 = Math.min(_levelCap(3), remaining);
-  const remL3 = _distributeChildren(L2nodes, wantL3, 2, users, userIndexRef, nodeIdRef);
+  const remL3 = _distributeChildren(
+    L2nodes,
+    wantL3,
+    2,
+    users,
+    userIndexRef,
+    nodeIdRef,
+  );
   remaining -= wantL3 - remL3;
 
   const L3nodes = [];
   L2nodes.forEach((p) => (p.children || []).forEach((c) => L3nodes.push(c)));
   const wantL4 = Math.min(_levelCap(4), remaining);
-  const remL4 = _distributeChildren(L3nodes, wantL4, 3, users, userIndexRef, nodeIdRef);
+  const remL4 = _distributeChildren(
+    L3nodes,
+    wantL4,
+    3,
+    users,
+    userIndexRef,
+    nodeIdRef,
+  );
   remaining -= wantL4 - remL4;
 
   const L4nodes = [];
   L3nodes.forEach((p) => (p.children || []).forEach((c) => L4nodes.push(c)));
   const wantL5 = Math.min(_levelCap(5), remaining);
-  const remL5 = _distributeChildren(L4nodes, wantL5, 4, users, userIndexRef, nodeIdRef);
+  const remL5 = _distributeChildren(
+    L4nodes,
+    wantL5,
+    4,
+    users,
+    userIndexRef,
+    nodeIdRef,
+  );
   remaining -= wantL5 - remL5;
 
   if (remaining > 0) {
@@ -155,7 +190,10 @@ function _computeOrganic(root, rng) {
   const angles2 =
     n2 <= 1
       ? [0]
-      : Array.from({ length: n2 }, (_, i) => -span2 / 2 + (span2 * i) / (n2 - 1));
+      : Array.from(
+          { length: n2 },
+          (_, i) => -span2 / 2 + (span2 * i) / (n2 - 1),
+        );
   const r2 = depthGap;
   for (let i = 0; i < n2; i++) {
     const a = angles2[i];
@@ -172,7 +210,8 @@ function _computeOrganic(root, rng) {
     const count = children.length;
     if (!count) return;
     const aParent = p.angle ?? angles2[Math.min(idx, angles2.length - 1)];
-    const localSpan = (count <= 4 ? 40 : Math.min(70, 25 + count * 8)) * (Math.PI / 180);
+    const localSpan =
+      (count <= 4 ? 40 : Math.min(70, 25 + count * 8)) * (Math.PI / 180);
     for (let i = 0; i < count; i++) {
       const t = count === 1 ? 0.5 : i / (count - 1);
       const a = aParent - localSpan / 2 + localSpan * t;
@@ -192,7 +231,8 @@ function _computeOrganic(root, rng) {
     const count = children.length;
     if (!count) return;
     const aParent = p.angle ?? 0;
-    const localSpan = (count <= 3 ? 30 : Math.min(50, 18 + count * 6)) * (Math.PI / 180);
+    const localSpan =
+      (count <= 3 ? 30 : Math.min(50, 18 + count * 6)) * (Math.PI / 180);
     for (let i = 0; i < count; i++) {
       const t = count === 1 ? 0.5 : i / (count - 1);
       const a = aParent - localSpan / 2 + localSpan * t;
@@ -212,7 +252,8 @@ function _computeOrganic(root, rng) {
     const count = children.length;
     if (!count) return;
     const aParent = p.angle ?? 0;
-    const localSpan = (count <= 2 ? 25 : Math.min(42, 15 + count * 5)) * (Math.PI / 180);
+    const localSpan =
+      (count <= 2 ? 25 : Math.min(42, 15 + count * 5)) * (Math.PI / 180);
     for (let i = 0; i < count; i++) {
       const t = count === 1 ? 0.5 : i / (count - 1);
       const a = aParent - localSpan / 2 + localSpan * t;
@@ -232,7 +273,8 @@ function _computeOrganic(root, rng) {
     const count = children.length;
     if (!count) return;
     const aParent = p.angle ?? 0;
-    const localSpan = (count <= 2 ? 20 : Math.min(35, 12 + count * 4)) * (Math.PI / 180);
+    const localSpan =
+      (count <= 2 ? 20 : Math.min(35, 12 + count * 4)) * (Math.PI / 180);
     for (let i = 0; i < count; i++) {
       const t = count === 1 ? 0.5 : i / (count - 1);
       const a = aParent - localSpan / 2 + localSpan * t;
@@ -348,7 +390,14 @@ export const computeAlumniTreeLayout = async () => {
 };
 // ─────────────────────────────────────────────────────────────────────────────
 import User from "../../models/User.js";
-import { USER_STATUSES, MEMBERSHIP_ACTIVE } from "../../util/config/enums.js";
+import mongoose from "mongoose";
+import {
+  USER_STATUSES,
+  ACTIVE,
+  ALUMNI_MIGRATED,
+  MEMBERSHIP_ACTIVE,
+} from "../../util/config/enums.js";
+import { ALUMNI } from "../../util/config/defines.js";
 import { extractUserFromRequest } from "../../util/functions/security.js";
 
 export const getFingerprintLite = (req) => {
@@ -368,14 +417,19 @@ export const getFingerprintLite = (req) => {
 // we always prioritize alumnis
 export const findUserByEmail = async (email) => {
   // Check if email is valid before running queries
-  if (!email || typeof email !== 'string') {
+  if (!email || typeof email !== "string") {
     return null;
   }
 
   try {
-    const excludeMembershipActive = { status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] } };
+    const excludeMembershipActive = {
+      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
+    };
     const userQuery = User.findOne({ email, ...excludeMembershipActive });
-    const alumniQuery = AlumniUser.findOne({ email, ...excludeMembershipActive });
+    const alumniQuery = AlumniUser.findOne({
+      email,
+      ...excludeMembershipActive,
+    });
 
     const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
 
@@ -386,20 +440,25 @@ export const findUserByEmail = async (email) => {
   }
 };
 
-export const findUserById = async (id) => {  
+export const findUserById = async (id) => {
   // Check if id is valid before running queries
-  if (!id || typeof id !== 'string' && !id.toString) {
+  if (!id || (typeof id !== "string" && !id.toString)) {
     return null;
   }
 
   try {
-    const excludeMembershipActive = { status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] } };
+    const excludeMembershipActive = {
+      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
+    };
     const userQuery = User.findOne({ _id: id, ...excludeMembershipActive });
-    const alumniQuery = AlumniUser.findOne({ _id: id, ...excludeMembershipActive });
+    const alumniQuery = AlumniUser.findOne({
+      _id: id,
+      ...excludeMembershipActive,
+    });
 
     const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
 
-    return (alumni || user);
+    return alumni || user;
   } catch (err) {
     console.error("Error in findUserById:", err);
     return null;
@@ -408,9 +467,19 @@ export const findUserById = async (id) => {
 
 export const findUserByName = async (name, surname) => {
   try {
-    const excludeMembershipActive = { status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] } };
-    const userQuery = User.findOne({ name, surname, ...excludeMembershipActive });
-    const alumniQuery = AlumniUser.findOne({ name, surname, ...excludeMembershipActive });
+    const excludeMembershipActive = {
+      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
+    };
+    const userQuery = User.findOne({
+      name,
+      surname,
+      ...excludeMembershipActive,
+    });
+    const alumniQuery = AlumniUser.findOne({
+      name,
+      surname,
+      ...excludeMembershipActive,
+    });
 
     const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
 
@@ -424,14 +493,19 @@ export const findUserByName = async (name, surname) => {
 // Generic function to find user by any query, prioritizing alumni users
 export const findUserByQuery = async (query) => {
   // Check if query is valid
-  if (!query || typeof query !== 'object') {
+  if (!query || typeof query !== "object") {
     return null;
   }
 
   try {
-    const excludeMembershipActive = { status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] } };
+    const excludeMembershipActive = {
+      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
+    };
     const userQuery = User.findOne({ ...query, ...excludeMembershipActive });
-    const alumniQuery = AlumniUser.findOne({ ...query, ...excludeMembershipActive });
+    const alumniQuery = AlumniUser.findOne({
+      ...query,
+      ...excludeMembershipActive,
+    });
 
     const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
 
@@ -440,4 +514,162 @@ export const findUserByQuery = async (query) => {
     console.error("Error in findUserByQuery:", err);
     return null;
   }
+};
+
+/**
+ * Converts an alumni user back into a regular User.
+ * Deletes the alumni record and creates a User preserving all available data.
+ * Required User fields not present on alumni (birth, phone, university) are
+ * filled with placeholders — the user should update them after conversion.
+ *
+ * @param {string} alumniId - e.g. "alumni_<ObjectId>"
+ * @returns {{ userId: string, email: string }}
+ * @throws {Error} if the alumni is not found, ID is malformed, or a user already exists
+ */
+export const convertAlumniToUser = async (alumniId) => {
+  const alumniUser = await AlumniUser.findOne({ _id: alumniId });
+  if (!alumniUser) {
+    throw new Error(`Alumni not found: ${alumniId}`);
+  }
+
+  const idMatch = alumniUser._id.match(/^alumni_(.*)/);
+  if (!idMatch?.[1]) {
+    throw new Error(`Alumni ID format is invalid: ${alumniUser._id}`);
+  }
+
+  const userId = `member_${idMatch[1]}`;
+
+  const existing = await User.findOne({
+    $or: [{ _id: userId }, { email: alumniUser.email }],
+  });
+  if (existing) {
+    throw new Error(
+      `A user with ID "${userId}" or email "${alumniUser.email}" already exists`,
+    );
+  }
+
+  const sess = await mongoose.startSession();
+  sess.startTransaction();
+
+  try {
+    const newUser = new User({
+      _id: userId,
+      name: alumniUser.name,
+      region: "-", //TODO: better fill out
+      surname: alumniUser.surname,
+      email: alumniUser.email,
+      password: alumniUser.password,
+      image: alumniUser.image || "-",
+      status: alumniUser.status || USER_STATUSES[ACTIVE],
+      roles: ["member"],
+      subscription: alumniUser.subscription || {},
+      documents: alumniUser.documents || [],
+      tickets: alumniUser.tickets || [],
+      christmas: alumniUser.christmas || [],
+      internshipApplications: alumniUser.internshipApplications || [],
+      purchaseDate: alumniUser.purchaseDate || new Date(),
+      expireDate:
+        alumniUser.expireDate ||
+        new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+      joinDate: alumniUser.joinDate || new Date(),
+      // Alumni lacks these required User fields — placeholders to be updated by the user
+      birth: new Date("2000-01-01"),
+      phone: "-",
+      university: "-",
+    });
+
+    await newUser.save({ session: sess });
+    await AlumniUser.deleteOne({ _id: alumniUser._id }, { session: sess });
+
+    await sess.commitTransaction();
+
+    return { userId: newUser._id, email: newUser.email };
+  } catch (err) {
+    await sess.abortTransaction();
+    throw err;
+  } finally {
+    sess.endSession();
+  }
+};
+
+/**
+ * Converts a regular User into an alumni user.
+ * If an alumni record already exists for this user (same ID or email) it is updated
+ * rather than re-created. The original User record is marked as alumni-migrated.
+ *
+ * @param {string} userId - e.g. "member_<ObjectId>"
+ * @returns {{ alumniId: string, userId: string, email: string, action: "created" | "updated" }}
+ * @throws {Error} if the user is not found or the ID format is invalid
+ */
+export const convertUserToAlumni = async (userId) => {
+  const regularUser = await User.findOne({ _id: userId });
+  if (!regularUser) {
+    throw new Error(`User not found: ${userId}`);
+  }
+
+  const idMatch = regularUser._id.match(/^member_(.*)/);
+  const objectIdPart = idMatch?.[1] ?? regularUser._id.toString();
+  if (!objectIdPart) {
+    throw new Error(`User ID format is invalid: ${regularUser._id}`);
+  }
+
+  const alumniId = `alumni_${objectIdPart}`;
+
+  const existingAlumni = await AlumniUser.findOne({
+    $or: [{ _id: alumniId }, { email: regularUser.email }],
+  });
+
+  let result;
+
+  if (existingAlumni) {
+    existingAlumni.name = regularUser.name;
+    existingAlumni.surname = regularUser.surname;
+    existingAlumni.email = regularUser.email;
+    existingAlumni.image = regularUser.image;
+    existingAlumni.password = regularUser.password;
+    existingAlumni.status = regularUser.status || USER_STATUSES[ACTIVE];
+    existingAlumni.purchaseDate = regularUser.purchaseDate || new Date();
+    existingAlumni.expireDate =
+      regularUser.expireDate ||
+      new Date(new Date().setFullYear(new Date().getFullYear() + 1));
+
+    if (!existingAlumni.roles.includes(ALUMNI)) {
+      existingAlumni.roles.push(ALUMNI);
+    }
+
+    await existingAlumni.save();
+    result = { action: "updated", alumniId: existingAlumni._id };
+  } else {
+    const newAlumniUser = new AlumniUser({
+      _id: alumniId,
+      name: regularUser.name,
+      surname: regularUser.surname,
+      email: regularUser.email,
+      password: regularUser.password,
+      image: regularUser.image || "",
+      status: regularUser.status || USER_STATUSES[ACTIVE],
+      tier: 0, // TODO: change this
+      subscription: {
+        ...regularUser.subscription,
+        period: 1,
+      },
+      roles: [ALUMNI],
+      purchaseDate: regularUser.purchaseDate || new Date(),
+      expireDate:
+        regularUser.expireDate ||
+        new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+      tickets: regularUser.tickets || [],
+      christmas: regularUser.christmas || [],
+      internshipApplications: regularUser.internshipApplications || [],
+      joinDate: regularUser.joinDate || new Date(),
+    });
+
+    await newAlumniUser.save();
+    result = { action: "created", alumniId: newAlumniUser._id };
+  }
+
+  regularUser.status = USER_STATUSES[ALUMNI_MIGRATED];
+  await regularUser.save();
+
+  return { ...result, userId: regularUser._id, email: regularUser.email };
 };
