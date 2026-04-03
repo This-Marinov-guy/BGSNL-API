@@ -108,6 +108,33 @@ export const addPrice = async (region, productId, amount = 0, nickname = 'price'
     return price['id'];
 }
 
+/**
+ * Issues a Stripe refund for a payment intent
+ * @param {string} region - Region for stripe client
+ * @param {string} paymentIntentId - Stripe payment intent ID (pi_...)
+ * @param {string|null} reason - Human-readable reason (stored in metadata)
+ * @returns {{ success: boolean, refundId?: string, status?: string, error?: string }}
+ */
+export const refundStripePayment = async (region, paymentIntentId, reason = null) => {
+  if (!paymentIntentId || paymentIntentId === "-") {
+    return { success: false, error: "No valid payment intent ID" };
+  }
+
+  const stripeClient = createStripeClient(region);
+
+  try {
+    const refundData = { payment_intent: paymentIntentId };
+    if (reason) {
+      refundData.metadata = { reason };
+    }
+    const refund = await stripeClient.refunds.create(refundData);
+    return { success: true, refundId: refund.id, status: refund.status };
+  } catch (err) {
+    console.error(`[refundStripePayment] Failed to refund payment intent ${paymentIntentId}:`, err.message);
+    return { success: false, error: err.message };
+  }
+};
+
 export const editPrice = async (region, priceId, data) => {
     const stripeClient = createStripeClient(region);
 

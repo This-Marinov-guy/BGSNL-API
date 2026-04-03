@@ -162,6 +162,8 @@ const eventSchema = new Schema({
         },
       ],
       ticket: { type: String },
+      refunded: { type: Boolean, default: false },
+      refundReason: { type: String },
     },
   ],
 });

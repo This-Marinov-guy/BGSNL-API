@@ -1,5 +1,11 @@
 import moment from "moment";
-import { addPrice, addProduct } from "../side-services/stripe.js";
+import mongoose from "mongoose";
+import HttpError from "../../models/Http-error.js";
+import Event from "../../models/Event.js";
+import User from "../../models/User.js";
+import AlumniUser from "../../models/AlumniUser.js";
+import { addPrice, addProduct, refundStripePayment } from "../side-services/stripe.js";
+import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
 
 export const createEventProductWithPrice = async (
   data,
@@ -497,4 +503,144 @@ export const calculateFinalPrice = (event, userType = 'guest', promocodeString =
     promocodeInfo: promocodeInfo,
     currency: 'EUR',
   };
+};
+
+/**
+ * Refunds tickets for an event by issuing Stripe refunds and marking guests as refunded.
+ * Also removes the ticket from User/AlumniUser.tickets for member-type guests (best-effort).
+ *
+ * @param {string} eventId - The MongoDB ID of the event
+ * @param {string|null} reason - Optional reason for the refund (stored in Stripe metadata and DB)
+ * @param {string[]|null} ids - Optional array of guestList entry IDs to refund; if omitted, all non-refunded guests are processed
+ * @returns {{ eventId, summary: { total, refunded, skipped, failed }, results: { success, skipped, failed } }}
+ */
+export const refundEventTickets = async (eventId, reason = null, ids = null) => {
+  console.log(
+    `[refundEventTickets] Start | eventId=${eventId} | reason=${reason ?? "none"} | targets=${ids ? `[${ids.join(", ")}]` : "all"}`
+  );
+
+  let event;
+  try {
+    event = await Event.findById(eventId);
+  } catch (err) {
+    console.error(`[refundEventTickets] DB error fetching event ${eventId}:`, err.message);
+    throw new HttpError("Could not fetch event", 500);
+  }
+
+  if (!event) {
+    console.error(`[refundEventTickets] Event not found: ${eventId}`);
+    throw new HttpError("Event not found", 404);
+  }
+
+  console.log(`[refundEventTickets] Event found: "${event.title}" | region=${event.region} | guestList size=${event.guestList.length}`);
+
+  // Determine which guests to process
+  const candidates = ids
+    ? event.guestList.filter((g) => ids.includes(g._id.toString()))
+    : event.guestList;
+
+  const guestsToRefund = candidates.filter((g) => !g.refunded);
+  const alreadyRefunded = candidates.length - guestsToRefund.length;
+
+  if (alreadyRefunded > 0) {
+    console.log(`[refundEventTickets] Skipping ${alreadyRefunded} guest(s) already marked as refunded`);
+  }
+
+  console.log(`[refundEventTickets] Processing ${guestsToRefund.length} ticket(s)`);
+
+  const results = { success: [], skipped: [], failed: [] };
+
+  for (const guest of guestsToRefund) {
+    const guestId = guest._id.toString();
+
+    if (!guest.transactionId || guest.transactionId === "-") {
+      // Free or manually added ticket — no Stripe charge to reverse
+      console.log(`[refundEventTickets] Guest ${guestId} (${guest.name}) has no transaction — marking refunded without Stripe call`);
+      guest.refunded = true;
+      if (reason) guest.refundReason = reason;
+      results.skipped.push({ id: guestId, name: guest.name, email: guest.email, reason: "no_transaction" });
+      continue;
+    }
+
+    console.log(`[refundEventTickets] Refunding guest ${guestId} (${guest.name}) | transactionId=${guest.transactionId}`);
+
+    const refundResult = await refundStripePayment(event.region, guest.transactionId, reason);
+
+    if (refundResult.success) {
+      console.log(`[refundEventTickets] Stripe refund OK | guest=${guestId} (${guest.name}) | refundId=${refundResult.refundId} | status=${refundResult.status}`);
+      guest.refunded = true;
+      if (reason) guest.refundReason = reason;
+      results.success.push({ id: guestId, name: guest.name, email: guest.email, refundId: refundResult.refundId });
+    } else {
+      console.error(`[refundEventTickets] Stripe refund FAILED | guest=${guestId} (${guest.name}) | error=${refundResult.error}`);
+      results.failed.push({ id: guestId, name: guest.name, email: guest.email, error: refundResult.error });
+    }
+  }
+
+  // Persist refund status on the event
+  try {
+    await event.save();
+    console.log(`[refundEventTickets] Event ${eventId} saved with updated refund statuses`);
+  } catch (err) {
+    console.error(`[refundEventTickets] Failed to save event ${eventId}:`, err.message);
+    throw new HttpError("Failed to persist refund status", 500);
+  }
+
+  // Best-effort: remove tickets from User/AlumniUser.tickets for member-type guests
+  const refundedMemberGuests = [...results.success, ...results.skipped].filter((r) => {
+    const guest = event.guestList.find((g) => g._id.toString() === r.id);
+    return guest && guest.type === "member";
+  });
+
+  if (refundedMemberGuests.length > 0) {
+    const eventTicketLabel =
+      event.title + " | " + moment(event.date).format(MOMENT_DATE_YEAR);
+
+    console.log(`[refundEventTickets] Removing tickets from user profiles for ${refundedMemberGuests.length} member(s) | label="${eventTicketLabel}"`);
+
+    for (const r of refundedMemberGuests) {
+      try {
+        const sess = await mongoose.startSession();
+        sess.startTransaction();
+
+        // Try regular User first, then AlumniUser
+        let targetUser = await User.findOne({ email: r.email }).session(sess);
+        if (!targetUser) {
+          targetUser = await AlumniUser.findOne({ email: r.email }).session(sess);
+        }
+
+        if (targetUser) {
+          const before = targetUser.tickets.length;
+          targetUser.tickets = targetUser.tickets.filter(
+            (t) => t.event !== eventTicketLabel
+          );
+          const removed = before - targetUser.tickets.length;
+          await targetUser.save({ session: sess });
+          await sess.commitTransaction();
+          console.log(`[refundEventTickets] Removed ${removed} ticket(s) from user profile | email=${r.email}`);
+        } else {
+          await sess.abortTransaction();
+          console.log(`[refundEventTickets] No user profile found for email=${r.email} — skipping ticket removal`);
+        }
+
+        sess.endSession();
+      } catch (err) {
+        console.error(`[refundEventTickets] Failed to remove ticket from user profile | email=${r.email}:`, err.message);
+        // Non-fatal — Stripe refund already succeeded
+      }
+    }
+  }
+
+  const summary = {
+    total: guestsToRefund.length,
+    refunded: results.success.length,
+    skipped: results.skipped.length,
+    failed: results.failed.length,
+  };
+
+  console.log(
+    `[refundEventTickets] Done | eventId=${eventId} | refunded=${summary.refunded} | skipped=${summary.skipped} | failed=${summary.failed}`
+  );
+
+  return { eventId, summary, results };
 };
