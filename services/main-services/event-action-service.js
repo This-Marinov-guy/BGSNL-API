@@ -6,6 +6,7 @@ import User from "../../models/User.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { addPrice, addProduct, refundStripePayment } from "../side-services/stripe.js";
 import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
+import { DEFAULT_REGION } from "../../util/config/defines.js";
 
 export const createEventProductWithPrice = async (
   data,
@@ -511,12 +512,14 @@ export const calculateFinalPrice = (event, userType = 'guest', promocodeString =
  *
  * @param {string} eventId - The MongoDB ID of the event
  * @param {string|null} reason - Optional reason for the refund (stored in Stripe metadata and DB)
+ * @param {string|null} region - Optional Stripe region to use; defaults to the Netherlands region
  * @param {string[]|null} ids - Optional array of guestList entry IDs to refund; if omitted, all non-refunded guests are processed
  * @returns {{ eventId, summary: { total, refunded, skipped, failed }, results: { success, skipped, failed } }}
  */
-export const refundEventTickets = async (eventId, reason = null, ids = null) => {
+export const refundEventTickets = async (eventId, reason = null, region = null, ids = null) => {
+  const stripeRegion = region || DEFAULT_REGION;
   console.log(
-    `[refundEventTickets] Start | eventId=${eventId} | reason=${reason ?? "none"} | targets=${ids ? `[${ids.join(", ")}]` : "all"}`
+    `[refundEventTickets] Start | eventId=${eventId} | reason=${reason ?? "none"} | region=${stripeRegion} | targets=${ids ? `[${ids.join(", ")}]` : "all"}`
   );
 
   let event;
@@ -532,7 +535,7 @@ export const refundEventTickets = async (eventId, reason = null, ids = null) => 
     throw new HttpError("Event not found", 404);
   }
 
-  console.log(`[refundEventTickets] Event found: "${event.title}" | region=${event.region} | guestList size=${event.guestList.length}`);
+  console.log(`[refundEventTickets] Event found: "${event.title}" | event.region=${event.region} | stripeRegion=${stripeRegion} | guestList size=${event.guestList.length}`);
 
   // Determine which guests to process
   const candidates = ids
@@ -564,7 +567,7 @@ export const refundEventTickets = async (eventId, reason = null, ids = null) => 
 
     console.log(`[refundEventTickets] Refunding guest ${guestId} (${guest.name}) | transactionId=${guest.transactionId}`);
 
-    const refundResult = await refundStripePayment(event.region, guest.transactionId, reason);
+    const refundResult = await refundStripePayment(stripeRegion, guest.transactionId, reason);
 
     if (refundResult.success) {
       console.log(`[refundEventTickets] Stripe refund OK | guest=${guestId} (${guest.name}) | refundId=${refundResult.refundId} | status=${refundResult.status}`);
