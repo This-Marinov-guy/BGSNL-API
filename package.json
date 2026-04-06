@@ -11,6 +11,7 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "start-server": "node app.js",
+    "repair-join-dates": "node scripts/repair-join-dates-from-subscriptions.js",
     "deploy": "git add . && git commit -m done && git push heroku main"
   },
   "keywords": [],

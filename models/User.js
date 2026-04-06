@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import uniqueValidator from "mongoose-unique-validator";
 import { MEMBER } from "../util/config/defines.js";
 import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
+import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const Schema = mongoose.Schema;
 
@@ -19,7 +20,7 @@ const userSchema = new Schema({
     customerId: { type: String },
   },
   region: { type: String },
-  purchaseDate: { type: Date, default: new Date(), required: true },
+  purchaseDate: { type: Date, default: createCurrentDate, required: true },
   expireDate: { type: Date, required: true },
   image: { type: String, required: true },
   name: { type: String, required: true },
@@ -37,7 +38,7 @@ const userSchema = new Schema({
   tickets: [
     {
       event: { type: String, required: true },
-      purchaseDate: { type: Date, default: new Date() },
+      purchaseDate: { type: Date, default: createCurrentDate },
       image: { type: String, required: true },
       // default: []
     },
@@ -54,7 +55,7 @@ const userSchema = new Schema({
     calendarSubscription: { type: Boolean, default: false },
     calendarImage: { type: String, default: "" },
   },
-  joinDate: { type: Date, default: new Date(), required: true },
+  joinDate: { type: Date, default: createCurrentDate, required: true },
   internshipApplications: [
     { type: Schema.Types.ObjectId, ref: "InternshipApplication" },
   ],

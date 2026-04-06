@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const Schema = mongoose.Schema;
 
@@ -9,7 +10,7 @@ const eventSchema = new Schema({
     {
       user: { type: String, required: true },
       userId: { type: String },
-      timestamp: { type: Date, default: new Date() },
+      timestamp: { type: Date, default: createCurrentDate },
       name: { type: String, required: true },
       ticket: { type: String },
       course: { type: String },

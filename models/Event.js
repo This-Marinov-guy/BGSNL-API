@@ -1,10 +1,11 @@
 import mongoose from "mongoose";
 import { EVENT_OPENED } from "../util/config/defines.js";
+import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const Schema = mongoose.Schema;
 
 const eventSchema = new Schema({
-  createdAt: { type: Date, immutable: true, default: Date.now },
+  createdAt: { type: Date, immutable: true, default: createCurrentDate },
   lastUpdate: {
     timestamp: { type: Date },
     id: { type: String },
@@ -147,7 +148,7 @@ const eventSchema = new Schema({
       code: { type: Number },
       type: { type: String },
       transactionId: { type: String, default: "-" },
-      timestamp: { type: Date, default: new Date() },
+      timestamp: { type: Date, default: createCurrentDate },
       name: { type: String, required: true },
       email: { type: String, required: true },
       phone: { type: String, required: true },

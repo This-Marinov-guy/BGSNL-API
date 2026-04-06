@@ -3,7 +3,74 @@ dotenv.config();
 import { MOMENT_DATE_YEAR } from '../../util/functions/dateConvert.js'
 import { capitalizeFirstLetter } from '../../util/functions/helpers.js'
 import moment from "moment";
-import { createStripeClient } from "../../util/config/stripe.js";
+import { DEFAULT_REGION } from "../../util/config/defines.js";
+import { STRIPE_KEYS, createStripeClient } from "../../util/config/stripe.js";
+
+const stripeClientCache = new Map();
+
+const getCachedStripeClient = (region) => {
+    if (!stripeClientCache.has(region)) {
+        stripeClientCache.set(region, createStripeClient(region));
+    }
+
+    return stripeClientCache.get(region);
+}
+
+const getStripeLookupRegions = (preferredRegions = []) => {
+    const seenRegions = new Set();
+    const seenSecretKeys = new Set();
+    const orderedRegions = [...preferredRegions, DEFAULT_REGION, ...Object.keys(STRIPE_KEYS)];
+
+    return orderedRegions.filter((region) => {
+        if (!region || seenRegions.has(region) || !(region in STRIPE_KEYS)) {
+            return false;
+        }
+
+        seenRegions.add(region);
+
+        const secretKey = STRIPE_KEYS[region]?.secretKey;
+        if (!secretKey || seenSecretKeys.has(secretKey)) {
+            return false;
+        }
+
+        seenSecretKeys.add(secretKey);
+        return true;
+    });
+}
+
+const isStripeResourceMissingError = (err) =>
+    err?.code === "resource_missing" ||
+    err?.raw?.code === "resource_missing" ||
+    err?.statusCode === 404;
+
+export const getStripeSubscriptionCreatedDate = async (subscriptionId, preferredRegions = []) => {
+    if (!subscriptionId) {
+        return null;
+    }
+
+    for (const region of getStripeLookupRegions(preferredRegions)) {
+        try {
+            const subscription = await getCachedStripeClient(region).subscriptions.retrieve(subscriptionId);
+
+            if (subscription?.created) {
+                return {
+                    createdAt: new Date(subscription.created * 1000),
+                    region,
+                };
+            }
+        } catch (err) {
+            if (isStripeResourceMissingError(err)) {
+                continue;
+            }
+
+            console.error(
+                `[getStripeSubscriptionCreatedDate] Failed to retrieve subscription ${subscriptionId} from ${region}: ${err.message}`
+            );
+        }
+    }
+
+    return null;
+}
 
 export const stripeProductDescription = (region, name, date) => {
     console.log(region, name, date);
@@ -638,4 +705,3 @@ export const processPromocodesForUpdate = async (region, productId, promoCodes, 
 
   return processedPromocodes;
 };
-

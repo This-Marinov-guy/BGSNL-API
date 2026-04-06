@@ -55,7 +55,7 @@ export const postWebhookCheckout = async (req, res, next) => {
   const metadata = event.data.object.metadata ?? {};
   const paymentStatus = event.data.object?.payment_status ?? "";
   const transactionId = event.data.object?.payment_intent || event.id || "-";
-  const paymentData = { subscriptionId, customerId, paymentStatus, transactionId };
+  const paymentData = { subscriptionId, customerId, paymentStatus, transactionId, stripeRegion: userRegion };
 
   // Debug logging for webhook events
   console.log(`Webhook Event: ${eventType}`);

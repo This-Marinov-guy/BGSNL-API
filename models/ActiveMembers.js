@@ -1,10 +1,11 @@
 import mongoose from "mongoose";
 import uniqueValidator from "mongoose-unique-validator";
+import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const Schema = mongoose.Schema;
 
 const activeMemberSchema = new Schema({
-    timestamp: { type: Date, default: new Date() },
+    timestamp: { type: Date, default: createCurrentDate },
     positions: { type: Array },
     date: { type: Array },
     email: { type: String, required: true },

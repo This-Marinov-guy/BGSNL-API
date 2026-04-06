@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const Schema = mongoose.Schema;
 
@@ -12,7 +13,7 @@ const internshipApplicationSchema = new Schema({
   position: { type: String, required: true },
   cv: { type: String, required: false },
   coverLetter: { type: String, required: false },
-  createdAt: { type: Date, default: new Date(), required: true },
+  createdAt: { type: Date, default: createCurrentDate, required: true },
 });
 
 export default mongoose.model("InternshipApplication", internshipApplicationSchema);

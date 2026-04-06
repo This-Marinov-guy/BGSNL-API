@@ -120,6 +120,7 @@ export const signup = async (req, res, next) => {
   const createdUser = new User({
     status: "freezed",
     region,
+    joinDate: new Date(),
     purchaseDate,
     expireDate,
     image,
@@ -212,6 +213,7 @@ export const alumniSignup = async (req, res, next) => {
   const createdUser = new AlumniUser({
     status: "freezed",
     tier,
+    joinDate: new Date(),
     purchaseDate,
     expireDate,
     image,

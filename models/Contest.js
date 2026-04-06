@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const Schema = mongoose.Schema;
 
@@ -6,7 +7,7 @@ const contestSchema = new Schema({
     contestName: { type: String },
     registered: [
         {
-            timestamp: { type: Date, default: new Date() },
+            timestamp: { type: Date, default: createCurrentDate },
             name: { type: String, required: true },
             surname: { type: String, required: true },
             email: { type: String, required: true },

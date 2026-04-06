@@ -58,12 +58,25 @@ import {
   recountMemberStatistics,
   recountAlumniStatistics,
 } from "../background-services/statistics-service.js";
+import { getStripeSubscriptionCreatedDate } from "../side-services/stripe.js";
+
+const resolveJoinDateFromSubscription = async (
+  subscriptionId,
+  preferredRegions = []
+) => {
+  const stripeSubscription = await getStripeSubscriptionCreatedDate(
+    subscriptionId,
+    preferredRegions
+  );
+
+  return stripeSubscription?.createdAt || new Date();
+};
 
 /**
  * Handle alumni signup checkout session
  */
 export const handleAlumniSignup = async (metadata, paymentData) => {
-  const { subscriptionId, customerId, paymentStatus } = paymentData;
+  const { subscriptionId, customerId, paymentStatus, stripeRegion } = paymentData;
   const { tier, period, name, surname, email } = metadata;
 
   const password = decryptData(metadata.password);
@@ -83,6 +96,10 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
   }
 
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(1);
+  const joinDate = await resolveJoinDateFromSubscription(subscriptionId, [
+    stripeRegion,
+    DEFAULT_REGION,
+  ]);
 
   const createdUser = new AlumniUser({
     status:
@@ -95,6 +112,7 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
       customerId,
     },
     tier,
+    joinDate,
     purchaseDate,
     expireDate,
     image,
@@ -125,7 +143,7 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
  * Handle regular user signup checkout session
  */
 export const handleUserSignup = async (metadata, paymentData) => {
-  const { subscriptionId, customerId, paymentStatus } = paymentData;
+  const { subscriptionId, customerId, paymentStatus, stripeRegion } = paymentData;
   const {
     longTerm,
     name,
@@ -160,6 +178,11 @@ export const handleUserSignup = async (metadata, paymentData) => {
   }
 
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
+  const joinDate = await resolveJoinDateFromSubscription(subscriptionId, [
+    stripeRegion,
+    region,
+    DEFAULT_REGION,
+  ]);
 
   const createdUser = new User({
     status:
@@ -172,6 +195,7 @@ export const handleUserSignup = async (metadata, paymentData) => {
       customerId,
     },
     region,
+    joinDate,
     purchaseDate,
     expireDate,
     image,
@@ -391,7 +415,7 @@ export const handleMemberTicketPurchase = async (metadata, paymentData) => {
  * Handle alumni migration checkout session
  */
 export const handleAlumniMigration = async (metadata, paymentData) => {
-  const { subscriptionId, customerId, paymentStatus } = paymentData;
+  const { subscriptionId, customerId, paymentStatus, stripeRegion } = paymentData;
   const { userId, tier, period } = metadata;
 
   // Find the regular user
@@ -459,6 +483,11 @@ export const handleAlumniMigration = async (metadata, paymentData) => {
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(
     period || 12
   );
+  const joinDate = await resolveJoinDateFromSubscription(subscriptionId, [
+    stripeRegion,
+    regularUser.region,
+    DEFAULT_REGION,
+  ]);
 
   // Check if an alumni user already exists
   let existingAlumni;
@@ -492,7 +521,7 @@ export const handleAlumniMigration = async (metadata, paymentData) => {
       };
       existingAlumni.purchaseDate = purchaseDate;
       existingAlumni.expireDate = expireDate;
-      existingAlumni.joinDate = existingAlumni.joinDate || new Date();
+      existingAlumni.joinDate = joinDate;
 
       // Make sure the alumni role is set
       if (!existingAlumni.roles.includes(ALUMNI)) {
@@ -522,7 +551,7 @@ export const handleAlumniMigration = async (metadata, paymentData) => {
           id: subscriptionId,
           customerId,
         },
-        joinDate: new Date(),
+        joinDate,
         purchaseDate,
         expireDate,
         tickets: regularUser.tickets || [],

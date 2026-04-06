@@ -23,8 +23,10 @@ import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
 import kokoAppRouter from "./routes/Integration/koko-app-data.js";
 import internshipRouter from "./routes/internship-routes.js";
+import dashboardRouter from "./routes/dashboard-routes.js";
 import { convertAlumniToUser, convertUserToAlumni } from "./services/main-services/user-service.js";
 import { refundEventTickets } from "./services/main-services/event-action-service.js";
+import { getUsersByDateRange } from "./services/background-services/statistics-service.js";
 
 const app = express();
 
@@ -105,6 +107,7 @@ app.use("/api/contest", contestRouter);
 app.use("/api/special", specialEventsRouter);
 app.use("/api/wordpress", wordpressRouter);
 app.use("/api/internship", internshipRouter);
+app.use("/api/dashboard", dashboardRouter);
 
 //no page found
 app.use((req, res, next) => {
