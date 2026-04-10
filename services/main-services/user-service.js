@@ -551,11 +551,11 @@ export const convertAlumniToUser = async (alumniId) => {
   const sess = await mongoose.startSession();
   sess.startTransaction();
 
-  try {
+try {
     const newUser = new User({
       _id: userId,
       name: alumniUser.name,
-      region: "-", //TODO: better fill out
+      region: "", //TODO: better fill out
       surname: alumniUser.surname,
       email: alumniUser.email,
       password: alumniUser.password,
