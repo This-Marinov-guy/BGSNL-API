@@ -408,32 +408,36 @@ export const postNonSocietyEvent = async (req, res, next) => {
     return next(new HttpError("Could not find such event", 404));
   }
 
-  const { userId } = extractUserFromRequest(req);
+  // Try to extract an authenticated user — guests won't have one
+  const { userId } = extractUserFromRequest(req) ?? {};
 
-  let targetUser;
+  let targetUser = null;
+  if (userId) {
+    try {
+      targetUser = await findUserById(userId);
+    } catch (err) {
+      return next(
+        new HttpError("Could not find the current user, please try again", 500)
+      );
+    }
 
-  try {
-    targetUser = await findUserById(userId);
-  } catch (err) {
-    return next(
-      new HttpError("Could not find the current user, please try again", 500)
-    );
+    if (!targetUser) {
+      return next(
+        new HttpError("Could not find the current user, please try again", 404)
+      );
+    }
   }
 
-  if (!targetUser) {
-    return next(
-      new HttpError("Could not find the current user, please try again", 404)
-    );
-  }
+  // Resolve identity: prefer DB user, fall back to request body
+  const memberName = targetUser
+    ? `${targetUser.name} ${targetUser.surname}`
+    : name;
+  const memberEmail = targetUser ? targetUser.email : email;
 
-  const memberName = `${targetUser.name} ${targetUser.surname}`;
+  // Duplicate check
   let status = true;
-
   for (const guestCheck of nonSocietyEvent.guestList) {
-    if (
-      guestCheck.name === memberName &&
-      guestCheck.email === targetUser.email
-    ) {
+    if (guestCheck.name === memberName && guestCheck.email === memberEmail) {
       status = false;
       break;
     }
@@ -448,38 +452,45 @@ export const postNonSocietyEvent = async (req, res, next) => {
     );
   }
 
+  // Build guest — mirrors postAddGuestToEvent shape for non-member path
   let guest = {
     user,
     userId: userId ?? "-",
-    name,
-    email,
-    phone,
+    name: memberName,
+    email: memberEmail,
+    phone: targetUser ? targetUser.phone : phone,
     ticket: req.file.location,
-    course: targetUser.course ?? "-",
+    course: targetUser?.course ?? "-",
     extraData,
     notificationTypeTerms,
   };
 
   try {
     nonSocietyEvent.guestList.push(guest);
-    targetUser.tickets.push({
-      event: event + " | " + moment(date).format(MOMENT_DATE_YEAR),
-      image: req.file.location,
-    });
+
+    // Only push to user.tickets if we have an authenticated member
+    if (targetUser) {
+      targetUser.tickets.push({
+        event: event + " | " + moment(date).format(MOMENT_DATE_YEAR),
+        image: req.file.location,
+      });
+      await targetUser.save();
+    }
+
     await nonSocietyEvent.save();
-    await targetUser.save();
   } catch (err) {
     return next(
       new HttpError("Adding user to the event failed, please try again", 500)
     );
   }
 
-  sendTicketEmail("member", email, event, date, name, req.file.location);
+  sendTicketEmail("member", memberEmail, event, date, memberName, req.file.location);
 
   specialEventsToSpreadsheet(nonSocietyEvent.id);
 
   return res.status(201).json({ status: true });
 };
+
 
 // status 0 = noting to update
 // status 1 = success
