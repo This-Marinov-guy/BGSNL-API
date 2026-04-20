@@ -450,7 +450,9 @@ export const postNonSocietyEvent = async (req, res, next) => {
         401
       )
     );
-  }
+  }  
+
+  const ticketLocation = req.file?.location ?? "";
 
   // Build guest — mirrors postAddGuestToEvent shape for non-member path
   let guest = {
@@ -459,7 +461,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
     name: memberName,
     email: memberEmail,
     phone: targetUser ? targetUser.phone : phone,
-    ticket: req.file.location,
+    ticket: ticketLocation,
     course: targetUser?.course ?? "-",
     extraData,
     notificationTypeTerms,
@@ -472,7 +474,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
     if (targetUser) {
       targetUser.tickets.push({
         event: event + " | " + moment(date).format(MOMENT_DATE_YEAR),
-        image: req.file.location,
+        image: ticketLocation,
       });
       await targetUser.save();
     }
@@ -484,7 +486,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
     );
   }
 
-  sendTicketEmail("member", memberEmail, event, date, memberName, req.file.location);
+  sendTicketEmail("member", memberEmail, event, date, memberName, ticketLocation);
 
   specialEventsToSpreadsheet(nonSocietyEvent.id);
 
