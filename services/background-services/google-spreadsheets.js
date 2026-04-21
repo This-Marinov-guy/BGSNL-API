@@ -470,20 +470,20 @@ const eventToSpreadsheet = (id) => {
           }
         }
 
-        // Clear the existing data in the sheet
+        // Write new data first so the sheet is never left blank if a later step fails.
+        // update() replaces from A1; clear() afterwards removes any stale rows below.
+        await googleSheets.spreadsheets.values.update({
+          auth,
+          spreadsheetId,
+          range: `${sheetName}!A1`,
+          valueInputOption: "RAW",
+          resource: { values },
+        });
+
         await googleSheets.spreadsheets.values.clear({
           auth,
           spreadsheetId,
-          range: sheetName,
-        });
-
-        // Append the new event and guest data
-        await googleSheets.spreadsheets.values.append({
-          auth,
-          spreadsheetId,
-          range: sheetName,
-          valueInputOption: "RAW",
-          resource: { values },
+          range: `${sheetName}!A${values.length + 1}:ZZ`,
         });
 
         console.log(`Event data updated in spreadsheet: ${spreadsheetId}`);
@@ -767,20 +767,20 @@ const specialEventsToSpreadsheet = (id) => {
           }
         }
 
-        // Clear the existing data in the sheet
+        // Write new data first so the sheet is never left blank if a later step fails.
+        // update() replaces from A1; clear() afterwards removes any stale rows below.
+        await googleSheets.spreadsheets.values.update({
+          auth,
+          spreadsheetId,
+          range: `${sheetName}!A1`,
+          valueInputOption: "RAW",
+          resource: { values },
+        });
+
         await googleSheets.spreadsheets.values.clear({
           auth,
           spreadsheetId,
-          range: sheetName,
-        });
-
-        // Append the new event and guest data
-        await googleSheets.spreadsheets.values.append({
-          auth,
-          spreadsheetId,
-          range: sheetName,
-          valueInputOption: "RAW",
-          resource: { values },
+          range: `${sheetName}!A${values.length + 1}:ZZ`,
         });
 
         console.log(`Event data updated in spreadsheet: ${spreadsheetId}`);
@@ -925,20 +925,20 @@ const usersToSpreadsheet = (region = null) => {
             "Roles",
           ];
 
+      const allUserValues = [["Members of:", sheetName], nameOfValues, ...values];
+
+      await googleSheets.spreadsheets.values.update({
+        auth,
+        spreadsheetId,
+        range: `${sheetName}!A1`,
+        valueInputOption: "RAW",
+        resource: { values: allUserValues },
+      });
+
       await googleSheets.spreadsheets.values.clear({
         auth,
         spreadsheetId,
-        range: sheetName,
-      });
-
-      await googleSheets.spreadsheets.values.append({
-        auth,
-        spreadsheetId,
-        range: sheetName,
-        valueInputOption: "RAW",
-        resource: {
-          values: [["Members of:", sheetName], nameOfValues, ...values],
-        },
+        range: `${sheetName}!A${allUserValues.length + 1}:ZZ`,
       });
 
       console.log(`Member Sheet updated for: ${region ?? "Netherlands"}`);
@@ -1033,20 +1033,20 @@ export const alumniToSpreadsheet = () => {
         "Email",
       ];
 
+      const allAlumniValues = [["Members of:", sheetName], nameOfValues, ...values];
+
+      await googleSheets.spreadsheets.values.update({
+        auth,
+        spreadsheetId,
+        range: `${sheetName}!A1`,
+        valueInputOption: "RAW",
+        resource: { values: allAlumniValues },
+      });
+
       await googleSheets.spreadsheets.values.clear({
         auth,
         spreadsheetId,
-        range: sheetName,
-      });
-
-      await googleSheets.spreadsheets.values.append({
-        auth,
-        spreadsheetId,
-        range: sheetName,
-        valueInputOption: "RAW",
-        resource: {
-          values: [["Members of:", sheetName], nameOfValues, ...values],
-        },
+        range: `${sheetName}!A${allAlumniValues.length + 1}:ZZ`,
       });
 
       const meta = await googleSheets.spreadsheets.get({
@@ -1285,20 +1285,20 @@ export const internshipApplicationsToSpreadsheet = () => {
         "Created At",
       ];
 
+      const allInternshipValues = [["Internship Applications"], headers, ...values];
+
+      await googleSheets.spreadsheets.values.update({
+        auth,
+        spreadsheetId,
+        range: `${sheetName}!A1`,
+        valueInputOption: "RAW",
+        resource: { values: allInternshipValues },
+      });
+
       await googleSheets.spreadsheets.values.clear({
         auth,
         spreadsheetId,
-        range: sheetName,
-      });
-
-      await googleSheets.spreadsheets.values.append({
-        auth,
-        spreadsheetId,
-        range: sheetName,
-        valueInputOption: "RAW",
-        resource: {
-          values: [["Internship Applications"], headers, ...values],
-        },
+        range: `${sheetName}!A${allInternshipValues.length + 1}:ZZ`,
       });
 
       console.log(`Internship applications sheet updated`);
