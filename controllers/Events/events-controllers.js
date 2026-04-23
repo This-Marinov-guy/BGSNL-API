@@ -463,6 +463,9 @@ export const postNonSocietyEvent = async (req, res, next) => {
     phone,
     notificationTypeTerms,
     extraData,
+    ticketImg,
+    origin_url,
+    originUrl,
   } = req.body;
 
   let nonSocietyEvent;
@@ -526,7 +529,45 @@ export const postNonSocietyEvent = async (req, res, next) => {
     );
   }  
 
-  const ticketLocation = req.file?.location ?? "";
+  let ticketLocation = req.file?.location ?? "";
+
+  if (!ticketLocation) {
+    const normalizedTicketImg = String(ticketImg || "").trim();
+    const normalizedOriginUrl = String(origin_url || originUrl || "").trim();
+
+    if (!normalizedTicketImg) {
+      return next(new HttpError("Missing ticket template image", 422));
+    }
+
+    const absoluteTicketImg = /^https?:\/\//i.test(normalizedTicketImg)
+      ? normalizedTicketImg
+      : `${normalizedOriginUrl.replace(/\/$/, "")}${normalizedTicketImg.startsWith("/") ? "" : "/"}${normalizedTicketImg}`;
+
+    try {
+      ticketLocation = await generateAndUploadEventTicket({
+        event: {
+          id: nonSocietyEvent.id || nonSocietyEvent._id?.toString() || event,
+          ticketImg: absoluteTicketImg,
+          ticketName: true,
+          ticketQR: false,
+          ticketColor: "#faf9f6",
+        },
+        checkoutType: targetUser ? "member" : "guest",
+        bucketName: process.env.BUCKET_MEMBER_TICKETS,
+        originUrl: normalizedOriginUrl,
+        code: Date.now(),
+        quantity: 1,
+        guestName: memberName,
+        userId: userId ?? "",
+        memberUser: targetUser,
+      });
+    } catch (err) {
+      console.log(err);
+      return next(
+        new HttpError("Ticket generation failed, please try again", 500)
+      );
+    }
+  }
 
   // Build guest — mirrors postAddGuestToEvent shape for non-member path
   let guest = {
