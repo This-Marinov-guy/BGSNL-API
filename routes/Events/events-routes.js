@@ -1,5 +1,6 @@
 import express from "express";
 import { check } from "express-validator";
+import multer from "multer";
 import {
   checkEligibleMemberForPurchase,
   checkTicketEligibility,
@@ -20,6 +21,7 @@ import { ACCESS_1, ACCESS_2, ACCESS_3 } from "../../util/config/defines.js";
 dotenv.config();
 
 const eventRouter = express.Router();
+const formDataUpload = multer({ storage: multer.memoryStorage() });
 
 eventRouter.get(
   "/get-purchase-status/:eventId",
@@ -55,10 +57,9 @@ eventRouter.post(
 eventRouter.post(
   "/purchase-ticket/guest",
   adminMiddleware(ACCESS_3),
-  fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
+  formDataUpload.none(),
   [
-    check("eventName").notEmpty(),
-    check("eventDate").notEmpty(),
+    check("eventId").notEmpty(),
     check("guestName").notEmpty(),
     check("guestEmail").notEmpty(),
     check("guestPhone").notEmpty(),

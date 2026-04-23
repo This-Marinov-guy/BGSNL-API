@@ -21,6 +21,7 @@ import { checkDiscountsOnEvents } from "../../services/main-services/event-actio
 import { extractUserFromRequest } from "../../util/functions/security.js";
 import { findUserById } from "../../services/main-services/user-service.js";
 import { ACCESS_4 } from "../../util/config/defines.js";
+import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -308,7 +309,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
     const sess = await mongoose.startSession();
     sess.startTransaction();
     societyEvent.guestList.push({
-      type: type ?? "member",
+      type: "free member",
       code,
       name: targetUser.name + " " + targetUser.surname,
       email: targetUser.email,
@@ -381,18 +382,41 @@ export const postAddGuestToEvent = async (req, res, next) => {
     return next(new HttpError("Tickets are sold out", 500));
   }
 
+  const safeQuantity = Number(quantity) > 0 ? Number(quantity) : 1;
+
+  let ticketLocation = req.file?.location ?? "";
+
+  if (!ticketLocation) {
+    try {
+      ticketLocation = await generateAndUploadEventTicket({
+        event: societyEvent,
+        checkoutType: "guest",
+        bucketName: process.env.BUCKET_GUEST_TICKETS,
+        originUrl: req.body?.origin_url || req.body?.originUrl || "",
+        code,
+        quantity: safeQuantity,
+        guestName,
+      });
+    } catch (err) {
+      console.log(err);
+      return next(
+        new HttpError("Ticket generation failed, please try again", 500)
+      );
+    }
+  }
+
   let guest = {
-    type: type ?? "guest",
+    type: "free guest",
     code,
     name: guestName,
     email: guestEmail,
     phone: guestPhone,
     preferences,
     addOns,
-    ticket: req.file.location,
+    ticket: ticketLocation,
   };
 
-  for (let i = 0; i < quantity; i++) {
+  for (let i = 0; i < safeQuantity; i++) {
     try {
       const sess = await mongoose.startSession();
       sess.startTransaction();
@@ -407,7 +431,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
     }
   }
 
-  const tickets = Array.from({ length: quantity }, () => req.file.location);
+  const tickets = Array.from({ length: safeQuantity }, () => ticketLocation);
 
   sendTicketEmail(
     "guest",
