@@ -29,13 +29,13 @@ paymentRouter.post("/checkout/general", postCheckoutNoFile);
 paymentRouter.post(
   "/checkout/member-ticket",
   authMiddleware,
-  formDataUpload.single("image"),
+  formDataUpload.none(),
   postCheckoutFile
 );
 
 paymentRouter.post(
   "/checkout/guest-ticket",
-  formDataUpload.single("image"),
+  formDataUpload.none(),
   postCheckoutFile
 );
 

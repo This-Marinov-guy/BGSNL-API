@@ -32,6 +32,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let cachedArchiveFontPath = null;
+let cachedArchiveFontBase64 = null;
 
 const escapeXml = (value = "") =>
   String(value)
@@ -73,6 +74,13 @@ const buildGuestCheckLink = ({ originUrl, eventId, code, quantity }) => {
 
 const resolveArchiveFontPath = async () => {
   if (cachedArchiveFontPath !== null) {
+    if (cachedArchiveFontPath) {
+      try {
+        await fs.promises.access(cachedArchiveFontPath);
+      } catch {
+        cachedArchiveFontPath = "";
+      }
+    }
     return cachedArchiveFontPath;
   }
 
@@ -96,42 +104,142 @@ const resolveArchiveFontPath = async () => {
   return cachedArchiveFontPath;
 };
 
-const createTextOverlayBuffer = async ({
+const getArchiveFontBase64 = async () => {
+  if (cachedArchiveFontBase64 !== null) {
+    return cachedArchiveFontBase64;
+  }
+
+  const fontPath = await resolveArchiveFontPath();
+  if (!fontPath) {
+    cachedArchiveFontBase64 = "";
+    return cachedArchiveFontBase64;
+  }
+
+  try {
+    const fontBuffer = await fs.promises.readFile(fontPath);
+    cachedArchiveFontBase64 = fontBuffer.toString("base64");
+    return cachedArchiveFontBase64;
+  } catch (err) {
+    console.error("[ticket] Failed to read font file:", err.message);
+    cachedArchiveFontBase64 = "";
+    return cachedArchiveFontBase64;
+  }
+};
+
+const createTextSvgBuffer = async ({
   text,
   width,
   height,
   fontSize,
   color,
-  fontPath,
 }) => {
   const safeText = String(text ?? "").trim();
   if (!safeText) {
     return null;
   }
 
-  const textBuffer = await sharp({
-    text: {
-      text: `<span foreground="${color}">${escapeXml(safeText)}</span>`,
-      rgba: true,
-      width: Math.max(1, Math.round(width)),
-      height: Math.max(1, Math.round(height)),
-      align: "center",
-      font: `${fontPath ? "Archive" : "sans"} ${fontSize}`,
-      fontfile: fontPath || undefined,
-      dpi: 300,
-    },
-  })
-    .png()
-    .toBuffer();
+  const fontBase64 = await getArchiveFontBase64();
 
-  return textBuffer;
+  const fontFace = fontBase64
+    ? `
+      @font-face {
+        font-family: 'Archive';
+        src: url("data:font/ttf;charset=utf-8;base64,${fontBase64}") format("truetype");
+        font-weight: 400;
+        font-style: normal;
+      }
+    `
+    : "";
+
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(
+      1,
+      Math.round(width),
+    )}" height="${Math.max(1, Math.round(height))}" viewBox="0 0 ${Math.max(
+      1,
+      Math.round(width),
+    )} ${Math.max(1, Math.round(height))}">
+      <style>
+        ${fontFace}
+        .label {
+          font-family: 'Archive', sans-serif;
+          font-size: ${fontSize}px;
+          font-weight: 400;
+          font-style: normal;
+          fill: ${color};
+        }
+      </style>
+      <rect width="100%" height="100%" fill="transparent" />
+      <text
+        class="label"
+        x="50%"
+        y="50%"
+        text-anchor="middle"
+        dominant-baseline="central"
+        xml:space="preserve"
+      >${escapeXml(safeText)}</text>
+    </svg>
+  `;
+
+  return Buffer.from(svg);
+};
+
+const createTextOverlayBuffer = async ({
+  text,
+  width,
+  height,
+  fontSize,
+  color,
+  fontPath, // kept only so your call sites stay unchanged
+}) => {
+  const safeText = String(text ?? "").trim();
+  if (!safeText) {
+    return null;
+  }
+
+  try {
+    const svgBuffer = await createTextSvgBuffer({
+      text: safeText,
+      width,
+      height,
+      fontSize,
+      color,
+    });
+
+    return await sharp(svgBuffer).png().toBuffer();
+  } catch (err) {
+    console.error("[ticket] SVG text render failed:", {
+      text: safeText,
+      error: err.message,
+      fontPath,
+    });
+
+    // fallback to your previous behavior
+    try {
+      return await sharp({
+        text: {
+          text: `<span foreground="${color}">${escapeXml(safeText)}</span>`,
+          rgba: true,
+          width: Math.max(1, Math.round(width)),
+          height: Math.max(1, Math.round(height)),
+          align: "center",
+          dpi: 300,
+          font: `sans ${fontSize}`,
+        },
+      })
+        .png()
+        .toBuffer();
+    } catch (_) {
+      return null;
+    }
+  }
 };
 
 const createVerticalLabelBuffer = async ({
   text,
   ticketHeight,
   color,
-  fontPath,
+  fontPath, // kept only so your call sites stay unchanged
 }) => {
   const horizontalTextBuffer = await createTextOverlayBuffer({
     text,
