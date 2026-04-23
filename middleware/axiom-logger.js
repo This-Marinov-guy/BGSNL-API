@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { Axiom } from "@axiomhq/js";
-import { createInfoEvent } from "../util/logging/axiom-log-models.js";
+import { createInfoEvent, createErrorEvent } from "../util/logging/axiom-log-models.js";
 
 /**
  * Initialize Axiom client
@@ -77,6 +77,27 @@ export const ingestLog = (log) => {
   } catch (err) {
     console.error("[axiom] ingest failed:", err);
   }
+};
+
+/**
+ * Log an error to Axiom. Drop into any catch block.
+ *
+ * @param {unknown} err - The caught error
+ * @param {{ req?: object, meta?: object, payload?: unknown }} [options]
+ *   req     - Express req object (optional, adds route/IP context)
+ *   meta    - Extra key/value pairs, e.g. { action: 'createUser', userId }
+ *   payload - Any additional data to attach (will be JSON-stringified if object)
+ */
+export const logError = (err, { req, meta, payload } = {}) => {
+  const event = createErrorEvent({
+    error: err instanceof Error ? err : new Error(String(err)),
+    req: req || null,
+    res: null,
+    meta,
+    payload,
+    redact: redactSensitive,
+  });
+  ingestLog(event);
 };
 
 /**

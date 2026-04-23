@@ -9,7 +9,6 @@ import {
   sendNewPasswordEmail,
   welcomeEmail,
 } from "../services/background-services/email-transporter.js";
-import { ACCOUNT_KEYS } from "../util/config/KEYS.js";
 import {
   alumniToSpreadsheet,
   usersToSpreadsheet,
@@ -62,18 +61,13 @@ export const postCheckEmail = async (req, res, next) => {
   res.status(200).send({ status: true });
 };
 
-export const postCheckMemberKey = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    const error = new HttpError("No key found", 422);
-    return next(error);
-  }
-
-  const { email } = req.body;
-
-  const result = ACCOUNT_KEYS.includes(email.toLowerCase());
-
-  res.status(200).send({ status: result });
+export const postDirectSignupDisabled = (req, res, next) => {
+  return next(
+    new HttpError(
+      "Direct signup is disabled. Please complete signup through checkout.",
+      403
+    )
+  );
 };
 
 export const signup = async (req, res, next) => {

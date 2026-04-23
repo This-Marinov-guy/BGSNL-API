@@ -1,8 +1,8 @@
 import express from "express";
 import { check } from "express-validator";
 import {
-  checkEligibleGuestForDiscount,
   checkEligibleMemberForPurchase,
+  checkTicketEligibility,
   getEventById,
   getEventPurchaseAvailability,
   getEvents,
@@ -16,7 +16,7 @@ import {
 import fileUpload from "../../middleware/file-upload.js";
 import dotenv from "dotenv";
 import { adminMiddleware, authMiddleware } from "../../middleware/authorization.js";
-import { ACCESS_3 } from "../../util/config/defines.js";
+import { ACCESS_1, ACCESS_2, ACCESS_3 } from "../../util/config/defines.js";
 dotenv.config();
 
 const eventRouter = express.Router();
@@ -47,17 +47,14 @@ eventRouter.get(
 );
 
 eventRouter.post(
-  "/check-guest-discount/:eventId",
-  [
-    check("email").notEmpty(),
-    check("name").notEmpty(),
-    check("surname").notEmpty(),
-  ],
-  checkEligibleGuestForDiscount
+  "/check-ticket-eligibility",
+  [check("eventId").notEmpty()],
+  checkTicketEligibility
 );
 
 eventRouter.post(
   "/purchase-ticket/guest",
+  adminMiddleware(ACCESS_3),
   fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
   [
     check("eventName").notEmpty(),
@@ -66,19 +63,19 @@ eventRouter.post(
     check("guestEmail").notEmpty(),
     check("guestPhone").notEmpty(),
   ],
-  postAddGuestToEvent
+  postAddGuestToEvent,
 );
 
 eventRouter.post(
   "/purchase-ticket/member",
-  authMiddleware,
+  adminMiddleware(ACCESS_3),
   fileUpload(process.env.BUCKET_MEMBER_TICKETS).single("image"),
   [
     check("userId").notEmpty(),
     check("eventName").notEmpty(),
     check("eventDate").notEmpty(),
   ],
-  postAddMemberToEvent
+  postAddMemberToEvent,
 );
 
 eventRouter.post(

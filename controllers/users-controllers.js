@@ -147,7 +147,6 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
         currentPeriodEnd: sub.current_period_end ?? null,
       };
 
-      console.log(stripeSubscription);
     } catch (err) {
       stripeSubscriptionError =
         err?.message || "Failed to fetch subscription from Stripe";

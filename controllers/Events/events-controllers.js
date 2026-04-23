@@ -20,6 +20,7 @@ import moment from "moment";
 import { checkDiscountsOnEvents } from "../../services/main-services/event-action-service.js";
 import { extractUserFromRequest } from "../../util/functions/security.js";
 import { findUserById } from "../../services/main-services/user-service.js";
+import { ACCESS_4 } from "../../util/config/defines.js";
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -84,8 +85,6 @@ export const getEventById = async (req, res, next) => {
     event = checkDiscountsOnEvents(event);
     event = removeModelProperties(event, [
       "guestList",
-      "discountPass",
-      "freePass",
       "earlyBird",
       "lateBird",
       "promotion",
@@ -121,8 +120,6 @@ export const getEvents = async (req, res, next) => {
   const formattedEvents = events.map((event) =>
     removeModelProperties(event, [
       "guestList",
-      "discountPass",
-      "freePass",
       "earlyBird",
       "lateBird",
       "promotion",
@@ -190,38 +187,90 @@ export const checkEligibleMemberForPurchase = async (req, res, next) => {
   res.status(200).json({ status });
 };
 
-export const checkEligibleGuestForDiscount = async (req, res, next) => {
-  const { email, name, surname, eventId } = req.params;
-  const { withError } = req.query;
-  const guestName = `${name} ${surname}`;
-  let status = true;
+// Determines whether a ticket is free or paid, and returns the correct priceId.
+// Called by both guest and member purchase flows before checkout.
+export const checkTicketEligibility = async (req, res, next) => {
+  const { eventId, userId, normalTicket } = req.body;
 
   if (!eventId) {
     return next(new HttpError("Invalid inputs passed", 422));
   }
 
-  let event = await Event.findById(eventId);
+  let event;
+  try {
+    event = await Event.findById(eventId);
+  } catch (err) {
+    return next(new HttpError("Could not find event", 500));
+  }
 
   if (!event) {
     return next(new HttpError("No event was found", 404));
   }
 
-  if (
-    !event.freePass ||
-    !event.freePass.includes(guestName) ||
-    !event.freePass.includes(email)
-  ) {
-    return res.status(200).json({ status });
+  const ticketsRemaining = event.ticketLimit - event.guestList.length;
+  const expired = isEventTimerFinished(event.ticketTimer);
+  if (ticketsRemaining <= 0 || expired) {
+    return next(new HttpError("Ticket sale is closed", 400));
   }
 
-  for (const guest of event.guestList) {
-    if (guest.name === guestName || guest.email === email) {
-      status = false;
-      break;
+  // --- Member path ---
+  if (userId) {
+    let member;
+    try {
+      member = await User.findById(userId);
+    } catch (err) {
+      return next(new HttpError("Could not find user", 500));
     }
+    if (!member) {
+      return next(new HttpError("User not found", 404));
+    }
+
+    const memberName = `${member.name} ${member.surname}`;
+    const alreadyRegistered = event.guestList.some(
+      (g) => g.name === memberName && g.email === member.email
+    );
+
+    // First-time check: warn the member they already have a ticket
+    if (alreadyRegistered && !normalTicket) {
+      return res.status(200).json({ alreadyRegistered: true });
+    }
+
+    // Free for all members
+    if (event.isFree || event.isMemberFree) {
+      return res.status(200).json({ type: "free" });
+    }
+
+    // Active members (ACCESS_4 roles) get the discounted/activeMember price
+    const isActiveMember = ACCESS_4.includes(member.role);
+
+    let priceId;
+    if (normalTicket) {
+      // Already has a member ticket — falls back to guest price
+      priceId = event.product?.guest?.priceId;
+    } else if (isActiveMember && event.product?.activeMember?.priceId) {
+      priceId = event.product.activeMember.priceId;
+    } else {
+      priceId = event.product?.member?.priceId;
+    }
+
+    if (!priceId) {
+      return next(new HttpError("No price configured for this event", 500));
+    }
+
+    return res.status(200).json({ type: "paid", priceId });
   }
 
-  res.status(200).json({ status });
+  // --- Guest path ---
+  if (event.isFree) {
+    return res.status(200).json({ type: "free" });
+  }
+
+  const priceId = event.product?.guest?.priceId;
+  if (!priceId) {
+    return next(new HttpError("No price configured for this event", 500));
+  }
+
+  return res.status(200).json({ type: "paid", priceId });
 };
 
 export const postAddMemberToEvent = async (req, res, next) => {
@@ -430,14 +479,15 @@ export const postNonSocietyEvent = async (req, res, next) => {
 
   // Resolve identity: prefer DB user, fall back to request body
   const memberName = targetUser
-    ? `${targetUser.name} ${targetUser.surname}`
+    ? `${targetUser?.name} ${targetUser?.surname}`
     : name;
-  const memberEmail = targetUser ? targetUser.email : email;
+  const memberEmail = targetUser ? targetUser?.email : email;
+  const memberPhone = (targetUser?.phone ?? phone ?? "").trim();
 
   // Duplicate check
   let status = true;
   for (const guestCheck of nonSocietyEvent.guestList) {
-    if (guestCheck.name === memberName && guestCheck.email === memberEmail) {
+    if (guestCheck.name === memberName && guestCheck.email === memberEmail) {      
       status = false;
       break;
     }
@@ -460,7 +510,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
     userId: userId ?? "-",
     name: memberName,
     email: memberEmail,
-    phone: targetUser ? targetUser.phone : phone,
+    phone: memberPhone,
     ticket: ticketLocation,
     course: targetUser?.course ?? "-",
     extraData,
@@ -481,6 +531,8 @@ export const postNonSocietyEvent = async (req, res, next) => {
 
     await nonSocietyEvent.save();
   } catch (err) {
+    console.log(err);
+    
     return next(
       new HttpError("Adding user to the event failed, please try again", 500)
     );

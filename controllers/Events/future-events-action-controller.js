@@ -110,8 +110,6 @@ export const addEvent = async (req, res, next) => {
   const {
     memberOnly,
     hidden,
-    freePass,
-    discountPass,
     region,
     title,
     date,
@@ -436,8 +434,6 @@ export const addEvent = async (req, res, next) => {
     memberOnly,
     hidden,
     extraInputsForm,
-    freePass,
-    discountPass,
     subEvent,
     region,
     title,
@@ -521,8 +517,6 @@ export const editEvent = async (req, res, next) => {
   const {
     memberOnly,
     hidden,
-    freePass,
-    discountPass,
     region,
     title,
     date,
@@ -956,8 +950,6 @@ export const editEvent = async (req, res, next) => {
   event.bgImageSelection = bgImageSelection;
   event.memberOnly = memberOnly;
   event.hidden = hidden;
-  event.freePass = freePass;
-  event.discountPass = discountPass;
   event.region = region;
   event.title = title;
   event.description = description;

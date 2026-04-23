@@ -130,8 +130,6 @@ const eventSchema = new Schema({
       ],
     },
   },
-  freePass: { type: [String] },
-  discountPass: { type: [String] },
   folder: {
     type: String,
     required: true,

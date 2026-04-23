@@ -7,31 +7,35 @@ import {
   postSubscriptionFile,
   postDonationIntent,
   postCustomerPortal,
+  postPlaygroundTicketPreview,
 } from "../controllers/payments-controllers.js";
-import fileUpload from "../middleware/file-upload.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
+import multer from "multer";
 import dotenv from "dotenv";
 import { authMiddleware } from "../middleware/authorization.js";
 dotenv.config();
 
 const paymentRouter = express.Router();
+const formDataUpload = multer({ storage: multer.memoryStorage() });
 
 paymentRouter.get("/donation/config", donationConfig)
 
 paymentRouter.post("/donation/create-payment-intent", postDonationIntent)
+
+paymentRouter.post("/playground/ticket", postPlaygroundTicketPreview)
 
 paymentRouter.post("/checkout/general", postCheckoutNoFile);
 
 paymentRouter.post(
   "/checkout/member-ticket",
   authMiddleware,
-  fileUpload(process.env.BUCKET_MEMBER_TICKETS).single("image"),
+  formDataUpload.single("image"),
   postCheckoutFile
 );
 
 paymentRouter.post(
   "/checkout/guest-ticket",
-  fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
+  formDataUpload.single("image"),
   postCheckoutFile
 );
 

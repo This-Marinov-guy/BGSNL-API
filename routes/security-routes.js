@@ -1,18 +1,15 @@
 import express from "express";
 import { check } from "express-validator";
 import {
-  signup,
   login,
   postSendPasswordResetEmail,
   patchUserPassword,
   postCheckEmail,
-  postCheckMemberKey,
   postVerifyToken,
   adminPatchUserPassword,
-  alumniSignup,
   encryptDataController,
+  postDirectSignupDisabled,
 } from "../controllers/security-controller.js";
-import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -25,36 +22,13 @@ securityRouter.post(
 );
 
 securityRouter.post(
-  "/check-member-key",
-  [check("email").notEmpty()],
-  postCheckMemberKey
-);
-
-securityRouter.post(
   "/signup",
-  fileResizedUpload(process.env.BUCKET_USERS).single("image"),
-  [
-    check("name").notEmpty(),
-    check("surname").notEmpty(),
-    check("birth").notEmpty(),
-    check("phone").notEmpty(),
-    check("university").notEmpty(),
-    check("email").notEmpty(),
-    check("password").isLength({ min: 5 }),
-  ],
-  signup
+  postDirectSignupDisabled
 );
 
 securityRouter.post(
   "/alumni-signup",
-  fileResizedUpload(process.env.BUCKET_USERS).single("image"),
-  [
-    check("name").notEmpty(),
-    check("surname").notEmpty(),
-    check("email").notEmpty(),
-    check("password").isLength({ min: 5 }),
-  ],
-  alumniSignup
+  postDirectSignupDisabled
 );
 
 securityRouter.post("/login", login);
