@@ -21,8 +21,8 @@ const QUANTITY_TEXT_BOX_HEIGHT = 84;
 const MULTIPLIER_TEXT_BOX_WIDTH = 48;
 const MULTIPLIER_TEXT_BOX_HEIGHT = 48;
 
-const NAME_LEFT_COLUMN_X = 1170;
-const SURNAME_LEFT_COLUMN_X = 1230;
+const NAME_LEFT_COLUMN_X = 1210;
+const SURNAME_LEFT_COLUMN_X = 1270;
 const QUANTITY_CENTER_X = 1380;
 const QUANTITY_CENTER_Y_FROM_BOTTOM = 110;
 const MULTIPLIER_CENTER_X = 1345;
@@ -33,6 +33,11 @@ const __dirname = path.dirname(__filename);
 
 let cachedArchiveFontPath = null;
 let cachedArchiveFontBase64 = null;
+const ARCHIVE_FONT_FAMILIES = [
+  "Archive Regular",
+  "Archive-Regular",
+  "Archive",
+];
 
 const escapeXml = (value = "") =>
   String(value)
@@ -143,7 +148,7 @@ const createTextSvgBuffer = async ({
   const fontFace = fontBase64
     ? `
       @font-face {
-        font-family: 'Archive';
+        font-family: 'Archive Regular';
         src: url("data:font/ttf;charset=utf-8;base64,${fontBase64}") format("truetype");
         font-weight: 400;
         font-style: normal;
@@ -162,7 +167,7 @@ const createTextSvgBuffer = async ({
       <style>
         ${fontFace}
         .label {
-          font-family: 'Archive', sans-serif;
+          font-family: 'Archive Regular', 'Archive-Regular', 'Archive', sans-serif;
           font-size: ${fontSize}px;
           font-weight: 400;
           font-style: normal;
@@ -195,6 +200,29 @@ const createTextOverlayBuffer = async ({
   const safeText = String(text ?? "").trim();
   if (!safeText) {
     return null;
+  }
+
+  if (fontPath) {
+    for (const fontFamily of ARCHIVE_FONT_FAMILIES) {
+      try {
+        return await sharp({
+          text: {
+            text: `<span foreground="${color}">${escapeXml(safeText)}</span>`,
+            rgba: true,
+            width: Math.max(1, Math.round(width)),
+            height: Math.max(1, Math.round(height)),
+            align: "center",
+            dpi: 300,
+            font: `${fontFamily} ${fontSize}`,
+            fontfile: fontPath,
+          },
+        })
+          .png()
+          .toBuffer();
+      } catch (_) {
+        // Try the next Archive family alias before falling back.
+      }
+    }
   }
 
   try {
@@ -394,14 +422,14 @@ export const generateAndUploadEventTicket = async ({
       composites,
       buffer: nameBuffer,
       centerX: NAME_LEFT_COLUMN_X,
-      centerY: height - 400 / 2,
+      centerY: height / 2,
     });
 
     await pushCenteredOverlay({
       composites,
       buffer: surnameBuffer,
       centerX: SURNAME_LEFT_COLUMN_X,
-      centerY: height - 400 / 2,
+      centerY: height / 2,
     });
   }
 
