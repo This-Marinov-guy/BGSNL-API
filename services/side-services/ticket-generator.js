@@ -33,11 +33,6 @@ const __dirname = path.dirname(__filename);
 
 let cachedArchiveFontPath = null;
 let cachedArchiveFontBase64 = null;
-const ARCHIVE_FONT_FAMILIES = [
-  "Archive Regular",
-  "Archive-Regular",
-  "Archive",
-];
 
 const escapeXml = (value = "") =>
   String(value)
@@ -53,8 +48,16 @@ const sanitizeKeyPart = (value = "") =>
     .replace(/[^a-z0-9_-]+/g, "")
     .slice(0, 60);
 
+const escapePangoMarkup = (value = "") =>
+  String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
 const normalizeColor = (color) =>
   /^#([0-9a-f]{3,8})$/i.test(color ?? "") ? color : DEFAULT_TICKET_COLOR;
+
+const isNonEmptyBuffer = (value) => Buffer.isBuffer(value) && value.length > 0;
 
 const splitGuestName = (guestName = "") => {
   const chunks = String(guestName).trim().split(/\s+/).filter(Boolean);
@@ -195,69 +198,55 @@ const createTextOverlayBuffer = async ({
   height,
   fontSize,
   color,
-  fontPath, // kept only so your call sites stay unchanged
+  fontPath,
 }) => {
   const safeText = String(text ?? "").trim();
   if (!safeText) {
     return null;
   }
 
-  if (fontPath) {
-    for (const fontFamily of ARCHIVE_FONT_FAMILIES) {
-      try {
-        return await sharp({
-          text: {
-            text: `<span foreground="${color}">${escapeXml(safeText)}</span>`,
-            rgba: true,
-            width: Math.max(1, Math.round(width)),
-            height: Math.max(1, Math.round(height)),
-            align: "center",
-            dpi: 300,
-            font: `${fontFamily} ${fontSize}`,
-            fontfile: fontPath,
-          },
-        })
-          .png()
-          .toBuffer();
-      } catch (_) {
-        // Try the next Archive family alias before falling back.
-      }
-    }
-  }
-
   try {
-    const svgBuffer = await createTextSvgBuffer({
-      text: safeText,
-      width,
-      height,
-      fontSize,
-      color,
-    });
+    const fontFamily = fontPath ? "Archive Regular" : "sans";
 
-    return await sharp(svgBuffer).png().toBuffer();
+    return await sharp({
+      text: {
+        text: `<span foreground="${color}">${escapePangoMarkup(safeText)}</span>`,
+        rgba: true,
+        width: Math.max(1, Math.round(width)),
+        height: Math.max(1, Math.round(height)),
+        align: "center",
+        dpi: 300,
+        font: `${fontFamily} ${fontSize}`,
+      },
+    })
+      .png()
+      .toBuffer();
   } catch (err) {
-    console.error("[ticket] SVG text render failed:", {
+    console.error("[ticket] Sharp text render failed:", {
       text: safeText,
       error: err.message,
       fontPath,
     });
 
-    // fallback to your previous behavior
     try {
-      return await sharp({
-        text: {
-          text: `<span foreground="${color}">${escapeXml(safeText)}</span>`,
-          rgba: true,
-          width: Math.max(1, Math.round(width)),
-          height: Math.max(1, Math.round(height)),
-          align: "center",
-          dpi: 300,
-          font: `sans ${fontSize}`,
-        },
-      })
-        .png()
-        .toBuffer();
-    } catch (_) {
+      const svgBuffer = await createTextSvgBuffer({
+        text: safeText,
+        width,
+        height,
+        fontSize,
+        color,
+      });
+      if (!isNonEmptyBuffer(svgBuffer)) {
+        return null;
+      }
+
+      return await sharp(svgBuffer).png().toBuffer();
+    } catch (svgErr) {
+      console.error("[ticket] SVG text render failed:", {
+        text: safeText,
+        error: svgErr.message,
+        fontPath,
+      });
       return null;
     }
   }
@@ -282,10 +271,19 @@ const createVerticalLabelBuffer = async ({
     return null;
   }
 
-  return await sharp(horizontalTextBuffer)
-    .rotate(-90, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toBuffer();
+  try {
+    return await sharp(horizontalTextBuffer)
+      .rotate(-90, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+  } catch (err) {
+    console.error("[ticket] Vertical text rotate failed:", {
+      text: String(text ?? "").trim(),
+      error: err.message,
+      fontPath,
+    });
+    return null;
+  }
 };
 
 const pushCenteredOverlay = async ({
@@ -298,7 +296,18 @@ const pushCenteredOverlay = async ({
     return;
   }
 
-  const metadata = await sharp(buffer).metadata();
+  if (!isNonEmptyBuffer(buffer)) {
+    return;
+  }
+
+  let metadata;
+  try {
+    metadata = await sharp(buffer).metadata();
+  } catch (err) {
+    console.error("[ticket] Overlay metadata read failed:", err.message);
+    return;
+  }
+
   const overlayWidth = metadata.width || 0;
   const overlayHeight = metadata.height || 0;
 
@@ -387,14 +396,28 @@ export const generateAndUploadEventTicket = async ({
     memberUser,
   });
 
-  const imageResponse = await axios.get(event.ticketImg, {
+  const ticketImageUrl = String(event.ticketImg).trim();
+  if (!ticketImageUrl) {
+    throw new Error("Missing event ticket template image");
+  }
+
+  const imageResponse = await axios.get(ticketImageUrl, {
     responseType: "arraybuffer",
     timeout: 15000,
   });
 
-  const resizedTicketImage = await sharp(Buffer.from(imageResponse.data))
+  const sourceImageBuffer = Buffer.from(imageResponse.data || []);
+  if (!isNonEmptyBuffer(sourceImageBuffer)) {
+    throw new Error("Ticket template image download returned empty data");
+  }
+
+  const resizedTicketImage = await sharp(sourceImageBuffer)
     .resize(DEFAULT_TICKET_WIDTH, DEFAULT_TICKET_HEIGHT, { fit: "fill" })
     .toBuffer();
+
+  if (!isNonEmptyBuffer(resizedTicketImage)) {
+    throw new Error("Ticket template image resize returned empty data");
+  }
 
   const baseImageMetadata = await sharp(resizedTicketImage).metadata();
   const width = baseImageMetadata.width ?? DEFAULT_TICKET_WIDTH;
@@ -448,11 +471,13 @@ export const generateAndUploadEventTicket = async ({
     });
     const qrResized = await sharp(qrBuffer).resize(80, 80).png().toBuffer();
 
-    composites.push({
-      input: qrResized,
-      left: 1330,
-      top: Math.max(height - 380, 0),
-    });
+    if (isNonEmptyBuffer(qrResized)) {
+      composites.push({
+        input: qrResized,
+        left: 1330,
+        top: Math.max(height - 380, 0),
+      });
+    }
   }
 
   if (safeQuantity > 1) {

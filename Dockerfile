@@ -1,6 +1,9 @@
 # Use LTS version
 FROM node:20-alpine
 
+# Install fontconfig so Sharp/Pango can resolve custom fonts
+RUN apk add --no-cache fontconfig
+
 # Install PM2 globally
 RUN npm install -g pm2
 
@@ -15,6 +18,11 @@ RUN npm install
 
 # Copy application files
 COPY . .
+
+# Register bundled fonts inside the container
+RUN mkdir -p /usr/share/fonts/bgsnl \
+  && cp -r /usr/src/app/assets/fonts/. /usr/share/fonts/bgsnl/ \
+  && fc-cache -f
 
 # Create logs directory
 RUN mkdir -p /usr/src/app/logs
