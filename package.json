@@ -12,7 +12,6 @@
     "dev": "nodemon app.js",
     "start-server": "node app.js",
     "repair-join-dates": "node scripts/repair-join-dates-from-subscriptions.js",
-    "reorder-internships": "node scripts/reorder-internships-keep-last.js",
     "deploy": "git add . && git commit -m done && git push heroku main"
   },
   "keywords": [],

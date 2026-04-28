@@ -9,10 +9,74 @@ import { findUserById } from "../services/main-services/user-service.js";
 import mongoose from "mongoose";
 import { DOCUMENT_TYPES } from "../util/config/enums.js";
 
+const sortInternshipsForDisplay = (internships = []) =>
+  [...internships].sort((a, b) => {
+    const aHasPosition = Number.isFinite(a?.position);
+    const bHasPosition = Number.isFinite(b?.position);
+
+    if (aHasPosition && bHasPosition && a.position !== b.position) {
+      return a.position - b.position;
+    }
+
+    if (aHasPosition !== bHasPosition) {
+      return aHasPosition ? -1 : 1;
+    }
+
+    const aCreatedAt = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bCreatedAt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+
+    if (aCreatedAt !== bCreatedAt) {
+      return bCreatedAt - aCreatedAt;
+    }
+
+    return String(b?._id ?? "").localeCompare(String(a?._id ?? ""));
+  });
+
+const getNextInternshipCreatedAt = async () => {
+  const latestInternship = await Internship.findOne()
+    .sort({ createdAt: -1, _id: -1 })
+    .select("createdAt")
+    .lean();
+
+  const now = new Date();
+  const latestCreatedAt = latestInternship?.createdAt
+    ? new Date(latestInternship.createdAt)
+    : null;
+
+  if (!latestCreatedAt || Number.isNaN(latestCreatedAt.getTime())) {
+    return now;
+  }
+
+  // Keep newly added internships at the top even if older records were given
+  // artificially newer createdAt values during prior reordering.
+  return latestCreatedAt.getTime() >= now.getTime()
+    ? new Date(latestCreatedAt.getTime() + 1000)
+    : now;
+};
+
+const getNextInternshipPosition = async () => {
+  const firstPositionedInternship = await Internship.findOne({
+    position: { $type: "number" },
+  })
+    .sort({ position: 1 })
+    .select("position")
+    .lean();
+
+  if (Number.isFinite(firstPositionedInternship?.position)) {
+    return firstPositionedInternship.position - 1;
+  }
+
+  const existingInternship = await Internship.findOne().select("_id").lean();
+  return existingInternship ? -1 : 0;
+};
+
 export const getInternshipsList = async (req, res, next) => {
   try {
-    const internships = await Internship.find({ isActive: true }).sort({ createdAt: -1 });
-    return res.status(200).json({ status: true, internships });
+    const internships = await Internship.find({ isActive: true }).lean();
+    return res.status(200).json({
+      status: true,
+      internships: sortInternshipsForDisplay(internships),
+    });
   } catch (err) {
     return next(new HttpError("Failed to fetch internships", 500));
   }
@@ -20,8 +84,11 @@ export const getInternshipsList = async (req, res, next) => {
 
 export const getAllInternshipsAdmin = async (req, res, next) => {
   try {
-    const internships = await Internship.find().sort({ createdAt: -1 });
-    return res.status(200).json({ status: true, internships });
+    const internships = await Internship.find().lean();
+    return res.status(200).json({
+      status: true,
+      internships: sortInternshipsForDisplay(internships),
+    });
   } catch (err) {
     return next(new HttpError("Failed to fetch internships", 500));
   }
@@ -41,9 +108,13 @@ export const addInternship = async (req, res, next) => {
     ? (req.file.location || req.file.Location || "")
     : (req.body.existingLogoUrl || "");
 
+  const createdAt = await getNextInternshipCreatedAt();
+  const position = await getNextInternshipPosition();
+
   const internship = new Internship({
     company, specialty, location, label, duration, description,
     bonuses, requirements, languages, contactMail, website, applyLink, logo,
+    createdAt, updatedAt: createdAt, position,
   });
 
   try {
@@ -91,6 +162,68 @@ export const deleteInternship = async (req, res, next) => {
   } catch (err) {
     console.log(err);
     return next(new HttpError("Failed to delete internship", 500));
+  }
+};
+
+export const reorderInternships = async (req, res, next) => {
+  const { internshipIds } = req.body;
+
+  if (!Array.isArray(internshipIds) || internshipIds.length === 0) {
+    return next(new HttpError("internshipIds must be a non-empty array", 422));
+  }
+
+  const uniqueIds = [...new Set(internshipIds)];
+
+  if (uniqueIds.length !== internshipIds.length) {
+    return next(new HttpError("internshipIds must not contain duplicates", 422));
+  }
+
+  if (!uniqueIds.every((id) => mongoose.Types.ObjectId.isValid(id))) {
+    return next(new HttpError("internshipIds contains an invalid internship id", 422));
+  }
+
+  try {
+    const totalInternships = await Internship.countDocuments();
+
+    if (uniqueIds.length !== totalInternships) {
+      return next(new HttpError("Please submit the full internship list when saving order", 422));
+    }
+
+    const existingInternships = await Internship.find({
+      _id: { $in: uniqueIds },
+    })
+      .select("_id")
+      .lean();
+
+    if (existingInternships.length !== uniqueIds.length) {
+      return next(new HttpError("One or more internships could not be found", 404));
+    }
+
+    const updatedAt = new Date();
+
+    await Internship.bulkWrite(
+      uniqueIds.map((id, index) => ({
+        updateOne: {
+          filter: { _id: id },
+          update: {
+            $set: {
+              position: index,
+              updatedAt,
+            },
+          },
+        },
+      }))
+    );
+
+    const internships = await Internship.find().lean();
+
+    return res.status(200).json({
+      status: true,
+      internships: sortInternshipsForDisplay(internships),
+    });
+  } catch (err) {
+    console.log(err);
+    return next(new HttpError("Failed to save internship order", 500));
   }
 };
 

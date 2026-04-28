@@ -18,6 +18,7 @@ const internshipSchema = new Schema({
   applyLink: { type: String, required: false },
   logo: { type: String, required: false, default: "" },
   isActive: { type: Boolean, default: true },
+  position: { type: Number, default: null },
   createdAt: { type: Date, default: createCurrentDate, required: true },
   updatedAt: { type: Date, default: createCurrentDate },
 });
