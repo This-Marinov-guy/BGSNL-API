@@ -8,6 +8,7 @@ const internshipApplicationSchema = new Schema({
   email: { type: String, required: true },
   name: { type: String, required: true },
   phone: { type: String, required: false },
+  internshipId: { type: Schema.Types.ObjectId, ref: "Internship", required: false },
   companyId: { type: String, required: true },
   companyName: { type: String, required: true },
   position: { type: String, required: true },
