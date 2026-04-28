@@ -6,6 +6,7 @@ import {
   addInternship,
   editInternship,
   deleteInternship,
+  reorderInternships,
   postMemberApply,
 } from "../controllers/internship-controllers.js";
 import { authMiddleware, adminMiddleware } from "../middleware/authorization.js";
@@ -37,6 +38,8 @@ internshipRouter.patch(
   logoUpload(process.env.BUCKET_DOCUMENTS).single("logo"),
   editInternship
 );
+
+internshipRouter.patch("/reorder", adminMiddleware(ACCESS_1), reorderInternships);
 
 internshipRouter.delete("/delete/:id", adminMiddleware(ACCESS_1), deleteInternship);
 
