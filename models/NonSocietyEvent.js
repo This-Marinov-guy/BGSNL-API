@@ -1,10 +1,12 @@
 import mongoose from "mongoose";
+import { DEFAULT_REGION } from "../util/config/defines.js";
 import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const Schema = mongoose.Schema;
 
 const eventSchema = new Schema({
   event: { type: String, require: true },
+  region: { type: String, required: true, default: DEFAULT_REGION },
   date: { type: Date },
   guestList: [
     {

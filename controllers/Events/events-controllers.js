@@ -20,7 +20,7 @@ import moment from "moment";
 import { checkDiscountsOnEvents } from "../../services/main-services/event-action-service.js";
 import { extractUserFromRequest } from "../../util/functions/security.js";
 import { findUserById } from "../../services/main-services/user-service.js";
-import { ACCESS_4 } from "../../util/config/defines.js";
+import { ACCESS_4, DEFAULT_REGION } from "../../util/config/defines.js";
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
@@ -74,6 +74,12 @@ export const getEventById = async (req, res, next) => {
       });
     }
 
+    if (event.region === DEFAULT_REGION) {
+      return res.status(200).json({
+        status: false,
+      });
+    }
+
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
@@ -106,13 +112,21 @@ export const getEvents = async (req, res, next) => {
 
   try {
     if (region) {
+      if (region === DEFAULT_REGION) {
+        return res.status(200).json({ events: [] });
+      }
+
       events = await Event.find({
         region,
         hidden: false,
         status: { $ne: "archived" },
       });
     } else {
-      events = await Event.find({ hidden: false, status: { $ne: "archived" } });
+      events = await Event.find({
+        region: { $ne: DEFAULT_REGION },
+        hidden: false,
+        status: { $ne: "archived" },
+      });
     }
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
@@ -470,10 +484,27 @@ export const postNonSocietyEvent = async (req, res, next) => {
 
   let nonSocietyEvent;
   try {
-    nonSocietyEvent = await NonSocietyEvent.findOneOrCreate(
-      { event: event },
-      { status: "open", event: event, date: date, guestList: [] }
-    );
+    nonSocietyEvent =
+      (await NonSocietyEvent.findOne({ event, region: DEFAULT_REGION })) ||
+      (await NonSocietyEvent.findOne({
+        event,
+        $or: [{ region: { $exists: false } }, { region: "" }, { region: null }],
+      }));
+
+    if (nonSocietyEvent && nonSocietyEvent.region !== DEFAULT_REGION) {
+      nonSocietyEvent.region = DEFAULT_REGION;
+      await nonSocietyEvent.save();
+    }
+
+    if (!nonSocietyEvent) {
+      nonSocietyEvent = await NonSocietyEvent.create({
+        status: "open",
+        event,
+        region: DEFAULT_REGION,
+        date,
+        guestList: [],
+      });
+    }
   } catch (err) {
     return next(
       new HttpError("Could not add you to the event, please try again!", 500)
