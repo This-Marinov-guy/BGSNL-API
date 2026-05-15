@@ -11,6 +11,7 @@ import {
   postAddGuestToEvent,
   postAddMemberToEvent,
   postNonSocietyEvent,
+  postSendNonSocietyEventResendEmail,
   postSyncEventsCalendar,
   updatePresence
 } from "../../controllers/Events/events-controllers.js";
@@ -91,6 +92,12 @@ eventRouter.post(
 );
 
 eventRouter.post(
+  "/non-society-event/resend-email",
+  adminMiddleware(ACCESS_3),
+  postSendNonSocietyEventResendEmail
+);
+
+eventRouter.post(
   "/sync-calendar-events",
   [],
   postSyncEventsCalendar
@@ -105,6 +112,6 @@ eventRouter.patch(
   check("email").notEmpty()
   ],
   updatePresence
-)
+);
 
 export default eventRouter;

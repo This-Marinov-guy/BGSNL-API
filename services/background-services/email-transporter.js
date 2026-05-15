@@ -1,4 +1,5 @@
 import { MailtrapClient } from "mailtrap";
+import { Resend } from "resend";
 import dotenv from "dotenv";
 import { WHATS_APP } from "../../util/config/LINKS.js";
 import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE, ALUMNI_TEMPLATE } from "../../util/config/defines.js";
@@ -49,11 +50,16 @@ function enqueueMail(key, jobFn) {
 }
 
 const client = new MailtrapClient({ endpoint: process.env.MAIL_ENDPOINT, token: process.env.MAIL_TOKEN });
+const resend = process.env.RESEND_API_KEY
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null;
 
 const sender = {
   email: NO_REPLY_EMAIL,
   name: NO_REPLY_EMAIL_NAME,
 };
+
+const resendSender = `${NO_REPLY_EMAIL_NAME} <${NO_REPLY_EMAIL}>`;
 
 const sendTicketEmail = (
   type,
@@ -167,6 +173,41 @@ export const sendMarketingEmail = (templateId, receiver, name = '') => {
       template_variables: { template_variables: { name } },
     });
   });
-}
+};
+
+export const sendResendTemplateEmail = (
+  templateId,
+  receiver,
+  name = '',
+  variables = {}
+) => {
+  enqueueMail(`resend-template:${templateId}:${receiver}`, async () => {
+    if (!resend) {
+      throw new Error("Missing RESEND_API_KEY");
+    }
+
+    const {
+      subject = "Bulgarian Society Netherlands",
+      ...templateVariables
+    } = variables;
+
+    const response = await resend.emails.send({
+      from: resendSender,
+      to: receiver,
+      subject,
+      template: {
+        id: templateId,
+        variables: {
+          name,
+          ...templateVariables,
+        },
+      },
+    });
+
+    if (response?.error) {
+      throw new Error(response.error.message || "Resend email failed");
+    }
+  });
+};
 
 export { sendTicketEmail, sendNewPasswordEmail, welcomeEmail, sendContestMaterials, paymentFailedEmail };
