@@ -5,7 +5,10 @@ import User from "../../models/User.js";
 import { validationResult } from "express-validator";
 import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
 import HttpError from "../../models/Http-error.js";
-import { sendTicketEmail } from "../../services/background-services/email-transporter.js";
+import {
+  sendResendTemplateEmail,
+  sendTicketEmail,
+} from "../../services/background-services/email-transporter.js";
 import {
   eventToSpreadsheet,
   specialEventsToSpreadsheet,
@@ -20,8 +23,16 @@ import moment from "moment";
 import { checkDiscountsOnEvents } from "../../services/main-services/event-action-service.js";
 import { extractUserFromRequest } from "../../util/functions/security.js";
 import { findUserById } from "../../services/main-services/user-service.js";
-import { ACCESS_4 } from "../../util/config/defines.js";
+import {
+  ACCESS_4,
+  DEFAULT_REGION,
+  NON_SOCIETY_EVENT_RESEND_EVENT_ID,
+  NON_SOCIETY_EVENT_RESEND_TEST_EMAILS,
+  NON_SOCIETY_EVENT_RESEND_TEMPLATE,
+} from "../../util/config/defines.js";
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -74,6 +85,12 @@ export const getEventById = async (req, res, next) => {
       });
     }
 
+    if (event.region === DEFAULT_REGION) {
+      return res.status(200).json({
+        status: false,
+      });
+    }
+
     let status = true;
 
     const ticketsRemaining = event.ticketLimit - event.guestList.length;
@@ -106,13 +123,21 @@ export const getEvents = async (req, res, next) => {
 
   try {
     if (region) {
+      if (region === DEFAULT_REGION) {
+        return res.status(200).json({ events: [] });
+      }
+
       events = await Event.find({
         region,
         hidden: false,
         status: { $ne: "archived" },
       });
     } else {
-      events = await Event.find({ hidden: false, status: { $ne: "archived" } });
+      events = await Event.find({
+        region: { $ne: DEFAULT_REGION },
+        hidden: false,
+        status: { $ne: "archived" },
+      });
     }
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
@@ -470,10 +495,27 @@ export const postNonSocietyEvent = async (req, res, next) => {
 
   let nonSocietyEvent;
   try {
-    nonSocietyEvent = await NonSocietyEvent.findOneOrCreate(
-      { event: event },
-      { status: "open", event: event, date: date, guestList: [] }
-    );
+    nonSocietyEvent =
+      (await NonSocietyEvent.findOne({ event, region: DEFAULT_REGION })) ||
+      (await NonSocietyEvent.findOne({
+        event,
+        $or: [{ region: { $exists: false } }, { region: "" }, { region: null }],
+      }));
+
+    if (nonSocietyEvent && nonSocietyEvent.region !== DEFAULT_REGION) {
+      nonSocietyEvent.region = DEFAULT_REGION;
+      await nonSocietyEvent.save();
+    }
+
+    if (!nonSocietyEvent) {
+      nonSocietyEvent = await NonSocietyEvent.create({
+        status: "open",
+        event,
+        region: DEFAULT_REGION,
+        date,
+        guestList: [],
+      });
+    }
   } catch (err) {
     return next(
       new HttpError("Could not add you to the event, please try again!", 500)
@@ -608,6 +650,126 @@ export const postNonSocietyEvent = async (req, res, next) => {
   specialEventsToSpreadsheet(nonSocietyEvent.id);
 
   return res.status(201).json({ status: true });
+};
+
+export const sendNonSocietyEventResendEmail = async ({
+  customEmails = [],
+  testOnly = false,
+} = {}) => {
+  if (!NON_SOCIETY_EVENT_RESEND_TEMPLATE) {
+    throw new HttpError("Missing non-society event email template UUID", 500);
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(NON_SOCIETY_EVENT_RESEND_EVENT_ID)) {
+    throw new HttpError("Invalid non-society event id", 500);
+  }
+
+  let nonSocietyEvent;
+  try {
+    nonSocietyEvent = await NonSocietyEvent.findById(
+      NON_SOCIETY_EVENT_RESEND_EVENT_ID
+    ).select("event guestList.email guestList.name");
+  } catch (err) {
+    throw new HttpError(
+      "Could not find the non-society event, please try again",
+      500
+    );
+  }
+
+  if (!nonSocietyEvent) {
+    throw new HttpError("Could not find such non-society event", 404);
+  }
+
+  const invalidEmails = [];
+  const recipientsByEmail = new Map();
+
+  const addRecipient = (email, name = "") => {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+
+    if (!normalizedEmail) return;
+
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      invalidEmails.push(email);
+      return;
+    }
+
+    if (!recipientsByEmail.has(normalizedEmail)) {
+      recipientsByEmail.set(normalizedEmail, {
+        email: normalizedEmail,
+        name: String(name || "").trim(),
+      });
+    }
+  };
+
+  if (true) {
+    for (const email of NON_SOCIETY_EVENT_RESEND_TEST_EMAILS) {
+      addRecipient(email, "Bulgarian Society Netherlands");
+    }
+  } else {
+    for (const guest of nonSocietyEvent.guestList || []) {
+      addRecipient(guest.email, guest.name);
+    }
+  }
+
+  for (const email of customEmails) {
+    addRecipient(email);
+  }
+
+  const recipients = [...recipientsByEmail.values()];
+
+  console.log(
+    `[nonSocietyEventResendEmail] Queuing emails for "${nonSocietyEvent.event}" | testOnly=${testOnly}`
+  );
+
+  for (const recipient of recipients) {
+    console.log(
+      `[nonSocietyEventResendEmail] ${recipient.email}${recipient.name ? ` | ${recipient.name}` : ""}`
+    );
+
+    sendResendTemplateEmail(
+      NON_SOCIETY_EVENT_RESEND_TEMPLATE,
+      recipient.email,
+      recipient.name
+    );
+  }
+
+  if (invalidEmails.length > 0) {
+    console.log(
+      `[nonSocietyEventResendEmail] Skipped invalid emails: ${invalidEmails.join(", ")}`
+    );
+  }
+
+  console.log(
+    `[nonSocietyEventResendEmail] Total queued: ${recipients.length}`
+  );
+
+  return {
+    status: true,
+    message: "Non-society event emails queued",
+    eventId: NON_SOCIETY_EVENT_RESEND_EVENT_ID,
+    event: nonSocietyEvent.event,
+    testOnly,
+    queued: recipients.length,
+    invalidEmails,
+  };
+};
+
+export const postSendNonSocietyEventResendEmail = async (req, res, next) => {
+  const testOnly = req.body?.testOnly === true || req.query?.testOnly === "true";
+  const customEmails = Array.isArray(req.body?.customEmails)
+    ? req.body.customEmails
+    : [];
+
+  try {
+    const result = await sendNonSocietyEventResendEmail({
+      customEmails,
+      testOnly,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    return next(err);
+  }
 };
 
 

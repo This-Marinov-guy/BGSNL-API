@@ -39,6 +39,22 @@ import {
   deleteCalendarEvent,
 } from "../../services/side-services/google-calendar.js";
 import { IS_PROD } from "../../util/functions/helpers.js";
+import { ACCESS_2, DEFAULT_REGION } from "../../util/config/defines.js";
+
+const hasAdminRegionAccess = (req) =>
+  ACCESS_2.some((role) => req.user?.roles?.includes(role));
+
+const hasEventRegionAccess = (req, region) =>
+  region !== DEFAULT_REGION || hasAdminRegionAccess(req);
+
+const rejectNetherlandsRegionAccess = (req, next) => {
+  if (hasEventRegionAccess(req, req.body?.region)) {
+    return false;
+  }
+
+  next(new HttpError("Only admins can manage Netherlands events", 403));
+  return true;
+};
 
 export const fetchFullDataEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
@@ -59,6 +75,10 @@ export const fetchFullDataEvent = async (req, res, next) => {
     return res.status(200).json({
       status: false,
     });
+  }
+
+  if (!hasEventRegionAccess(req, event.region)) {
+    return next(new HttpError("Only admins can access Netherlands events", 403));
   }
 
   let status = true;
@@ -82,17 +102,34 @@ export const fetchFullDataEvent = async (req, res, next) => {
 
 export const fetchFullDataEventsList = async (req, res, next) => {
   const region = req.query.region;
+  const isAdmin = hasAdminRegionAccess(req);
 
   let events;
 
   try {
     if (region) {
+      if (region === DEFAULT_REGION && !isAdmin) {
+        return next(new HttpError("Only admins can access Netherlands events", 403));
+      }
+
+      if (!isAdmin && region !== req.user?.region) {
+        return next(new HttpError("No access for this region", 403));
+      }
+
       events = await Event.find({
         region,
         status: { $ne: "archived" }, // exclude archived
       });
-    } else {
+    } else if (isAdmin) {
       events = await Event.find({
+        status: { $ne: "archived" }, // exclude archived
+      });
+    } else {
+      const userRegion =
+        req.user?.region === DEFAULT_REGION ? "" : req.user?.region ?? "";
+
+      events = await Event.find({
+        region: userRegion,
         status: { $ne: "archived" }, // exclude archived
       });
     }
@@ -134,6 +171,10 @@ export const addEvent = async (req, res, next) => {
     bgImage,
     bgImageSelection,
   } = req.body;
+
+  if (rejectNetherlandsRegionAccess(req, next)) {
+    return;
+  }
 
   const extraInputsForm = processExtraInputsForm(
     parseStingData(req.body.extraInputsForm)
@@ -512,6 +553,10 @@ export const editEvent = async (req, res, next) => {
     return next(new HttpError("No such event", 404));
   }
 
+  if (!hasEventRegionAccess(req, event.region)) {
+    return next(new HttpError("Only admins can manage Netherlands events", 403));
+  }
+
   const folder = event.folder ?? (IS_PROD ? "spare" : "development/spare");
 
   const {
@@ -541,6 +586,10 @@ export const editEvent = async (req, res, next) => {
     bgImage,
     bgImageSelection,
   } = req.body;
+
+  if (rejectNetherlandsRegionAccess(req, next)) {
+    return;
+  }
 
   const extraInputsForm = processExtraInputsForm(
     parseStingData(req.body.extraInputsForm)
@@ -693,20 +742,14 @@ export const editEvent = async (req, res, next) => {
 
   // TODO: move to service
   if (date) {
-    const frontend = moment.tz(date, "Europe/Amsterdam");
-    const stored = moment.tz(event.date, "Europe/Amsterdam");
-  
-    const sameDate =
-      frontend.year() === stored.year() &&
-      frontend.month() === stored.month() &&
-      frontend.date() === stored.date();
-  
-    const sameTime =
-      frontend.hour() === stored.hour() &&
-      frontend.minute() === stored.minute();
-  
-    if (!(sameDate && sameTime)) {
-      event.correctedDate = frontend.toISOString();
+    // The frontend sends an absolute moment (JS Date → ISO in UTC), captured
+    // from the admin's local clock at edit time. Compare absolute instants so
+    // the admin's timezone is irrelevant; store the ISO so each viewer can
+    // render it in their own timezone.
+    const incoming = new Date(date);
+    const stored = new Date(event.date);
+    if (incoming.getTime() !== stored.getTime()) {
+      event.correctedDate = incoming.toISOString();
     }
   }
 
@@ -1015,6 +1058,10 @@ export const deleteEvent = async (req, res, next) => {
   // todo: check the error with the no such event
   if (!event) {
     return next(new HttpError("No such event", 404));
+  }
+
+  if (!hasEventRegionAccess(req, event.region)) {
+    return next(new HttpError("Only admins can manage Netherlands events", 403));
   }
 
   const folder = event.folder ?? "";

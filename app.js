@@ -27,6 +27,7 @@ import dashboardRouter from "./routes/dashboard-routes.js";
 import { convertAlumniToUser, convertUserToAlumni } from "./services/main-services/user-service.js";
 import { refundEventTickets } from "./services/main-services/event-action-service.js";
 import { getUsersByDateRange } from "./services/background-services/statistics-service.js";
+import { sendNonSocietyEventResendEmail } from "./controllers/Events/events-controllers.js";
 
 const app = express();
 

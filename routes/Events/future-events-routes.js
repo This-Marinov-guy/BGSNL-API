@@ -2,16 +2,24 @@ import express from "express";
 import dotenv from "dotenv";
 import multer from "multer";
 import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList } from "../../controllers/Events/future-events-action-controller.js";
-import { adminMiddleware } from "../../middleware/authorization.js";
-import { ACCESS_1, ACCESS_2, ACCESS_3, ACCESS_4 } from "../../util/config/defines.js";
+import { adminMiddleware, optionalAuthMiddleware } from "../../middleware/authorization.js";
+import { ACCESS_4 } from "../../util/config/defines.js";
 dotenv.config();
 
 const upload = multer({ storage: multer.memoryStorage() })
 const futureEventRouter = express.Router();
 
-futureEventRouter.get('/full-event-details/:eventId', fetchFullDataEvent)
+futureEventRouter.get(
+    '/full-event-details/:eventId',
+    optionalAuthMiddleware,
+    fetchFullDataEvent
+)
 
-futureEventRouter.get('/full-data-events-list', fetchFullDataEventsList)
+futureEventRouter.get(
+    '/full-data-events-list',
+    adminMiddleware(ACCESS_4),
+    fetchFullDataEventsList
+)
 
 const eventImageUploads = upload.fields([
     { name: 'images', maxCount: 4 },

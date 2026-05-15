@@ -18,6 +18,24 @@ export const authMiddleware = (req, res, next) => {
       return next(new HttpError("Session expired: please login again!", 403));
     }
 
+    req.user = user;
+    next();
+  });
+};
+
+export const optionalAuthMiddleware = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return next();
+  }
+
+  jwt.verify(token, process.env.JWT_STRING, (err, user) => {
+    if (!err) {
+      req.user = user;
+    }
+
     next();
   });
 };
@@ -43,6 +61,7 @@ export const adminMiddleware = (requiredRoles = []) => {
         return next(new HttpError("No access for such request", 403));
       }
 
+      req.user = user;
       next();
     });
   };
