@@ -92,3 +92,6 @@ export const CLONE_SHEETS = {
 };
 
 export const INTERNSHIP_SHEET = "1-pihyWq1151bR_tFcrZ81OxRC4svqNbMHbu9Wg340FU";
+
+export const PWC_EVENT_SPREADSHEET =
+  "1j1M6B0Vk8eUJBuxX2OK4_5B7qMysBAs62k0Eq30_jsQ";

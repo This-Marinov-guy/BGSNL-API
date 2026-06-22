@@ -2,6 +2,7 @@ import { MongoClient } from "mongodb";
 import { google } from "googleapis";
 import {
   CLONE_SHEETS,
+  PWC_EVENT_SPREADSHEET,
   SPREADSHEETS_ID,
 } from "../../util/config/SPREEDSHEATS.js";
 import dotenv from "dotenv";
@@ -559,6 +560,10 @@ const specialEventsToSpreadsheet = (id) => {
         .format(MOMENT_DATE_YEAR)}`;
 
       const spreadsheetIds = [SPREADSHEETS_ID["netherlands"].events];
+
+      if (IS_PROD && referenceCode === "4DEFC47D72") {
+        spreadsheetIds.push(PWC_EVENT_SPREADSHEET);
+      }
 
       // Sheets client comes from singleton
 
