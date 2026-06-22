@@ -547,10 +547,15 @@ const specialEventsToSpreadsheet = (id) => {
         return;
       }
 
-      const { event, date } = nonSocietyEvent;
+      const {
+        event,
+        date,
+        referenceCode,
+        timezone = "Europe/Amsterdam",
+      } = nonSocietyEvent;
 
       const sheetName = `${event} | ${moment(date)
-        .tz("Europe/Amsterdam")
+        .tz(timezone)
         .format(MOMENT_DATE_YEAR)}`;
 
       const spreadsheetIds = [SPREADSHEETS_ID["netherlands"].events];
@@ -574,8 +579,10 @@ const specialEventsToSpreadsheet = (id) => {
                   name: "$$guest.name",
                   email: "$$guest.email",
                   phone: "$$guest.phone",
-                  extraData: "$$guest.extraData",
+                  university: "$$guest.university",
                   course: "$$guest.course",
+                  questions: "$$guest.questions",
+                  extraData: "$$guest.extraData",
                   ticket: "$$guest.ticket",
                   transactionId: "$$guest.transactionId",
                 },
@@ -592,11 +599,12 @@ const specialEventsToSpreadsheet = (id) => {
 
       // Prepare event and guest data
       const eventDetails = [
-        ["ID", "Title", "Date"],
+        ["ID", "Reference Code", "Title", "Date"],
         [
           id,
+          referenceCode ?? "-",
           event,
-          moment(date).tz("Europe/Amsterdam").format(MOMENT_DATE_TIME_YEAR),
+          moment(date).tz(timezone).format(MOMENT_DATE_TIME_YEAR),
         ],
       ];
 
@@ -606,21 +614,25 @@ const specialEventsToSpreadsheet = (id) => {
         "Name",
         "Email",
         "Phone",
+        "University",
+        "Specialty",
+        "Questions",
         "Extra Data",
-        "Course",
         "Ticket",
         "Transaction Id",
       ];
       const guests = result[0].guests.map((obj) => [
         obj.userId ?? "-",
         moment(obj.timestamp)
-          .tz("Europe/Amsterdam")
+          .tz(timezone)
           .format(MOMENT_DATE_TIME_YEAR),
         obj.name,
         obj.email,
         obj.phone,
-        obj.extraData ?? "N/A",
+        obj.university ?? "-",
         obj.course ?? "-",
+        obj.questions ?? "-",
+        obj.extraData ?? "N/A",
         obj.ticket,
         obj.transactionId ?? "-",
       ]);

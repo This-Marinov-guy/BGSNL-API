@@ -87,6 +87,8 @@ eventRouter.post(
     check("event").notEmpty(),
     check("name").notEmpty(),
     check("email").notEmpty(),
+    check("university").notEmpty(),
+    check("course").notEmpty(),
   ],
   postNonSocietyEvent
 );
