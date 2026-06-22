@@ -488,6 +488,11 @@ export const postNonSocietyEvent = async (req, res, next) => {
     phone,
     notificationTypeTerms,
     extraData,
+    university,
+    course,
+    questions,
+    referenceCode,
+    timezone = "Europe/Amsterdam",
     ticketImg,
     origin_url,
     originUrl,
@@ -511,10 +516,15 @@ export const postNonSocietyEvent = async (req, res, next) => {
       nonSocietyEvent = await NonSocietyEvent.create({
         status: "open",
         event,
+        referenceCode,
         region: DEFAULT_REGION,
         date,
+        timezone,
         guestList: [],
       });
+    } else {
+      nonSocietyEvent.referenceCode = referenceCode || nonSocietyEvent.referenceCode;
+      nonSocietyEvent.timezone = timezone || nonSocietyEvent.timezone;
     }
   } catch (err) {
     return next(
@@ -546,17 +556,23 @@ export const postNonSocietyEvent = async (req, res, next) => {
     }
   }
 
-  // Resolve identity: prefer DB user, fall back to request body
-  const memberName = targetUser
-    ? `${targetUser?.name} ${targetUser?.surname}`
-    : name;
-  const memberEmail = targetUser ? targetUser?.email : email;
+  // Member fields arrive pre-filled, but remain editable for this registration.
+  const memberName =
+    name || (targetUser ? `${targetUser?.name} ${targetUser?.surname}` : "");
+  const memberEmail = email || targetUser?.email;
   const memberPhone = (targetUser?.phone ?? phone ?? "").trim();
+  const memberUniversity =
+    targetUser?.university === "other"
+      ? targetUser?.otherUniversityName
+      : targetUser?.university;
 
   // Duplicate check
   let status = true;
   for (const guestCheck of nonSocietyEvent.guestList) {
-    if (guestCheck.name === memberName && guestCheck.email === memberEmail) {      
+    if (
+      (userId && guestCheck.userId === userId) ||
+      (guestCheck.name === memberName && guestCheck.email === memberEmail)
+    ) {
       status = false;
       break;
     }
@@ -619,7 +635,9 @@ export const postNonSocietyEvent = async (req, res, next) => {
     email: memberEmail,
     phone: memberPhone,
     ticket: ticketLocation,
-    course: targetUser?.course ?? "-",
+    course: course || targetUser?.course || "-",
+    university: university || memberUniversity || "-",
+    questions: questions || "",
     extraData,
     notificationTypeTerms,
   };
@@ -645,7 +663,15 @@ export const postNonSocietyEvent = async (req, res, next) => {
     );
   }
 
-  sendTicketEmail("member", memberEmail, event, date, memberName, ticketLocation);
+  sendTicketEmail(
+    targetUser ? "member" : "guest",
+    memberEmail,
+    event,
+    date,
+    memberName,
+    ticketLocation,
+    timezone
+  );
 
   specialEventsToSpreadsheet(nonSocietyEvent.id);
 

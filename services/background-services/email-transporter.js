@@ -67,7 +67,8 @@ const sendTicketEmail = (
   eventName,
   eventDate,
   guestName,
-  tickets
+  tickets,
+  timezone = "Europe/Amsterdam"
 ) => {
   enqueueMail(`ticket:${type}:${receiver}:${eventName}:${eventDate}`, async () => {
     const recipients = [
@@ -83,8 +84,8 @@ const sendTicketEmail = (
         template_variables: {
           eventName,
           eventDate: `${moment(eventDate)
-            .tz("Europe/Amsterdam")
-            .format(MOMENT_DATE_TIME)} (Amsterdam/Europe time)`,
+            .tz(timezone)
+            .format(MOMENT_DATE_TIME)} (${timezone} time)`,
           guestName,
           tickets: Array.isArray(tickets) ? tickets : [tickets],
         },

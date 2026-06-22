@@ -6,8 +6,10 @@ const Schema = mongoose.Schema;
 
 const eventSchema = new Schema({
   event: { type: String, require: true },
+  referenceCode: { type: String },
   region: { type: String, required: true, default: DEFAULT_REGION },
   date: { type: Date },
+  timezone: { type: String, default: "Europe/Amsterdam" },
   guestList: [
     {
       user: { type: String, required: true },
@@ -16,9 +18,11 @@ const eventSchema = new Schema({
       name: { type: String, required: true },
       ticket: { type: String },
       course: { type: String },
+      university: { type: String },
+      questions: { type: String },
       extraData: { type: String },
       email: { type: String, required: true },
-      phone: { type: String, required: true },
+      phone: { type: String },
       notificationTypeTerms: { type: String, required: true },
     },
   ],
