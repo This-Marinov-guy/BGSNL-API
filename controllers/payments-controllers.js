@@ -6,7 +6,10 @@ import Event from "../models/Event.js";
 import { ACCESS_4, DEFAULT_REGION, MEMBER } from "../util/config/defines.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
 import { createStripeClient, getStripeKey } from "../util/config/stripe.js";
-import { findUserById } from "../services/main-services/user-service.js";
+import {
+  findUserById,
+  normalizeEmail,
+} from "../services/main-services/user-service.js";
 import { BILLING_PORTAL_CONFIGURATIONS } from "../util/config/enums.js";
 import { checkDiscountsOnEvents } from "../services/main-services/event-action-service.js";
 import {
@@ -238,6 +241,7 @@ export const postPlaygroundTicketPreview = async (req, res, next) => {
 export const postSubscriptionNoFile = async (req, res, next) => {
   const { itemId, origin_url, region } = req.body;
   const { userId, customerId = '' } = extractUserFromRequest(req);
+  const email = normalizeEmail(req.body.email);
 
   const stripeClient = createStripeClient(DEFAULT_REGION);
 
@@ -249,6 +253,7 @@ export const postSubscriptionNoFile = async (req, res, next) => {
     cancel_url: `${origin_url}/fail`,
     metadata: {
       ...req.body,
+      ...("email" in req.body ? { email: email || "" } : {}),
       userId: userId || "",
     },
   };
@@ -265,6 +270,7 @@ export const postSubscriptionNoFile = async (req, res, next) => {
 export const postSubscriptionFile = async (req, res, next) => {
   const { itemId, origin_url, region } = req.body;
   const { userId, customerId = '' } = extractUserFromRequest(req);
+  const email = normalizeEmail(req.body.email);
 
   const stripeClient = createStripeClient(DEFAULT_REGION);
 
@@ -283,6 +289,7 @@ export const postSubscriptionFile = async (req, res, next) => {
       file: fileLocation ? fileLocation : null,
       userId: userId || "",
       ...req.body,
+      ...("email" in req.body ? { email: email || "" } : {}),
     },
   };
 

@@ -414,10 +414,28 @@ export const getFingerprintLite = (req) => {
   }
 };
 
+export const normalizeEmail = (email) => {
+  if (!email || typeof email !== "string") {
+    return null;
+  }
+
+  return email.replace(/\s+/g, "").toLowerCase() || null;
+};
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const buildEmailRegex = (email) =>
+  new RegExp(
+    `^\\s*${Array.from(email).map(escapeRegExp).join("\\s*")}\\s*$`,
+    "i"
+  );
+
 // we always prioritize alumnis
 export const findUserByEmail = async (email) => {
   // Check if email is valid before running queries
-  if (!email || typeof email !== "string") {
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedEmail) {
     return null;
   }
 
@@ -425,9 +443,13 @@ export const findUserByEmail = async (email) => {
     const excludeMembershipActive = {
       status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
     };
-    const userQuery = User.findOne({ email, ...excludeMembershipActive });
+    const emailRegex = buildEmailRegex(normalizedEmail);
+    const userQuery = User.findOne({
+      email: emailRegex,
+      ...excludeMembershipActive,
+    });
     const alumniQuery = AlumniUser.findOne({
-      email,
+      email: emailRegex,
       ...excludeMembershipActive,
     });
 
