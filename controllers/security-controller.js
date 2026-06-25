@@ -33,7 +33,10 @@ import moment from "moment";
 import { calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
 import { LOCKED, USER_STATUSES } from "../util/config/enums.js";
 import TemporaryCode from "../models/TemporaryCode.js";
-import { findUserByEmail } from "../services/main-services/user-service.js";
+import {
+  findUserByEmail,
+  normalizeEmail,
+} from "../services/main-services/user-service.js";
 import AlumniUser from "../models/AlumniUser.js";
 
 export const postCheckEmail = async (req, res, next) => {
@@ -43,7 +46,10 @@ export const postCheckEmail = async (req, res, next) => {
     return next(error);
   }
 
-  const email = req.body.email;
+  const email = normalizeEmail(req.body.email);
+  if (!email) {
+    return next(new HttpError("Please send a valid email", 422));
+  }
 
   let existingUser;
   try {
@@ -84,7 +90,7 @@ export const signup = async (req, res, next) => {
     surname,
     birth,
     phone,
-    email,
+    email: rawEmail,
     university,
     otherUniversityName,
     graduationDate,
@@ -92,6 +98,10 @@ export const signup = async (req, res, next) => {
     studentNumber,
     notificationTypeTerms,
   } = req.body;
+  const email = normalizeEmail(rawEmail);
+  if (!email) {
+    return next(new HttpError("Please send a valid email", 422));
+  }
 
   const password = decryptData(req.body.password);
 
@@ -184,7 +194,11 @@ export const alumniSignup = async (req, res, next) => {
     );
   }
 
-  const { tier, period, name, surname, email } = req.body;
+  const { tier, period, name, surname } = req.body;
+  const email = normalizeEmail(req.body.email);
+  if (!email) {
+    return next(new HttpError("Please send a valid email", 422));
+  }
 
   const password = decryptData(req.body.password);
 
@@ -242,7 +256,8 @@ export const alumniSignup = async (req, res, next) => {
 };
 
 export const login = async (req, res, next) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = normalizeEmail(req.body.email);
 
   let existingUser;
 
@@ -332,7 +347,7 @@ export const login = async (req, res, next) => {
 };
 
 export const postSendPasswordResetEmail = async (req, res, next) => {
-  const email = req.body.email;
+  const email = normalizeEmail(req.body.email);
   const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   if (!regex.test(email)) {
@@ -371,7 +386,8 @@ export const postSendPasswordResetEmail = async (req, res, next) => {
 };
 
 export const postVerifyToken = async (req, res, next) => {
-  const { token, email } = req.body;
+  const { token } = req.body;
+  const email = normalizeEmail(req.body.email);
   let user;
 
   try {
@@ -433,7 +449,8 @@ export const patchUserPassword = async (req, res, next) => {
     return next(new HttpError("Please send valid inputs", 422));
   }
 
-  const { email, password, token } = req.body;
+  const { password, token } = req.body;
+  const email = normalizeEmail(req.body.email);
   let existingUser;
   let temporaryCode;
 
@@ -483,7 +500,8 @@ export const patchUserPassword = async (req, res, next) => {
 };
 
 export const adminPatchUserPassword = async (req, res, next) => {
-  const { email, password = 1111 } = req.body;
+  const { password = 1111 } = req.body;
+  const email = normalizeEmail(req.body.email);
 
   let existingUser;
 

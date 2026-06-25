@@ -15,7 +15,11 @@ import {
   eventToSpreadsheet,
   usersToSpreadsheet,
 } from "../background-services/google-spreadsheets.js";
-import { findUserByQuery, findUserById } from "./user-service.js";
+import {
+  findUserByQuery,
+  findUserById,
+  normalizeEmail,
+} from "./user-service.js";
 import {
   chooseRandomAvatar,
   decryptData,
@@ -77,7 +81,11 @@ const resolveJoinDateFromSubscription = async (
  */
 export const handleAlumniSignup = async (metadata, paymentData) => {
   const { subscriptionId, customerId, paymentStatus, stripeRegion } = paymentData;
-  const { tier, period, name, surname, email } = metadata;
+  const { tier, period, name, surname, email: rawEmail } = metadata;
+  const email = normalizeEmail(rawEmail);
+  if (!email) {
+    throw new HttpError("Please send a valid email", 422);
+  }
 
   const password = decryptData(metadata.password);
 
@@ -152,7 +160,7 @@ export const handleUserSignup = async (metadata, paymentData) => {
     surname,
     birth,
     phone,
-    email,
+    email: rawEmail,
     university,
     otherUniversityName,
     graduationDate,
@@ -160,6 +168,10 @@ export const handleUserSignup = async (metadata, paymentData) => {
     studentNumber,
     notificationTypeTerms,
   } = metadata;
+  const email = normalizeEmail(rawEmail);
+  if (!email) {
+    throw new HttpError("Please send a valid email", 422);
+  }
 
   const password = decryptData(metadata.password);
 
