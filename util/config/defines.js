@@ -1,6 +1,6 @@
 export const REGIONS = [
   "amsterdam",
-  "breda",
+  "breda_tilburg",
   "eindhoven",
   "groningen",
   "leeuwarden",
