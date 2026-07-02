@@ -14,7 +14,7 @@ export const SPREADSHEETS_ID = IS_PROD
         events: "1FHWWtHW1U2na8inuf_xn2w7oK7rsSW568KmebnXTwHY",
         users: "1iyZTnHP5jxR78CzDxVBpW8_uBCwb6T7VILmvkyna4C4",
       },
-      breda: {
+      breda_tilburg: {
         events: "1JPUNqtCsfINUqAA9jGBUUd-a9DnxmKpqaw9X3z5qKbs",
         users: "1qE5BJndzvjyD5U_--xOWS1YTrLVlaKqA6D-raHwxa98",
       },
@@ -53,7 +53,7 @@ export const SPREADSHEETS_ID = IS_PROD
         events: "1vJkbiMMS-UL8gEHX1W7eilSYMrFPQs_1fFQ1EVQjrZc",
         users: "1vJkbiMMS-UL8gEHX1W7eilSYMrFPQs_1fFQ1EVQjrZc",
       },
-      breda: {
+      breda_tilburg: {
         events: "1vJkbiMMS-UL8gEHX1W7eilSYMrFPQs_1fFQ1EVQjrZc",
         users: "1vJkbiMMS-UL8gEHX1W7eilSYMrFPQs_1fFQ1EVQjrZc",
       },

@@ -23,7 +23,7 @@ export const STRIPE_KEYS = {
     secretKey: process.env.STRIPE_LWD_SECRET_KEY,
     webhookSecretKey: process.env.STRIPE_LWD_WEBHOOK_CH_KEY,
   },
-  breda: {
+  breda_tilburg: {
     publishableKey: process.env.STRIPE_NL_PUBLISHABLE_KEY,
     secretKey: process.env.STRIPE_NL_SECRET_KEY,
     webhookSecretKey: process.env.STRIPE_NL_WEBHOOK_CH_KEY,
