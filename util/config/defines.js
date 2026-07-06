@@ -61,6 +61,13 @@ export const NON_SOCIETY_EVENT_RESEND_TEST_EMAILS = [
   "bulgariansociety.netherlands@gmail.com",
   "vladislavmarinov3142@gmail.com",
 ];
+export const NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE =
+  "0c9bca58-82e4-42f2-87b9-a3ad4087e9d6";
+export const NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID =
+  "6a3917abcf9edd30cd1213ce";
+export const NON_SOCIETY_EVENT_FINAL_REMINDER_TEST_EMAILS = [
+  "vladislavmarinov3142@gmail.com",
+];
 
 export const NO_REPLY_EMAIL = "no-reply@bulgariansociety.nl";
 export const NO_REPLY_EMAIL_NAME = "Bulgarian Society Netherlands";

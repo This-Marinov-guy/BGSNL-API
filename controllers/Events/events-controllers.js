@@ -6,6 +6,7 @@ import { validationResult } from "express-validator";
 import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
 import HttpError from "../../models/Http-error.js";
 import {
+  sendMailtrapTemplateEmail,
   sendResendTemplateEmail,
   sendTicketEmail,
 } from "../../services/background-services/email-transporter.js";
@@ -18,14 +19,20 @@ import {
   isEventTimerFinished,
   removeModelProperties,
 } from "../../util/functions/helpers.js";
-import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
-import moment from "moment";
+import {
+  MOMENT_DATE_TIME_YEAR,
+  MOMENT_DATE_YEAR,
+} from "../../util/functions/dateConvert.js";
+import moment from "moment-timezone";
 import { checkDiscountsOnEvents } from "../../services/main-services/event-action-service.js";
 import { extractUserFromRequest } from "../../util/functions/security.js";
 import { findUserById } from "../../services/main-services/user-service.js";
 import {
   ACCESS_4,
   DEFAULT_REGION,
+  NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID,
+  NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE,
+  NON_SOCIETY_EVENT_FINAL_REMINDER_TEST_EMAILS,
   NON_SOCIETY_EVENT_RESEND_EVENT_ID,
   NON_SOCIETY_EVENT_RESEND_TEST_EMAILS,
   NON_SOCIETY_EVENT_RESEND_TEMPLATE,
@@ -33,6 +40,74 @@ import {
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const addEmailRecipient = (recipientsByEmail, invalidEmails, email, name = "") => {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+
+  if (!normalizedEmail) return;
+
+  if (!EMAIL_REGEX.test(normalizedEmail)) {
+    invalidEmails.push(email);
+    return;
+  }
+
+  if (!recipientsByEmail.has(normalizedEmail)) {
+    recipientsByEmail.set(normalizedEmail, {
+      email: normalizedEmail,
+      name: String(name || "").trim(),
+    });
+  }
+};
+
+const getNonSocietyEventEmailRecipients = ({
+  nonSocietyEvent,
+  testOnly,
+  testEmails,
+  customEmails,
+}) => {
+  const invalidEmails = [];
+  const recipientsByEmail = new Map();
+
+  if (testOnly) {
+    for (const email of testEmails) {
+      addEmailRecipient(
+        recipientsByEmail,
+        invalidEmails,
+        email,
+        "Bulgarian Society Netherlands"
+      );
+    }
+  } else {
+    for (const guest of nonSocietyEvent.guestList || []) {
+      addEmailRecipient(
+        recipientsByEmail,
+        invalidEmails,
+        guest.email,
+        guest.name
+      );
+    }
+  }
+
+  for (const email of customEmails) {
+    addEmailRecipient(recipientsByEmail, invalidEmails, email);
+  }
+
+  return {
+    recipients: [...recipientsByEmail.values()],
+    invalidEmails,
+  };
+};
+
+const formatNonSocietyEventDate = (
+  date,
+  timezone = "Europe/Amsterdam"
+) => {
+  if (!date) return "";
+
+  return `${moment(date)
+    .tz(timezone)
+    .format(MOMENT_DATE_TIME_YEAR)} (${timezone} time)`;
+};
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -706,42 +781,12 @@ export const sendNonSocietyEventResendEmail = async ({
     throw new HttpError("Could not find such non-society event", 404);
   }
 
-  const invalidEmails = [];
-  const recipientsByEmail = new Map();
-
-  const addRecipient = (email, name = "") => {
-    const normalizedEmail = String(email || "").trim().toLowerCase();
-
-    if (!normalizedEmail) return;
-
-    if (!EMAIL_REGEX.test(normalizedEmail)) {
-      invalidEmails.push(email);
-      return;
-    }
-
-    if (!recipientsByEmail.has(normalizedEmail)) {
-      recipientsByEmail.set(normalizedEmail, {
-        email: normalizedEmail,
-        name: String(name || "").trim(),
-      });
-    }
-  };
-
-  if (true) {
-    for (const email of NON_SOCIETY_EVENT_RESEND_TEST_EMAILS) {
-      addRecipient(email, "Bulgarian Society Netherlands");
-    }
-  } else {
-    for (const guest of nonSocietyEvent.guestList || []) {
-      addRecipient(guest.email, guest.name);
-    }
-  }
-
-  for (const email of customEmails) {
-    addRecipient(email);
-  }
-
-  const recipients = [...recipientsByEmail.values()];
+  const { recipients, invalidEmails } = getNonSocietyEventEmailRecipients({
+    nonSocietyEvent,
+    testOnly,
+    testEmails: NON_SOCIETY_EVENT_RESEND_TEST_EMAILS,
+    customEmails,
+  });
 
   console.log(
     `[nonSocietyEventResendEmail] Queuing emails for "${nonSocietyEvent.event}" | testOnly=${testOnly}`
@@ -780,6 +825,93 @@ export const sendNonSocietyEventResendEmail = async ({
   };
 };
 
+export const sendNonSocietyEventFinalReminderEmail = async ({
+  customEmails = [],
+  testOnly = false,
+  templateVariablesOverride = null,
+} = {}) => {
+  if (!NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE) {
+    throw new HttpError("Missing non-society event final reminder template UUID", 500);
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID)) {
+    throw new HttpError("Invalid non-society event final reminder event id", 500);
+  }
+
+  let nonSocietyEvent;
+  try {
+    nonSocietyEvent = await NonSocietyEvent.findById(
+      NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID
+    ).select("event date timezone guestList.email guestList.name");
+  } catch (err) {
+    throw new HttpError(
+      "Could not find the non-society event, please try again",
+      500
+    );
+  }
+
+  if (!nonSocietyEvent) {
+    throw new HttpError("Could not find such non-society event", 404);
+  }
+
+  const { recipients, invalidEmails } = getNonSocietyEventEmailRecipients({
+    nonSocietyEvent,
+    testOnly,
+    testEmails: NON_SOCIETY_EVENT_FINAL_REMINDER_TEST_EMAILS,
+    customEmails,
+  });
+
+  const eventDate = formatNonSocietyEventDate(
+    nonSocietyEvent.date,
+    nonSocietyEvent.timezone
+  );
+
+  console.log(
+    `[nonSocietyEventFinalReminderEmail] Queuing emails for "${nonSocietyEvent.event}" | testOnly=${testOnly}`
+  );
+
+  for (const recipient of recipients) {
+    const templateVariables =
+      templateVariablesOverride || {
+        template_variables: {
+          eventName: nonSocietyEvent.event,
+          guestName: recipient.name,
+          eventDate,
+        },
+      };
+
+    console.log(
+      `[nonSocietyEventFinalReminderEmail] ${recipient.email}${recipient.name ? ` | ${recipient.name}` : ""}`
+    );
+
+    sendMailtrapTemplateEmail(
+      NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE,
+      recipient.email,
+      templateVariables
+    );
+  }
+
+  if (invalidEmails.length > 0) {
+    console.log(
+      `[nonSocietyEventFinalReminderEmail] Skipped invalid emails: ${invalidEmails.join(", ")}`
+    );
+  }
+
+  console.log(
+    `[nonSocietyEventFinalReminderEmail] Total queued: ${recipients.length}`
+  );
+
+  return {
+    status: true,
+    message: "Non-society event final reminder emails queued",
+    eventId: NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID,
+    event: nonSocietyEvent.event,
+    testOnly,
+    queued: recipients.length,
+    invalidEmails,
+  };
+};
+
 export const postSendNonSocietyEventResendEmail = async (req, res, next) => {
   const testOnly = req.body?.testOnly === true || req.query?.testOnly === "true";
   const customEmails = Array.isArray(req.body?.customEmails)
@@ -790,6 +922,26 @@ export const postSendNonSocietyEventResendEmail = async (req, res, next) => {
     const result = await sendNonSocietyEventResendEmail({
       customEmails,
       testOnly,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+export const postSendNonSocietyEventFinalReminderEmail = async (req, res, next) => {
+  const testOnly = req.body?.testOnly === true || req.query?.testOnly === "true";
+  const customEmails = Array.isArray(req.body?.customEmails)
+    ? req.body.customEmails
+    : [];
+  const templateVariablesOverride = req.body?.templateVariables || null;
+
+  try {
+    const result = await sendNonSocietyEventFinalReminderEmail({
+      customEmails,
+      testOnly,
+      templateVariablesOverride,
     });
 
     return res.status(200).json(result);

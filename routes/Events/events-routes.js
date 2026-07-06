@@ -11,6 +11,7 @@ import {
   postAddGuestToEvent,
   postAddMemberToEvent,
   postNonSocietyEvent,
+  postSendNonSocietyEventFinalReminderEmail,
   postSendNonSocietyEventResendEmail,
   postSyncEventsCalendar,
   updatePresence
@@ -97,6 +98,12 @@ eventRouter.post(
   "/non-society-event/resend-email",
   adminMiddleware(ACCESS_3),
   postSendNonSocietyEventResendEmail
+);
+
+eventRouter.post(
+  "/non-society-event/final-reminder-email",
+  adminMiddleware(ACCESS_3),
+  postSendNonSocietyEventFinalReminderEmail
 );
 
 eventRouter.post(

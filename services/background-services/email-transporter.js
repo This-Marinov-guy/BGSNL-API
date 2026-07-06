@@ -176,6 +176,23 @@ export const sendMarketingEmail = (templateId, receiver, name = '') => {
   });
 };
 
+export const sendMailtrapTemplateEmail = (
+  templateId,
+  receiver,
+  templateVariables = {}
+) => {
+  enqueueMail(`mailtrap-template:${templateId}:${receiver}`, async () => {
+    const recipients = [{ email: receiver }];
+
+    await client.send({
+      from: sender,
+      to: recipients,
+      template_uuid: templateId,
+      template_variables: templateVariables,
+    });
+  });
+};
+
 export const sendResendTemplateEmail = (
   templateId,
   receiver,
