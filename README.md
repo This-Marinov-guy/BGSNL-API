@@ -67,7 +67,24 @@ NODE_ENV=development
 AXIOM_TOKEN=your-axiom-api-token
 AXIOM_ORG_ID=your-axiom-organization-id
 AXIOM_DATASET=api-logs
+
+# Server-to-server access for the Next.js site's SSR data fetching.
+# Must match BGSNL_SERVER_KEY on the website. Generate with:
+#   openssl rand -hex 32
+SSR_SERVER_KEY=your-shared-ssr-secret
 ```
+
+### Server-to-server access (SSR)
+
+The website renders its public pages on the server, so page data is fetched by
+the Next.js server rather than the visitor's browser. Those requests carry no
+browser `Origin`, which the firewall's allow-list relies on.
+
+Requests presenting `x-bgsnl-server-key` matching `SSR_SERVER_KEY` are treated
+as trusted (`middleware/firewall.js`). The comparison is timing-safe, and the
+header is deliberately **not** listed in `Access-Control-Allow-Headers`, so a
+browser can never send it cross-origin. If `SSR_SERVER_KEY` is unset the check
+is skipped entirely and only the origin allow-list applies.
 
 **Note**: Request the `.env` file from the team as the application requires these environment variables to run.
 
