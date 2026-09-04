@@ -81,7 +81,16 @@ const resolveJoinDateFromSubscription = async (
  */
 export const handleAlumniSignup = async (metadata, paymentData) => {
   const { subscriptionId, customerId, paymentStatus, stripeRegion } = paymentData;
-  const { tier, period, name, surname, email: rawEmail } = metadata;
+  const {
+    tier,
+    period,
+    name,
+    surname,
+    email: rawEmail,
+    notificationTypeTerms,
+  } = metadata;
+  const notificationTerms =
+    metadata.notificationTerms === true || metadata.notificationTerms === "true";
   const email = normalizeEmail(rawEmail);
   if (!email) {
     throw new HttpError("Please send a valid email", 422);
@@ -128,6 +137,10 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
     surname,
     email,
     password: hashedPassword,
+    notificationTerms,
+    notificationTypeTerms: notificationTerms
+      ? notificationTypeTerms || "whatsapp & email"
+      : undefined,
     tickets: [],
     roles: [ALUMNI],
   });
@@ -166,6 +179,7 @@ export const handleUserSignup = async (metadata, paymentData) => {
     graduationDate,
     course,
     studentNumber,
+    profession,
     notificationTypeTerms,
   } = metadata;
   const email = normalizeEmail(rawEmail);
@@ -217,10 +231,11 @@ export const handleUserSignup = async (metadata, paymentData) => {
     phone,
     email,
     university,
-    otherUniversityName,
-    graduationDate,
-    course,
-    studentNumber,
+    otherUniversityName: university === "other" ? otherUniversityName : undefined,
+    graduationDate: university === "working" ? undefined : graduationDate,
+    course: university === "working" ? undefined : course,
+    studentNumber: university === "working" ? undefined : studentNumber,
+    profession: university === "working" ? profession : undefined,
     password: hashedPassword,
     notificationTypeTerms,
     tickets: [],

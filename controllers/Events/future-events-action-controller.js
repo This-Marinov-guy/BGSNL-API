@@ -1,4 +1,5 @@
 import Event from "../../models/Event.js";
+import EventDraft from "../../models/EventDraft.js";
 import HttpError from "../../models/Http-error.js";
 import {
   uploadToCloudinary,
@@ -33,13 +34,20 @@ import {
   updateEventStatistics,
 } from "../../services/background-services/data-pool.js";
 import { eventToSpreadsheet } from "../../services/background-services/google-spreadsheets.js";
+import { notifyEventCreated } from "../../services/background-services/internal-notifications.js";
 import { getFingerprintLite } from "../../services/main-services/user-service.js";
 import {
   addOrUpdateEvent,
   deleteCalendarEvent,
 } from "../../services/side-services/google-calendar.js";
 import { IS_PROD } from "../../util/functions/helpers.js";
-import { ACCESS_2, DEFAULT_REGION } from "../../util/config/defines.js";
+import {
+  ACCESS_2,
+  ACCESS_4,
+  DEFAULT_REGION,
+  EVENT_DRAFT,
+  EVENT_OPENED,
+} from "../../util/config/defines.js";
 
 const hasAdminRegionAccess = (req) =>
   ACCESS_2.some((role) => req.user?.roles?.includes(role));
@@ -56,15 +64,190 @@ const rejectNetherlandsRegionAccess = (req, next) => {
   return true;
 };
 
+const isDraftRequest = (req) => req.body?.status === EVENT_DRAFT;
+
+const hasDraftAccess = (req, event) => {
+  const canManageEvents = ACCESS_4.some((role) =>
+    req.user?.roles?.includes(role)
+  );
+
+  if (!canManageEvents) return false;
+  if (hasAdminRegionAccess(req)) return true;
+
+  return (
+    event.draftOwner?.userId === req.user?.userId ||
+    (!!event.region && event.region === req.user?.region)
+  );
+};
+
+const parseJsonSafely = (value, fallback) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string") return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const optionalDate = (value) => {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+const optionalNumber = (value) => {
+  if (value === "" || value === undefined || value === null) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+};
+
+const saveEventDraft = async (req, res, next, existingDraft = null) => {
+  const draftData = parseJsonSafely(req.body.draftData, {});
+  const event = existingDraft ?? new EventDraft();
+  const folder =
+    event.folder ||
+    `${IS_PROD ? "" : "development/"}drafts/${event._id.toString()}`;
+  const files = req.files ?? {};
+
+  try {
+    if (files.poster?.[0]) {
+      event.poster = await uploadToCloudinary(files.poster[0], {
+        folder,
+        public_id: "poster",
+        width: 800,
+        height: 800,
+        crop: "fit",
+        format: "jpg",
+      });
+    }
+
+    if (files.ticketImg?.[0]) {
+      event.ticketImg = await uploadToCloudinary(files.ticketImg[0], {
+        folder,
+        public_id: "ticket",
+        width: 1500,
+        height: 485,
+        crop: "fit",
+        format: "jpg",
+      });
+    }
+
+    if (files.bgImageExtra?.[0]) {
+      event.bgImageExtra = await uploadToCloudinary(files.bgImageExtra[0], {
+        folder,
+        public_id: "background",
+        width: 1200,
+        crop: "fit",
+        format: "jpg",
+      });
+    }
+
+    const imagesOrder = parseJsonSafely(req.body.imagesOrder, []);
+    const existingImages = parseJsonSafely(req.body.existingImages, null);
+    const uploadedImages = {};
+
+    await Promise.all(
+      (files.images ?? []).map(async (file, index) => {
+        const link = await uploadToCloudinary(file, {
+          folder,
+          public_id: `draft_${Date.now()}_${index}`,
+          width: 800,
+          height: 800,
+          crop: "fit",
+          format: "jpg",
+        });
+        uploadedImages[file.originalname] = link;
+      })
+    );
+
+    if (imagesOrder.length > 0) {
+      event.images = imagesOrder
+        .map((item) =>
+          item.type === "existing"
+            ? item.url
+            : uploadedImages[item.fileName] ?? null
+        )
+        .filter(Boolean);
+    } else if (existingImages !== null || Object.keys(uploadedImages).length) {
+      event.images = [
+        ...(existingImages ?? []),
+        ...Object.values(uploadedImages),
+      ];
+    }
+  } catch (err) {
+    console.error("Saving draft images failed:", err);
+    return next(new HttpError("Saving draft images failed", 500));
+  }
+
+  event.status = EVENT_DRAFT;
+  event.lastUpdate = getFingerprintLite(req);
+  event.folder = folder;
+  event.region = draftData.region || undefined;
+  event.title = draftData.title || "";
+  event.description = draftData.description || "";
+  event.date = optionalDate(draftData.date);
+  event.location = draftData.location || "";
+  event.ticketTimer = optionalDate(draftData.ticketTimer);
+  event.ticketLimit = optionalNumber(draftData.ticketLimit);
+  event.text = draftData.text || "";
+
+  [
+    "memberOnly",
+    "hidden",
+    "isSaleClosed",
+    "isFree",
+    "isMemberFree",
+  ].forEach((key) => {
+    if (typeof draftData[key] === "boolean") event[key] = draftData[key];
+  });
+
+  draftData.poster = event.poster || null;
+  draftData.ticketImg = event.ticketImg || null;
+  draftData.bgImageExtra = event.bgImageExtra || null;
+  draftData.images = event.images ?? [];
+  event.draftData = draftData;
+
+  if (!existingDraft) {
+    event.draftOwner = {
+      userId: req.user?.userId,
+      region: req.user?.region,
+    };
+  }
+
+  try {
+    await event.save();
+  } catch (err) {
+    console.error("Saving event draft failed:", err);
+    return next(new HttpError("Saving event draft failed", 500));
+  }
+
+  const responseEvent = removeModelProperties(event, ["guestList", "draftOwner"]);
+  return res.status(existingDraft ? 200 : 201).json({
+    status: true,
+    event: responseEvent,
+  });
+};
+
 export const fetchFullDataEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
 
   let event;
+  let isDraft = false;
   try {
     event = await Event.findOne({
       _id: eventId,
       status: { $ne: "archived" },
     });
+
+    if (!event) {
+      event = await EventDraft.findById(eventId);
+      isDraft = Boolean(event);
+    } else {
+      // Keep legacy draft documents private until they are migrated.
+      isDraft = event.status === EVENT_DRAFT;
+    }
   } catch (err) {
     return res.status(200).json({
       status: false,
@@ -75,6 +258,15 @@ export const fetchFullDataEvent = async (req, res, next) => {
     return res.status(200).json({
       status: false,
     });
+  }
+
+  if (isDraft && !hasDraftAccess(req, event)) {
+    return next(new HttpError("No access to this event draft", 403));
+  }
+
+  if (isDraft) {
+    event = removeModelProperties(event, ["guestList", "draftOwner"]);
+    return res.status(200).json({ event, status: false });
   }
 
   if (!hasEventRegionAccess(req, event.region)) {
@@ -105,6 +297,7 @@ export const fetchFullDataEventsList = async (req, res, next) => {
   const isAdmin = hasAdminRegionAccess(req);
 
   let events;
+  let drafts;
 
   try {
     if (region) {
@@ -118,19 +311,30 @@ export const fetchFullDataEventsList = async (req, res, next) => {
 
       events = await Event.find({
         region,
-        status: { $ne: "archived" }, // exclude archived
+        status: { $nin: ["archived", EVENT_DRAFT] },
       });
+      drafts = await EventDraft.find({ region });
     } else if (isAdmin) {
       events = await Event.find({
-        status: { $ne: "archived" }, // exclude archived
+        status: { $nin: ["archived", EVENT_DRAFT] },
       });
+      drafts = await EventDraft.find({});
     } else {
       const userRegion =
         req.user?.region === DEFAULT_REGION ? "" : req.user?.region ?? "";
 
       events = await Event.find({
+        status: { $nin: ["archived", EVENT_DRAFT] },
         region: userRegion,
-        status: { $ne: "archived" }, // exclude archived
+      });
+      drafts = await EventDraft.find({
+        $or: [
+          { region: userRegion },
+          {
+            region: { $in: [null, ""] },
+            "draftOwner.userId": req.user?.userId,
+          },
+        ],
       });
     }
   } catch (err) {
@@ -138,12 +342,20 @@ export const fetchFullDataEventsList = async (req, res, next) => {
   }
 
   // TODO: remove early, lateBird and add them to a new
-  events = events.map((event) => removeModelProperties(event, ["guestList"]));
+  events = [
+    ...events.map((event) => removeModelProperties(event, ["guestList"])),
+    ...drafts.map((draft) => removeModelProperties(draft, ["draftOwner"])),
+  ];
 
   res.status(200).json({ events });
 };
 
 export const addEvent = async (req, res, next) => {
+  if (isDraftRequest(req)) {
+    if (rejectNetherlandsRegionAccess(req, next)) return;
+    return saveEventDraft(req, res, next);
+  }
+
   const {
     memberOnly,
     hidden,
@@ -197,6 +409,7 @@ export const addEvent = async (req, res, next) => {
       title,
       region,
       date,
+      status: { $nin: ["archived", EVENT_DRAFT] },
     })
   ) {
     const error = new HttpError(
@@ -525,6 +738,8 @@ export const addEvent = async (req, res, next) => {
     );
   }
 
+  notifyEventCreated(event);
+
   try {
     eventToSpreadsheet(event.id);
     await addOrUpdateEvent(await Event.findById(event._id));
@@ -542,19 +757,71 @@ export const editEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
 
   let event;
+  let draft;
   try {
-    event = await Event.findById(eventId);
-    console.log(event);
+    [event, draft] = await Promise.all([
+      Event.findById(eventId),
+      EventDraft.findById(eventId),
+    ]);
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
 
-  if (!event) {
+  if (!event && !draft) {
     return next(new HttpError("No such event", 404));
   }
 
-  if (!hasEventRegionAccess(req, event.region)) {
+  if (isDraftRequest(req)) {
+    if (!draft) {
+      return next(
+        new HttpError("Published events cannot be converted to drafts", 422)
+      );
+    }
+    if (!hasDraftAccess(req, draft)) {
+      return next(new HttpError("No access to this event draft", 403));
+    }
+    if (rejectNetherlandsRegionAccess(req, next)) return;
+    return saveEventDraft(req, res, next, draft);
+  }
+
+  const wasDraft = Boolean(draft);
+
+  if (wasDraft && event) {
+    return next(new HttpError("This draft has already been published", 409));
+  }
+
+  if (wasDraft && !hasDraftAccess(req, draft)) {
+    return next(new HttpError("No access to this event draft", 403));
+  }
+
+  if (!wasDraft && !hasEventRegionAccess(req, event.region)) {
     return next(new HttpError("Only admins can manage Netherlands events", 403));
+  }
+
+  if (wasDraft) {
+    event = new Event({
+      _id: draft._id,
+      createdAt: draft.createdAt,
+      lastUpdate: draft.lastUpdate,
+      region: draft.region,
+      title: draft.title,
+      description: draft.description,
+      date: draft.date,
+      location: draft.location,
+      ticketTimer: draft.ticketTimer,
+      ticketLimit: draft.ticketLimit,
+      text: draft.text,
+      memberOnly: draft.memberOnly,
+      hidden: draft.hidden,
+      isSaleClosed: draft.isSaleClosed,
+      isFree: draft.isFree,
+      isMemberFree: draft.isMemberFree,
+      images: draft.images,
+      ticketImg: draft.ticketImg,
+      poster: draft.poster,
+      bgImageExtra: draft.bgImageExtra,
+      folder: draft.folder,
+    });
   }
 
   const folder = event.folder ?? (IS_PROD ? "spare" : "development/spare");
@@ -604,6 +871,24 @@ export const editEvent = async (req, res, next) => {
   const promoCodes = req.body.promoCodes
     ? JSON.parse(req.body.promoCodes)
     : null;
+
+  if (
+    wasDraft &&
+    (await Event.exists({
+      _id: { $ne: event._id },
+      title,
+      region,
+      date,
+      status: { $nin: ["archived", EVENT_DRAFT] },
+    }))
+  ) {
+    return next(
+      new HttpError(
+        "Event already exists - find it in the dashboard and edit it!",
+        422
+      )
+    );
+  }
 
   const poster = req.files["poster"]
     ? await uploadToCloudinary(req.files["poster"][0], {
@@ -1019,9 +1304,34 @@ export const editEvent = async (req, res, next) => {
   };
   event.date = date;
   event.addOns = addOns;
+  if (wasDraft) {
+    event.status = EVENT_OPENED;
+    event.sheetName = `${title}|${moment(new Date(date)).format(
+      MOMENT_DATE_TIME_YEAR
+    )}`;
+  }
 
   try {
-    await event.save();
+    if (wasDraft) {
+      const session = await Event.startSession();
+      try {
+        await session.withTransaction(async () => {
+          await event.save({ session });
+          const result = await EventDraft.deleteOne(
+            { _id: draft._id },
+            { session }
+          );
+
+          if (result.deletedCount !== 1) {
+            throw new Error("Event draft disappeared while publishing");
+          }
+        });
+      } finally {
+        await session.endSession();
+      }
+    } else {
+      await event.save();
+    }
   } catch (err) {
     console.log(err);
     return next(
@@ -1032,8 +1342,12 @@ export const editEvent = async (req, res, next) => {
     );
   }
 
+  if (wasDraft) {
+    notifyEventCreated(event);
+    eventToSpreadsheet(event.id);
+  }
+
   try {
-    // eventToSpreadsheet(event.id);
     await addOrUpdateEvent(await Event.findById(event._id));
   } catch (err) {
     // TODO: email or notify error
@@ -1049,24 +1363,44 @@ export const deleteEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
 
   let event;
+  let draft;
   try {
-    event = await Event.findById(eventId);
+    [event, draft] = await Promise.all([
+      Event.findById(eventId),
+      EventDraft.findById(eventId),
+    ]);
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
 
   // todo: check the error with the no such event
-  if (!event) {
+  if (!event && !draft) {
     return next(new HttpError("No such event", 404));
   }
 
-  if (!hasEventRegionAccess(req, event.region)) {
+  if (draft && !hasDraftAccess(req, draft)) {
+    return next(new HttpError("No access to this event draft", 403));
+  }
+
+  if (!draft && !hasEventRegionAccess(req, event.region)) {
     return next(new HttpError("Only admins can manage Netherlands events", 403));
+  }
+
+  if (draft) {
+    try {
+      await draft.deleteOne();
+    } catch (err) {
+      console.log(err);
+      return next(new HttpError("Deleting event draft failed", 500));
+    }
+
+    if (draft.folder) await deleteFolder(draft.folder);
+    return res.status(200).json({ status: true, eventId });
   }
 
   const folder = event.folder ?? "";
   const region = event.region ?? "";
-  const productId = event.product.id ?? "";
+  const productId = event.product?.id ?? "";
 
   // Increment event statistics before archiving
   await updateEventStatistics(event);
@@ -1085,8 +1419,8 @@ export const deleteEvent = async (req, res, next) => {
     );
   }
 
-  await deleteProduct(region, productId);
-  await deleteFolder(folder);
+  if (productId) await deleteProduct(region, productId);
+  if (folder) await deleteFolder(folder);
   res.status(200).json({ status: true, eventId });
 };
 

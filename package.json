@@ -9,9 +9,15 @@
   "scripts": {
     "lint": "eslint .",
     "start": "node app.js",
-    "dev": "nodemon app.js",
+    "dev": "APP_ENV=dev PORT=8080 nodemon app.js",
     "start-server": "node app.js",
     "repair-join-dates": "node scripts/repair-join-dates-from-subscriptions.js",
+    "backfill-marketing-emails": "node scripts/backfill-marketing-emails.js",
+    "backfill-marketing-emails:archive": "node scripts/backfill-marketing-emails-from-archive.js",
+    "rename-marketing-emails-collection": "node scripts/rename-marketing-emails-collection.js",
+    "backfill-marketing-unsubscribed": "node scripts/backfill-marketing-email-unsubscribed.js",
+    "test:domakin-mailer": "node --test tests/domakin-mailer.test.js",
+    "test:event-drafts": "node --test tests/event-drafts.test.js",
     "send-final-reminder": "node scripts/send-non-society-final-reminder.js",
     "deploy": "git add . && git commit -m done && git push heroku main"
   },

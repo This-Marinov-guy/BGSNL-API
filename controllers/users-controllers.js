@@ -202,6 +202,17 @@ export const postActiveMember = async (req, res, next) => {
   }
 
   const { positions, date, email, phone, questions } = req.body;
+  let questionAnswers = questions;
+
+  if (typeof questions === "string") {
+    try {
+      questionAnswers = JSON.parse(questions);
+    } catch {
+      // Compatibility with the former browser payload, which coerced the
+      // answers array to a comma-delimited string.
+      questionAnswers = questions.split(",");
+    }
+  }
 
   const timestamp = new Date();
 
@@ -214,16 +225,16 @@ export const postActiveMember = async (req, res, next) => {
     cv: req.files["cv"] ? req.files["cv"][0].location : null,
     // letter: req.files['letter'][0].location,
     questions: {
-      q1: questions[0],
-      q2: questions[1],
-      q3: questions[2],
-      q4: questions[3],
-      q5: questions[4],
-      q6: questions[5],
-      q7: questions[6],
-      q8: questions[7],
-      q9: questions[8],
-      q10: questions[9],
+      q1: questionAnswers[0],
+      q2: questionAnswers[1],
+      q3: questionAnswers[2],
+      q4: questionAnswers[3],
+      q5: questionAnswers[4],
+      q6: questionAnswers[5],
+      q7: questionAnswers[6],
+      q8: questionAnswers[7],
+      q9: questionAnswers[8],
+      q10: questionAnswers[9],
     },
   });
 
@@ -253,6 +264,7 @@ export const patchUserInfo = async (req, res, next) => {
     graduationDate,
     course,
     studentNumber,
+    profession,
     notificationTypeTerms,
     password,
   } = req.body;
@@ -289,11 +301,27 @@ export const patchUserInfo = async (req, res, next) => {
   surname && (user.surname = surname);
   phone && (user.phone = phone);
   email && (user.email = email);
-  university && (user.university = university);
-  otherUniversityName && (user.otherUniversityName = otherUniversityName);
-  graduationDate && (user.graduationDate = graduationDate);
-  course && (user.course = course);
-  studentNumber && (user.studentNumber = studentNumber);
+  if (university) {
+    user.university = university;
+    user.otherUniversityName =
+      university === "other" ? otherUniversityName || undefined : undefined;
+    user.graduationDate =
+      university === "working" ? undefined : graduationDate || undefined;
+    user.course = university === "working" ? undefined : course || undefined;
+    user.studentNumber =
+      university === "working" ? undefined : studentNumber || undefined;
+    user.profession =
+      university === "working" ? profession || undefined : undefined;
+  } else {
+    otherUniversityName !== undefined &&
+      (user.otherUniversityName = otherUniversityName || undefined);
+    graduationDate !== undefined &&
+      (user.graduationDate = graduationDate || undefined);
+    course !== undefined && (user.course = course || undefined);
+    studentNumber !== undefined &&
+      (user.studentNumber = studentNumber || undefined);
+    profession !== undefined && (user.profession = profession || undefined);
+  }
   notificationTypeTerms && (user.notificationTypeTerms = notificationTypeTerms);
 
   try {

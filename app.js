@@ -28,13 +28,33 @@ import { convertAlumniToUser, convertUserToAlumni } from "./services/main-servic
 import { refundEventTickets } from "./services/main-services/event-action-service.js";
 import { getUsersByDateRange } from "./services/background-services/statistics-service.js";
 import { sendNonSocietyEventResendEmail } from "./controllers/Events/events-controllers.js";
+import captureMarketingEmail from "./middleware/capture-marketing-email.js";
+import {
+  apiVersionMiddleware,
+  requireEnabledApiVersion,
+} from "./middleware/api-version.js";
+import {
+  API_VERSIONS,
+  DEFAULT_API_VERSION,
+  ENABLED_API_VERSIONS,
+  getApiRoutePath,
+} from "./util/config/api-versions.js";
+import { formatUploadValidationError } from "./middleware/upload-validation-error.js";
 
 const app = express();
 
+// All unversioned /api requests resolve to v1. Explicit version prefixes are
+// preserved so v2 and v3 routers can be introduced without changing v1.
+app.use(apiVersionMiddleware);
+
+const mountApiRouter = (version, routePath, router) => {
+  app.use(getApiRoutePath(routePath, version), router);
+};
+
 // Pass secured routes
-app.use("/api/google-scripts", googleScriptsRouter);
-app.use("/api/mobile", kokoAppRouter);
-app.use("/api/webhooks", webhookRouter);
+mountApiRouter(API_VERSIONS.V1, "/google-scripts", googleScriptsRouter);
+mountApiRouter(API_VERSIONS.V1, "/mobile", kokoAppRouter);
+mountApiRouter(API_VERSIONS.V1, "/webhooks", webhookRouter);
 
 // Firewall
 app.set("trust proxy", true);
@@ -46,7 +66,10 @@ if (app.get("env") !== "development") {
   allowedOrigins.push(
     "http://localhost:3000",
     "http://localhost:3001",
-    "http://localhost:3002"
+    "http://localhost:3002",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002"
   );
 }
 
@@ -66,6 +89,9 @@ app.use(
     },
   })
 );
+
+// Reject unavailable explicit versions after firewall and CORS processing.
+app.use(requireEnabledApiVersion);
 
 // TODO: fix this as it is risky (one change in path will break the payments)
 app.use((req, res, next) => {
@@ -88,27 +114,40 @@ app.use((req, res, next) => {
   if ("OPTIONS" == req.method) {
     return res.sendStatus(200);
   } else {
-    next();
+    return next();
   }
 });
+
+// Persist marketing recipients after successful form responses without making
+// the user wait for the database write.
+app.use(captureMarketingEmail);
 
 //routes
 app.get("/", (req, res) => {
   res.status(200).json({ message: "Welcome to BGSNL Official Server" });
 });
 
+app.get(getApiRoutePath(), (req, res) => {
+  res.status(200).json({
+    message: "Welcome to BGSNL Official Server API",
+    version: req.apiVersion,
+    defaultVersion: DEFAULT_API_VERSION,
+    supportedVersions: ENABLED_API_VERSIONS,
+  });
+});
+
 // Protected routes
-app.use("/api/common", commonRouter);
-app.use("/api/security", securityRouter);
-app.use("/api/user", userRouter);
-app.use("/api/event", eventRouter);
-app.use("/api/future-event", futureEventRouter);
-app.use("/api/payment", paymentRouter);
-app.use("/api/contest", contestRouter);
-app.use("/api/special", specialEventsRouter);
-app.use("/api/wordpress", wordpressRouter);
-app.use("/api/internship", internshipRouter);
-app.use("/api/dashboard", dashboardRouter);
+mountApiRouter(API_VERSIONS.V1, "/common", commonRouter);
+mountApiRouter(API_VERSIONS.V1, "/security", securityRouter);
+mountApiRouter(API_VERSIONS.V1, "/user", userRouter);
+mountApiRouter(API_VERSIONS.V1, "/event", eventRouter);
+mountApiRouter(API_VERSIONS.V1, "/future-event", futureEventRouter);
+mountApiRouter(API_VERSIONS.V1, "/payment", paymentRouter);
+mountApiRouter(API_VERSIONS.V1, "/contest", contestRouter);
+mountApiRouter(API_VERSIONS.V1, "/special", specialEventsRouter);
+mountApiRouter(API_VERSIONS.V1, "/wordpress", wordpressRouter);
+mountApiRouter(API_VERSIONS.V1, "/internship", internshipRouter);
+mountApiRouter(API_VERSIONS.V1, "/dashboard", dashboardRouter);
 
 //no page found
 app.use((req, res, next) => {
@@ -120,8 +159,14 @@ app.use((req, res, next) => {
 });
 
 // error handling (not sure if needed)
-app.use((error, req, res, next) => {
+app.use((error, req, res, _next) => {
   console.log(error);
+
+  const uploadValidationError = formatUploadValidationError(error);
+  if (uploadValidationError) {
+    return res.status(422).json(uploadValidationError);
+  }
+
   const status = error.statusCode || 500;
   const message = error.message;
   const data = error.data;
@@ -136,7 +181,7 @@ app.use((error, req, res, next) => {
   });
   ingestLog(logEvent);
 
-  res.status(status).json({ message: message, data: data });
+  return res.status(status).json({ message: message, data: data });
 });
 
 //db connection

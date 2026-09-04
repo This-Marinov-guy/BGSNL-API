@@ -3,7 +3,6 @@ import { EVENT_OPENED } from "../util/config/defines.js";
 import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const Schema = mongoose.Schema;
-
 const eventSchema = new Schema({
   createdAt: { type: Date, immutable: true, default: createCurrentDate },
   lastUpdate: {

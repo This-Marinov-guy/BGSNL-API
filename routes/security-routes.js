@@ -1,5 +1,4 @@
 import express from "express";
-import { check } from "express-validator";
 import {
   login,
   postSendPasswordResetEmail,
@@ -10,6 +9,16 @@ import {
   encryptDataController,
   postDirectSignupDisabled,
 } from "../controllers/security-controller.js";
+import { validateRequest } from "../middleware/validate-request.js";
+import {
+  changePasswordValidators,
+  checkEmailValidators,
+  encryptDataValidators,
+  forceChangePasswordValidators,
+  loginValidators,
+  passwordResetEmailValidators,
+  passwordTokenValidators,
+} from "../validation/form-validators.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -17,7 +26,8 @@ const securityRouter = express.Router();
 
 securityRouter.post(
   "/check-email",
-  [check("email").notEmpty()],
+  checkEmailValidators,
+  validateRequest,
   postCheckEmail
 );
 
@@ -31,29 +41,41 @@ securityRouter.post(
   postDirectSignupDisabled
 );
 
-securityRouter.post("/login", login);
+securityRouter.post("/login", loginValidators, validateRequest, login);
 
-securityRouter.post("/send-password-token", postSendPasswordResetEmail);
+securityRouter.post(
+  "/send-password-token",
+  passwordResetEmailValidators,
+  validateRequest,
+  postSendPasswordResetEmail
+);
 
 securityRouter.post(
   "/verify-token",
-  [
-    check("email").notEmpty(),
-    check("token").notEmpty(),
-    check("birth").notEmpty(),
-    check("phone").notEmpty(),
-  ],
+  passwordTokenValidators,
+  validateRequest,
   postVerifyToken
 );
 
 securityRouter.patch(
   "/change-password",
-  [check("password").isLength({ min: 5 })],
+  changePasswordValidators,
+  validateRequest,
   patchUserPassword
 );
 
-securityRouter.patch("/force-change-password", adminPatchUserPassword);
+securityRouter.patch(
+  "/force-change-password",
+  forceChangePasswordValidators,
+  validateRequest,
+  adminPatchUserPassword
+);
 
-securityRouter.post("/encrypt-data", encryptDataController);
+securityRouter.post(
+  "/encrypt-data",
+  encryptDataValidators,
+  validateRequest,
+  encryptDataController
+);
 
 export default securityRouter;

@@ -27,7 +27,7 @@ export const getMembers = async (req, res, next) => {
 
     const users = await User.find(query)
       .select(
-        "name surname email roles region status purchaseDate expireDate subscription tickets image phone university"
+        "name surname email roles region status purchaseDate expireDate subscription tickets image phone university otherUniversityName profession"
       )
       .lean();
 
@@ -76,6 +76,8 @@ export const getMembers = async (req, res, next) => {
         isPaid,
         phone: user.phone,
         university: user.university,
+        otherUniversityName: user.otherUniversityName,
+        profession: user.profession,
         image: user.image,
       };
     });
@@ -111,7 +113,7 @@ export const getEventsAnalytics = async (req, res, next) => {
   const toDate = req.query.to;
 
   try {
-    const query = { status: { $ne: "archived" } };
+    const query = { status: { $nin: ["archived", "draft"] } };
 
     if (!isAdmin) {
       query.region = region;

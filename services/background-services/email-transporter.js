@@ -5,6 +5,7 @@ import { WHATS_APP } from "../../util/config/LINKS.js";
 import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE, ALUMNI_TEMPLATE } from "../../util/config/defines.js";
 import moment from "moment-timezone";
 import { MOMENT_DATE_TIME } from "../../util/functions/dateConvert.js";
+export { queueDomakinTemplateEmail } from "./domakin-mailer.js";
 dotenv.config();
 
 // Lightweight background mail queue with concurrency limit and de-duplication
@@ -225,6 +226,32 @@ export const sendResendTemplateEmail = (
     if (response?.error) {
       throw new Error(response.error.message || "Resend email failed");
     }
+  });
+};
+
+export const sendInternalNotificationEmail = ({
+  receiver,
+  subject,
+  text,
+  html,
+  type,
+  entityId,
+}) => {
+  const key = `internal:${type}:${entityId}:${receiver}`;
+
+  enqueueMail(key, async () => {
+    await client.send({
+      from: sender,
+      to: [{ email: receiver }],
+      subject,
+      text,
+      html,
+      category: "internal-notification",
+      custom_variables: {
+        notification_type: type,
+        entity_id: String(entityId),
+      },
+    });
   });
 };
 

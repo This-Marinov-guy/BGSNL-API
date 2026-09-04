@@ -60,8 +60,8 @@ STRIPE_SECRET_KEY_NETHERLANDS=your-stripe-secret-key
 STRIPE_SECRET_KEY_BELGIUM=your-stripe-secret-key
 
 # Server
-PORT=5000
-NODE_ENV=development
+PORT=8080
+APP_ENV=dev
 
 # Axiom Logging (Optional)
 AXIOM_TOKEN=your-axiom-api-token
@@ -72,6 +72,16 @@ AXIOM_DATASET=api-logs
 # Must match BGSNL_SERVER_KEY on the website. Generate with:
 #   openssl rand -hex 32
 SSR_SERVER_KEY=your-shared-ssr-secret
+
+# Optional additive Domakin Mailer connection. Existing Mailtrap/Resend sends
+# continue unchanged when these are not configured.
+MAILER_API_URL=https://your-domakin-mailer.example/api
+MAILER_BULGARIANSOCIETY_SECRET=your-bulgarian-society-scoped-secret
+
+# Internal email notifications are queued after successful writes. Subscribers
+# are comma-separated and receive separate messages (addresses are not exposed).
+INTERNAL_NOTIFICATIONS_ENABLED=true
+INTERNAL_NOTIFICATION_SUBSCRIBERS=vladislavmarinov3142@gmail.com,bulgariansocietynetherlands@gmail.com
 ```
 
 ### Server-to-server access (SSR)
@@ -88,6 +98,19 @@ is skipped entirely and only the origin allow-list applies.
 
 **Note**: Request the `.env` file from the team as the application requires these environment variables to run.
 
+### Domakin Mailer (optional)
+
+`queueDomakinTemplateEmail()` in
+`services/background-services/domakin-mailer.js` queues a local template through
+Domakin Mailer. The client always selects the `bulgariansociety` channel and
+never accepts a `from` address. That channel is locked by Domakin Mailer to
+`info@bulgariansociety.nl`.
+
+Configure the same `MAILER_BULGARIANSOCIETY_SECRET` in both services. This is a
+scoped credential: it can only call `POST /api/delivery/template` for the
+Bulgarian Society channel. `MAILER_API_URL` may be the Mailer service root or
+its `/api` base URL.
+
 ### Step 4: Start the Application
 
 **Development mode:**
@@ -100,7 +123,9 @@ npm run dev
 npm start
 ```
 
-The API will be available at `http://localhost:5000` (or the port specified in your `.env` file).
+The development script sets `APP_ENV=dev` and `PORT=8080`, so the API is
+available at `http://localhost:8080`. `npm start` continues to use the
+deployment environment's configured values.
 
 ## Project Structure
 

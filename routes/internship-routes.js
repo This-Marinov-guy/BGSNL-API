@@ -1,5 +1,4 @@
 import express from "express";
-import { check } from "express-validator";
 import {
   getInternshipsList,
   getAllInternshipsAdmin,
@@ -14,6 +13,14 @@ import multiFileUpload from "../middleware/multiple-file-upload.js";
 import logoUpload from "../middleware/logo-upload.js";
 import { ACCESS_1 } from "../util/config/defines.js";
 import dotenv from "dotenv";
+import { validateRequest } from "../middleware/validate-request.js";
+import {
+  addInternshipValidators,
+  deleteInternshipValidators,
+  editInternshipValidators,
+  internshipApplicationValidators,
+  reorderInternshipsValidators,
+} from "../validation/form-validators.js";
 dotenv.config();
 
 const internshipRouter = express.Router();
@@ -29,6 +36,8 @@ internshipRouter.post(
   "/add",
   adminMiddleware(ACCESS_1),
   logoUpload(process.env.BUCKET_DOCUMENTS).single("logo"),
+  addInternshipValidators,
+  validateRequest,
   addInternship
 );
 
@@ -36,12 +45,26 @@ internshipRouter.patch(
   "/edit/:id",
   adminMiddleware(ACCESS_1),
   logoUpload(process.env.BUCKET_DOCUMENTS).single("logo"),
+  editInternshipValidators,
+  validateRequest,
   editInternship
 );
 
-internshipRouter.patch("/reorder", adminMiddleware(ACCESS_1), reorderInternships);
+internshipRouter.patch(
+  "/reorder",
+  adminMiddleware(ACCESS_1),
+  reorderInternshipsValidators,
+  validateRequest,
+  reorderInternships
+);
 
-internshipRouter.delete("/delete/:id", adminMiddleware(ACCESS_1), deleteInternship);
+internshipRouter.delete(
+  "/delete/:id",
+  adminMiddleware(ACCESS_1),
+  deleteInternshipValidators,
+  validateRequest,
+  deleteInternship
+);
 
 // Member apply
 internshipRouter.post(
@@ -50,11 +73,8 @@ internshipRouter.post(
   multiFileUpload(process.env.BUCKET_DOCUMENTS).fields([
     { name: "coverLetter", maxCount: 1 },
   ]),
-  [
-    check("companyId").notEmpty().withMessage("Company ID is required"),
-    check("companyName").notEmpty().withMessage("Company name is required"),
-    check("position").notEmpty().withMessage("Position is required"),
-  ],
+  internshipApplicationValidators,
+  validateRequest,
   postMemberApply
 );
 

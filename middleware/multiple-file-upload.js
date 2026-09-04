@@ -2,6 +2,7 @@ import multer from "multer";
 import multerS3 from "multer-s3";
 import AWS from "aws-sdk";
 import dotenv from "dotenv";
+import { unsupportedUploadError } from "./upload-validation-error.js";
 dotenv.config();
 
 //Normal upload
@@ -13,7 +14,7 @@ const fileFilter = (req, file, cb) => {
   ) {
     cb(null, true);
   } else {
-    cb(null, false);
+    cb(unsupportedUploadError(file, "a PDF or DOCX file"));
   }
 };
 

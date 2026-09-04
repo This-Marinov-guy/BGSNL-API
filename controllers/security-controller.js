@@ -96,6 +96,7 @@ export const signup = async (req, res, next) => {
     graduationDate,
     course,
     studentNumber,
+    profession,
     notificationTypeTerms,
   } = req.body;
   const email = normalizeEmail(rawEmail);
@@ -134,10 +135,11 @@ export const signup = async (req, res, next) => {
     phone,
     email,
     university,
-    otherUniversityName,
-    graduationDate,
-    course,
-    studentNumber,
+    otherUniversityName: university === "other" ? otherUniversityName : undefined,
+    graduationDate: university === "working" ? undefined : graduationDate,
+    course: university === "working" ? undefined : course,
+    studentNumber: university === "working" ? undefined : studentNumber,
+    profession: university === "working" ? profession : undefined,
     password: hashedPassword,
     notificationTypeTerms,
     tickets: [],
@@ -194,7 +196,9 @@ export const alumniSignup = async (req, res, next) => {
     );
   }
 
-  const { tier, period, name, surname } = req.body;
+  const { tier, period, name, surname, notificationTypeTerms } = req.body;
+  const notificationTerms =
+    req.body.notificationTerms === true || req.body.notificationTerms === "true";
   const email = normalizeEmail(req.body.email);
   if (!email) {
     return next(new HttpError("Please send a valid email", 422));
@@ -229,6 +233,10 @@ export const alumniSignup = async (req, res, next) => {
     surname,
     email,
     password: hashedPassword,
+    notificationTerms,
+    notificationTypeTerms: notificationTerms
+      ? notificationTypeTerms || "whatsapp & email"
+      : undefined,
     tickets: [],
     roles: [ADMIN],
   });

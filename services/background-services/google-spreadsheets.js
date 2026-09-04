@@ -846,6 +846,7 @@ const usersToSpreadsheet = (region = null) => {
           course,
           studentNumber,
           graduationDate,
+          profession,
           password,
           notificationTypeTerms,
           tickets,
@@ -889,7 +890,14 @@ const usersToSpreadsheet = (region = null) => {
           birth: formattedBirth,
           purchaseDate: formattedPurchaseDate,
           expireDate: formattedExpireDate,
-          university: university === "other" ? otherUniversityName : university,
+          university:
+            university === "other"
+              ? otherUniversityName
+              : university === "working"
+                ? "Working"
+                : university,
+          profession:
+            university === "working" ? profession || "not specified" : "",
           course,
           studentNumber,
           graduationDate: graduationDate || "not specified",
@@ -920,6 +928,7 @@ const usersToSpreadsheet = (region = null) => {
             "Email",
             "Birth",
             "University",
+            "Profession",
             "Course",
             "Student Number",
             "Graduation Date",
@@ -936,6 +945,7 @@ const usersToSpreadsheet = (region = null) => {
             "Email",
             "Birth",
             "University",
+            "Profession",
             "Course",
             "Student Number",
             "Graduation Date",

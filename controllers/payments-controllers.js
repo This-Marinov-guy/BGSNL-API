@@ -184,7 +184,9 @@ export const postPlaygroundTicketPreview = async (req, res, next) => {
 
   let latestEvent;
   try {
-    latestEvent = await Event.findOne({ status: { $ne: "archived" } }).sort({
+    latestEvent = await Event.findOne({
+      status: { $nin: ["archived", "draft"] },
+    }).sort({
       date: -1,
     });
   } catch (err) {

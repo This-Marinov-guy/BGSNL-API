@@ -39,6 +39,7 @@ export const LIMITLESS_ACCOUNT = [SUPER_ADMIN, ADMIN, VIP];
 
 // event status
 export const EVENT_OPENED = "opened";
+export const EVENT_DRAFT = "draft";
 export const EVENT_CLOSED = "closed";
 export const EVENT_SALE_STOP = "temporary closed";
 export const EVENT_CANCELED = "canceled";

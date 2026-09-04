@@ -5,6 +5,8 @@ import { usersCountCache } from "../util/config/caches.js";
 import { readSpreadsheetRows } from "../services/background-services/google-spreadsheets.js";
 import { STATISTICS_ABOUT_US_SHEET } from "../util/config/SPREEDSHEATS.js";
 import Statistics from "../models/Statistics.js";
+import { validationResult } from "express-validator";
+import HttpError from "../models/Http-error.js";
 
 export const getTotalMemberCount = async (req, res, next) => {
   let userCount = usersCountCache.get("total");
@@ -95,4 +97,20 @@ export const getAboutUsData = async (req, res, next) => {
     console.log(err);
     return res.status(200).json({});
   }
+};
+
+export const acceptMarketingEmail = (req, res, next) => {
+  if (!validationResult(req).isEmpty()) {
+    return next(new HttpError("Invalid email or city", 422));
+  }
+
+  return res.status(202).json({ message: "Marketing email accepted" });
+};
+
+// EmailJS remains the established delivery provider for the public contact
+// form. This preflight endpoint gives that flow the same server-side contract
+// enforcement as API-backed forms before any delivery is attempted.
+export const validateContactForm = (_req, res) => {
+  res.locals.skipMarketingCapture = true;
+  return res.status(200).json({ valid: true });
 };

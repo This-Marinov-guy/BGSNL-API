@@ -28,6 +28,8 @@ const alumniUserSchema = new Schema({
   surname: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true, minlength: 5 },
+  notificationTerms: { type: Boolean, default: false },
+  notificationTypeTerms: { type: String },
   quote: { type: String },
   tickets: [
     {

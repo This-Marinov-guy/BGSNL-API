@@ -62,6 +62,7 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
     university: 1,
     otherUniversityName: 1,
     course: 1,
+    profession: 1,
     "mmmCampaign2025.calendarSubscription": 1,
   })
     .sort({ _id: -1 })
@@ -134,10 +135,16 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
     // university (resolve "other")
     let uni = u.university;
     if (uni === "other") uni = u.otherUniversityName || "other";
+    if (uni === "working") uni = "Working";
     increment(byUniversity, uni);
-    
+
     // course/specialty
-    increment(byCourse, u.course || "Not specified");
+    increment(
+      byCourse,
+      u.university === "working"
+        ? u.profession || "Not specified"
+        : u.course || "Not specified"
+    );
 
     // purchase year
     if (u.purchaseDate) increment(byPurchaseYear, moment(u.purchaseDate).format("YYYY"));

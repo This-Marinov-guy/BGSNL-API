@@ -119,7 +119,7 @@ export const getEventPurchaseAvailability = async (req, res, next) => {
 
     const event = await Event.findById(eventId);
 
-    if (!event) {
+    if (!event || event.status === "draft") {
       return next(new HttpError("No event was found", 404));
     }
 
@@ -151,7 +151,7 @@ export const getEventById = async (req, res, next) => {
   try {
     let event = await Event.findOne({
       _id: eventId,
-      status: { $ne: "archived" },
+      status: { $nin: ["archived", "draft"] },
     });
 
     if (!event) {
@@ -205,13 +205,13 @@ export const getEvents = async (req, res, next) => {
       events = await Event.find({
         region,
         hidden: false,
-        status: { $ne: "archived" },
+        status: { $nin: ["archived", "draft"] },
       });
     } else {
       events = await Event.find({
         region: { $ne: DEFAULT_REGION },
         hidden: false,
-        status: { $ne: "archived" },
+        status: { $nin: ["archived", "draft"] },
       });
     }
   } catch (err) {
@@ -243,7 +243,7 @@ export const getSoldTicketQuantity = async (req, res, next) => {
 
     let ticketsSold;
 
-    if (event) {
+    if (event && event.status !== "draft") {
       ticketsSold = event.guestList.length;
     } else {
       ticketsSold = 0;
@@ -266,7 +266,7 @@ export const checkEligibleMemberForPurchase = async (req, res, next) => {
 
   let event = await Event.findById(eventId);
 
-  if (!event) {
+  if (!event || event.status === "draft") {
     return next(new HttpError("No event was found", 404));
   }
 
@@ -304,7 +304,7 @@ export const checkTicketEligibility = async (req, res, next) => {
     return next(new HttpError("Could not find event", 500));
   }
 
-  if (!event) {
+  if (!event || event.status === "draft") {
     return next(new HttpError("No event was found", 404));
   }
 
@@ -388,7 +388,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
     );
   }
 
-  if (!societyEvent) {
+  if (!societyEvent || societyEvent.status === "draft") {
     return next(new HttpError("Could not find such event", 404));
   }
 
@@ -471,7 +471,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
     );
   }
 
-  if (!societyEvent) {
+  if (!societyEvent || societyEvent.status === "draft") {
     return next(new HttpError("Could not find such event", 404));
   }
 
@@ -637,9 +637,11 @@ export const postNonSocietyEvent = async (req, res, next) => {
   const memberEmail = email || targetUser?.email;
   const memberPhone = (targetUser?.phone ?? phone ?? "").trim();
   const memberUniversity =
-    targetUser?.university === "other"
-      ? targetUser?.otherUniversityName
-      : targetUser?.university;
+    targetUser?.university === "working"
+      ? targetUser?.profession
+      : targetUser?.university === "other"
+        ? targetUser?.otherUniversityName
+        : targetUser?.university;
 
   // Duplicate check
   let status = true;

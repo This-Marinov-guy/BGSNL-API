@@ -5,6 +5,7 @@ import Internship from "../models/Internship.js";
 import Document from "../models/Document.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
 import { internshipApplicationsToSpreadsheet } from "../services/background-services/google-spreadsheets.js";
+import { notifyInternshipApplicationCreated } from "../services/background-services/internal-notifications.js";
 import { findUserById } from "../services/main-services/user-service.js";
 import mongoose from "mongoose";
 import { DOCUMENT_TYPES } from "../util/config/enums.js";
@@ -332,6 +333,8 @@ export const postMemberApply = async (req, res, next) => {
       await user.save({ session: sess });
 
       await sess.commitTransaction();
+
+      notifyInternshipApplicationCreated(internshipApplication);
 
       // Update Google Spreadsheet in background (outside transaction)
       internshipApplicationsToSpreadsheet();

@@ -1,5 +1,4 @@
 import express from "express";
-import { check, body } from "express-validator";
 import {
   getCurrentUser,
   patchUserInfo,
@@ -26,6 +25,18 @@ import { authMiddleware } from "../middleware/authorization.js";
 import { adminMiddleware } from "../middleware/authorization.js";
 import { ACCESS_2 } from "../util/config/defines.js";
 import fileUpload from "../middleware/file-upload.js";
+import { validateRequest } from "../middleware/validate-request.js";
+import {
+  activeMemberValidators,
+  addDocumentValidators,
+  alumniQuoteValidators,
+  calendarVerificationValidators,
+  convertAlumniToUserValidators,
+  convertUserToAlumniValidators,
+  deleteDocumentValidators,
+  editDocumentValidators,
+  editUserValidators,
+} from "../validation/form-validators.js";
 dotenv.config();
 
 const userRouter = express.Router();
@@ -49,11 +60,8 @@ userRouter.post(
     { name: "cv", maxCount: 2 },
     // { name: 'letter', maxCount: 2 },
   ]),
-  [
-    check("email").notEmpty(),
-    check("phone").notEmpty(),
-    check("questions").notEmpty(),
-  ],
+  activeMemberValidators,
+  validateRequest,
   postActiveMember
 );
 
@@ -61,13 +69,8 @@ userRouter.patch(
   "/edit-info",
   authMiddleware,
   fileResizedUpload(process.env.BUCKET_USERS).single("image"),
-  [
-    check("name").notEmpty(),
-    check("surname").notEmpty(),
-    check("phone").notEmpty(),
-    check("university").notEmpty(),
-    check("email").notEmpty(),
-  ],
+  editUserValidators,
+  validateRequest,
   patchUserInfo
 );
 
@@ -77,6 +80,8 @@ userRouter.post(
   "/verify-calendar-subscription",
   authMiddleware,
   fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
+  calendarVerificationValidators,
+  validateRequest,
   submitCalendarVerification
 );
 // Anonymized vital stats export (XLS)
@@ -90,7 +95,8 @@ userRouter.get(
 userRouter.post(
   "/convert-to-alumni",
   adminMiddleware(ACCESS_2), // Restrict to admin access
-  [check("email").isEmail().withMessage("Please provide a valid email")],
+  convertUserToAlumniValidators,
+  validateRequest,
   convertUserToAlumni
 );
 
@@ -98,11 +104,18 @@ userRouter.post(
 userRouter.post(
   "/convert-alumni-to-user",
   adminMiddleware(ACCESS_2),
-  [check("alumniId").notEmpty().withMessage("alumniId is required")],
+  convertAlumniToUserValidators,
+  validateRequest,
   convertAlumniToUser
 );
 
-userRouter.patch("/alumni-quote", authMiddleware, updateAlumniQuote);
+userRouter.patch(
+  "/alumni-quote",
+  authMiddleware,
+  alumniQuoteValidators,
+  validateRequest,
+  updateAlumniQuote
+);
 
 // Get active alumni members with basic info
 userRouter.get("/active-alumni", getActiveAlumniMembers);
@@ -116,18 +129,8 @@ userRouter.post(
   fileUpload(process.env.BUCKET_DOCUMENTS).single(
     "content"
   ),
-  [
-    body("type")
-      .custom((value) => {
-        const numValue = parseInt(value);
-        return numValue === 1 || numValue === 2;
-      })
-      .withMessage("Wrong type of document"),
-    check("content")
-      .optional()
-      .isString()
-      .withMessage("Content must be a string (link) if not uploading a file"),
-  ],
+  addDocumentValidators,
+  validateRequest,
   postAddDocument
 );
 
@@ -135,27 +138,17 @@ userRouter.patch(
   "/edit-document/:documentId",
   authMiddleware,
   fileUpload(process.env.BUCKET_DOCUMENTS).single("content"),
-  [
-    body("type")
-      .optional()
-      .custom((value) => {
-        if (value === undefined) return true;
-        const numValue = parseInt(value);
-        return numValue === 1 || numValue === 2;
-      })
-      .withMessage("Type must be 1 (CV) or 2 (Cover Letter)"),
-    check("name")
-      .optional()
-      .notEmpty()
-      .withMessage("Name cannot be empty if provided"),
-    check("content")
-      .optional()
-      .isString()
-      .withMessage("Content must be a string (link) if not uploading a file"),
-  ],
+  editDocumentValidators,
+  validateRequest,
   patchEditDocument
 );
 
-userRouter.delete("/delete-document/:documentId", authMiddleware, deleteDocument);
+userRouter.delete(
+  "/delete-document/:documentId",
+  authMiddleware,
+  deleteDocumentValidators,
+  validateRequest,
+  deleteDocument
+);
 
 export default userRouter;

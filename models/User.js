@@ -33,6 +33,7 @@ const userSchema = new Schema({
   graduationDate: { type: String },
   course: { type: String },
   studentNumber: { type: String },
+  profession: { type: String },
   password: { type: String, required: true, minlength: 5 },
   notificationTypeTerms: { type: String },
   tickets: [
