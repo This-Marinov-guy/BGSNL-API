@@ -86,6 +86,7 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
     period,
     name,
     surname,
+    phone,
     email: rawEmail,
     notificationTypeTerms,
   } = metadata;
@@ -135,6 +136,7 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
     image,
     name,
     surname,
+    phone,
     email,
     password: hashedPassword,
     notificationTerms,
@@ -537,6 +539,7 @@ export const handleAlumniMigration = async (metadata, paymentData) => {
           : USER_STATUSES[ACTIVE];
       existingAlumni.name = regularUser.name;
       existingAlumni.surname = regularUser.surname;
+      existingAlumni.phone = regularUser.phone;
       existingAlumni.email = regularUser.email;
       existingAlumni.image = regularUser.image || "";
       existingAlumni.status = USER_STATUSES[ACTIVE];
@@ -564,6 +567,7 @@ export const handleAlumniMigration = async (metadata, paymentData) => {
         _id: alumniId,
         name: regularUser.name,
         surname: regularUser.surname,
+        phone: regularUser.phone,
         email: regularUser.email,
         password: regularUser.password,
         image: regularUser.image || "",

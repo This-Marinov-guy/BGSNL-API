@@ -667,6 +667,7 @@ test("current signup and subscription checkout payloads pass", async () => {
       method: "alumni-signup",
       name: "Alumni",
       surname: "Member",
+      phone: "+31612345678",
       email: "alumni@example.com",
       password,
       policyTerms: "true",
@@ -675,6 +676,18 @@ test("current signup and subscription checkout payloads pass", async () => {
     },
   });
   assert.equal(alumniSignup.nextCalled, true);
+
+  const alumniSignupWithoutPhone = await validate(signupCheckoutValidators, {
+    body: {
+      ...alumniSignup.req.body,
+      phone: undefined,
+    },
+  });
+  assert.equal(alumniSignupWithoutPhone.nextCalled, false);
+  assert.equal(
+    alumniSignupWithoutPhone.response.payload.errors.phone,
+    "Phone must be text"
+  );
 
   const unlock = await validate(subscriptionCheckoutValidators, {
     body: {
@@ -769,7 +782,9 @@ test("user model includes the optional profession field", () => {
   assert.equal(workingMember.toObject().profession, "Software engineer");
 });
 
-test("alumni model stores optional contact consent", () => {
+test("alumni model stores phone and optional contact consent", () => {
+  assert.equal(AlumniUser.schema.path("phone")?.instance, "String");
+  assert.notEqual(AlumniUser.schema.path("phone")?.isRequired, true);
   assert.equal(AlumniUser.schema.path("notificationTerms")?.instance, "Boolean");
   assert.equal(
     AlumniUser.schema.path("notificationTypeTerms")?.instance,
@@ -777,9 +792,11 @@ test("alumni model stores optional contact consent", () => {
   );
 
   const alumni = new AlumniUser({
+    phone: "+31612345678",
     notificationTerms: true,
     notificationTypeTerms: "whatsapp & email",
   });
+  assert.equal(alumni.toObject().phone, "+31612345678");
   assert.equal(alumni.toObject().notificationTerms, true);
   assert.equal(alumni.toObject().notificationTypeTerms, "whatsapp & email");
 });

@@ -196,7 +196,7 @@ export const alumniSignup = async (req, res, next) => {
     );
   }
 
-  const { tier, period, name, surname, notificationTypeTerms } = req.body;
+  const { tier, period, name, surname, phone, notificationTypeTerms } = req.body;
   const notificationTerms =
     req.body.notificationTerms === true || req.body.notificationTerms === "true";
   const email = normalizeEmail(req.body.email);
@@ -231,6 +231,7 @@ export const alumniSignup = async (req, res, next) => {
     image,
     name,
     surname,
+    phone,
     email,
     password: hashedPassword,
     notificationTerms,

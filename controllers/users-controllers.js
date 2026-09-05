@@ -33,18 +33,18 @@ import { DOCUMENT_TYPES } from "../util/config/enums.js";
 import { createStripeClient } from "../util/config/stripe.js";
 import { DEFAULT_REGION } from "../util/config/defines.js";
 
-export const refreshToken = async (req, res, next) => {
-  let newToken = null;
+export const refreshToken = async (req, res) => {
+  const token = getTokenFromHeader(req);
+  const newToken = jwtRefresh(token);
 
-  try {
-    const token = getTokenFromHeader(req);
-
-    newToken = jwtRefresh(token);
-  } catch {
-    newToken = null;
+  if (!newToken) {
+    return res.status(401).json({
+      token: null,
+      message: "Authentication token is invalid",
+    });
   }
 
-  return res.status(201).json({ token: newToken });
+  return res.status(200).json({ token: newToken });
 };
 
 export const getCurrentUser = async (req, res, next) => {
@@ -64,6 +64,21 @@ export const getCurrentUser = async (req, res, next) => {
   if (!user) {
     const error = new HttpError("User not found", 404);
     return next(error);
+  }
+
+  // Alumni created through the legacy migration flow may not have a phone on
+  // their alumni document. The original member document is retained, so use
+  // its number for prefilled forms without making this read endpoint mutate data.
+  if (!user.phone && String(user._id).startsWith("alumni_")) {
+    const linkedMemberId = String(user._id).replace(/^alumni_/, "member_");
+    try {
+      const linkedMember = await User.findById(linkedMemberId).select("phone").lean();
+      if (linkedMember?.phone && linkedMember.phone !== "-") {
+        user.phone = linkedMember.phone;
+      }
+    } catch (err) {
+      console.error("Could not resolve legacy alumni phone:", err);
+    }
   }
 
   // Populate documents if user has documents

@@ -26,6 +26,7 @@ const alumniUserSchema = new Schema({
   image: { type: String, required: true },
   name: { type: String, required: true },
   surname: { type: String, required: true },
+  phone: { type: String },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true, minlength: 5 },
   notificationTerms: { type: Boolean, default: false },

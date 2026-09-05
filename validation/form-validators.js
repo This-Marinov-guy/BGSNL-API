@@ -1202,7 +1202,6 @@ export const signupCheckoutValidators = [
     .custom(isParsableDate)
     .withMessage("Date of birth is invalid"),
   body("phone")
-    .if(body("method").equals("signup"))
     .isString()
     .withMessage("Phone must be text")
     .bail()

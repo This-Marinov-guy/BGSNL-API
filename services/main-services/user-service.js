@@ -541,7 +541,7 @@ export const findUserByQuery = async (query) => {
 /**
  * Converts an alumni user back into a regular User.
  * Deletes the alumni record and creates a User preserving all available data.
- * Required User fields not present on alumni (birth, phone, university) are
+ * Required User fields not present on alumni (birth and university) are
  * filled with placeholders — the user should update them after conversion.
  *
  * @param {string} alumniId - e.g. "alumni_<ObjectId>"
@@ -596,7 +596,7 @@ try {
       joinDate: alumniUser.joinDate || new Date(),
       // Alumni lacks these required User fields — placeholders to be updated by the user
       birth: new Date("2000-01-01"),
-      phone: "-",
+      phone: alumniUser.phone || "-",
       university: "-",
     });
 
@@ -646,6 +646,7 @@ export const convertUserToAlumni = async (userId) => {
   if (existingAlumni) {
     existingAlumni.name = regularUser.name;
     existingAlumni.surname = regularUser.surname;
+    existingAlumni.phone = regularUser.phone;
     existingAlumni.email = regularUser.email;
     existingAlumni.image = regularUser.image;
     existingAlumni.password = regularUser.password;
@@ -666,6 +667,7 @@ export const convertUserToAlumni = async (userId) => {
       _id: alumniId,
       name: regularUser.name,
       surname: regularUser.surname,
+      phone: regularUser.phone,
       email: regularUser.email,
       password: regularUser.password,
       image: regularUser.image || "",

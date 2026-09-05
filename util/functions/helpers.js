@@ -60,6 +60,14 @@ export const jwtSign = (user) => {
 };
 
 export const jwtRefresh = (token) => {
+  if (
+    typeof token !== "string" ||
+    token.length === 0 ||
+    token.split(".").length !== 3
+  ) {
+    return null;
+  }
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_STRING, {
       ignoreExpiration: true,
@@ -81,7 +89,12 @@ export const jwtRefresh = (token) => {
 
     return newToken;
   } catch (error) {
-    console.error("Error refreshing token:", error);
+    if (
+      !(error instanceof jwt.JsonWebTokenError) &&
+      !(error instanceof jwt.NotBeforeError)
+    ) {
+      console.error("Unexpected error refreshing token:", error);
+    }
     return null;
   }
 };
