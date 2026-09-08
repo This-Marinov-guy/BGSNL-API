@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import {
   buildEventCreatedNotification,
   buildInternshipApplicationNotification,
+  buildSupportTicketNotification,
   createInternalNotificationService,
+  createSupportTicketNotifier,
+  SUPPORT_NOTIFICATION_RECIPIENT,
 } from "../services/background-services/internal-notifications.js";
 import {
   DEFAULT_INTERNAL_NOTIFICATION_SUBSCRIBERS,
@@ -87,6 +90,26 @@ test("queues a new-event notification with the operational event details", () =>
   assert.match(messages[0].subject, /Autumn networking night/);
   assert.match(messages[0].text, /Region: Amsterdam/);
   assert.equal(messages[0].type, "event-created");
+});
+
+test("new support tickets notify the technology inbox with ticket diagnostics", () => {
+  const messages = [];
+  const notify = createSupportTicketNotifier({ sendEmail: (message) => messages.push(message) });
+  assert.equal(notify({ id: "ticket-id", reference: "ABC12345", subject: "Checkout is stuck", pagePath: "/signup",
+    contact: { name: "Test Member", email: "member@example.test" }, createdAt: "2026-09-07T10:00:00.000Z",
+    environment: { deviceType: "Mobile", browser: "Safari", platform: "iOS", viewport: { width: 390, height: 844 }, devicePixelRatio: 3 } }), 1);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].receiver, SUPPORT_NOTIFICATION_RECIPIENT);
+  assert.equal(messages[0].receiver, "technology@bulgariansociety.nl");
+  assert.match(messages[0].subject, /ABC12345/);
+  assert.match(messages[0].text, /Mobile · Safari · iOS/);
+  assert.match(messages[0].text, /390 × 844 at 3×/);
+});
+
+test("support-ticket notification HTML escapes reporter-provided content", () => {
+  const notification = buildSupportTicketNotification({ id: "ticket", subject: "<img src=x onerror=alert(1)>", contact: { name: "<b>Name</b>" } });
+  assert.doesNotMatch(notification.html, /<img src=x/);
+  assert.match(notification.html, /&lt;img src=x/);
 });
 
 test("does not enqueue mail when internal notifications are disabled", () => {

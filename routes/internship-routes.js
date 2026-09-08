@@ -8,7 +8,7 @@ import {
   reorderInternships,
   postMemberApply,
 } from "../controllers/internship-controllers.js";
-import { authMiddleware, adminMiddleware } from "../middleware/authorization.js";
+import { authMiddleware, adminMiddleware, requireBenefits } from "../middleware/authorization.js";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
 import logoUpload from "../middleware/logo-upload.js";
 import { ACCESS_1 } from "../util/config/defines.js";
@@ -70,6 +70,7 @@ internshipRouter.delete(
 internshipRouter.post(
   "/member-apply",
   authMiddleware,
+  requireBenefits(),
   multiFileUpload(process.env.BUCKET_DOCUMENTS).fields([
     { name: "coverLetter", maxCount: 1 },
   ]),

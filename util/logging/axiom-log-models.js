@@ -28,6 +28,9 @@ const REQ_HEADER_KEYS = [
  * @param {object} redact - Redact function for sensitive data
  */
 export function buildReq(req, redact) {
+  if (req.supportPrivate) {
+    return { method: req.method, url: "/api/support", path: "/api/support" };
+  }
   const headers = {};
   for (const key of REQ_HEADER_KEYS) {
     const v = req.headers[key];

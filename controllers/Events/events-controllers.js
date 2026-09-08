@@ -25,6 +25,8 @@ import {
 } from "../../util/functions/dateConvert.js";
 import moment from "moment-timezone";
 import { checkDiscountsOnEvents } from "../../services/main-services/event-action-service.js";
+import { accountEntitlements } from "../../util/subscriptions/policy.js";
+import { reconcileAccount } from "../../services/subscriptions/reconcile.js";
 import { extractUserFromRequest } from "../../util/functions/security.js";
 import { findUserById } from "../../services/main-services/user-service.js";
 import {
@@ -257,7 +259,8 @@ export const getSoldTicketQuantity = async (req, res, next) => {
 };
 
 export const checkEligibleMemberForPurchase = async (req, res, next) => {
-  const { userId, eventId } = req.params;
+  const { eventId } = req.params;
+  const userId = req.user.userId;
   let status = true;
 
   if (!eventId) {
@@ -270,10 +273,10 @@ export const checkEligibleMemberForPurchase = async (req, res, next) => {
     return next(new HttpError("No event was found", 404));
   }
 
-  let member = await User.findOne({ _id: userId });
+  let member = await findUserById(userId);
 
   if (!member) {
-    res.status(200).json({ status: false });
+    return res.status(200).json({ status: false });
   }
 
   const memberName = `${member.name} ${member.surname}`;
@@ -291,7 +294,9 @@ export const checkEligibleMemberForPurchase = async (req, res, next) => {
 // Determines whether a ticket is free or paid, and returns the correct priceId.
 // Called by both guest and member purchase flows before checkout.
 export const checkTicketEligibility = async (req, res, next) => {
-  const { eventId, userId, normalTicket } = req.body;
+  const { eventId, normalTicket } = req.body;
+  const userId = req.user?.userId;
+  if (req.body.userId && !userId) return next(new HttpError("Please sign in to check member eligibility", 401));
 
   if (!eventId) {
     return next(new HttpError("Invalid inputs passed", 422));
@@ -318,7 +323,8 @@ export const checkTicketEligibility = async (req, res, next) => {
   if (userId) {
     let member;
     try {
-      member = await User.findById(userId);
+      member = (await reconcileAccount(req.account))?.user;
+      if (!member || !accountEntitlements(member).memberDiscount) return next(new HttpError("An active member subscription is required", 403));
     } catch (err) {
       return next(new HttpError("Could not find user", 500));
     }
@@ -337,12 +343,12 @@ export const checkTicketEligibility = async (req, res, next) => {
     }
 
     // Free for all members
-    if (event.isFree || event.isMemberFree) {
+    if (event.isFree || (!normalTicket && event.isMemberFree)) {
       return res.status(200).json({ type: "free" });
     }
 
     // Active members (ACCESS_4 roles) get the discounted/activeMember price
-    const isActiveMember = ACCESS_4.includes(member.role);
+    const isActiveMember = member.roles?.some((role) => ACCESS_4.includes(role));
 
     let priceId;
     if (normalTicket) {

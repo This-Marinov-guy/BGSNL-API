@@ -40,12 +40,22 @@ import {
   getApiRoutePath,
 } from "./util/config/api-versions.js";
 import { formatUploadValidationError } from "./middleware/upload-validation-error.js";
+import { startBillingWorker } from "./services/subscriptions/reminders.js";
+import BillingRecord from "./models/BillingRecord.js";
+import BillingAttention from "./models/BillingAttention.js";
+import AccountIdentity from "./models/AccountIdentity.js";
+import AuthChallenge from "./models/AuthChallenge.js";
+import AuthRateLimit from "./models/AuthRateLimit.js";
+import SupportConversation from "./models/SupportConversation.js";
+import supportRouter, { supportError, supportPrivacy } from "./routes/support-routes.js";
+import backofficeRouter from "./routes/backoffice-routes.js";
 
 const app = express();
 
 // All unversioned /api requests resolve to v1. Explicit version prefixes are
 // preserved so v2 and v3 routers can be introduced without changing v1.
 app.use(apiVersionMiddleware);
+app.use(supportPrivacy);
 
 const mountApiRouter = (version, routePath, router) => {
   app.use(getApiRoutePath(routePath, version), router);
@@ -101,7 +111,7 @@ app.use((req, res, next) => {
     // Skip JSON parsing for multipart/form-data (let multer handle it)
     next();
   } else {
-    bodyParser.json()(req, res, next);
+    bodyParser.json(req.supportPrivate ? { limit: "32kb" } : {})(req, res, next);
   }
 });
 
@@ -148,6 +158,8 @@ mountApiRouter(API_VERSIONS.V1, "/special", specialEventsRouter);
 mountApiRouter(API_VERSIONS.V1, "/wordpress", wordpressRouter);
 mountApiRouter(API_VERSIONS.V1, "/internship", internshipRouter);
 mountApiRouter(API_VERSIONS.V1, "/dashboard", dashboardRouter);
+mountApiRouter(API_VERSIONS.V1, "/support", supportRouter);
+mountApiRouter(API_VERSIONS.V1, "/backoffice", backofficeRouter);
 
 //no page found
 app.use((req, res, next) => {
@@ -157,6 +169,9 @@ app.use((req, res, next) => {
   );
   return next(error);
 });
+
+// Private report failures never reach the generic body/error logger.
+app.use(supportError);
 
 // error handling (not sure if needed)
 app.use((error, req, res, _next) => {
@@ -187,13 +202,16 @@ app.use((error, req, res, _next) => {
 //db connection
 mongoose.set("strictQuery", true);
 let server;
+let stopBillingWorker;
 
 mongoose
   .connect(
     `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`
   )
-  .then(() => {
+  .then(async () => {
     console.log("Connected to DB");
+    await Promise.all([BillingRecord.init(), BillingAttention.init(), AccountIdentity.init(), AuthChallenge.init(), AuthRateLimit.init(), SupportConversation.init()]);
+    stopBillingWorker = startBillingWorker();
     server = app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
@@ -211,6 +229,7 @@ const gracefulShutdown = async (signal) => {
   }
 
   // Flush Axiom logs
+  await stopBillingWorker?.();
   await flushAxiom();
 
   // Close MongoDB connection

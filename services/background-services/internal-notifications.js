@@ -106,6 +106,43 @@ export const buildEventCreatedNotification = (event) => {
   };
 };
 
+export const SUPPORT_NOTIFICATION_RECIPIENT = "technology@bulgariansociety.nl";
+
+export const buildSupportTicketNotification = (ticket) => {
+  const subject = present(ticket?.subject, "Website support request");
+  const reference = present(ticket?.reference ?? String(ticket?.id || "").slice(0, 8).toUpperCase(), "unknown");
+  const environment = ticket?.environment || {};
+  const device = [environment.deviceType, environment.browser, environment.platform].filter(Boolean).join(" · ");
+  const viewport = environment.viewport?.width && environment.viewport?.height
+    ? `${environment.viewport.width} × ${environment.viewport.height}${environment.devicePixelRatio ? ` at ${environment.devicePixelRatio}×` : ""}`
+    : "Not provided";
+  const message = renderNotification({
+    eyebrow: "Internal notification",
+    title: "New website support ticket",
+    rows: [
+      ["Reference", reference],
+      ["Subject", subject],
+      ["Reporter", ticket?.contact?.name],
+      ["Email", ticket?.contact?.email],
+      ["Phone", ticket?.contact?.phone],
+      ["Reported page", ticket?.pagePath],
+      ["Device", device],
+      ["Viewport", viewport],
+      ["Submitted", formatDateTime(ticket?.createdAt ?? new Date())],
+      ["Open inbox", "https://www.bulgariansociety.nl/user/support"],
+    ],
+  });
+  return { ...message, subject: `New support ticket #${reference} — ${subject}`, type: "support-ticket-created", entityId: present(ticket?.id, reference) };
+};
+
+export const createSupportTicketNotifier = ({
+  receiver = SUPPORT_NOTIFICATION_RECIPIENT,
+  sendEmail = sendInternalNotificationEmail,
+} = {}) => (ticket) => {
+  sendEmail({ receiver, ...buildSupportTicketNotification(ticket) });
+  return 1;
+};
+
 export const createInternalNotificationService = ({
   config = getInternalNotificationConfig(),
   sendEmail = sendInternalNotificationEmail,
@@ -146,6 +183,15 @@ export const notifyEventCreated = (event) => {
     return internalNotificationService.notifyEventCreated(event);
   } catch (error) {
     console.error("Failed to enqueue event notification:", error);
+    return 0;
+  }
+};
+
+const supportTicketNotifier = createSupportTicketNotifier();
+export const notifySupportTicketCreated = (ticket) => {
+  try { return supportTicketNotifier(ticket); }
+  catch (error) {
+    console.error("Failed to enqueue support ticket notification:", error);
     return 0;
   }
 };

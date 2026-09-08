@@ -58,7 +58,7 @@ export const redactSensitive = (value) => {
 
   const out = {};
   for (const [key, val] of Object.entries(value)) {
-    if (/password|passwd|pwd|secret|token|key/i.test(key)) {
+    if (/password|passwd|pwd|secret|token|key|credential|nonce|proof|authorization|cookie|challengeId/i.test(key)) {
       out[key] = "<redacted>";
     } else {
       out[key] = redactSensitive(val);
@@ -104,7 +104,7 @@ export const logError = (err, { req, meta, payload } = {}) => {
  * Express middleware – logs API requests using fixed-field info model (req, res, headers).
  */
 export const axiomLogger = (req, res, next) => {
-  if (!axiom || process.env.APP_ENV === "dev") {
+  if (req.supportPrivate || !axiom || process.env.APP_ENV === "dev") {
     return next();
   }
 

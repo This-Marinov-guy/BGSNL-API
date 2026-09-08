@@ -17,11 +17,12 @@ import {
   deleteDocument,
   getTreeLayout,
 } from "../controllers/users-controllers.js";
-import { cancelSubscription } from "../controllers/payments-controllers.js";
+import { cancelMembershipInPortal } from "../controllers/subscriptions-controller.js";
+import { MEMBER_PROMOTIONS } from "../util/config/promotions.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
-import { authMiddleware } from "../middleware/authorization.js";
+import { authMiddleware, requireBenefits } from "../middleware/authorization.js";
 import { adminMiddleware } from "../middleware/authorization.js";
 import { ACCESS_2 } from "../util/config/defines.js";
 import fileUpload from "../middleware/file-upload.js";
@@ -56,6 +57,7 @@ userRouter.get("/roles", authMiddleware, getCurrentUserRoles);
 userRouter.post(
   "/active-member",
   authMiddleware,
+  requireBenefits("memberDiscount"),
   multiFileUpload(process.env.BUCKET_AM).fields([
     { name: "cv", maxCount: 2 },
     // { name: 'letter', maxCount: 2 },
@@ -74,11 +76,13 @@ userRouter.patch(
   patchUserInfo
 );
 
-userRouter.delete("/cancel-membership", authMiddleware, cancelSubscription);
+userRouter.delete("/cancel-membership", authMiddleware, cancelMembershipInPortal);
+userRouter.get("/promotions", authMiddleware, requireBenefits(), (req, res) => res.json({ promotions: MEMBER_PROMOTIONS }));
 
 userRouter.post(
   "/verify-calendar-subscription",
   authMiddleware,
+  requireBenefits(),
   fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
   calendarVerificationValidators,
   validateRequest,
@@ -112,6 +116,7 @@ userRouter.post(
 userRouter.patch(
   "/alumni-quote",
   authMiddleware,
+  requireBenefits(),
   alumniQuoteValidators,
   validateRequest,
   updateAlumniQuote

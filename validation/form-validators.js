@@ -1141,6 +1141,11 @@ export const deleteEventValidators = [
   param("eventId").isMongoId().withMessage("Event ID is invalid"),
 ];
 
+export const eventDraftReminderValidators = [
+  param("eventId").isMongoId().withMessage("Event draft ID is invalid"),
+  requiredEmail(),
+];
+
 const stripePrice = (field = "itemId") =>
   body(field)
     .isString()
@@ -1295,7 +1300,13 @@ export const generalCheckoutValidators = [
   ),
 ];
 
+export const changeMembershipValidators = [
+  body("itemId").isString().bail().matches(/^(price_[A-Za-z0-9]+|alumni_free)$/).withMessage("Invalid membership plan"),
+  requiredUrl("origin_url", "Return URL"),
+];
+
 export const customerPortalValidators = [
+  body("action").optional().isIn(["cancel", "payment_method"]).withMessage("Invalid portal action"),
   requiredUrl("url", "Return URL"),
   body("type")
     .optional({ checkFalsy: true })

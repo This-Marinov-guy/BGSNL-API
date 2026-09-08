@@ -17,7 +17,7 @@ import {
 } from "../../controllers/Events/events-controllers.js";
 import fileUpload from "../../middleware/file-upload.js";
 import dotenv from "dotenv";
-import { adminMiddleware } from "../../middleware/authorization.js";
+import { adminMiddleware, authMiddleware, optionalAuthMiddleware, requireBenefits } from "../../middleware/authorization.js";
 import { ACCESS_3 } from "../../util/config/defines.js";
 import { validateRequest } from "../../middleware/validate-request.js";
 import {
@@ -55,11 +55,14 @@ eventRouter.get(
 
 eventRouter.get(
   "/check-member/:userId/:eventId",
+  authMiddleware,
+  requireBenefits("memberDiscount"),
   checkEligibleMemberForPurchase
 );
 
 eventRouter.post(
   "/check-ticket-eligibility",
+  optionalAuthMiddleware,
   checkTicketEligibilityValidators,
   validateRequest,
   checkTicketEligibility
@@ -85,6 +88,7 @@ eventRouter.post(
 
 eventRouter.post(
   "/register/non-society-event",
+  optionalAuthMiddleware,
   formDataUpload.none(),
   nonSocietyRegistrationValidators,
   validateRequest,

@@ -3,17 +3,16 @@ import {
   donationConfig,
   postCheckoutFile,
   postCheckoutNoFile,
-  postSubscriptionNoFile,
-  postSubscriptionFile,
   postDonationIntent,
-  postCustomerPortal,
   postPlaygroundTicketPreview,
 } from "../controllers/payments-controllers.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import multer from "multer";
 import dotenv from "dotenv";
-import { authMiddleware } from "../middleware/authorization.js";
+import { authMiddleware, optionalAuthMiddleware, requireBenefits } from "../middleware/authorization.js";
+import { getMembershipPlans, changeMembership, signupMembership, manageMembership } from "../controllers/subscriptions-controller.js";
 import { validateRequest } from "../middleware/validate-request.js";
+import { asyncHandler } from "../middleware/async-handler.js";
 import {
   customerPortalValidators,
   donationValidators,
@@ -23,6 +22,7 @@ import {
   playgroundTicketValidators,
   signupCheckoutValidators,
   subscriptionCheckoutValidators,
+  changeMembershipValidators,
 } from "../validation/form-validators.js";
 dotenv.config();
 
@@ -47,18 +47,20 @@ paymentRouter.post(
 
 paymentRouter.post(
   "/checkout/general",
+  optionalAuthMiddleware,
   generalCheckoutValidators,
   validateRequest,
-  postCheckoutNoFile
+  asyncHandler(postCheckoutNoFile)
 );
 
 paymentRouter.post(
   "/checkout/member-ticket",
   authMiddleware,
+  requireBenefits("memberDiscount"),
   formDataUpload.none(),
   memberTicketValidators,
   validateRequest,
-  postCheckoutFile
+  asyncHandler(postCheckoutFile)
 );
 
 paymentRouter.post(
@@ -66,7 +68,7 @@ paymentRouter.post(
   formDataUpload.none(),
   guestCheckoutValidators,
   validateRequest,
-  postCheckoutFile
+  asyncHandler(postCheckoutFile)
 );
 
 paymentRouter.post(
@@ -74,16 +76,16 @@ paymentRouter.post(
   fileResizedUpload(process.env.BUCKET_USERS).single("image"),
   signupCheckoutValidators,
   validateRequest,
-  postSubscriptionFile
+  signupMembership
 );
 
-// TODO: rename as this is only for unlocking account with old payment system
+// Backward-compatible entry point; all subscription changes share the same policy.
 paymentRouter.post(
   "/subscription/general",
   authMiddleware,
   subscriptionCheckoutValidators,
   validateRequest,
-  postSubscriptionNoFile
+  changeMembership
 );
 
 paymentRouter.post(
@@ -91,7 +93,10 @@ paymentRouter.post(
   authMiddleware,
   customerPortalValidators,
   validateRequest,
-  postCustomerPortal
+  manageMembership
 );
+
+paymentRouter.get("/subscription/plans", authMiddleware, getMembershipPlans);
+paymentRouter.post("/subscription/change", authMiddleware, changeMembershipValidators, validateRequest, changeMembership);
 
 export default paymentRouter;

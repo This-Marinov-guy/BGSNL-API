@@ -52,6 +52,7 @@ const _recountMemberStatistics = async () => {
     const today = new Date();
     const memberCount = await User.countDocuments({
       expireDate: { $gt: today },
+      status: "active",
     });
 
     let memberStatistics = await Statistics.findOne({ type: "member" });
@@ -84,7 +85,7 @@ const _recountMemberStatistics = async () => {
  */
 const _recountAlumniStatistics = async () => {
   try {
-    const alumniCount = await AlumniUser.countDocuments();
+    const alumniCount = await AlumniUser.countDocuments({ status: "active" });
 
     let alumniStatistics = await Statistics.findOne({ type: "alumni" });
 

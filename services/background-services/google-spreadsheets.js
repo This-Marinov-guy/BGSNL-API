@@ -827,7 +827,7 @@ const usersToSpreadsheet = (region = null) => {
       // Fetch users from MongoDB using Mongoose
       const query = {
         ...(filterByRegion && { region }),
-        status: { $ne: ALUMNI_MIGRATED },
+        status: { $nin: [ALUMNI_MIGRATED, "membership-migrated", "membership_active"] },
       };
 
       const users = await User.find(query)
@@ -985,7 +985,7 @@ export const alumniToSpreadsheet = () => {
       // Sheets client comes from singleton
 
       // Fetch users from MongoDB using Mongoose
-      const query = {};
+      const query = { status: { $nin: ["alumni-migrated", "membership-migrated", "membership_active"] } };
       const users = await AlumniUser.find(query)
         .sort({
           purchaseDate: 1,

@@ -1,7 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import multer from "multer";
-import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList } from "../../controllers/Events/future-events-action-controller.js";
+import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList, sendEventDraftReminder } from "../../controllers/Events/future-events-action-controller.js";
 import { adminMiddleware, optionalAuthMiddleware } from "../../middleware/authorization.js";
 import { ACCESS_4 } from "../../util/config/defines.js";
 import { validateRequest } from "../../middleware/validate-request.js";
@@ -9,6 +9,7 @@ import { unsupportedUploadError } from "../../middleware/upload-validation-error
 import {
     addEventValidators,
     deleteEventValidators,
+    eventDraftReminderValidators,
     editEventValidators,
 } from "../../validation/form-validators.js";
 dotenv.config();
@@ -69,6 +70,14 @@ futureEventRouter.patch(
     editEventValidators,
     validateRequest,
     editEvent
+);
+
+futureEventRouter.post(
+    "/draft/:eventId/reminder",
+    adminMiddleware(ACCESS_4),
+    eventDraftReminderValidators,
+    validateRequest,
+    sendEventDraftReminder
 );
 
 futureEventRouter.delete(

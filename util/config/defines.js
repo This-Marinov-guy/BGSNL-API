@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 export const REGIONS = [
   "amsterdam",
   "breda_tilburg",
@@ -23,6 +25,7 @@ export const DEV_JWT_TIMEOUT = "1h";
 export const SUPER_ADMIN = "super_admin";
 export const ADMIN = "admin";
 export const SOCIETY_ADMIN = "society_board_member";
+export const SUPPORT = "support";
 export const ACTIVE_MEMBER = "active_member";
 export const BOARD_MEMBER = "board_member";
 export const COMMITTEE_MEMBER = "committee_member";
@@ -73,14 +76,14 @@ export const NON_SOCIETY_EVENT_FINAL_REMINDER_TEST_EMAILS = [
 export const NO_REPLY_EMAIL = "no-reply@bulgariansociety.nl";
 export const NO_REPLY_EMAIL_NAME = "Bulgarian Society Netherlands";
 
-export const SUBSCRIPTION_PRICE_MONTHS_6 = "price_1QOg1FAShinXgMFZ1dZiQn1P";
-export const SUBSCRIPTION_PRICE_YEAR_1 = "price_1QOg1XAShinXgMFZyH0F4P9i";
+export const SUBSCRIPTION_PRICE_MONTHS_6 = process.env.STRIPE_MEMBERSHIP_6M_PRICE_ID || "price_1QOg1FAShinXgMFZ1dZiQn1P";
+export const SUBSCRIPTION_PRICE_YEAR_1 = process.env.STRIPE_MEMBERSHIP_12M_PRICE_ID || "price_1QOg1XAShinXgMFZyH0F4P9i";
 
 // Alumni subscription price IDs
-export const ALUMNI_PRICE_TIER_1 = "price_1Rx1XKAShinXgMFZqWsg4V0D"; // 3 euro/month - tier 1
-export const ALUMNI_PRICE_TIER_2 = "price_1SGEBBAShinXgMFZuC6fiOqf"; // 5 euro/month - tier 2
-export const ALUMNI_PRICE_TIER_3 = "price_1SGEFLAShinXgMFZcWsbLjeE"; // 7 euro/month - tier 3
-export const ALUMNI_PRICE_TIER_4 = "price_1SGEFoAShinXgMFZZzo95PeT"; // 10 euro/month - tier 4
+export const ALUMNI_PRICE_TIER_1 = process.env.STRIPE_ALUMNI_TIER_1_PRICE_ID || "price_1Rx1XKAShinXgMFZqWsg4V0D"; // 3 euro/month - tier 1
+export const ALUMNI_PRICE_TIER_2 = process.env.STRIPE_ALUMNI_TIER_2_PRICE_ID || "price_1SGEBBAShinXgMFZuC6fiOqf"; // 5 euro/month - tier 2
+export const ALUMNI_PRICE_TIER_3 = process.env.STRIPE_ALUMNI_TIER_3_PRICE_ID || "price_1SGEFLAShinXgMFZcWsbLjeE"; // 7 euro/month - tier 3
+export const ALUMNI_PRICE_TIER_4 = process.env.STRIPE_ALUMNI_TIER_4_PRICE_ID || "price_1SGEFoAShinXgMFZZzo95PeT"; // 10 euro/month - tier 4
 
 // Old alumni price IDs (legacy)
 export const ALUMNI_PRICE_TIER_1_OLD = "price_1Rx1XKAShinXgMFZqWsg4V0D"; // 3 euro/month - tier 1

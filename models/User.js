@@ -3,10 +3,12 @@ import uniqueValidator from "mongoose-unique-validator";
 import { MEMBER } from "../util/config/defines.js";
 import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 import { createCurrentDate } from "../util/functions/currentDate.js";
+import { subscriptionSchema, sharedMembershipFields } from "./SubscriptionFields.js";
 
 const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
+  ...sharedMembershipFields,
   _id: {
     type: String,
     default: () => "member_" + new mongoose.Types.ObjectId(),
@@ -14,21 +16,17 @@ const userSchema = new Schema({
   status: { type: String, required: true, default: USER_STATUSES[ACTIVE] },
   roles: { type: Array, required: true, default: [MEMBER] },
   documents: [{ type: Schema.Types.ObjectId, ref: "Document" }],
-  subscription: {
-    period: { type: Number },
-    id: { type: String },
-    customerId: { type: String },
-  },
+  subscription: { type: subscriptionSchema, default: () => ({}) },
   region: { type: String },
   purchaseDate: { type: Date, default: createCurrentDate, required: true },
   expireDate: { type: Date, required: true },
   image: { type: String, required: true },
   name: { type: String, required: true },
   surname: { type: String, required: true },
-  birth: { type: Date, required: true },
-  phone: { type: String, required: true },
+  birth: { type: Date, required() { return !this.accountAliases?.length; } },
+  phone: { type: String, required() { return !this.accountAliases?.length; } },
   email: { type: String, required: true, unique: true },
-  university: { type: String, required: true },
+  university: { type: String, required() { return !this.accountAliases?.length; } },
   otherUniversityName: { type: String },
   graduationDate: { type: String },
   course: { type: String },
@@ -63,5 +61,9 @@ const userSchema = new Schema({
 });
 
 userSchema.plugin(uniqueValidator);
+userSchema.index({ "subscription.id": 1, status: 1 });
+userSchema.index({ accountAliases: 1 });
+userSchema.index({ "subscription.syncedAt": 1, status: 1 });
+userSchema.index({ "subscription.lastAttemptAt": 1, "subscription.syncedAt": 1 });
 
 export default mongoose.model("User", userSchema);

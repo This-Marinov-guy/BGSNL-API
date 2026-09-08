@@ -1,11 +1,14 @@
 import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
+import { accountEntitlements } from "../util/subscriptions/policy.js";
+import { reconcileAccount } from "../services/subscriptions/reconcile.js";
 dotenv.config();
 import bcrypt from "bcryptjs";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { usersToSpreadsheet } from "../services/background-services/google-spreadsheets.js";
-import { isBirthdayToday, jwtRefresh } from "../util/functions/helpers.js";
+import { isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
 import { getTokenFromHeader } from "../util/functions/security.js";
 import {
@@ -33,22 +36,23 @@ import { DOCUMENT_TYPES } from "../util/config/enums.js";
 import { createStripeClient } from "../util/config/stripe.js";
 import { DEFAULT_REGION } from "../util/config/defines.js";
 
-export const refreshToken = async (req, res) => {
-  const token = getTokenFromHeader(req);
-  const newToken = jwtRefresh(token);
-
-  if (!newToken) {
-    return res.status(401).json({
-      token: null,
-      message: "Authentication token is invalid",
-    });
-  }
-
-  return res.status(200).json({ token: newToken });
+export const refreshToken = async (req, res, next) => {
+  let claims;
+  try {
+    claims = jwt.verify(getTokenFromHeader(req), process.env.JWT_STRING, { algorithms: ["HS256"], ignoreExpiration: true });
+    if (Number(claims.version) !== Number(process.env.AUTH_VERSION ?? 1)) throw new Error("Revoked token");
+  } catch { return res.status(401).json({ token: null, message: "Authentication token is invalid" }); }
+  try {
+    const user = await findUserById(claims.userId);
+    if (!user) return res.status(401).json({ token: null, message: "Account no longer available" });
+    if (Number(claims.sessionVersion ?? 0) !== Number(user.sessionVersion ?? 0)) return res.status(401).json({ token: null, message: "Session revoked. Please login again." });
+    res.set("Cache-Control", "private, no-store");
+    return res.status(200).json({ token: jwtSign(user) });
+  } catch { return next(new HttpError("Could not refresh your session", 503)); }
 };
 
 export const getCurrentUser = async (req, res, next) => {
-  const { userId } = extractUserFromRequest(req);  
+  const { userId } = extractUserFromRequest(req);
 
   const withTickets = (req.query.withTickets ?? 'true') === 'true';
   const withChristmas = (req.query.withChristmas ?? 'true') === 'true';
@@ -81,27 +85,28 @@ export const getCurrentUser = async (req, res, next) => {
     }
   }
 
+  let billingVerificationUnavailable = false;
+  try { user = (await reconcileAccount(user))?.user || user; }
+  catch { billingVerificationUnavailable = true; }
+
   // Populate documents if user has documents
   if (user.documents && user.documents.length > 0) {
     await user.populate('documents');
   }
 
-  user = user.toObject({ getters: true });
+  user = { ...user.toObject({ getters: true }), ...accountEntitlements(user) };
+  user.billingVerificationUnavailable = billingVerificationUnavailable;
+  if (billingVerificationUnavailable) { user.hasBenefits = false; user.memberDiscount = false; }
 
   delete user.password;
   user.registrationKey && delete user.registrationKey;
   !withTickets && delete user.tickets;
   !withChristmas && delete user.christmas;
 
-  if (user.status !== USER_STATUSES[ACTIVE]) {
-    return res.status(200).json({
-      status: user.status,
-      user: {
-        id: user._id,
-        status: user.status,
-        subscription: user.subscription,
-      },
-    });
+  if (!user.hasBenefits) {
+    delete user.tickets;
+    delete user.christmas;
+    delete user.mmmCampaign2025;
   }
 
   if (isBirthdayToday(user.birth)) {
@@ -112,79 +117,23 @@ export const getCurrentUser = async (req, res, next) => {
 };
 
 export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
-  const { userId } = extractUserFromRequest(req);
-
-  let user;
   try {
-    user = await findUserById(userId);
-  } catch (err) {
-    const error = new HttpError("Could not fetch user", 500);
-    return next(error);
+    const result = await reconcileAccount(req.account);
+    const user = result?.user || req.account;
+    return res.status(200).json({
+      ...accountEntitlements(user), roles: user.roles, region: user.region, image: user.image,
+      subscription: user.subscription || null,
+      stripeSubscription: result?.sub ? {
+        id: result.sub.id, status: result.sub.status,
+        cancelAtPeriodEnd: !!result.sub.cancel_at_period_end,
+        currentPeriodEnd: result.state.periodEnd,
+      } : null,
+    });
+  } catch {
+    const user = req.account;
+    return res.status(200).json({ ...accountEntitlements(user), hasBenefits: false, memberDiscount: false,
+      billingVerificationUnavailable: true, roles: user.roles, region: user.region, image: user.image, subscription: user.subscription });
   }
-
-  if (!user) {
-    const error = new HttpError("Could not fetch user", 500);
-    return next(error);
-  }
-
-  user = user.toObject({ getters: true });
-
-  const isAlumni = user?.tier !== undefined;
-  const alumniData = isAlumni
-    ? {
-        tier: user.tier,
-      }
-    : {};
-
-  const hasSubscriptionData = !!(
-    user.subscription &&
-    user.subscription.id &&
-    user.subscription.customerId
-  );
-
-  let stripeSubscription = null;
-  let stripeSubscriptionError = null;
-
-  if (hasSubscriptionData) {
-    try {
-      const stripeClient = createStripeClient(DEFAULT_REGION);
-      const sub = await stripeClient.subscriptions.retrieve(
-        "sub_1Qdp74AShinXgMFZH20uFakc",
-      );
-
-      stripeSubscription = {
-        id: sub.id,
-        status: sub.status, // e.g. active, canceled, past_due, unpaid, trialing
-        cancelAtPeriodEnd: !!sub.cancel_at_period_end,
-        canceledAt: sub.canceled_at ?? null,
-        cancelAt: sub.cancel_at ?? null,
-        currentPeriodStart: sub.current_period_start ?? null,
-        currentPeriodEnd: sub.current_period_end ?? null,
-      };
-
-    } catch (err) {
-      stripeSubscriptionError =
-        err?.message || "Failed to fetch subscription from Stripe";
-    }
-  }
-
-  const isCancelledInStripe = !!(
-    stripeSubscription &&
-    (stripeSubscription.status === "canceled" || stripeSubscription.cancelAtPeriodEnd)
-  );
-
-  // TODO: optimize this and send subscription data to the frontend
-  const isSubscribed = hasSubscriptionData && !isCancelledInStripe;
-
-  return res.status(200).json({
-    isSubscribed,
-    isAlumni,
-    ...alumniData,
-    status: user.status,
-    subscription: user.subscription || null,
-    stripeSubscription,
-    stripeSubscriptionError,
-  });
 };
 
 export const getCurrentUserRoles = async (req, res, next) => {
@@ -262,8 +211,6 @@ export const postActiveMember = async (req, res, next) => {
     );
     return next(error);
   }
-
-  activeMembersToSpreadsheet();
 
   res.status(201).json({ message: "Done" });
 };
@@ -449,7 +396,7 @@ export const convertUserToAlumni = async (req, res, next) => {
 export const getActiveAlumniMembers = async (req, res, next) => {
   try {
     // Find all alumni users with 'active' status
-    const alumniMembers = await AlumniUser.find()
+    const alumniMembers = await AlumniUser.find({ status: "active", $or: [{ tier: 0 }, { expireDate: { $gt: new Date() } }] })
       .select("name surname image tier quote joinDate")
       .sort({ name: 1, surname: 1 }); // Sort by name and surname alphabetically
 
@@ -498,9 +445,9 @@ export const updateAlumniQuote = async (req, res, next) => {
   // Find the alumni user
   let alumniUser;
   try {
-    alumniUser = await AlumniUser.findOne({ _id: userId });
+    alumniUser = await findUserById(userId);
 
-    if (!alumniUser) {
+    if (!alumniUser || !accountEntitlements(alumniUser).isAlumni) {
       return next(new HttpError("Alumni user not found", 404));
     }
   } catch (err) {
@@ -585,12 +532,12 @@ export const postAddDocument = async (req, res, next) => {
   if (!user) {
     const error = new HttpError("User not found", 404);
     return next(error);
-  }  
+  }
 
   // Get content from file upload if available, otherwise use the content from body
   let documentContent = content;
   let documentName = req.body?.name;
-  
+
   if (req.file) {
     documentContent = req.file.location || req.file.Location;
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
@@ -633,7 +580,7 @@ export const postAddDocument = async (req, res, next) => {
         user.documents = [];
       }
       user.documents.push(document);
-      
+
       await user.save({ session: sess });
 
       await sess.commitTransaction();

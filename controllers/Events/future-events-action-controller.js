@@ -35,6 +35,7 @@ import {
 } from "../../services/background-services/data-pool.js";
 import { eventToSpreadsheet } from "../../services/background-services/google-spreadsheets.js";
 import { notifyEventCreated } from "../../services/background-services/internal-notifications.js";
+import { sendEventDraftReminderEmail } from "../../services/background-services/email-transporter.js";
 import { getFingerprintLite } from "../../services/main-services/user-service.js";
 import {
   addOrUpdateEvent,
@@ -47,7 +48,24 @@ import {
   DEFAULT_REGION,
   EVENT_DRAFT,
   EVENT_OPENED,
+  HOME_URL,
 } from "../../util/config/defines.js";
+
+const PRODUCTION_WEBSITE_ORIGINS = new Set([
+  "https://bulgariansociety.nl",
+  "https://www.bulgariansociety.nl",
+]);
+
+const websiteOriginForRequest = (req) => {
+  const requestedOrigin = String(req.get("origin") ?? "").replace(/\/$/, "");
+  const isLocalOrigin =
+    !IS_PROD &&
+    /^http:\/\/(?:localhost|127\.0\.0\.1):300[0-2]$/.test(requestedOrigin);
+
+  return PRODUCTION_WEBSITE_ORIGINS.has(requestedOrigin) || isLocalOrigin
+    ? requestedOrigin
+    : HOME_URL;
+};
 
 const hasAdminRegionAccess = (req) =>
   ACCESS_2.some((role) => req.user?.roles?.includes(role));
@@ -227,6 +245,42 @@ const saveEventDraft = async (req, res, next, existingDraft = null) => {
   return res.status(existingDraft ? 200 : 201).json({
     status: true,
     event: responseEvent,
+  });
+};
+
+export const sendEventDraftReminder = async (req, res, next) => {
+  let draft;
+  try {
+    draft = await EventDraft.findById(req.params.eventId);
+  } catch {
+    return next(new HttpError("Fetching the event draft failed", 500));
+  }
+
+  if (!draft) {
+    return next(new HttpError("No such event draft", 404));
+  }
+
+  if (!hasDraftAccess(req, draft)) {
+    return next(new HttpError("No access to this event draft", 403));
+  }
+
+  const receiver = String(req.body.email).trim().toLowerCase();
+  const continueUrl = `${websiteOriginForRequest(req)}/user/edit-event/${draft.id}`;
+
+  try {
+    sendEventDraftReminderEmail({
+      receiver,
+      eventId: draft.id,
+      eventTitle: draft.title,
+      continueUrl,
+    });
+  } catch {
+    return next(new HttpError("Queuing the reminder email failed", 500));
+  }
+
+  return res.status(202).json({
+    status: true,
+    message: "Draft reminder email queued",
   });
 };
 

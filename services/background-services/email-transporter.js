@@ -1,4 +1,5 @@
-import { MailtrapClient } from "mailtrap";
+import { sendEmail, useDomakinMailer, resolveDomakinResendTemplate } from "./email-provider.js";
+import { queueDomakinTemplateEmail } from "./domakin-mailer.js";
 import { Resend } from "resend";
 import dotenv from "dotenv";
 import { WHATS_APP } from "../../util/config/LINKS.js";
@@ -11,7 +12,7 @@ dotenv.config();
 // Lightweight background mail queue with concurrency limit and de-duplication
 const MAIL_MAX_CONCURRENCY = 2;
 const MAIL_MAX_QUEUE = 500;
-const MAIL_TIMEOUT_MS = 60000; // 60s per job
+const MAIL_TIMEOUT_MS = useDomakinMailer() ? 100000 : 60000; // Domakin HTTP acceptance allows 95s.
 const mailQueue = [];
 const activeMailKeys = [];
 let activeMailCount = 0;
@@ -22,16 +23,22 @@ function processMailQueue() {
   if (!next) return;
   activeMailCount++;
   (async () => {
+    let timeout;
     try {
       await Promise.race([
         next.jobFn(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Mail timeout: ${next.key}`)), MAIL_TIMEOUT_MS)
-        ),
+        new Promise((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("Mail delivery timed out")), MAIL_TIMEOUT_MS);
+        }),
       ]);
     } catch (e) {
-      console.error("Background mail error:", e);
+      // Axios errors contain authorization headers, reset tokens and email
+      // bodies. Never log the request/config object or recipient queue key.
+      console.error("Background mail failed", { code: e.code, status: e.response?.status,
+        ...(!e.isAxiosError ? { message: e.message } : {}),
+      });
     } finally {
+      clearTimeout(timeout);
       const idx = activeMailKeys.indexOf(next.key);
       if (idx !== -1) activeMailKeys.splice(idx, 1);
       activeMailCount--;
@@ -50,7 +57,7 @@ function enqueueMail(key, jobFn) {
   processMailQueue();
 }
 
-const client = new MailtrapClient({ endpoint: process.env.MAIL_ENDPOINT, token: process.env.MAIL_TOKEN });
+const client = { send: sendEmail };
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
@@ -201,6 +208,15 @@ export const sendResendTemplateEmail = (
   variables = {}
 ) => {
   enqueueMail(`resend-template:${templateId}:${receiver}`, async () => {
+    if (useDomakinMailer()) {
+      const values = { ...variables };
+      delete values.subject;
+      const templateVariables = { name, ...values };
+      await queueDomakinTemplateEmail(resolveDomakinResendTemplate(templateId), receiver, {
+        ...templateVariables, template_variables: templateVariables,
+      });
+      return;
+    }
     if (!resend) {
       throw new Error("Missing RESEND_API_KEY");
     }
@@ -250,6 +266,65 @@ export const sendInternalNotificationEmail = ({
       custom_variables: {
         notification_type: type,
         entity_id: String(entityId),
+      },
+    });
+  });
+};
+
+const escapeEmailHtml = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+export const buildEventDraftReminderEmail = ({ eventTitle, continueUrl }) => {
+  const title =
+    String(eventTitle || "Untitled event").replace(/[\r\n]+/g, " ").trim() ||
+    "Untitled event";
+  const safeTitle = escapeEmailHtml(title);
+  const safeContinueUrl = escapeEmailHtml(continueUrl);
+
+  return {
+    subject: `Continue your event draft — ${title}`,
+    text: [
+      `Your event draft “${title}” is saved and ready to continue.`,
+      "",
+      `Continue editing: ${continueUrl}`,
+      "",
+      "Sign in with a Bulgarian Society Netherlands team account that has access to this draft.",
+    ].join("\n"),
+    html: `<!doctype html>
+      <html lang="en">
+        <body style="margin:0;padding:24px;background:#f3f6f4;font-family:Arial,sans-serif;color:#17201c;">
+          <div style="max-width:600px;margin:0 auto;padding:32px;border-radius:16px;background:#ffffff;box-shadow:0 16px 44px rgba(32,60,49,.10);">
+            <h1 style="margin:0 0 12px;font-size:26px;line-height:1.2;">Continue your event draft</h1>
+            <p style="margin:0 0 24px;font-size:16px;line-height:1.55;">Your draft <strong>${safeTitle}</strong> is saved and ready when you are.</p>
+            <a href="${safeContinueUrl}" style="display:inline-block;padding:13px 20px;border-radius:10px;background:#017363;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">Continue editing</a>
+            <p style="margin:24px 0 0;color:#66716b;font-size:14px;line-height:1.5;">Sign in with a Bulgarian Society Netherlands team account that has access to this draft.</p>
+          </div>
+        </body>
+      </html>`,
+  };
+};
+
+export const sendEventDraftReminderEmail = ({
+  receiver,
+  eventId,
+  eventTitle,
+  continueUrl,
+}) => {
+  const message = buildEventDraftReminderEmail({ eventTitle, continueUrl });
+
+  enqueueMail(`event-draft-reminder:${eventId}:${receiver}`, async () => {
+    await client.send({
+      from: sender,
+      to: [{ email: receiver }],
+      ...message,
+      category: "event-draft-reminder",
+      custom_variables: {
+        event_draft_id: String(eventId),
       },
     });
   });

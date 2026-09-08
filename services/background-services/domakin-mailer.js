@@ -74,7 +74,7 @@ export const createDomakinMailerClient = ({
         receiver: normalizeReceiver(receiver),
         variables: normalizeVariables(templateVariables),
         // The caller cannot select a sender. Domakin Mailer resolves this
-        // channel to its locked info@bulgariansociety.nl identity.
+        // channel to its server-configured Bulgarian Society identity.
         channel: DOMAKIN_MAILER_CHANNEL,
       },
       {
@@ -94,8 +94,8 @@ export const createDomakinMailerClient = ({
 });
 
 /**
- * Additive Domakin Mailer entry point. Existing Mailtrap and Resend helpers
- * remain unchanged and continue to handle every current BGSNL email flow.
+ * Channel-scoped Domakin Mailer entry point. The shared email provider uses
+ * this when BGSNL_EMAIL_PROVIDER=domakin; production defaults remain unchanged.
  */
 export const queueDomakinTemplateEmail = (
   templateId,

@@ -1,4 +1,6 @@
 import AlumniUser from "../../models/AlumniUser.js";
+import AccountIdentity from "../../models/AccountIdentity.js";
+import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 
 // ─── Alumni tree layout ───────────────────────────────────────────────────────
 // Exact port of frontend Tree.jsx + layout.js so the output is identical.
@@ -351,7 +353,7 @@ function _flattenTree(root) {
 }
 
 export const computeAlumniTreeLayout = async () => {
-  const members = await AlumniUser.find()
+  const members = await AlumniUser.find({ status: "active", $or: [{ tier: 0 }, { expireDate: { $gt: new Date() } }] })
     .select("name surname image tier quote joinDate")
     .sort({ name: 1, surname: 1 });
 
@@ -441,7 +443,7 @@ export const findUserByEmail = async (email) => {
 
   try {
     const excludeMembershipActive = {
-      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
+      ...CURRENT_ACCOUNT_FILTER,
     };
     const emailRegex = buildEmailRegex(normalizedEmail);
     const userQuery = User.findOne({
@@ -463,34 +465,25 @@ export const findUserByEmail = async (email) => {
 };
 
 export const findUserById = async (id) => {
-  // Check if id is valid before running queries
-  if (!id || (typeof id !== "string" && !id.toString)) {
-    return null;
-  }
-
-  try {
-    const excludeMembershipActive = {
-      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
-    };
-    const userQuery = User.findOne({ _id: id, ...excludeMembershipActive });
-    const alumniQuery = AlumniUser.findOne({
-      _id: id,
-      ...excludeMembershipActive,
-    });
-
-    const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
-
-    return alumni || user;
-  } catch (err) {
-    console.error("Error in findUserById:", err);
-    return null;
-  }
+  if (typeof id !== "string" || !id) return null;
+  const query = { $or: [{ _id: id }, { accountAliases: id }], ...CURRENT_ACCOUNT_FILTER };
+  const [member, alumni] = await Promise.all([User.findOne(query), AlumniUser.findOne(query)]);
+  if (alumni || member) return alumni || member;
+  // Legacy conversions used paired IDs. Never resolve an old authenticated ID
+  // by email alone: that address may since have been changed or reassigned.
+  const archived = await User.findById(id) || await AlumniUser.findById(id);
+  if (!archived || !CURRENT_ACCOUNT_FILTER.status.$nin.includes(archived.status)) return null;
+  const match = id.match(/^(member|alumni)_(.+)$/);
+  if (!match) return null;
+  const Target = match[1] === "member" ? AlumniUser : User;
+  const counterpartId = `${match[1] === "member" ? "alumni" : "member"}_${match[2]}`;
+  return Target.findOne({ _id: counterpartId, ...CURRENT_ACCOUNT_FILTER });
 };
 
 export const findUserByName = async (name, surname) => {
   try {
     const excludeMembershipActive = {
-      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
+      ...CURRENT_ACCOUNT_FILTER,
     };
     const userQuery = User.findOne({
       name,
@@ -521,7 +514,7 @@ export const findUserByQuery = async (query) => {
 
   try {
     const excludeMembershipActive = {
-      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
+      ...CURRENT_ACCOUNT_FILTER,
     };
     const userQuery = User.findOne({ ...query, ...excludeMembershipActive });
     const alumniQuery = AlumniUser.findOne({
@@ -550,6 +543,8 @@ export const findUserByQuery = async (query) => {
  */
 export const convertAlumniToUser = async (alumniId) => {
   const alumniUser = await AlumniUser.findOne({ _id: alumniId });
+  if (alumniUser?.subscription?.id) throw new Error("Subscription-backed accounts must change plans through Stripe billing");
+  if (alumniUser && (alumniUser.sessionVersion > 0 || await AccountIdentity.exists({ accountId: alumniId }))) throw new Error("Accounts with connected sign-in history must change membership in account settings");
   if (!alumniUser) {
     throw new Error(`Alumni not found: ${alumniId}`);
   }
@@ -625,6 +620,8 @@ try {
  */
 export const convertUserToAlumni = async (userId) => {
   const regularUser = await User.findOne({ _id: userId });
+  if (regularUser?.subscription?.id) throw new Error("Subscription-backed accounts must change plans through Stripe billing");
+  if (regularUser && (regularUser.sessionVersion > 0 || await AccountIdentity.exists({ accountId: userId }))) throw new Error("Accounts with connected sign-in history must change membership in account settings");
   if (!regularUser) {
     throw new Error(`User not found: ${userId}`);
   }

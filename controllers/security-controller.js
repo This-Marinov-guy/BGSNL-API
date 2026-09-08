@@ -18,26 +18,24 @@ import {
   compareIntStrings,
   decryptData,
   encryptData,
-  hasOverlap,
   isBirthdayToday,
   jwtSign,
 } from "../util/functions/helpers.js";
 import {
   ADMIN,
   ALUMNI,
-  LIMITLESS_ACCOUNT,
   MEMBER,
 } from "../util/config/defines.js";
 import { forgottenPassTokenCache } from "../util/config/caches.js";
 import moment from "moment";
 import { calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
-import { LOCKED, USER_STATUSES } from "../util/config/enums.js";
 import TemporaryCode from "../models/TemporaryCode.js";
 import {
   findUserByEmail,
   normalizeEmail,
 } from "../services/main-services/user-service.js";
 import AlumniUser from "../models/AlumniUser.js";
+import { buildLoginResponse } from "../services/authentication/login.js";
 
 export const postCheckEmail = async (req, res, next) => {
   const errors = validationResult(req);
@@ -298,61 +296,11 @@ export const login = async (req, res, next) => {
     return next(error);
   }
 
-  //check for expired account and lock it if necessary
-  const today = new Date();
-
-  if (
-    !hasOverlap(LIMITLESS_ACCOUNT, existingUser.roles) &&
-    today > existingUser.expireDate &&
-    existingUser?.tier !== 0
-  ) {
-    existingUser.status = USER_STATUSES[LOCKED];
-    try {
-      await existingUser.save();
-    } catch (err) {
-      console.log(err);
-      const error = new HttpError("Logging in failed, please try again", 500);
-      return next(error);
-    }
-  }
-
-  let token;
   try {
-    token = await jwtSign(existingUser);
-  } catch (err) {
-    console.log(err);
-    const error = new HttpError("Logging in failed", 500);
-    return next(error);
+    return res.status(201).json(await buildLoginResponse(existingUser));
+  } catch {
+    return next(new HttpError("Logging in failed, please try again", 503));
   }
-
-  const isSubscribed = !!(
-    existingUser.subscription &&
-    existingUser.subscription.id &&
-    existingUser.subscription.customerId
-  );
-
-  const isAlumni = existingUser.id.includes(ALUMNI);
-  const alumniData = isAlumni
-    ? {
-        tier: existingUser.tier,
-      }
-    : {};
-
-  const existingUserData = {
-    token,
-    isSubscribed,
-    isAlumni,
-    ...alumniData,
-    region: existingUser.region,
-    roles: existingUser.roles,
-    status: existingUser.status,
-  };
-
-  if (isBirthdayToday(existingUser.birth)) {
-    return res.status(201).json({ ...existingUserData, celebrate: true });
-  }
-
-  return res.status(201).json(existingUserData);
 };
 
 export const postSendPasswordResetEmail = async (req, res, next) => {

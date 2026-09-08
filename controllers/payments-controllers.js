@@ -1,21 +1,20 @@
 import dotenv from "dotenv";
 dotenv.config();
 import HttpError from "../models/Http-error.js";
-import User from "../models/User.js";
 import Event from "../models/Event.js";
-import { ACCESS_4, DEFAULT_REGION, MEMBER } from "../util/config/defines.js";
+import { ACCESS_4, DEFAULT_REGION } from "../util/config/defines.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
 import { createStripeClient, getStripeKey } from "../util/config/stripe.js";
 import {
   findUserById,
-  normalizeEmail,
 } from "../services/main-services/user-service.js";
-import { BILLING_PORTAL_CONFIGURATIONS } from "../util/config/enums.js";
 import { checkDiscountsOnEvents } from "../services/main-services/event-action-service.js";
 import {
   handleGuestTicketPurchase,
   handleMemberTicketPurchase,
 } from "../services/main-services/stripe-webhook-service.js";
+import { accountEntitlements } from "../util/subscriptions/policy.js";
+import { reconcileAccount } from "../services/subscriptions/reconcile.js";
 import { generateAndUploadEventTicket } from "../services/side-services/ticket-generator.js";
 
 // Resolves the correct Stripe priceId from the DB, applying early/late-bird and promotion discounts.
@@ -44,13 +43,13 @@ const resolveTicketPriceId = async (
 
   let user;
   try {
-    user = await User.findById(userId);
+    user = await findUserById(userId);
   } catch (_) {
     return null;
   }
-  if (!user) return null;
+  if (!user || !accountEntitlements(user).memberDiscount) return null;
 
-  const isActiveMember = ACCESS_4.includes(user.role);
+  const isActiveMember = user.roles?.some((role) => ACCESS_4.includes(role));
   if (isActiveMember && p?.activeMember?.priceId) {
     return p.activeMember.priceId;
   }
@@ -90,35 +89,6 @@ const resolveAddonLineItems = (event, addOns) => {
         : null;
     })
     .filter(Boolean);
-};
-
-export const cancelSubscription = async (req, res, next) => {
-  const { userId } = extractUserFromRequest(req);
-
-  let user;
-
-  try {
-    user = await findUserById(userId);
-  } catch (err) {
-    return next(
-      new HttpError("Could not find the current user, please try again", 500)
-    );
-  }
-
-  const stripeClient = createStripeClient(DEFAULT_REGION);
-
-  try {
-    await stripeClient.subscriptions.update(user.subscription.id, {
-      cancel_at_period_end: true,
-    });
-  } catch (err) {
-    new HttpError("Something went wrong, please try again!", 500);
-  }
-
-  res.status(200).json({
-    message:
-      "Membership was canceled - you can still access your account and use discounts until the expiration date!",
-  });
 };
 
 export const donationConfig = (req, res) => {
@@ -240,70 +210,6 @@ export const postPlaygroundTicketPreview = async (req, res, next) => {
   });
 };
 
-export const postSubscriptionNoFile = async (req, res, next) => {
-  const { itemId, origin_url, region } = req.body;
-  const { userId, customerId = '' } = extractUserFromRequest(req);
-  const email = normalizeEmail(req.body.email);
-
-  const stripeClient = createStripeClient(DEFAULT_REGION);
-
-  const checkoutData = {
-    mode: "subscription",
-    allow_promotion_codes: true,
-    line_items: [{ price: itemId, quantity: 1 }],
-    success_url: `${origin_url}/success`,
-    cancel_url: `${origin_url}/fail`,
-    metadata: {
-      ...req.body,
-      ...("email" in req.body ? { email: email || "" } : {}),
-      userId: userId || "",
-    },
-  };
-
-  // if (customerId) {
-  //   checkoutData.customer = customerId;
-  // }
-
-  const session = await stripeClient.checkout.sessions.create(checkoutData);
-
-  res.status(200).json({ url: session.url });
-};
-
-export const postSubscriptionFile = async (req, res, next) => {
-  const { itemId, origin_url, region } = req.body;
-  const { userId, customerId = '' } = extractUserFromRequest(req);
-  const email = normalizeEmail(req.body.email);
-
-  const stripeClient = createStripeClient(DEFAULT_REGION);
-
-  let fileLocation;
-  if (req.file) {
-    fileLocation = req.file.Location ? req.file.Location : req.file.location;
-  }
-
-  const checkoutData = {
-    mode: "subscription",
-    allow_promotion_codes: false,
-    line_items: [{ price: itemId, quantity: 1 }],
-    success_url: `${origin_url}/success`,
-    cancel_url: `${origin_url}/fail`,
-    metadata: {
-      file: fileLocation ? fileLocation : null,
-      userId: userId || "",
-      ...req.body,
-      ...("email" in req.body ? { email: email || "" } : {}),
-    },
-  };
-
-  // if (customerId) {
-  //   checkoutData.customer = customerId;
-  // }
-
-  const session = await stripeClient.checkout.sessions.create(checkoutData);
-
-  res.status(200).json({ url: session.url });
-};
-
 export const postCheckoutNoFile = async (req, res, next) => {
   const { origin_url, eventId, normalTicket } = req.body;
   const { userId } = extractUserFromRequest(req);
@@ -311,7 +217,14 @@ export const postCheckoutNoFile = async (req, res, next) => {
   let { quantity } = req.body;
   const checkoutType = inferCheckoutType(req, userId);
   const effectiveUserId =
-    checkoutType === "member" ? userId || req.body.userId || "" : "";
+    checkoutType === "member" ? userId || "" : "";
+
+  if (checkoutType === "member") {
+    try {
+      const account = (await reconcileAccount(req.account))?.user;
+      if (!account || !accountEntitlements(account).memberDiscount) return next(new HttpError("An active member subscription is required", 403));
+    } catch { return next(new HttpError("Could not verify membership. Please try again.", 503)); }
+  }
 
   if (!eventId) {
     return next(new HttpError("Missing eventId", 422));
@@ -358,6 +271,7 @@ export const postCheckoutNoFile = async (req, res, next) => {
     cancel_url: `${origin_url}/fail`,
     metadata: {
       ...req.body,
+      method: checkoutType === "member" ? "buy_member_ticket" : "buy_guest_ticket",
       userId: effectiveUserId,
       quantity,
       region: event.region,
@@ -380,7 +294,14 @@ export const postCheckoutFile = async (req, res, next) => {
   let { quantity } = req.body;
   const checkoutType = inferCheckoutType(req, userId);
   const effectiveUserId =
-    checkoutType === "member" ? userId || req.body.userId || "" : "";
+    checkoutType === "member" ? userId || "" : "";
+
+  if (checkoutType === "member") {
+    try {
+      const account = (await reconcileAccount(req.account))?.user;
+      if (!account || !accountEntitlements(account).memberDiscount) return next(new HttpError("An active member subscription is required", 403));
+    } catch { return next(new HttpError("Could not verify membership. Please try again.", 503)); }
+  }
 
   if (!eventId) {
     return next(new HttpError("Missing eventId", 422));
@@ -411,13 +332,13 @@ export const postCheckoutFile = async (req, res, next) => {
     }
 
     try {
-      member = await User.findById(effectiveUserId);
+      member = await findUserById(effectiveUserId);
     } catch (_) {
       return next(new HttpError("Could not load member", 500));
     }
 
-    if (!member) {
-      return next(new HttpError("User not found", 404));
+    if (!member || !accountEntitlements(member).memberDiscount) {
+      return next(new HttpError("An active member subscription is required", 403));
     }
 
     const memberName = `${member.name} ${member.surname}`;
@@ -454,11 +375,12 @@ export const postCheckoutFile = async (req, res, next) => {
   }
 
   const isFreeCheckout =
-    event.isFree || (checkoutType === "member" && event.isMemberFree);
+    event.isFree || (checkoutType === "member" && !isNormalTicket && event.isMemberFree);
 
   if (isFreeCheckout) {
     const metadata = {
       ...req.body,
+      method: checkoutType === "member" ? "buy_member_ticket" : "buy_guest_ticket",
       file: fileLocation ? fileLocation : "",
       userId: effectiveUserId,
       quantity,
@@ -506,6 +428,7 @@ export const postCheckoutFile = async (req, res, next) => {
     cancel_url: `${origin_url}/fail`,
     metadata: {
       ...req.body,
+      method: checkoutType === "member" ? "buy_member_ticket" : "buy_guest_ticket",
       file: fileLocation ? fileLocation : null,
       userId: effectiveUserId,
       quantity,
@@ -518,47 +441,6 @@ export const postCheckoutFile = async (req, res, next) => {
   // }
 
   const session = await stripeClient.checkout.sessions.create(checkoutData);
-
-  res.status(200).json({ url: session.url });
-};
-
-export const postCustomerPortal = async (req, res, next) => {
-  const { url, type } = req.body;
-  const { userId } = extractUserFromRequest(req);
-
-  let user;
-
-  try {
-    user = await findUserById(userId);
-  } catch (err) {
-    return next(
-      new HttpError("Could not find the current user, please try again", 500)
-    );
-  }  
-
-  if (!user || !user.subscription.customerId) {
-    return next(
-      new HttpError("Operation failed - please contact support!", 500)
-    );
-  }
-
-  const stripeClient = createStripeClient(DEFAULT_REGION);
-
-  let session = null;
-  let configuration = BILLING_PORTAL_CONFIGURATIONS[type] ?? BILLING_PORTAL_CONFIGURATIONS[MEMBER];
-
-  try {
-    session = await stripeClient.billingPortal.sessions.create({
-      customer: user.subscription.customerId,
-      return_url: url,
-      configuration: configuration,
-    });
-  } catch (err) {
-    console.log(err);
-    return next(
-      new HttpError("Operation failed - please contact support!", 500)
-    );
-  }
 
   res.status(200).json({ url: session.url });
 };

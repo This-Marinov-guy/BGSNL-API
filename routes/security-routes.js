@@ -10,6 +10,10 @@ import {
   postDirectSignupDisabled,
 } from "../controllers/security-controller.js";
 import { validateRequest } from "../middleware/validate-request.js";
+import { authMiddleware } from "../middleware/authorization.js";
+import { requireGoogleOrigin } from "../services/authentication/google.js";
+import { getGoogleConfig, getConnectedAccounts, prepareGoogle, completeGoogle, disconnectGoogle } from "../controllers/google-auth-controller.js";
+import { googleChallengeValidators, googleLinkChallengeValidators, googleCredentialValidators, googlePasswordValidators } from "../validation/google-auth-validators.js";
 import {
   changePasswordValidators,
   checkEmailValidators,
@@ -23,6 +27,14 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const securityRouter = express.Router();
+
+securityRouter.get("/google/config", getGoogleConfig);
+securityRouter.get("/connected-accounts", authMiddleware, getConnectedAccounts);
+securityRouter.post("/google/login/challenge", requireGoogleOrigin, googleChallengeValidators, validateRequest, prepareGoogle("login"));
+securityRouter.post("/google/login", requireGoogleOrigin, googleCredentialValidators, validateRequest, completeGoogle("login"));
+securityRouter.post("/google/link/challenge", requireGoogleOrigin, authMiddleware, googleLinkChallengeValidators, validateRequest, prepareGoogle("link"));
+securityRouter.post("/google/link", requireGoogleOrigin, authMiddleware, googleCredentialValidators, validateRequest, completeGoogle("link"));
+securityRouter.post("/google/disconnect", requireGoogleOrigin, authMiddleware, googlePasswordValidators, validateRequest, disconnectGoogle);
 
 securityRouter.post(
   "/check-email",

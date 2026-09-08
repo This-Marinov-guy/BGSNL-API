@@ -83,7 +83,7 @@ export const firewall = async (req, res, next) => {
     );
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization"
+      "Content-Type, Authorization, X-Support-Token"
     );
     return next();
   } else {

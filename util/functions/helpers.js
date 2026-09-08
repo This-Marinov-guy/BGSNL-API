@@ -46,9 +46,12 @@ export const jwtSign = (user) => {
   return jwt.sign(
     {
       version: Number(process.env.AUTH_VERSION ?? 1),
+      sessionVersion: Number(user.sessionVersion ?? 0),
       image: user.image,
+      name: user.name,
+      surname: user.surname,
       userId: user.id,
-      customerId: user.subscription.customerId ?? '',
+      customerId: user.subscription?.customerId ?? '',
       status: user.status,
       roles: user.roles,
       email: user.email,
@@ -76,7 +79,10 @@ export const jwtRefresh = (token) => {
     const newToken = jwt.sign(
       {
         version: Number(process.env.AUTH_VERSION ?? 1),
+        sessionVersion: Number(decoded.sessionVersion ?? 0),
         image: decoded.image,
+        name: decoded.name,
+        surname: decoded.surname,
         userId: decoded.userId,
         customerId: decoded.customerId ?? '',
         roles: decoded.roles,

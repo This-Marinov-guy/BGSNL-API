@@ -3,10 +3,12 @@ import uniqueValidator from "mongoose-unique-validator";
 import { ALUMNI } from "../util/config/defines.js";
 import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 import { createCurrentDate } from "../util/functions/currentDate.js";
+import { subscriptionSchema, sharedMembershipFields } from "./SubscriptionFields.js";
 
 const Schema = mongoose.Schema;
 
 const alumniUserSchema = new Schema({
+  ...sharedMembershipFields,
   _id: {
     type: String,
     default: () => "alumni_" + new mongoose.Types.ObjectId(),
@@ -15,11 +17,7 @@ const alumniUserSchema = new Schema({
   tier: { type: Number, required: true, default: 0 },
   roles: { type: Array, required: true, default: [ALUMNI] },
   documents: [{ type: Schema.Types.ObjectId, ref: "Document" }],
-  subscription: {
-    period: { type: Number },
-    id: { type: String },
-    customerId: { type: String },
-  },
+  subscription: { type: subscriptionSchema, default: () => ({}) },
   joinDate: { type: Date, default: createCurrentDate, required: true },
   purchaseDate: { type: Date, default: createCurrentDate, required: true },
   expireDate: { type: Date, required: true },
@@ -52,5 +50,9 @@ const alumniUserSchema = new Schema({
 });
 
 alumniUserSchema.plugin(uniqueValidator);
+alumniUserSchema.index({ "subscription.id": 1, status: 1 });
+alumniUserSchema.index({ accountAliases: 1 });
+alumniUserSchema.index({ "subscription.syncedAt": 1, status: 1 });
+alumniUserSchema.index({ "subscription.lastAttemptAt": 1, "subscription.syncedAt": 1 });
 
 export default mongoose.model("AlumniUser", alumniUserSchema);
