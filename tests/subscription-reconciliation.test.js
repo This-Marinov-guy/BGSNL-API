@@ -90,10 +90,12 @@ test("unpaid alumni upgrade does not apply alumni identity or tier", async () =>
   assert.equal(h.account.tier, undefined);
   assert.equal(h.account.status, "locked");
 });
-test("billing recovery never clears an administrative suspension", async () => {
-  const h = makeHarness(); h.account.status = "frozen";
-  await h.sync();
-  assert.equal(h.account.status, "frozen");
+test("billing recovery never clears a frozen or suspended account", async () => {
+  for (const status of ["frozen", "suspended"]) {
+    const h = makeHarness(); h.account.status = status;
+    await h.sync();
+    assert.equal(h.account.status, status);
+  }
 });
 test("cancellation stops reminders and removes benefits without extending expiry", async () => {
   const h = makeHarness(); h.live.status = "past_due";

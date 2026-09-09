@@ -33,5 +33,5 @@ export const manageMembership = billingAction(async (req, res) => {
 });
 export const cancelMembershipInPortal = billingAction(async (req, res) => {
   const session = await createMembershipPortal(req.account, { action: "cancel" });
-  res.json({ url: session.url, message: "Review and confirm cancellation in the Stripe customer portal." });
+  res.json({ url: session.url, message: "Review and confirm the cancellation in the billing portal." });
 });

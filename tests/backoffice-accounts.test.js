@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { FROZEN, SUSPENDED, USER_STATUSES } from "../util/config/enums.js";
 import {
   buildAccountListFilter,
   buildAccountSearchPattern,
@@ -151,4 +152,18 @@ test("the last active super admin cannot be deactivated", async () => {
     }),
     (error) => error.statusCode === 409 && /last active super admin/.test(error.message),
   );
+});
+
+test("frozen and suspended are distinct editable statuses without changing existing frozen records", async () => {
+  assert.equal(FROZEN, "frozen");
+  assert.equal(SUSPENDED, "suspended");
+  for (const status of [FROZEN, SUSPENDED]) {
+    assert.equal(USER_STATUSES[status], status);
+    const memberModel = fakeModel(account({ status: "frozen" }));
+    const service = createAccountsBackofficeService({ memberModel, alumniModel: fakeModel() });
+    const result = await service.update({ type: "member", id: "member_1",
+      body: updateBody({ status, roles: [] }), actor: { _id: "member_admin" } });
+    assert.equal(result.account.status, status);
+    assert.equal(memberModel.state.update.update.$set.status, status);
+  }
 });

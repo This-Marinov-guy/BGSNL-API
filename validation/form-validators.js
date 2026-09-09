@@ -1030,6 +1030,10 @@ export const memberTicketValidators = [
   ...ticketMetadataValidators,
   requiredUserId(),
   optionalBoolean("normalTicket", "Normal ticket"),
+  body("quantity")
+    .optional({ checkFalsy: true })
+    .custom((value) => Number(value) === 1)
+    .withMessage("Member checkout is limited to one ticket"),
   body("method")
     .optional({ checkFalsy: true })
     .equals("buy_member_ticket")

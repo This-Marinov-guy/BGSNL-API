@@ -18,7 +18,7 @@ export const nextReminderSlot = (job, now = Date.now()) => {
 export async function deliverBillingReminder({ email, second }) {
   const message = "We could not collect your subscription payment. Your account benefits are locked. " +
     "Please sign in and open Manage billing to update your payment method and pay the outstanding invoice, " +
-    "or cancel your subscription in the Stripe customer portal. Changing your card alone does not restore benefits until payment succeeds. " +
+    "or cancel your subscription in the billing portal. Changing your card alone does not restore benefits until payment succeeds. " +
     "Cancelling stops the subscription; it does not restore paid benefits or automatically settle an outstanding invoice.";
   const delivery = sendEmail({
     from: { email: NO_REPLY_EMAIL, name: NO_REPLY_EMAIL_NAME }, to: [{ email }],

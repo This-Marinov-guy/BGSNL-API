@@ -1,7 +1,8 @@
 // USER STATUS
 export const ACTIVE = 'active';
 export const LOCKED = 'locked';
-export const SUSPENDED = 'frozen';
+export const FROZEN = 'frozen';
+export const SUSPENDED = 'suspended';
 export const ALUMNI_MIGRATED = 'alumni-migrated';
 export const PAYMENT_AWAITING = "payment_awaiting";
 export const MEMBERSHIP_ACTIVE = "membership_active";
@@ -9,6 +10,7 @@ export const MEMBERSHIP_ACTIVE = "membership_active";
 export const USER_STATUSES = {
   [ACTIVE]: ACTIVE,
   [LOCKED]: LOCKED,
+  [FROZEN]: FROZEN,
   [SUSPENDED]: SUSPENDED,
   [ALUMNI_MIGRATED]: ALUMNI_MIGRATED,
   [PAYMENT_AWAITING]: PAYMENT_AWAITING,

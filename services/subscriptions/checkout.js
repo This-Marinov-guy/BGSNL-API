@@ -105,7 +105,7 @@ export async function createMembershipPortal(user, { returnUrl, priceId, action,
 async function assertNoExistingSubscription(stripe, customer) {
   for await (const sub of stripe.subscriptions.list({ customer, status: "all", limit: 100 })) {
     if (!ENDED_SUBSCRIPTION_STATUSES.includes(sub.status)) {
-      throw new HttpError("You already have a subscription. Manage it in the Stripe customer portal.", 409);
+      throw new HttpError("You already have a subscription. Manage it in the billing portal.", 409);
     }
   }
 }

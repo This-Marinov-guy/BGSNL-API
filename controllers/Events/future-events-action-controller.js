@@ -610,7 +610,7 @@ export const addEvent = async (req, res, next) => {
     if (!product.id) {
       return next(
         new HttpError(
-          "Stripe Product could not be created, please try again!",
+          "The payment product could not be created. Please try again.",
           500
         )
       );

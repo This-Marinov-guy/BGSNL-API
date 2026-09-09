@@ -89,6 +89,15 @@ test("alumni identity does not depend on the legacy ID prefix", () => {
   assert.equal(accountEntitlements(user, now).memberDiscount, false);
   assert.equal(accountEntitlements({ ...user, tier: 0 }, now).hasBenefits, false);
 });
+
+test("frozen and suspended accounts cannot receive benefits from an otherwise paid subscription", () => {
+  for (const status of ["frozen", "suspended"]) {
+    const user = { status, roles: ["member", "super_admin"], expireDate: new Date(now + 3600000),
+      subscription: { id: "sub_owner", syncedAt: new Date(now), status: "active", hasBenefits: true } };
+    assert.equal(accountEntitlements(user, now).hasBenefits, false);
+    assert.equal(accountEntitlements(user, now).memberDiscount, false);
+  }
+});
 test("billing return URLs cannot redirect to external origins or embedded credentials", () => {
   assert.equal(billingReturnUrl("https://www.bulgariansociety.nl/user?x=y"), "https://www.bulgariansociety.nl/user#settings");
   for (const url of ["https://evil.example/user", "https://bulgariansociety.nl.evil.example", "https://evil@bulgariansociety.nl", "javascript:alert(1)"]) {

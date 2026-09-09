@@ -144,6 +144,8 @@ const eventSchema = new Schema({
       status: { type: Number, default: 0 },
       code: { type: Number },
       type: { type: String },
+      userId: { type: String },
+      memberPriceApplied: { type: Boolean, default: false },
       transactionId: { type: String, default: "-" },
       timestamp: { type: Date, default: createCurrentDate },
       name: { type: String, required: true },

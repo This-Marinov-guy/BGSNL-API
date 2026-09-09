@@ -596,6 +596,18 @@ test("ticket quantity is capped at the public purchase limit of 10", async () =>
   assert.ok(legacyCheckout.response.payload.errors.quantity);
 });
 
+test("member checkout is always limited to one ticket", async () => {
+  const member = await validate(memberTicketValidators, {
+    body: { ...memberCheckoutBody(), quantity: "2" },
+  });
+
+  assert.equal(member.response.statusCode, 422);
+  assert.equal(
+    member.response.payload.errors.quantity,
+    "Member checkout is limited to one ticket"
+  );
+});
+
 test("public guest checkout rejects an incomplete phone number", async () => {
   const guest = await validate(guestCheckoutValidators, {
     body: {

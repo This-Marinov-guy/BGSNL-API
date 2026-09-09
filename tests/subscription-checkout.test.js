@@ -43,6 +43,54 @@ test("repeated checkout requests reuse the same open session and verified custom
   assert.deepEqual(h.calls[0].data.metadata, { method: "membership_checkout", checkoutKey: "account-checkout:member_owner" });
   assert.equal(h.calls[0].data.line_items[0].price, MEMBERSHIP_PLANS[0].priceId);
 });
+test("checkout initializes a missing subscription without granting benefits before payment", async () => {
+  for (const subscription of [undefined, null]) {
+    const h = checkoutHarness();
+    h.user.subscription = subscription;
+    await h.reserve();
+    assert.equal(h.user.subscription.customerId, "cus_verified");
+    assert.equal(h.user.subscription.id, undefined);
+    assert.equal(h.user.subscription.hasBenefits, undefined);
+    assert.equal(h.calls[0].data.mode, "subscription");
+    assert.deepEqual(h.calls[0].data.line_items, [{ price: MEMBERSHIP_PLANS[0].priceId, quantity: 1 }]);
+    assert.equal(h.calls[0].data.success_url, "https://bulgariansociety.nl/user?billing=return#settings");
+    assert.equal(h.calls[0].data.cancel_url, "https://bulgariansociety.nl/user#settings");
+  }
+});
+test("accounts without a subscription can start every allowlisted Member period and Alumni tier", async () => {
+  for (const subscription of [undefined, null, {}, { customerId: "cus_existing" }]) {
+    for (const plan of MEMBERSHIP_PLANS) {
+      const user = { id: "verified_owner", status: "active", subscription };
+      const calls = [];
+      const result = await startMembershipChange(user, {
+        priceId: plan.priceId,
+        returnUrl: "https://bulgariansociety.nl",
+        dependencies: {
+          reconcile: async () => ({ user }),
+          openPortal: async () => { throw new Error("New subscriptions should use Checkout"); },
+          checkout: async (options) => { calls.push(options); return { url: "https://checkout.stripe.com/test-session" }; },
+        },
+      });
+      assert.equal(result.url, "https://checkout.stripe.com/test-session");
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].user, user);
+      assert.equal(calls[0].key, "account-checkout:verified_owner");
+      assert.deepEqual(calls[0].plan, plan);
+    }
+  }
+});
+test("a missing subscription cannot bypass frozen or suspended account restrictions", async () => {
+  for (const status of ["frozen", "suspended"]) {
+    const user = { id: "restricted_owner", status };
+    await assert.rejects(startMembershipChange(user, {
+      priceId: MEMBERSHIP_PLANS[0].priceId,
+      dependencies: {
+        reconcile: async () => ({ user }),
+        checkout: async () => { throw new Error("Restricted accounts must not create checkout sessions"); },
+      },
+    }), (error) => error.statusCode === 403);
+  }
+});
 test("ambiguous network failures replay the identical Stripe idempotency key and request", async () => {
   const h = checkoutHarness(); h.failNext();
   await assert.rejects(h.reserve(), /Network interrupted/);

@@ -543,7 +543,7 @@ export const findUserByQuery = async (query) => {
  */
 export const convertAlumniToUser = async (alumniId) => {
   const alumniUser = await AlumniUser.findOne({ _id: alumniId });
-  if (alumniUser?.subscription?.id) throw new Error("Subscription-backed accounts must change plans through Stripe billing");
+  if (alumniUser?.subscription?.id) throw new Error("Subscription-backed accounts must change plans through the billing portal");
   if (alumniUser && (alumniUser.sessionVersion > 0 || await AccountIdentity.exists({ accountId: alumniId }))) throw new Error("Accounts with connected sign-in history must change membership in account settings");
   if (!alumniUser) {
     throw new Error(`Alumni not found: ${alumniId}`);
@@ -620,7 +620,7 @@ try {
  */
 export const convertUserToAlumni = async (userId) => {
   const regularUser = await User.findOne({ _id: userId });
-  if (regularUser?.subscription?.id) throw new Error("Subscription-backed accounts must change plans through Stripe billing");
+  if (regularUser?.subscription?.id) throw new Error("Subscription-backed accounts must change plans through the billing portal");
   if (regularUser && (regularUser.sessionVersion > 0 || await AccountIdentity.exists({ accountId: userId }))) throw new Error("Accounts with connected sign-in history must change membership in account settings");
   if (!regularUser) {
     throw new Error(`User not found: ${userId}`);

@@ -14,6 +14,14 @@ import moment from "moment";
 import { ACTIVE, PAYMENT_AWAITING, USER_STATUSES } from "../../util/config/enums.js";
 import { recountMemberStatistics, recountAlumniStatistics } from "../background-services/statistics-service.js";
 import { getStripeSubscriptionCreatedDate } from "../side-services/stripe.js";
+import BillingRecord from "../../models/BillingRecord.js";
+import {
+  isMemberPriceCheckout,
+  isRestrictedTicketAccount,
+  memberTicketClaimKey,
+  memberTicketDuplicateMatcher,
+} from "../tickets/member-ticket-policy.js";
+import { refundDuplicateMemberTicket } from "../tickets/member-ticket-refund.js";
 
 const resolveJoinDateFromSubscription = async (
   subscriptionId,
@@ -285,8 +293,8 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
  * Handle member ticket purchase checkout session
  */
 export const handleMemberTicketPurchase = async (metadata, paymentData) => {
-  const { transactionId } = paymentData;
-  const { eventId, userId, code, preferences, type } = metadata;
+  const { transactionId, stripeRegion } = paymentData;
+  const { eventId, userId, code, preferences } = metadata;
   let societyEvent;
   try {
     societyEvent = await Event.findById(eventId);
@@ -305,37 +313,113 @@ export const handleMemberTicketPurchase = async (metadata, paymentData) => {
     throw new HttpError(err.message, 500);
   }
 
+  if (!targetUser) {
+    throw new HttpError("Could not find ticket account", 404);
+  }
+
+  // A checkout may complete after an administrator or billing reconciliation
+  // restricts the account. Fulfil it as a guest so no member benefit or member
+  // ticket record is retained for a non-active account.
+  if (isRestrictedTicketAccount(targetUser)) {
+    return handleGuestTicketPurchase({
+      ...metadata,
+      method: "buy_guest_ticket",
+      type: "guest",
+      userId: "",
+      memberPriceApplied: "false",
+      guestName: [targetUser?.name, targetUser?.surname].filter(Boolean).join(" ") || "Guest",
+      guestEmail: targetUser?.email || "",
+      guestPhone: targetUser?.phone || "Not provided",
+    }, paymentData);
+  }
+
   const addOns = metadata?.addOns ? JSON.parse(metadata?.addOns) : [];
+  const memberPriceApplied = isMemberPriceCheckout(metadata);
+  const guest = {
+    type: memberPriceApplied ? "member" : "guest",
+    userId: String(userId),
+    memberPriceApplied,
+    code,
+    transactionId,
+    name: targetUser.name + " " + targetUser.surname,
+    email: targetUser.email,
+    phone: targetUser.phone,
+    preferences,
+    addOns,
+    ticket: metadata.file,
+  };
+  const userTicket = {
+    event:
+      societyEvent.title +
+      " | " +
+      moment(societyEvent.date).format(MOMENT_DATE_YEAR),
+    image: metadata.file,
+  };
 
+  const eventQuery = { _id: eventId };
+  if (memberPriceApplied) {
+    eventQuery.guestList = {
+      $not: {
+        $elemMatch: memberTicketDuplicateMatcher({
+          userId,
+          userIds: targetUser.accountAliases,
+          email: targetUser.email,
+        }),
+      },
+    };
+  }
+
+  let updatedEvent = null;
+  const databaseSession = await mongoose.startSession();
   try {
-    const sess = await mongoose.startSession();
-    sess.startTransaction();
-    societyEvent.guestList.push({
-      type: type ?? "member",
-      code,
-      transactionId,
-      name: targetUser.name + " " + targetUser.surname,
-      email: targetUser.email,
-      phone: targetUser.phone,
-      preferences,
-      addOns,
-      ticket: metadata.file,
-    });
+    await databaseSession.withTransaction(async () => {
+      updatedEvent = await Event.findOneAndUpdate(
+        eventQuery,
+        { $push: { guestList: guest } },
+        { new: true, session: databaseSession }
+      );
 
-    targetUser.tickets.push({
-      event:
-        societyEvent.title +
-        " | " +
-        moment(societyEvent.date).format(MOMENT_DATE_YEAR),
-      image: metadata.file,
-    });
+      if (!updatedEvent) return;
 
-    await societyEvent.save();
-    await targetUser.save();
-    await sess.commitTransaction();
+      await targetUser.constructor.updateOne(
+        { _id: targetUser._id },
+        { $push: { tickets: userTicket } },
+        { session: databaseSession }
+      );
+
+      if (memberPriceApplied) {
+        await BillingRecord.updateOne(
+          { _id: memberTicketClaimKey(eventId, userId) },
+          {
+            $set: {
+              completedAt: new Date(),
+              "data.transactionId": transactionId,
+            },
+          },
+          { upsert: true, session: databaseSession }
+        );
+      }
+    });
   } catch (err) {
     throw new HttpError(err.message, 500);
+  } finally {
+    await databaseSession.endSession();
   }
+
+  if (!updatedEvent) {
+    const refunded = memberPriceApplied
+      ? await refundDuplicateMemberTicket({
+        transactionId,
+        eventId,
+        userId,
+        region: stripeRegion || societyEvent.region,
+      })
+      : false;
+
+    return { success: true, duplicate: true, refunded };
+  }
+
+  societyEvent = updatedEvent;
 
   sendTicketEmail(
     "member",
