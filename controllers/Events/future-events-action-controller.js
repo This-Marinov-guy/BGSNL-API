@@ -42,6 +42,9 @@ import {
   deleteCalendarEvent,
 } from "../../services/side-services/google-calendar.js";
 import { IS_PROD } from "../../util/functions/helpers.js";
+import { uniqueEventSlug } from "../../services/public-content/event-slug.js";
+import { publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
+import { dispatchSitemapRefresh } from "../../services/public-content/sitemap-dispatch.js";
 import {
   ACCESS_2,
   ACCESS_4,
@@ -290,10 +293,7 @@ export const fetchFullDataEvent = async (req, res, next) => {
   let event;
   let isDraft = false;
   try {
-    event = await Event.findOne({
-      _id: eventId,
-      status: { $ne: "archived" },
-    });
+    event = await Event.findOne({ _id: eventId, ...publicEventQuery });
 
     if (!event) {
       event = await EventDraft.findById(eventId);
@@ -336,12 +336,8 @@ export const fetchFullDataEvent = async (req, res, next) => {
     status = false;
   }
 
-  event = checkDiscountsOnEvents(event);
-  // TODO: remove early, lateBird and add them to a new
-  event = removeModelProperties(event, ["guestList"]);
-
-  res.status(200).json({
-    event,
+  return res.status(200).json({
+    event: serializePublicEvent(event, { checkout: true }),
     status,
   });
 };
@@ -415,6 +411,7 @@ export const addEvent = async (req, res, next) => {
     hidden,
     region,
     title,
+    slug,
     date,
     description,
     location,
@@ -736,6 +733,15 @@ export const addEvent = async (req, res, next) => {
     MOMENT_DATE_TIME_YEAR
   )}`;
 
+  let eventSlug;
+  try {
+    // A caller may choose a clean slug while the event is still being created;
+    // after this save the model and edit handler make it permanent.
+    eventSlug = await uniqueEventSlug(Event, slug || title);
+  } catch {
+    return next(new HttpError("Could not reserve the event URL. Please try again.", 503));
+  }
+
   //create event
   event = new Event({
     lastUpdate: getFingerprintLite(req),
@@ -745,6 +751,7 @@ export const addEvent = async (req, res, next) => {
     subEvent,
     region,
     title,
+    slug: eventSlug,
     description,
     date,
     location,
@@ -793,6 +800,7 @@ export const addEvent = async (req, res, next) => {
   }
 
   notifyEventCreated(event);
+  void dispatchSitemapRefresh("published", event);
 
   try {
     eventToSpreadsheet(event.id);
@@ -885,6 +893,7 @@ export const editEvent = async (req, res, next) => {
     hidden,
     region,
     title,
+    slug,
     date,
     description,
     location,
@@ -907,6 +916,18 @@ export const editEvent = async (req, res, next) => {
     bgImage,
     bgImageSelection,
   } = req.body;
+
+  if (!wasDraft && slug && slug !== event.slug) {
+    return next(new HttpError("An event URL cannot be changed after publication", 422));
+  }
+
+  if (wasDraft) {
+    try {
+      event.slug = await uniqueEventSlug(Event, slug || title, { excludeId: event._id });
+    } catch {
+      return next(new HttpError("Could not reserve the event URL. Please try again.", 503));
+    }
+  }
 
   if (rejectNetherlandsRegionAccess(req, next)) {
     return;
@@ -1399,6 +1420,7 @@ export const editEvent = async (req, res, next) => {
   if (wasDraft) {
     notifyEventCreated(event);
     eventToSpreadsheet(event.id);
+    void dispatchSitemapRefresh("published", event);
   }
 
   try {
@@ -1475,6 +1497,7 @@ export const deleteEvent = async (req, res, next) => {
 
   if (productId) await deleteProduct(region, productId);
   if (folder) await deleteFolder(folder);
+  void dispatchSitemapRefresh("archived", event);
   res.status(200).json({ status: true, eventId });
 };
 

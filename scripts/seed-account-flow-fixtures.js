@@ -1,4 +1,4 @@
-import bcrypt from "bcryptjs";
+import { hashPassword } from "../services/authentication/passwords.js";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import path from "node:path";
@@ -192,7 +192,7 @@ async function main() {
     throw new Error("FLOW_TEST_PASSWORD must be at least 12 characters.");
   }
 
-  const passwordHash = await bcrypt.hash(password, 12);
+  const passwordHash = await hashPassword(password);
   const fixtures = buildAccountFlowFixtures({ passwordHash });
   validateFixtures(fixtures);
 

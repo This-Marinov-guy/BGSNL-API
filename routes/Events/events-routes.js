@@ -113,7 +113,7 @@ eventRouter.post(
 
 eventRouter.post(
   "/sync-calendar-events",
-  [],
+  adminMiddleware(ACCESS_3),
   postSyncEventsCalendar
 );
 

@@ -17,10 +17,6 @@ export const DEFAULT_REGION = "netherlands";
 export const BGSNL_URL = "bulgariansociety.nl/";
 export const STRIPE_WEBHOOK_ROUTE = "/stripe-payments";
 
-// authorization
-export const PROD_JWT_TIMEOUT = "15m";
-export const DEV_JWT_TIMEOUT = "1h";
-
 // member roles
 export const SUPER_ADMIN = "super_admin";
 export const ADMIN = "admin";

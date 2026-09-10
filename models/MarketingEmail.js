@@ -33,7 +33,13 @@ const marketingEmailSchema = new Schema(
     unsubscribed: {
       type: Boolean,
       required: true,
-      default: false,
+      default: true,
+    },
+    consent: {
+      granted: { type: Boolean, required: true, default: false },
+      source: { type: String, maxlength: 240 },
+      recordedAt: { type: Date },
+      textVersion: { type: String, maxlength: 80 },
     },
   },
   {
@@ -57,18 +63,30 @@ marketingEmailSchema.index(
 
 // Optimizes campaign recipient reads while excluding unsubscribed addresses.
 marketingEmailSchema.index(
-  { city: 1, unsubscribed: 1, email: 1 },
-  { name: "city_subscription_email" }
+  { city: 1, unsubscribed: 1, "consent.granted": 1, email: 1 },
+  { name: "city_consent_subscription_email" }
 );
 
-marketingEmailSchema.static("add", async function add({ email, city }) {
+marketingEmailSchema.static("add", async function add({ email, city, consent }) {
   const normalizedEmail = normalizeMarketingEmail(email);
   const normalizedCity = normalizeMarketingCity(city);
+  if (consent?.granted !== true) {
+    throw new Error("Recorded marketing consent is required");
+  }
 
   try {
     return await this.findOneAndUpdate(
       { email: normalizedEmail, city: normalizedCity },
       {
+        $set: {
+          unsubscribed: false,
+          consent: {
+            granted: true,
+            source: consent.source || "unknown",
+            recordedAt: consent.recordedAt || new Date(),
+            textVersion: consent.textVersion || "unknown",
+          },
+        },
         $setOnInsert: {
           email: normalizedEmail,
           city: normalizedCity,
@@ -95,6 +113,7 @@ marketingEmailSchema.static("findByCity", function findByCity(city) {
   return this.find({
     city: normalizeMarketingCity(city),
     unsubscribed: false,
+    "consent.granted": true,
   })
     .select({ _id: 0, email: 1, addedAt: 1 })
     .sort({ email: 1 })

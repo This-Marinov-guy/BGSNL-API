@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import User from "../../models/User.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import AccountIdentity from "../../models/AccountIdentity.js";
+import PasskeyCredential from "../../models/PasskeyCredential.js";
 import { CURRENT_ACCOUNT_FILTER, accountType } from "../../util/subscriptions/policy.js";
 
 export async function findBillingAccount(query, session = null) {
@@ -55,7 +56,7 @@ export async function persistSubscriptionAccount(user, fields, plan, assertOwned
       data.roles = [...new Set([...(source.roles || []).filter((role) => !["member", "alumni"].includes(role)), targetType])];
       if (targetType === "alumni") data.tier = plan.tier;
       else delete data.tier;
-      for (const key of ["tickets", "christmas", "documents", "internshipApplications"]) {
+      for (const key of ["tickets", "christmas", "documents", "internshipApplications", "campaignsSeen"]) {
         data[key] = mergeArray(existing?.[key], source[key]);
       }
       for (const key of ["birth", "phone", "region", "university", "course", "studentNumber", "profession", "graduationDate", "otherUniversityName"]) {
@@ -65,6 +66,8 @@ export async function persistSubscriptionAccount(user, fields, plan, assertOwned
       target.set(data);
       saved = await target.save({ session });
       await AccountIdentity.updateMany({ accountId: { $in: data.accountAliases } }, { $set: { accountId: String(data._id) } }, { session });
+      // The authenticator's userHandle is immutable; only move the account owner.
+      await PasskeyCredential.updateMany({ accountId: { $in: data.accountAliases } }, { $set: { accountId: String(data._id) } }, { session });
       source.status = "membership-migrated";
       source.accountAliases = data.accountAliases;
       await source.save({ session });

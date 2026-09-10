@@ -13,6 +13,7 @@ export const sharedMembershipFields = {
   identityRevision: { type: Number, default: 0 },
   sessionVersion: { type: Number, default: 0 },
   accountAliases: [String],
+  campaignsSeen: { type: [String], default: () => [] },
   notificationTerms: Boolean, quote: String,
   birth: Date, phone: String, university: String, region: String,
   otherUniversityName: String, graduationDate: String, course: String,

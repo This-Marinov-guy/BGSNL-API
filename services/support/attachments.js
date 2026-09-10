@@ -31,7 +31,7 @@ export async function uploadSupportImages(files = [], { conversationId, messageI
       public_id: `${message}-${index + 1}-${hash}`,
       resource_type: "image",
       format: "webp",
-      transformation: [{ width: 2000, height: 2000, crop: "limit", quality: "auto" }],
+      transformation: [{ width: 2000, height: 8192, crop: "limit", quality: "auto" }],
     });
     return { type: "image", url: stableCloudinaryUrl(url) };
   }));

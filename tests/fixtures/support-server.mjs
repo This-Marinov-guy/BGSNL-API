@@ -2,7 +2,9 @@
 // APP_ENV=dev node tests/fixtures/support-server.mjs
 import express from "express";
 import cors from "cors";
-import jwt from "jsonwebtoken";
+import { createSessionService } from "../../services/authentication/sessions.js";
+import { memorySessionStore } from "./session-store.mjs";
+import { trustedWebsiteRequest } from "../../util/auth/request-client.js";
 import { randomBytes } from "node:crypto";
 import { createAuthMiddleware } from "../../middleware/authorization.js";
 import { apiVersionMiddleware } from "../../middleware/api-version.js";
@@ -19,20 +21,27 @@ const accounts = ["member", "staff"].map((name) => ({
   sessionVersion: 0, region: "groningen", version: 1, isSubscribed: false, isAlumni: false, hasBenefits: false, memberDiscount: false,
   image: "/assets/images/logo/logo-nl.png", birth: "1995-01-01", birthDate: "1995-01-01", joinDate: "2024-01-01", tickets: [], internships: [], subscription: {},
 }));
-const authenticate = createAuthMiddleware({ findAccount: async (id) => accounts.find((account) => account.id === id) });
-const token = (account) => jwt.sign({ userId: account.id, version: 1, sessionVersion: 0, roles: account.roles, status: account.status,
-  image: account.image, region: account.region }, process.env.JWT_STRING, { expiresIn: "1h" });
+const findAccount = async (id) => accounts.find((account) => account.id === id);
+const sessions = createSessionService({ records: memorySessionStore(), findAccount });
+const authenticate = createAuthMiddleware({ findAccount, validateSession: sessions.validate });
 const app = express();
 app.use(cors({ origin: "http://localhost:3002", allowedHeaders: ["Content-Type", "Authorization", "X-Support-Token"] }));
 app.use(express.json({ limit: "32kb" }));
 app.use(apiVersionMiddleware, supportPrivacy);
 app.get("/api/v1/security/google/config", (_req, res) => res.json({ enabled: false }));
-app.post("/api/v1/security/login", (req, res) => {
+app.post("/api/v1/security/login", async (req, res, next) => {
   const account = accounts.find(({ email }) => email === req.body.email);
   if (!account || req.body.password !== "Support-preview-only-123!") return res.status(401).json({ message: "Use the documented local fixture account." });
-  return res.json({ ...account, token: token(account) });
+  try { return res.json({ ...account, ...await sessions.start(account) }); } catch (error) { return next(error); }
 });
-app.get("/api/v1/user/refresh-token", authenticate, (req, res) => res.json({ token: token(req.account) }));
+for (const action of ["refresh", "activity", "logout"]) app.post(`/api/v1/security/session/${action}`, async (req, res, next) => {
+  if (!trustedWebsiteRequest(req)) return res.status(403).json({ message: "Website only" });
+  try {
+    if (action === "logout") { await sessions.revoke(req.body.refreshToken); return res.json({ status: true }); }
+    return res.json(await sessions.refresh(req.body.refreshToken, { activity: action === "activity" }));
+  } catch (error) { return next(error); }
+});
+app.get("/api/v1/user/refresh-token", (_req, res) => res.status(410).json({ message: "Use the website session flow." }));
 app.get("/api/v1/user/get-subscription-status", authenticate, (req, res) => res.json(req.account));
 app.get("/api/v1/user/current", authenticate, (req, res) => res.json({ user: req.account, celebrate: false }));
 app.use("/api/v1/support", createSupportRouter({ service: createSupportService({ records: memorySupportStore() }), authenticate, throttle: async () => {},

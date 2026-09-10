@@ -104,7 +104,8 @@ email or Stripe writes. Stop it when finished; all fixture reports disappear.
 
 This initial version is asynchronous in-site support: replies poll every 20
 seconds while the relevant view is visible. Each newly created ticket queues a
-deduplicated internal email to `technology@bulgariansociety.nl`; idempotent
+deduplicated internal email to each address in
+`INTERNAL_NOTIFICATION_SUBSCRIBERS`; idempotent
 create replays and later replies do not send another new-ticket email. It does
 not send requester email/SMS notifications, provide live-agent availability or
 offer automatic guest recovery links. The widget tells visitors to return here.
@@ -115,6 +116,27 @@ then converts uploads to bounded WebP images in `support/<conversation-id>` in
 Cloudinary. Stored message data contains only the resulting HTTPS Cloudinary
 URLs; client-supplied attachment URLs are ignored. Content-addressed public IDs
 keep retries idempotent.
+
+Submitting a new report automatically starts a full-document screenshot in the
+browser, without a permission prompt or confirmation step. After the report is
+confirmed, the screenshot uploads in the background as an attachment message
+using the same authenticated/guest access checks. Network/server upload failures
+retry once with the same message ID and file. Capture/upload failure never blocks
+the report; the customer gets a notice if its screenshot could not be attached.
+The page remains usable while the attachment is being prepared. Leaving the site
+before upload completes can interrupt this best-effort attachment.
+
+The capture excludes the support widget, support desk and embedded frames/video;
+form values and explicitly marked private content are masked in a detached clone.
+It captures the rendered page from top to bottom, not browser chrome or other
+applications. Images blocked by CORS, unloaded content and unsupported CSS may not
+render exactly. Capture is bounded to 3 megapixels, 2,000 pixels wide, 8,192 pixels
+tall and 5 MB; very long pages scale down. Support image storage now preserves up
+to 8,192 pixels of height instead of shrinking tall screenshots to 2,000 pixels.
+This requires deploying the API attachment-size change alongside the frontend.
+The screenshot is not included in the initial new-ticket notification email.
+
+Frontend tests: `node --test scripts/support-state.test.mjs scripts/support-screenshot.test.mjs`.
 
 The conversation composer also has a one-click screenshot action. It captures
 the currently visible website viewport (excluding the support widget itself)

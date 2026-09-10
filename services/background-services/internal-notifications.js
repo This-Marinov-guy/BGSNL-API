@@ -106,8 +106,6 @@ export const buildEventCreatedNotification = (event) => {
   };
 };
 
-export const SUPPORT_NOTIFICATION_RECIPIENT = "technology@bulgariansociety.nl";
-
 export const buildSupportTicketNotification = (ticket) => {
   const subject = present(ticket?.subject, "Website support request");
   const reference = present(ticket?.reference ?? String(ticket?.id || "").slice(0, 8).toUpperCase(), "unknown");
@@ -135,14 +133,6 @@ export const buildSupportTicketNotification = (ticket) => {
   return { ...message, subject: `New support ticket #${reference} — ${subject}`, type: "support-ticket-created", entityId: present(ticket?.id, reference) };
 };
 
-export const createSupportTicketNotifier = ({
-  receiver = SUPPORT_NOTIFICATION_RECIPIENT,
-  sendEmail = sendInternalNotificationEmail,
-} = {}) => (ticket) => {
-  sendEmail({ receiver, ...buildSupportTicketNotification(ticket) });
-  return 1;
-};
-
 export const createInternalNotificationService = ({
   config = getInternalNotificationConfig(),
   sendEmail = sendInternalNotificationEmail,
@@ -164,7 +154,15 @@ export const createInternalNotificationService = ({
     notifyEventCreated(event) {
       return queue(buildEventCreatedNotification(event));
     },
+    notifySupportTicketCreated(ticket) {
+      return queue(buildSupportTicketNotification(ticket));
+    },
   };
+};
+
+export const createSupportTicketNotifier = (options = {}) => {
+  const service = createInternalNotificationService(options);
+  return (ticket) => service.notifySupportTicketCreated(ticket);
 };
 
 const internalNotificationService = createInternalNotificationService();
@@ -187,9 +185,8 @@ export const notifyEventCreated = (event) => {
   }
 };
 
-const supportTicketNotifier = createSupportTicketNotifier();
 export const notifySupportTicketCreated = (ticket) => {
-  try { return supportTicketNotifier(ticket); }
+  try { return internalNotificationService.notifySupportTicketCreated(ticket); }
   catch (error) {
     console.error("Failed to enqueue support ticket notification:", error);
     return 0;

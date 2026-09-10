@@ -156,6 +156,7 @@ test("support uploads use content-addressed names in the conversation support fo
   assert.match(calls[0].public_id, new RegExp(`^${messageId}-1-[0-9a-f]{20}$`));
   assert.equal(calls[0].resource_type, "image");
   assert.equal(calls[0].format, "webp");
+  assert.deepEqual(calls[0].transformation, [{ width: 2000, height: 8192, crop: "limit", quality: "auto" }]);
 });
 
 test("staff replies request a response; requester replies reopen a resolved report", async () => {

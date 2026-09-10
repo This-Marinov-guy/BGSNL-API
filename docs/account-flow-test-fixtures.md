@@ -18,7 +18,9 @@ FLOW_TEST_PASSWORD='<at-least-12-characters>' \
 npm run seed:account-flows
 ```
 
-All login accounts use the supplied `FLOW_TEST_PASSWORD`.
+All login accounts use the supplied `FLOW_TEST_PASSWORD`. It must also satisfy the shared password policy: uppercase, lowercase and a number, with a maximum of 72 UTF-8 bytes. The seeder retains its minimum of 12 characters.
+
+For password/signup/webhook verification with automatic cleanup and no real Stripe/email calls, use the separate [password-flow development tests](password-hashing.md).
 
 | Email | Type | State | Expected behavior |
 | --- | --- | --- | --- |

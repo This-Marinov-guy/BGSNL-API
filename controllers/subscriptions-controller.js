@@ -4,6 +4,7 @@ import { DEFAULT_REGION } from "../util/config/defines.js";
 import { membershipPrices, startMembershipChange, startMembershipSignup, createMembershipPortal } from "../services/subscriptions/checkout.js";
 import { resolveSubscriptionRegion } from "../services/subscriptions/reconcile.js";
 import { FREE_ALUMNI_PLAN } from "../util/subscriptions/policy.js";
+import { readBillingDetails } from "../services/subscriptions/billing-details.js";
 
 const billingAction = (handler) => async (req, res, next) => {
   try { return await handler(req, res); }
@@ -18,6 +19,10 @@ export const getMembershipPlans = billingAction(async (req, res) => {
   const region = req.account.subscription?.id ? await resolveSubscriptionRegion(req.account) : DEFAULT_REGION;
   const plans = await membershipPrices(createStripeClient(region));
   res.json({ plans: [...plans.map(({ product, ...plan }) => plan), FREE_ALUMNI_PLAN] });
+});
+export const getBillingDetails = billingAction(async (req, res) => {
+  res.set("Cache-Control", "private, no-store");
+  res.json({ billing: await readBillingDetails(req.account) });
 });
 export const changeMembership = billingAction(async (req, res) => {
   const session = await startMembershipChange(req.account, { priceId: req.body.itemId, returnUrl: req.body.origin_url });

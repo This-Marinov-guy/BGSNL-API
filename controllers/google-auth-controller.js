@@ -1,10 +1,11 @@
 import HttpError from "../models/Http-error.js";
+import { requestClientAddress } from "../util/auth/request-client.js";
 import AccountIdentity from "../models/AccountIdentity.js";
-import { jwtSign } from "../util/functions/helpers.js";
+import { sessions } from "../services/authentication/sessions.js";
 import { buildLoginResponse } from "../services/authentication/login.js";
 import {
   googleClientId, limitGoogleRequests, verifyCurrentPassword, createGoogleChallenge,
-  consumeGoogleChallenge, findGoogleAccount, changeGoogleIdentity,
+  consumeGoogleChallenge, findGoogleAccount, changeGoogleIdentity, googleConnectionStatus,
 } from "../services/authentication/google.js";
 
 const authAction = (handler) => async (req, res, next) => {
@@ -21,32 +22,32 @@ const authAction = (handler) => async (req, res, next) => {
 export const getGoogleConfig = authAction(async (_req, res) => res.json({ enabled: !!googleClientId() }));
 export const getConnectedAccounts = authAction(async (req, res) => {
   const identity = await AccountIdentity.findOne({ provider: "google", accountId: req.account.id });
-  res.json({ google: { enabled: !!googleClientId(), connected: !!identity, email: identity?.email || null }, passkeys: { available: false } });
+  res.json({ google: googleConnectionStatus(req.account, identity), passkeys: { available: true } });
 });
 
 export const prepareGoogle = (purpose) => authAction(async (req, res) => {
-  await limitGoogleRequests(`ip:${req.ip}`);
+  await limitGoogleRequests(`ip:${requestClientAddress(req)}`);
   if (purpose === "link") await limitGoogleRequests(`account:${req.account.id}`, 5);
   const challenge = await createGoogleChallenge({ purpose, origin: req.headers.origin, proof: req.body.proof,
     user: req.account, password: req.body.password });
   res.json(challenge);
 });
 export const completeGoogle = (purpose) => authAction(async (req, res) => {
-  await limitGoogleRequests(`ip:${req.ip}`);
+  await limitGoogleRequests(`ip:${requestClientAddress(req)}`);
   const identity = await consumeGoogleChallenge({
     purpose, origin: req.headers.origin, user: req.account,
     challengeId: req.body.challengeId, proof: req.body.proof, credential: req.body.credential,
   });
   if (purpose === "link") {
     const user = await changeGoogleIdentity(req.account, identity);
-    return res.json({ google: { enabled: true, connected: true, email: identity.email }, token: jwtSign(user) });
+    return res.json({ google: googleConnectionStatus(user, identity), ...await sessions.replace(user, { session: req.authClaims }) });
   }
-  return res.json(await buildLoginResponse(await findGoogleAccount(identity.subject)));
+  return res.json(await buildLoginResponse(await findGoogleAccount(identity)));
 });
 export const disconnectGoogle = authAction(async (req, res) => {
   await limitGoogleRequests(`account:${req.account.id}`, 5);
   await verifyCurrentPassword(req.account, req.body.password);
   const user = await changeGoogleIdentity(req.account);
   // Disconnection revokes old sessions, including those originally issued via Google.
-  res.json({ google: { enabled: !!googleClientId(), connected: false, email: null }, token: jwtSign(user) });
+  res.json({ google: googleConnectionStatus(user), ...await sessions.replace(user, { session: req.authClaims }) });
 });

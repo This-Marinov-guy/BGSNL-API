@@ -40,6 +40,16 @@ import {
   NON_SOCIETY_EVENT_RESEND_TEMPLATE,
 } from "../../util/config/defines.js";
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
+import { publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
+
+const objectIdPattern = /^[a-f\d]{24}$/i;
+const publicEventIdentifierQuery = (identifier) => objectIdPattern.test(String(identifier || ""))
+  ? { $or: [{ _id: identifier }, { slug: identifier }] }
+  : { slug: String(identifier || "") };
+const findPublicEvent = (identifier) => Event.findOne({
+  ...publicEventQuery,
+  ...publicEventIdentifierQuery(identifier),
+});
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -119,9 +129,9 @@ export const getEventPurchaseAvailability = async (req, res, next) => {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    const event = await Event.findById(eventId);
+    const event = await findPublicEvent(eventId);
 
-    if (!event || event.status === "draft") {
+    if (!event) {
       return next(new HttpError("No event was found", 404));
     }
 
@@ -145,27 +155,18 @@ export const getEventById = async (req, res, next) => {
   const eventId = req.params.eventId;
 
   if (eventId === undefined || !eventId) {
-    return res.status(200).json({
-      status: false,
-    });
+    return next(new HttpError("No event was found", 404));
   }
 
   try {
-    let event = await Event.findOne({
-      _id: eventId,
-      status: { $nin: ["archived", "draft"] },
-    });
+    const event = await findPublicEvent(eventId);
 
     if (!event) {
-      return res.status(200).json({
-        status: false,
-      });
+      return next(new HttpError("No event was found", 404));
     }
 
     if (event.region === DEFAULT_REGION) {
-      return res.status(200).json({
-        status: false,
-      });
+      return next(new HttpError("No event was found", 404));
     }
 
     let status = true;
@@ -177,16 +178,7 @@ export const getEventById = async (req, res, next) => {
       status = false;
     }    
 
-    event = checkDiscountsOnEvents(event);
-    event = removeModelProperties(event, [
-      "guestList",
-      "earlyBird",
-      "lateBird",
-      "promotion",
-      "addOns",
-    ]);
-
-    res.status(200).json({ event, status });
+    return res.status(200).json({ event: serializePublicEvent(event), status });
   } catch (err) {
     console.log(err);
     return next(new HttpError("Fetching event failed", 500));
@@ -206,29 +198,19 @@ export const getEvents = async (req, res, next) => {
 
       events = await Event.find({
         region,
-        hidden: false,
-        status: { $nin: ["archived", "draft"] },
+        ...publicEventQuery,
       });
     } else {
       events = await Event.find({
         region: { $ne: DEFAULT_REGION },
-        hidden: false,
-        status: { $nin: ["archived", "draft"] },
+        ...publicEventQuery,
       });
     }
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
 
-  const formattedEvents = events.map((event) =>
-    removeModelProperties(event, [
-      "guestList",
-      "earlyBird",
-      "lateBird",
-      "promotion",
-      "addOns",
-    ])
-  );
+  const formattedEvents = events.map((event) => serializePublicEvent(event));
 
   res.status(200).json({ events: formattedEvents });
 };
@@ -241,16 +223,12 @@ export const getSoldTicketQuantity = async (req, res, next) => {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    const event = await Event.findById(eventId);
-
-    let ticketsSold;
-
-    if (event && event.status !== "draft") {
-      ticketsSold = event.guestList.length;
-    } else {
-      ticketsSold = 0;
+    const event = await findPublicEvent(eventId);
+    if (!event) {
+      return next(new HttpError("No event was found", 404));
     }
-    res.status(200).json({ ticketsSold: ticketsSold });
+
+    return res.status(200).json({ ticketsSold: event.guestList.length });
   } catch (error) {
     return next(
       new HttpError("Something got wrong, please contact support", 500)
@@ -1064,6 +1042,10 @@ export const updatePresence = async (req, res, next) => {
 };
 
 export const postSyncEventsCalendar = async (req, res, next) => {
-  console.log("Syncing events...");
-  await syncEvents();
+  try {
+    await syncEvents();
+    return res.status(202).json({ status: true });
+  } catch {
+    return next(new HttpError("Calendar synchronization could not be started", 503));
+  }
 };

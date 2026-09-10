@@ -1,16 +1,14 @@
 import dotenv from "dotenv";
-import jwt from "jsonwebtoken";
+import { requestProfileChange } from "../services/authentication/profile-change.js";
 import { accountEntitlements } from "../util/subscriptions/policy.js";
 import { reconcileAccount } from "../services/subscriptions/reconcile.js";
 dotenv.config();
-import bcrypt from "bcryptjs";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { usersToSpreadsheet } from "../services/background-services/google-spreadsheets.js";
-import { isBirthdayToday, jwtSign } from "../util/functions/helpers.js";
+import { isBirthdayToday } from "../util/functions/helpers.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
-import { getTokenFromHeader } from "../util/functions/security.js";
 import {
   ACTIVE,
   ALUMNI_MIGRATED,
@@ -36,20 +34,12 @@ import { DOCUMENT_TYPES } from "../util/config/enums.js";
 import { createStripeClient } from "../util/config/stripe.js";
 import { DEFAULT_REGION } from "../util/config/defines.js";
 
-export const refreshToken = async (req, res, next) => {
-  let claims;
-  try {
-    claims = jwt.verify(getTokenFromHeader(req), process.env.JWT_STRING, { algorithms: ["HS256"], ignoreExpiration: true });
-    if (Number(claims.version) !== Number(process.env.AUTH_VERSION ?? 1)) throw new Error("Revoked token");
-  } catch { return res.status(401).json({ token: null, message: "Authentication token is invalid" }); }
-  try {
-    const user = await findUserById(claims.userId);
-    if (!user) return res.status(401).json({ token: null, message: "Account no longer available" });
-    if (Number(claims.sessionVersion ?? 0) !== Number(user.sessionVersion ?? 0)) return res.status(401).json({ token: null, message: "Session revoked. Please login again." });
-    res.set("Cache-Control", "private, no-store");
-    return res.status(200).json({ token: jwtSign(user) });
-  } catch { return next(new HttpError("Could not refresh your session", 503)); }
-};
+// An access token must never be exchangeable for a refresh credential or an
+// endless chain of fresh access tokens. The website handles its compatibility
+// URL using the separate HttpOnly refresh cookie and server-only lifecycle.
+export const refreshToken = (_req, res) => res.status(410).json({
+  message: "Access-token-only renewal is retired. Please use the website session flow.",
+});
 
 export const getCurrentUser = async (req, res, next) => {
   const { userId } = extractUserFromRequest(req);
@@ -122,6 +112,7 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
     const user = result?.user || req.account;
     return res.status(200).json({
       ...accountEntitlements(user), roles: user.roles, region: user.region, image: user.image,
+      userId: user.id, name: user.name, surname: user.surname, email: user.email,
       subscription: user.subscription || null,
       stripeSubscription: result?.sub ? {
         id: result.sub.id, status: result.sub.status,
@@ -132,7 +123,8 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
   } catch {
     const user = req.account;
     return res.status(200).json({ ...accountEntitlements(user), hasBenefits: false, memberDiscount: false,
-      billingVerificationUnavailable: true, roles: user.roles, region: user.region, image: user.image, subscription: user.subscription });
+      billingVerificationUnavailable: true, roles: user.roles, region: user.region, image: user.image, subscription: user.subscription,
+      userId: user.id, name: user.name, surname: user.surname, email: user.email });
   }
 };
 
@@ -246,23 +238,9 @@ export const patchUserInfo = async (req, res, next) => {
     user.image = req.file.Location;
   }
 
-  if (password) {
-    let hashedPassword;
-    try {
-      hashedPassword = await bcrypt.hash(password, 12);
-    } catch (err) {
-      return next(
-        new HttpError("Updating user failed, please try again!", 500)
-      );
-    }
-
-    user.password = hashedPassword;
-  }
-
   name && (user.name = name);
   surname && (user.surname = surname);
   phone && (user.phone = phone);
-  email && (user.email = email);
   if (university) {
     user.university = university;
     user.otherUniversityName =
@@ -295,7 +273,13 @@ export const patchUserInfo = async (req, res, next) => {
   usersToSpreadsheet(user.region);
   usersToSpreadsheet();
 
-  res.status(200).json({ status: true });
+  try {
+    const pending = await requestProfileChange(user, { email, password, origin: req.headers.origin,
+      claims: { ...req.authClaims, userId: user.id } });
+    return res.status(200).json({ status: true, ...(pending || {}) });
+  } catch (error) {
+    return next(error instanceof HttpError ? error : new HttpError("Could not request the profile change. Your email and password have not changed. Please try again.", 503));
+  }
 };
 
 export const submitCalendarVerification = async (req, res, next) => {

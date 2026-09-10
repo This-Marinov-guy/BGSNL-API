@@ -243,7 +243,8 @@ export const scanArchive = (archivePath) => {
             email,
             city: normalizedCity,
             addedAt,
-            unsubscribed: false,
+            unsubscribed: true,
+            consent: { granted: false, source: "legacy-archive-import" },
           };
 
           if (!current) {

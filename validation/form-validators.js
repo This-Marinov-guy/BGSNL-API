@@ -8,13 +8,13 @@ import {
   REGIONS,
 } from "../util/config/defines.js";
 import { decryptData } from "../util/functions/helpers.js";
+import { validNewPassword, PASSWORD_MESSAGE } from "../services/authentication/passwords.js";
 import Event from "../models/Event.js";
 
 const EMAIL_MAX_LENGTH = 320;
 const NAME_MAX_LENGTH = 120;
 const TEXT_MAX_LENGTH = 5000;
 const URL_MAX_LENGTH = 2048;
-const PASSWORD_PATTERN = /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z]).{8,}$/;
 const IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
   "image/jpg",
@@ -583,6 +583,16 @@ const requiresExternalTicketLink = (_value, { req }) =>
   isTrueLike(req.body?.isTicketLink);
 
 const commonEventAdminValidators = [
+  body("slug")
+    .optional({ checkFalsy: true })
+    .isString()
+    .withMessage("Event URL must be text")
+    .bail()
+    .matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .withMessage("Event URL may only use lowercase letters, numbers and hyphens")
+    .bail()
+    .isLength({ min: 3, max: 96 })
+    .withMessage("Event URL must be between 3 and 96 characters"),
   body("status")
     .optional({ checkFalsy: true })
     .isIn([EVENT_DRAFT, EVENT_OPENED])
@@ -678,7 +688,8 @@ export const checkEmailValidators = [requiredEmail()];
 
 export const loginValidators = [
   requiredEmail(),
-  requiredText("password", "Password", 256),
+  // Passwords are opaque: trimming changes the user's chosen credential.
+  body("password").isString().bail().isLength({ min: 1, max: 256 }).withMessage("Enter your password (maximum 256 characters)."),
 ];
 
 export const passwordResetEmailValidators = [requiredEmail()];
@@ -696,17 +707,10 @@ export const changePasswordValidators = [
     .isString()
     .withMessage("Password must be text")
     .bail()
-    .matches(PASSWORD_PATTERN)
-    .withMessage(
-      "Password must be at least 8 characters and include uppercase, lowercase and a number"
-    ),
-];
-
-export const forceChangePasswordValidators = [
-  requiredEmail(),
-  body("password")
-    .optional({ checkFalsy: true })
-    .custom((value) => PASSWORD_PATTERN.test(String(value)))
+    .custom((value) => Buffer.byteLength(value, "utf8") <= 72)
+    .withMessage("Password is too long (maximum 72 UTF-8 bytes)")
+    .bail()
+    .custom(validNewPassword)
     .withMessage(
       "Password must be at least 8 characters and include uppercase, lowercase and a number"
     ),
@@ -800,10 +804,8 @@ export const editUserValidators = [
   optionalText("notificationTypeTerms", "Notification preference", 100),
   body("password")
     .optional({ checkFalsy: true })
-    .custom((value) => PASSWORD_PATTERN.test(String(value)))
-    .withMessage(
-      "Password must be at least 8 characters and include uppercase, lowercase and a number"
-    ),
+    .custom(validNewPassword)
+    .withMessage(PASSWORD_MESSAGE),
 ];
 
 export const calendarVerificationValidators = [
@@ -864,6 +866,10 @@ export const convertUserToAlumniValidators = [requiredEmail()];
 export const marketingEmailValidators = [
   requiredEmail(),
   requiredText("city", "City", 120),
+  body("consent")
+    .custom((value) => value === true || value === "true")
+    .withMessage("Marketing consent is required"),
+  optionalText("marketingConsentVersion", "Marketing consent version", 80),
 ];
 
 export const contactFormValidators = [
@@ -1164,15 +1170,14 @@ const encryptedPassword = body("password")
   .bail()
   .custom((value) => {
     try {
+      if (value.length > 8192) return false;
       const password = decryptData(value);
-      return typeof password === "string" && PASSWORD_PATTERN.test(password);
+      return validNewPassword(password);
     } catch {
       return false;
     }
   })
-  .withMessage(
-    "Password must be at least 8 characters and include uppercase, lowercase and a number"
-  );
+  .withMessage(PASSWORD_MESSAGE);
 
 const isSignupStudent = (_value, { req }) =>
   req.body?.method === "signup" &&

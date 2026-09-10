@@ -49,7 +49,7 @@ export async function readStripeSubscription(stripe, id) {
       if (state.hasBenefits) break;
     }
   }
-  return { sub, state };
+  return { sub, state, invoices };
 }
 
 export async function reconcileSubscription(subscriptionId, region, { expectedCustomerId, dependencies = {} } = {}) {

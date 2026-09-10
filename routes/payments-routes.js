@@ -1,4 +1,5 @@
 import express from "express";
+import { paymentResult } from "../controllers/payment-return-controller.js";
 import {
   donationConfig,
   postCheckoutFile,
@@ -10,7 +11,7 @@ import fileResizedUpload from "../middleware/file-resize-upload.js";
 import multer from "multer";
 import dotenv from "dotenv";
 import { authMiddleware, optionalAuthMiddleware } from "../middleware/authorization.js";
-import { getMembershipPlans, changeMembership, signupMembership, manageMembership } from "../controllers/subscriptions-controller.js";
+import { getMembershipPlans, getBillingDetails, changeMembership, signupMembership, manageMembership } from "../controllers/subscriptions-controller.js";
 import { validateRequest } from "../middleware/validate-request.js";
 import { asyncHandler } from "../middleware/async-handler.js";
 import {
@@ -28,6 +29,8 @@ dotenv.config();
 
 const paymentRouter = express.Router();
 const formDataUpload = multer({ storage: multer.memoryStorage() });
+
+paymentRouter.post("/result", paymentResult);
 
 paymentRouter.get("/donation/config", donationConfig);
 
@@ -96,6 +99,7 @@ paymentRouter.post(
 );
 
 paymentRouter.get("/subscription/plans", authMiddleware, getMembershipPlans);
+paymentRouter.get("/subscription/billing-details", authMiddleware, getBillingDetails);
 paymentRouter.post("/subscription/change", authMiddleware, changeMembershipValidators, validateRequest, changeMembership);
 
 export default paymentRouter;

@@ -6,7 +6,6 @@ import {
   buildSupportTicketNotification,
   createInternalNotificationService,
   createSupportTicketNotifier,
-  SUPPORT_NOTIFICATION_RECIPIENT,
 } from "../services/background-services/internal-notifications.js";
 import {
   DEFAULT_INTERNAL_NOTIFICATION_SUBSCRIBERS,
@@ -92,18 +91,36 @@ test("queues a new-event notification with the operational event details", () =>
   assert.equal(messages[0].type, "event-created");
 });
 
-test("new support tickets notify the technology inbox with ticket diagnostics", () => {
+test("new support tickets notify every internal subscriber with ticket diagnostics", () => {
   const messages = [];
-  const notify = createSupportTicketNotifier({ sendEmail: (message) => messages.push(message) });
+  const notify = createSupportTicketNotifier({
+    config: {
+      enabled: true,
+      subscribers: ["one@example.com", "two@example.com"],
+    },
+    sendEmail: (message) => messages.push(message),
+  });
   assert.equal(notify({ id: "ticket-id", reference: "ABC12345", subject: "Checkout is stuck", pagePath: "/signup",
     contact: { name: "Test Member", email: "member@example.test" }, createdAt: "2026-09-07T10:00:00.000Z",
-    environment: { deviceType: "Mobile", browser: "Safari", platform: "iOS", viewport: { width: 390, height: 844 }, devicePixelRatio: 3 } }), 1);
-  assert.equal(messages.length, 1);
-  assert.equal(messages[0].receiver, SUPPORT_NOTIFICATION_RECIPIENT);
-  assert.equal(messages[0].receiver, "technology@bulgariansociety.nl");
+    environment: { deviceType: "Mobile", browser: "Safari", platform: "iOS", viewport: { width: 390, height: 844 }, devicePixelRatio: 3 } }), 2);
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages.map(({ receiver }) => receiver), [
+    "one@example.com",
+    "two@example.com",
+  ]);
   assert.match(messages[0].subject, /ABC12345/);
   assert.match(messages[0].text, /Mobile · Safari · iOS/);
   assert.match(messages[0].text, /390 × 844 at 3×/);
+});
+
+test("support ticket notifications follow the internal notification switch", () => {
+  const messages = [];
+  const notify = createSupportTicketNotifier({
+    config: { enabled: false, subscribers: ["team@example.com"] },
+    sendEmail: (message) => messages.push(message),
+  });
+  assert.equal(notify({ id: "ticket-id", subject: "Test" }), 0);
+  assert.equal(messages.length, 0);
 });
 
 test("support-ticket notification HTML escapes reporter-provided content", () => {

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import bcrypt from "bcryptjs";
+import { hashPassword, registrationPasswordHash } from "../authentication/passwords.js";
 import BillingRecord from "../../models/BillingRecord.js";
 import User from "../../models/User.js";
 import AlumniUser from "../../models/AlumniUser.js";
@@ -13,6 +13,7 @@ import { persistSubscriptionAccount } from "./accounts.js";
 import { withBillingLease } from "./lease.js";
 import { canonicalStripeRegion, reconcileAccount, reconcileSubscription, readStripeSubscription } from "./reconcile.js";
 import { alumniWelcomeEmail, welcomeEmail } from "../background-services/email-transporter.js";
+import { newPaymentToken, preparePaymentReturn } from "../payments/payment-return.js";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 export function billingReturnUrl(value) {
@@ -111,7 +112,8 @@ async function assertNoExistingSubscription(stripe, customer) {
 }
 
 export async function reserveCheckout({ key, user, registration, plan, returnUrl, region, dependencies = {} }) {
-  const { withLease = withBillingLease, records = BillingRecord } = dependencies;
+  const { withLease = withBillingLease, records = BillingRecord, prepareReturn = preparePaymentReturn } = dependencies;
+  if (!user) registrationPasswordHash(registration);
   return withLease(key, async ({ record, assertOwned }) => {
     const stripe = dependencies.stripe || createStripeClient(region);
     let data = record.data || {};
@@ -137,20 +139,24 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
     await assertNoExistingSubscription(stripe, customerId);
     // Persist the operation before contacting Stripe. Network retries use the
     // same idempotency key, so concurrent clicks cannot make duplicate checkouts.
-    data = { ...data, operationId: data.operationId || randomUUID(), customerId, priceId: plan.priceId,
+    data = { ...data, operationId: data.operationId || randomUUID(), paymentReturnToken: data.paymentReturnToken || newPaymentToken(), customerId, priceId: plan.priceId,
       userId: user?.id, registration: user ? undefined : data.registration || registration, stripeRegion: region,
       returnUrl: data.returnUrl || billingReturnUrl(returnUrl) };
+    if (!user) registrationPasswordHash(data.registration);
     await records.updateOne({ _id: key }, { $set: { data }, $unset: { completedAt: 1 } });
     const origin = new URL(data.returnUrl).origin;
+    const receipt = await prepareReturn({ token: data.paymentReturnToken, origin, kind: "subscription", region,
+      returnPath: user ? "/user#settings" : plan.type === "alumni" ? "/alumni/register" : `/${registration?.region || region}/signup` });
     const session = await stripe.checkout.sessions.create({
       mode: "subscription", customer: customerId, allow_promotion_codes: false,
       line_items: [{ price: plan.priceId, quantity: 1 }],
-      success_url: user ? `${origin}/user?billing=return#settings` : `${origin}/success`,
-      cancel_url: user ? `${origin}/user#settings` : `${origin}/fail`,
-      metadata: { method: "membership_checkout", checkoutKey: key },
+      success_url: receipt.success_url,
+      cancel_url: receipt.cancel_url,
+      metadata: { method: "membership_checkout", checkoutKey: key, paymentReturnId: receipt.id },
       subscription_data: { metadata: { bgsnlCheckoutKey: key } },
     }, { idempotencyKey: `checkout:${data.operationId}` });
     await assertOwned();
+    await receipt.bind(session.id);
     await records.updateOne({ _id: key }, { $set: { "data.sessionId": session.id } });
     return session;
   });
@@ -179,34 +185,40 @@ export async function startMembershipChange(user, { priceId, returnUrl, dependen
     region: user.subscription?.stripeRegion || DEFAULT_REGION });
 }
 
-export async function startMembershipSignup(body, file) {
+export async function startMembershipSignup(body, file, { findAccount = findUserByEmail, checkout = reserveCheckout } = {}) {
   const plan = planForPrice(body.itemId, { selectable: true });
   if (!plan || (body.method === "signup" ? "member" : "alumni") !== plan.type) throw new HttpError("Invalid signup plan", 422);
   const email = normalizeEmail(body.email);
   if (!email) throw new HttpError("Please provide a valid email", 422);
-  if (await findUserByEmail(email)) throw new HttpError("An account already exists. Please sign in to change your subscription.", 409);
+  if (await findAccount(email)) throw new HttpError("An account already exists. Please sign in to change your subscription.", 409);
   const registration = {};
   for (const field of ["name", "surname", "birth", "phone", "university", "region", "otherUniversityName", "graduationDate", "course", "studentNumber", "profession", "notificationTypeTerms"]) {
     if (body[field] !== undefined) registration[field] = body[field];
   }
   registration.email = email;
-  registration.password = await bcrypt.hash(decryptData(body.password), 12);
+  // Preserve the reservation field used by older API instances during a rolling
+  // deploy. Its VALUE is always a server-created hash, never plaintext.
+  registration.password = await hashPassword(decryptData(body.password));
   registration.image = file?.Location || file?.location || chooseRandomAvatar();
   registration.notificationTerms = body.notificationTerms === true || body.notificationTerms === "true";
-  return reserveCheckout({ key: `signup:${hash(email)}`, registration, plan,
+  return checkout({ key: `signup:${hash(email)}`, registration, plan,
     returnUrl: body.origin_url, region: DEFAULT_REGION });
 }
 
-export async function completeMembershipCheckout(session, region) {
+export async function completeMembershipCheckout(session, region, {
+  withLease = withBillingLease, records = BillingRecord, stripeClient = createStripeClient,
+  readSubscription = readStripeSubscription, reconcile = reconcileSubscription,
+  notifyMember = welcomeEmail, notifyAlumni = alumniWelcomeEmail,
+} = {}) {
   const key = session.metadata?.checkoutKey;
   if (!key || session.mode !== "subscription" || session.status !== "complete" || !session.subscription) return;
   const subscriptionId = stripeId(session.subscription);
-  await withBillingLease(key, async ({ record, assertOwned }) => {
+  await withLease(key, async ({ record, assertOwned }) => {
     const data = record.data;
     if (!data || data.sessionId !== session.id || data.customerId !== stripeId(session.customer) ||
         canonicalStripeRegion(data.stripeRegion) !== canonicalStripeRegion(region)) throw new Error("Checkout ownership mismatch");
     if (record.completedAt) return;
-    const { sub, state } = await readStripeSubscription(createStripeClient(region), subscriptionId);
+    const { sub, state } = await readSubscription(stripeClient(region), subscriptionId);
     if (stripeId(sub.customer) !== data.customerId || !state.plan || state.plan.priceId !== data.priceId) throw new Error("Checkout price mismatch");
     let user = data.userId ? await findUserById(data.userId) : await findUserByEmail(data.registration.email);
     if (user?.subscription?.id && user.subscription.id !== subscriptionId) {
@@ -219,7 +231,11 @@ export async function completeMembershipCheckout(session, region) {
     const created = !user;
     if (!user) {
       const Model = state.plan.type === "alumni" ? AlumniUser : User;
-      user = new Model({ ...data.registration, roles: [state.plan.type], tier: state.plan.tier,
+      const storedHash = registrationPasswordHash(data.registration);
+      const registration = { ...data.registration };
+      delete registration.password;
+      delete registration.passwordHash;
+      user = new Model({ ...registration, password: storedHash, roles: [state.plan.type], tier: state.plan.tier,
         joinDate: new Date(sub.created * 1000), expireDate: new Date((state.periodEnd || sub.created) * 1000) });
     }
     // Until reconciliation completes, no benefits are granted by checkout alone.
@@ -227,11 +243,11 @@ export async function completeMembershipCheckout(session, region) {
     user.subscription = { id: subscriptionId, customerId: data.customerId, stripeRegion: canonicalStripeRegion(region), period: state.plan.period };
     await assertOwned();
     await user.save();
-    await BillingRecord.updateOne({ _id: key }, { $set: { completedAt: new Date() }, $unset: { "data.registration": 1 } });
+    await records.updateOne({ _id: key }, { $set: { completedAt: new Date() }, $unset: { "data.registration": 1 } });
     if (created && state.hasBenefits) {
-      if (state.plan.type === "alumni") alumniWelcomeEmail(user.email, user.name);
-      else welcomeEmail(user.email, user.name, user.region);
+      if (state.plan.type === "alumni") notifyAlumni(user.email, user.name);
+      else notifyMember(user.email, user.name, user.region);
     }
   });
-  await reconcileSubscription(subscriptionId, region, { expectedCustomerId: stripeId(session.customer) });
+  await reconcile(subscriptionId, region, { expectedCustomerId: stripeId(session.customer) });
 }

@@ -5,6 +5,12 @@ const SUCCESS_MAX = 300;
 const FORM_METHODS = new Set(["POST", "PUT", "PATCH"]);
 const EMAIL_FIELDS = ["email", "guestEmail"];
 const CITY_FIELDS = ["city", "region"];
+const MARKETING_CONSENT_VERSION = "2026-09-10";
+
+const hasMarketingConsent = (body) =>
+  body?.notificationTerms === true || body?.notificationTerms === "true" ||
+  body?.marketingConsent === true || body?.marketingConsent === "true" ||
+  body?.consent === true || body?.consent === "true";
 
 const firstStringField = (body, fields) => {
   for (const field of fields) {
@@ -21,10 +27,22 @@ export const extractMarketingEmail = (body) => {
     return null;
   }
 
+  // A successful contact, checkout or account request is not consent to
+  // promotional mail. Only an explicit, separately submitted opt-in is eligible.
+  if (!hasMarketingConsent(body)) return null;
+
   const email = firstStringField(body, EMAIL_FIELDS);
   const city = firstStringField(body, CITY_FIELDS);
 
-  return email && city ? { email, city } : null;
+  return email && city ? {
+    email,
+    city,
+    consent: {
+      granted: true,
+      recordedAt: new Date(),
+      textVersion: String(body.marketingConsentVersion || MARKETING_CONSENT_VERSION),
+    },
+  } : null;
 };
 
 export const queueMarketingEmail = (entry, requestLabel = "unknown") => {
@@ -32,7 +50,7 @@ export const queueMarketingEmail = (entry, requestLabel = "unknown") => {
 
   setImmediate(async () => {
     try {
-      await MarketingEmail.add(entry);
+      await MarketingEmail.add({ ...entry, consent: { ...entry.consent, source: requestLabel } });
     } catch (error) {
       // Marketing capture must never fail or delay the submitted form.
       console.error(

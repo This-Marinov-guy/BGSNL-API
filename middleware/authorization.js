@@ -1,28 +1,34 @@
-import jwt from "jsonwebtoken";
+import { verifySessionToken } from "../util/auth/session-token.js";
 import HttpError from "../models/Http-error.js";
 import { findUserById } from "../services/main-services/user-service.js";
 import { accountEntitlements } from "../util/subscriptions/policy.js";
 import { reconcileAccount } from "../services/subscriptions/reconcile.js";
+import { sessions } from "../services/authentication/sessions.js";
 
-export const createAuthMiddleware = ({ findAccount = findUserById } = {}) => async (req, res, next) => {
+export const createAuthMiddleware = ({ findAccount = findUserById, validateSession = sessions.validate } = {}) => async (req, res, next) => {
   const token = req.headers.authorization?.match(/^Bearer (\S+)$/i)?.[1];
   if (!token) return next(new HttpError("Please login to access this request", 401));
   let claims;
   try {
-    claims = jwt.verify(token, process.env.JWT_STRING, { algorithms: ["HS256"] });
-    if (Number(claims.version) !== Number(process.env.AUTH_VERSION ?? 1)) throw new Error("Revoked session");
-  } catch { return next(new HttpError("Session expired: please login again!", 401)); }
+    claims = verifySessionToken(token);
+  } catch (error) {
+    // Only this pre-handler failure is eligible for one safe server-side retry.
+    if (error.name === "TokenExpiredError") return res.status(401).json({ code: "ACCESS_TOKEN_EXPIRED", message: "Access token expired" });
+    return next(new HttpError("Session invalid: please login again!", 401));
+  }
   try {
     const account = await findAccount(claims.userId);
     if (!account) return next(new HttpError("Account no longer available. Please login again.", 401));
     if (Number(claims.sessionVersion ?? 0) !== Number(account.sessionVersion ?? 0)) return next(new HttpError("Session revoked. Please login again.", 401));
+    await validateSession(claims, account);
     req.account = account;
+    req.authClaims = claims;
     req.user = { userId: account.id, email: account.email, image: account.image,
       roles: account.roles, status: account.status, region: account.region,
       customerId: account.subscription?.customerId, ...accountEntitlements(account) };
     res.set("Cache-Control", "private, no-store");
     return next();
-  } catch { return next(new HttpError("Could not verify your account. Please try again.", 503)); }
+  } catch (error) { return next(error instanceof HttpError ? error : new HttpError("Could not verify your account. Please try again.", 503)); }
 };
 export const authMiddleware = createAuthMiddleware();
 

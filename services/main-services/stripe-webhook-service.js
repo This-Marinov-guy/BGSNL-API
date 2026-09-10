@@ -1,4 +1,4 @@
-import bcrypt from "bcryptjs";
+import { hashPassword } from "../authentication/passwords.js";
 import HttpError from "../../models/Http-error.js";
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
@@ -38,7 +38,10 @@ const resolveJoinDateFromSubscription = async (
 /**
  * Handle alumni signup checkout session
  */
-export const handleAlumniSignup = async (metadata, paymentData) => {
+export const handleAlumniSignup = async (metadata, paymentData, {
+  resolveJoinDate = resolveJoinDateFromSubscription, notify = alumniWelcomeEmail,
+  sync = alumniToSpreadsheet, recount = recountAlumniStatistics,
+} = {}) => {
   const { subscriptionId, customerId, paymentStatus, stripeRegion } = paymentData;
   const {
     tier,
@@ -60,7 +63,7 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
 
   let hashedPassword;
   try {
-    hashedPassword = await bcrypt.hash(password, 12);
+    hashedPassword = await hashPassword(password, { legacyCheckout: true });
   } catch (err) {
     throw new HttpError("Could not create a new user", 500);
   }
@@ -73,7 +76,7 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
   }
 
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(1);
-  const joinDate = await resolveJoinDateFromSubscription(subscriptionId, [
+  const joinDate = await resolveJoinDate(subscriptionId, [
     stripeRegion,
     DEFAULT_REGION,
   ]);
@@ -113,11 +116,11 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
     throw new HttpError("Signing up failed", 500);
   }
 
-  alumniToSpreadsheet();
-  alumniWelcomeEmail(email, name);
+  sync();
+  notify(email, name);
 
   // Update alumni statistics (background job, non-blocking)
-  recountAlumniStatistics();
+  recount();
 
   return { success: true };
 };
@@ -125,7 +128,10 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
 /**
  * Handle regular user signup checkout session
  */
-export const handleUserSignup = async (metadata, paymentData) => {
+export const handleUserSignup = async (metadata, paymentData, {
+  resolveJoinDate = resolveJoinDateFromSubscription, notify = welcomeEmail,
+  sync = usersToSpreadsheet, recount = recountMemberStatistics,
+} = {}) => {
   const { subscriptionId, customerId, paymentStatus, stripeRegion } = paymentData;
   const {
     name,
@@ -152,7 +158,7 @@ export const handleUserSignup = async (metadata, paymentData) => {
 
   let hashedPassword;
   try {
-    hashedPassword = await bcrypt.hash(password, 12);
+    hashedPassword = await hashPassword(password, { legacyCheckout: true });
   } catch (err) {
     throw new HttpError(err.message, 500);
   }
@@ -165,7 +171,7 @@ export const handleUserSignup = async (metadata, paymentData) => {
   }
 
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
-  const joinDate = await resolveJoinDateFromSubscription(subscriptionId, [
+  const joinDate = await resolveJoinDate(subscriptionId, [
     stripeRegion,
     region,
     DEFAULT_REGION,
@@ -209,12 +215,12 @@ export const handleUserSignup = async (metadata, paymentData) => {
     throw new HttpError(err.message, 500);
   }
 
-  welcomeEmail(email, name, region);
-  usersToSpreadsheet(region);
-  usersToSpreadsheet();
+  notify(email, name, region);
+  sync(region);
+  sync();
 
   // Update member statistics (background job, non-blocking)
-  recountMemberStatistics();
+  recount();
 
   return { success: true };
 };

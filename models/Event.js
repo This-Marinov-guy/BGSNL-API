@@ -12,6 +12,9 @@ const eventSchema = new Schema({
   status: { type: String, required: true, default: EVENT_OPENED },
   region: { type: String, required: true },
   title: { type: String, required: true },
+  // Assigned once at publication. Existing records remain readable without a
+  // slug until the explicit backfill is run; new values are globally unique.
+  slug: { type: String, immutable: true, unique: true, sparse: true, trim: true },
   description: { type: String, default: "" },
   date: { type: Date, required: true },
   correctedDate: { type: Date },

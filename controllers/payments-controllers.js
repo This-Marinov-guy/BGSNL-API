@@ -17,6 +17,7 @@ import { accountEntitlements } from "../util/subscriptions/policy.js";
 import { reconcileAccount } from "../services/subscriptions/reconcile.js";
 import { generateAndUploadEventTicket } from "../services/side-services/ticket-generator.js";
 import BillingRecord from "../models/BillingRecord.js";
+import { createReturnedCheckout, createFreePaymentReturn, preparePaymentReturn, paymentOrigin } from "../services/payments/payment-return.js";
 import { withBillingLease } from "../services/subscriptions/lease.js";
 import {
   isExistingMemberTicket,
@@ -29,7 +30,7 @@ import {
 // Resolves the correct Stripe priceId from the DB, applying early/late-bird and promotion discounts.
 // For guest checkout it always resolves guest price.
 // For member checkout normalTicket=true falls back to guest price.
-const resolveTicketPriceId = async (
+export const resolveTicketPriceId = async (
   event,
   checkoutType = "guest",
   userId = "",
@@ -85,13 +86,13 @@ const inferCheckoutType = (req, userId) => {
   return userId ? "member" : "guest";
 };
 
-const guestMetadataForAccount = (account) => ({
+export const guestMetadataForAccount = (account) => ({
   guestName: [account?.name, account?.surname].filter(Boolean).join(" ") || "Guest",
   guestEmail: account?.email || "",
   guestPhone: account?.phone || "Not provided",
 });
 
-const createTicketCheckoutSession = async ({
+export const createTicketCheckoutSession = async ({
   stripeClient,
   checkoutData,
   checkoutType,
@@ -100,8 +101,10 @@ const createTicketCheckoutSession = async ({
   userId,
   member,
 }) => {
+  const createSession = (data) => createReturnedCheckout({ stripe: stripeClient, checkoutData: data,
+    region: data.metadata.region, returnPath: `/${data.metadata.region}/purchase-ticket/${eventId}` });
   if (checkoutType !== "member" || isNormalTicket) {
-    const session = await stripeClient.checkout.sessions.create(checkoutData);
+    const session = await createSession(checkoutData);
     return { url: session.url };
   }
 
@@ -128,7 +131,7 @@ const createTicketCheckoutSession = async ({
     // Stripe requires Checkout sessions to remain open for at least 30 minutes.
     // Keep a small buffer so request latency cannot put us below that boundary.
     const expiresAt = Math.floor(Date.now() / 1000) + 31 * 60;
-    const session = await stripeClient.checkout.sessions.create({
+    const session = await createSession({
       ...checkoutData,
       expires_at: expiresAt,
     });
@@ -153,7 +156,7 @@ const createTicketCheckoutSession = async ({
 };
 
 // Builds Stripe line items for add-ons by matching _id against the event's add-on items in the DB.
-const resolveAddonLineItems = (event, addOns) => {
+export const resolveAddonLineItems = (event, addOns) => {
   const items = event.addOns?.items ?? [];
   return addOns
     .map((addon) => {
@@ -195,6 +198,8 @@ export const postDonationIntent = async (req, res, next) => {
   const stripeClient = createStripeClient(DEFAULT_REGION);
 
   try {
+    const receipt = await preparePaymentReturn({ origin: req.body.origin_url || req.get("origin"), kind: "donation",
+      region: DEFAULT_REGION, returnPath: "/contact" });
     const paymentIntent = await stripeClient.paymentIntents.create({
       currency: "EUR",
       amount: amount * 100,
@@ -203,11 +208,14 @@ export const postDonationIntent = async (req, res, next) => {
         name,
         comments,
         userId: userId || '',
+        paymentReturnId: receipt.id,
       },
     });
+    await receipt.bind(paymentIntent.id);
     // Send publishable key and PaymentIntent details to client
     return res.send({
       clientSecret: paymentIntent.client_secret,
+      returnUrl: receipt.url,
     });
   } catch (e) {
     return res.status(400).send({
@@ -288,6 +296,7 @@ export const postPlaygroundTicketPreview = async (req, res, next) => {
 
 export const postCheckoutNoFile = async (req, res, next) => {
   const { origin_url, eventId, normalTicket } = req.body;
+  paymentOrigin(origin_url);
   const { userId } = extractUserFromRequest(req);
   const addOns = req.body.addOns ? JSON.parse(req.body.addOns) : [];
   let { quantity } = req.body;
@@ -397,6 +406,7 @@ export const postCheckoutNoFile = async (req, res, next) => {
 
 export const postCheckoutFile = async (req, res, next) => {
   const { origin_url, eventId, normalTicket } = req.body;
+  paymentOrigin(origin_url);
   const { userId } = extractUserFromRequest(req);
   const addOns = req.body.addOns ? JSON.parse(req.body.addOns) : [];
   let { quantity } = req.body;
@@ -522,6 +532,8 @@ export const postCheckoutFile = async (req, res, next) => {
       status: true,
       free: true,
       message: "Success",
+      url: await createFreePaymentReturn({ origin: origin_url, region: event.region,
+        returnPath: `/${event.region}/event-details/${eventId}`, title: event.title, quantity }),
     });
   }
 
@@ -576,4 +588,3 @@ export const postCheckoutFile = async (req, res, next) => {
 
   return res.status(200).json(result);
 };
-

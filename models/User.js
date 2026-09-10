@@ -23,7 +23,10 @@ const userSchema = new Schema({
   image: { type: String, required: true },
   name: { type: String, required: true },
   surname: { type: String, required: true },
-  birth: { type: Date, required() { return !this.accountAliases?.length; } },
+  // Signup validation requires a date of birth. Keep it optional at schema
+  // level so a migrated Alumni account without a real date is never assigned a
+  // fictitious birthday (and never receives a false birthday email).
+  birth: { type: Date },
   phone: { type: String, required() { return !this.accountAliases?.length; } },
   email: { type: String, required: true, unique: true },
   university: { type: String, required() { return !this.accountAliases?.length; } },
@@ -65,5 +68,6 @@ userSchema.index({ "subscription.id": 1, status: 1 });
 userSchema.index({ accountAliases: 1 });
 userSchema.index({ "subscription.syncedAt": 1, status: 1 });
 userSchema.index({ "subscription.lastAttemptAt": 1, "subscription.syncedAt": 1 });
+userSchema.index({ joinDate: 1, region: 1 });
 
 export default mongoose.model("User", userSchema);

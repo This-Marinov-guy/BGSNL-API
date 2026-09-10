@@ -1,4 +1,7 @@
 import express from "express";
+import { param } from "express-validator";
+import { ACCOUNT_CAMPAIGN_KEYS } from "../util/config/account-campaigns.js";
+import { getAccountCampaign, markAccountCampaignSeen } from "../controllers/account-campaigns-controller.js";
 import {
   getCurrentUser,
   patchUserInfo,
@@ -27,6 +30,7 @@ import { adminMiddleware } from "../middleware/authorization.js";
 import { ACCESS_2 } from "../util/config/defines.js";
 import fileUpload from "../middleware/file-upload.js";
 import { validateRequest } from "../middleware/validate-request.js";
+import { createPasswordRateLimit } from "../middleware/password-rate-limit.js";
 import {
   activeMemberValidators,
   addDocumentValidators,
@@ -43,6 +47,10 @@ dotenv.config();
 const userRouter = express.Router();
 
 userRouter.get("/current", authMiddleware, getCurrentUser);
+
+const campaignValidators = [param("campaign").isIn(ACCOUNT_CAMPAIGN_KEYS).withMessage("Unknown account campaign")];
+userRouter.get("/campaigns/:campaign", authMiddleware, campaignValidators, validateRequest, getAccountCampaign);
+userRouter.post("/campaigns/:campaign/seen", authMiddleware, campaignValidators, validateRequest, markAccountCampaignSeen);
 
 userRouter.get(
   "/get-subscription-status",
@@ -70,6 +78,7 @@ userRouter.post(
 userRouter.patch(
   "/edit-info",
   authMiddleware,
+  createPasswordRateLimit("profile-change"),
   fileResizedUpload(process.env.BUCKET_USERS).single("image"),
   editUserValidators,
   validateRequest,
@@ -91,7 +100,7 @@ userRouter.post(
 // Anonymized vital stats export (XLS)
 userRouter.get(
   "/export-vital-stats",
-  // adminMiddleware(ACCESS_2),
+  adminMiddleware(ACCESS_2),
   exportVitalStatsXls
 );
 

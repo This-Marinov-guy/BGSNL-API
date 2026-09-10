@@ -56,10 +56,21 @@ export const readDatabaseCollection = async (req, res, next) => {
 
     switch (collection) {
       case "events":
-        documents = await Event.find();
+        documents = await Event.find({}).select([
+          "_id", "region", "title", "date", "correctedDate", "location",
+          "status", "ticketTimer", "ticketLimit", "isSaleClosed", "isFree",
+          "isMemberFree", "memberOnly", "hidden", "createdAt", "lastUpdate.timestamp",
+        ].join(" ")).lean();
         break;
       case "users":
-        documents = await User.find();
+        // Explicitly allow only the fields required by the spreadsheet import.
+        // Do not add account credentials, roles, subscription, documents,
+        // tickets, campaign state, recovery/session fields or arbitrary model data.
+        documents = await User.find({}).select([
+          "_id", "name", "surname", "email", "phone", "region", "status",
+          "university", "otherUniversityName", "graduationDate", "course",
+          "profession", "joinDate", "purchaseDate", "expireDate",
+        ].join(" ")).lean();
         break;
       default:
         throw new Error();

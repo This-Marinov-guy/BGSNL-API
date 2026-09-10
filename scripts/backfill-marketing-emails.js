@@ -93,7 +93,10 @@ export const createCandidateCollector = (fallbackDate = new Date()) => {
       email: normalizedEmail,
       city: normalizedCity,
       addedAt: getDate(addedAt, fallbackDate),
-      unsubscribed: false,
+      // Historical imports do not provide auditable marketing consent. Preserve
+      // them for suppression/audit only; do not make them campaign recipients.
+      unsubscribed: true,
+      consent: { granted: false, source: "legacy-import" },
     };
     const key = `${candidate.city}\u0000${candidate.email}`;
     const current = candidates.get(key);

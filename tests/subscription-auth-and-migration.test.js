@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import jwt from "jsonwebtoken";
+import { signSessionToken } from "../util/auth/session-token.js";
 import mongoose from "mongoose";
 import User from "../models/User.js";
 import AlumniUser from "../models/AlumniUser.js";
 import BillingRecord from "../models/BillingRecord.js";
 import AccountIdentity from "../models/AccountIdentity.js";
+import PasskeyCredential from "../models/PasskeyCredential.js";
 import { createAuthMiddleware, requireBenefits } from "../middleware/authorization.js";
 import { persistSubscriptionAccount } from "../services/subscriptions/accounts.js";
 import { withBillingLease } from "../services/subscriptions/lease.js";
@@ -16,9 +17,9 @@ test("signed but outdated JWT roles, customer and status are replaced with curre
   process.env.JWT_STRING = "subscription-tests-only-not-a-real-secret";
   t.after(() => { if (previous === undefined) delete process.env.JWT_STRING; else process.env.JWT_STRING = previous; });
   const account = { id: "alumni_current", email: "owner@example.test", status: "locked", roles: ["alumni"], tier: 3, subscription: { customerId: "cus_current" } };
-  const token = jwt.sign({ userId: "member_old", version: Number(process.env.AUTH_VERSION ?? 1), roles: ["super_admin", "member"], status: "active", customerId: "cus_forged" }, process.env.JWT_STRING);
+  const token = signSessionToken({ id: "member_old", roles: ["super_admin", "member"], status: "active", subscription: { customerId: "cus_forged" } });
   const req = { headers: { authorization: `Bearer ${token}` } };
-  const auth = createAuthMiddleware({ findAccount: async (id) => { assert.equal(id, "member_old"); return account; } });
+  const auth = createAuthMiddleware({ validateSession: async () => {}, findAccount: async (id) => { assert.equal(id, "member_old"); return account; } });
   let error;
   await auth(req, { set: () => {} }, (value) => { error = value; });
   assert.equal(error, undefined); // Login and billing are still accessible.
@@ -58,6 +59,13 @@ test("round-trip migration preserves profile, tickets, documents, aliases and St
   const session = { withTransaction: async (run) => run(), endSession: async () => {} };
   t.mock.method(mongoose, "startSession", async () => session);
   const identityOwners = [];
+  const passkeyOwners = [];
+  t.mock.method(PasskeyCredential, "updateMany", async (query, update, options) => {
+    assert.ok(query.accountId.$in.includes("member_original"));
+    assert.deepEqual(Object.keys(update.$set), ["accountId"]);
+    passkeyOwners.push(update.$set.accountId);
+    assert.equal(options.session, session);
+  });
   t.mock.method(AccountIdentity, "updateMany", async (query, update, options) => {
     assert.ok(query.accountId.$in.includes("member_original"));
     identityOwners.push(update.$set.accountId);
@@ -86,9 +94,11 @@ test("round-trip migration preserves profile, tickets, documents, aliases and St
   });
   documents.User.set(source.id, source);
   source.sessionVersion = 2;
+  source.campaignsSeen = ["whats-new-2026-09"];
   source.identityRevision = 4;
   const archivedAlumni = new AlumniUser({ ...source.toObject(), _id: "alumni_archived", roles: ["alumni"], tier: 0, status: "membership-migrated", sessionVersion: 0 });
   documents.AlumniUser.set(archivedAlumni.id, archivedAlumni);
+  archivedAlumni.campaignsSeen = ["previous-alumni-announcement"];
   const verifiedSessions = [];
   const owned = async (value) => verifiedSessions.push(value);
   const alumni = await persistSubscriptionAccount(source, { status: "active", subscription: source.subscription.toObject() }, { type: "alumni", tier: 4 }, owned);
@@ -102,7 +112,9 @@ test("round-trip migration preserves profile, tickets, documents, aliases and St
   assert.equal(member.email, "updated@example.test");
   assert.equal(member.sessionVersion, 2);
   assert.equal(member.identityRevision, 4);
+  assert.deepEqual([...member.campaignsSeen].sort(), ["previous-alumni-announcement", "whats-new-2026-09"]);
   assert.deepEqual(identityOwners, ["alumni_archived", "member_original"]);
+  assert.deepEqual(passkeyOwners, ["alumni_archived", "member_original"]);
   assert.equal(alumni.status, "membership-migrated");
   assert.equal(member.subscription.id, "sub_same"); assert.equal(member.subscription.customerId, "cus_same");
   assert.equal(member.profession, "Engineer"); assert.equal(member.tickets.length, 1);

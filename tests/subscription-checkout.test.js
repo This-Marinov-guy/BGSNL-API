@@ -28,7 +28,9 @@ const checkoutHarness = () => {
     }
     for (const key of Object.keys(update.$unset || {})) delete record[key];
   } };
-  const dependencies = { stripe, records, withLease: async (_key, work) => work({ record, assertOwned: async () => {} }) };
+  const dependencies = { stripe, records, withLease: async (_key, work) => work({ record, assertOwned: async () => {} }),
+    prepareReturn: async ({ token, origin }) => ({ id: "verified_receipt", success_url: `${origin}/payment/return?token=${token}`,
+      cancel_url: `${origin}/payment/return?token=${token}`, bind: async () => {} }) };
   const options = { key: "account-checkout:member_owner", user, plan: MEMBERSHIP_PLANS[0], region: "netherlands", returnUrl: "https://bulgariansociety.nl", dependencies };
   return { record, calls, user, options, reserve: () => reserveCheckout(options), failNext: () => { failOnce = true; },
     setSubscriptions: (subs) => { existingSubscriptions = subs; } };
@@ -40,7 +42,7 @@ test("repeated checkout requests reuse the same open session and verified custom
   assert.equal(first.id, second.id); assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].data.customer, "cus_verified");
   assert.equal(h.user.subscription.customerId, "cus_verified");
-  assert.deepEqual(h.calls[0].data.metadata, { method: "membership_checkout", checkoutKey: "account-checkout:member_owner" });
+  assert.deepEqual(h.calls[0].data.metadata, { method: "membership_checkout", checkoutKey: "account-checkout:member_owner", paymentReturnId: "verified_receipt" });
   assert.equal(h.calls[0].data.line_items[0].price, MEMBERSHIP_PLANS[0].priceId);
 });
 test("checkout initializes a missing subscription without granting benefits before payment", async () => {
@@ -53,8 +55,8 @@ test("checkout initializes a missing subscription without granting benefits befo
     assert.equal(h.user.subscription.hasBenefits, undefined);
     assert.equal(h.calls[0].data.mode, "subscription");
     assert.deepEqual(h.calls[0].data.line_items, [{ price: MEMBERSHIP_PLANS[0].priceId, quantity: 1 }]);
-    assert.equal(h.calls[0].data.success_url, "https://bulgariansociety.nl/user?billing=return#settings");
-    assert.equal(h.calls[0].data.cancel_url, "https://bulgariansociety.nl/user#settings");
+    assert.match(h.calls[0].data.success_url, /^https:\/\/bulgariansociety.nl\/payment\/return\?token=[a-f0-9]{64}$/);
+    assert.equal(h.calls[0].data.cancel_url, h.calls[0].data.success_url);
   }
 });
 test("accounts without a subscription can start every allowlisted Member period and Alumni tier", async () => {

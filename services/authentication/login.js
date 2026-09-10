@@ -1,10 +1,11 @@
 import { LIMITLESS_ACCOUNT } from "../../util/config/defines.js";
 import { accountEntitlements } from "../../util/subscriptions/policy.js";
 import { reconcileAccount } from "../subscriptions/reconcile.js";
-import { jwtSign, isBirthdayToday } from "../../util/functions/helpers.js";
+import { isBirthdayToday } from "../../util/functions/helpers.js";
+import { sessions } from "./sessions.js";
 import HttpError from "../../models/Http-error.js";
 
-export async function buildLoginResponse(user, { reconcile = reconcileAccount, sign = jwtSign } = {}) {
+export async function buildLoginResponse(user, { reconcile = reconcileAccount, sign = sessions.start } = {}) {
   const authenticatedVersion = Number(user.sessionVersion ?? 0);
   const authenticatedPassword = user.password;
   if (!user.subscription?.id && ["active", "locked", "payment_awaiting"].includes(user.status) &&
@@ -18,8 +19,9 @@ export async function buildLoginResponse(user, { reconcile = reconcileAccount, s
   if (Number(user.sessionVersion ?? 0) !== authenticatedVersion || user.password !== authenticatedPassword) {
     throw new HttpError("Account security changed during sign-in. Please sign in again.", 401);
   }
+  const credentials = await sign(user);
   return {
-    token: await sign(user), image: user.image, region: user.region, roles: user.roles,
+    ...(typeof credentials === "string" ? { token: credentials } : credentials), image: user.image, region: user.region, roles: user.roles,
     ...accountEntitlements(user), billingVerificationUnavailable,
     ...(billingVerificationUnavailable ? { hasBenefits: false, memberDiscount: false } : {}),
     ...(isBirthdayToday(user.birth) ? { celebrate: true } : {}),

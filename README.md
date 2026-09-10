@@ -2,6 +2,12 @@
 
 Express.js 4 REST API for Bulgarian Society Netherlands platform.
 
+Scheduled workers and their operational controls are listed in
+[`docs/scheduled-events.md`](docs/scheduled-events.md).
+
+Passkey sign-in, device setup and deployment requirements are documented in
+[`docs/passkeys.md`](docs/passkeys.md).
+
 ## Overview
 
 The BGSNL API is a comprehensive backend system that handles:
@@ -16,22 +22,22 @@ The BGSNL API is a comprehensive backend system that handles:
 
 ### Prerequisites
 
-- **Node.js**: Version 20.10.* (recommended via NVM)
+- **Node.js**: Version 22 LTS (recommended via NVM; supported range: 22–24)
 - **NPM**: Version 10.2.3
 - **MongoDB**: Database connection string
 - **Stripe Account**: For payment processing
 
 ### Step 1: Install Node.js
 
-Install NVM (Node Version Manager) and use it to install Node.js 20.10.*:
+Install NVM (Node Version Manager) and use it to install Node.js 22:
 
 ```bash
 # Install NVM (if not already installed)
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
 
-# Install Node.js 20.10.*
-nvm install 20.10.0
-nvm use 20.10.0
+# Install Node.js 22
+nvm install 22
+nvm use 22
 ```
 
 Or download directly from [nodejs.org](https://nodejs.org/en/download/)
@@ -53,7 +59,8 @@ DB_PASS=your-mongodb-password
 DB=your-mongodb-cluster-url
 
 # JWT
-JWT_SECRET=your-jwt-secret-key
+JWT_STRING=your-cryptographically-random-jwt-signing-secret
+AUTH_VERSION=1
 
 # Stripe
 STRIPE_SECRET_KEY_NETHERLANDS=your-stripe-secret-key
@@ -82,6 +89,16 @@ MAILER_BULGARIANSOCIETY_SECRET=your-bulgarian-society-scoped-secret
 # are comma-separated and receive separate messages (addresses are not exposed).
 INTERNAL_NOTIFICATIONS_ENABLED=true
 INTERNAL_NOTIFICATION_SUBSCRIBERS=vladislavmarinov3142@gmail.com,bulgariansocietynetherlands@gmail.com
+
+# Optional override. In production the report is enabled whenever internal
+# notifications are enabled; set false to disable it. It covers the completed
+# Monday–Sunday week and runs at 00:05 Monday in Europe/Amsterdam.
+WEEKLY_MEMBERSHIP_REPORT_ENABLED=true
+
+# Optional override. Birthday greetings are enabled by default in production,
+# run daily at 10:00 Europe/Amsterdam, and only use real stored birth dates.
+# Set false to disable the worker, or true to exercise it in development.
+BIRTHDAY_EMAIL_WORKER_ENABLED=true
 ```
 
 ### Server-to-server access (SSR)
@@ -284,12 +301,14 @@ BGSNL-API/
 - `POST /api/security/send-password-token` - Request password reset
 - `POST /api/security/verify-token` - Verify password reset token
 - `PATCH /api/security/change-password` - Change user password
-- `PATCH /api/security/force-change-password` - Admin force password change
+- `PATCH /api/security/force-change-password` - Retired (410); use verified password reset
 
 ### Users
 - `GET /api/user/current` - Get current user profile
 - `GET /api/user/get-subscription-status` - Get subscription status
-- `GET /api/user/refresh-token` - Refresh JWT token
+- `GET /api/user/refresh-token` - Retired on the direct API (410): access tokens cannot renew themselves. The website compatibility URL uses its separate HttpOnly refresh credential. See [refresh-session policy](docs/refresh-sessions.md).
+
+Password creation, verification and checkout/webhook compatibility use a shared bcrypt policy. See [password hashing and development-DB verification](docs/password-hashing.md).
 - `GET /api/user/roles` - Get current user roles
 - `PATCH /api/user/edit-info` - Update user profile
 - `POST /api/user/active-member` - Submit active member application

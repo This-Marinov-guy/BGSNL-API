@@ -7,6 +7,7 @@ const schema = new mongoose.Schema({
   proofHash: { type: String, required: true },
   origin: { type: String, required: true },
   accountId: String,
+  accountEmail: String,
   passwordHash: String,
   sessionVersion: Number,
   expiresAt: { type: Date, required: true },

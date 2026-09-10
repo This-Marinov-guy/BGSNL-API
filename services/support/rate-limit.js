@@ -1,5 +1,6 @@
 import AuthRateLimit from "../../models/AuthRateLimit.js";
 import HttpError from "../../models/Http-error.js";
+import { requestClientAddress } from "../../util/auth/request-client.js";
 import { digest } from "./policy.js";
 
 export async function consumeSupportLimit(key, maximum, windowMs, { limits = AuthRateLimit, now = Date.now() } = {}) {
@@ -17,7 +18,7 @@ export async function consumeSupportLimit(key, maximum, windowMs, { limits = Aut
 }
 
 export async function limitSupportRequest(req) {
-  const identity = req.account ? `account:${req.account._id || req.account.id}` : `ip:${req.ip}`;
+  const identity = req.account ? `account:${req.account._id || req.account.id}` : `ip:${requestClientAddress(req)}`;
   if (req.method === "POST" && req.path === "/conversations") {
     // A site-wide creation budget also bounds spam if proxy IP headers can be
     // spoofed. This service inherits the API's proxy configuration.

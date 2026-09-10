@@ -42,11 +42,19 @@ import {
 import { formatUploadValidationError } from "./middleware/upload-validation-error.js";
 import { startBillingWorker } from "./services/subscriptions/reminders.js";
 import BillingRecord from "./models/BillingRecord.js";
+import PaymentReturn from "./models/PaymentReturn.js";
 import BillingAttention from "./models/BillingAttention.js";
 import AccountIdentity from "./models/AccountIdentity.js";
 import AuthChallenge from "./models/AuthChallenge.js";
 import AuthRateLimit from "./models/AuthRateLimit.js";
+import RefreshSession from "./models/RefreshSession.js";
+import PasskeyCredential from "./models/PasskeyCredential.js";
+import PasskeyChallenge from "./models/PasskeyChallenge.js";
 import SupportConversation from "./models/SupportConversation.js";
+import WeeklyMembershipReportDelivery from "./models/WeeklyMembershipReportDelivery.js";
+import { startWeeklyMembershipReportWorker } from "./services/background-services/weekly-membership-report.js";
+import BirthdayEmailDelivery from "./models/BirthdayEmailDelivery.js";
+import { startBirthdayEmailWorker } from "./services/background-services/birthday-emails.js";
 import supportRouter, { supportError, supportPrivacy } from "./routes/support-routes.js";
 import backofficeRouter from "./routes/backoffice-routes.js";
 
@@ -55,19 +63,27 @@ const app = express();
 // All unversioned /api requests resolve to v1. Explicit version prefixes are
 // preserved so v2 and v3 routers can be introduced without changing v1.
 app.use(apiVersionMiddleware);
+// Payment return capabilities, Stripe documents and personal checkout details
+// must not be captured by request/response analytics.
+app.use((req, res, next) => {
+  req.paymentPrivate = /^\/api\/v\d+\/payment(?:\/|$)/.test(req.url);
+  if (req.paymentPrivate) res.set("Cache-Control", "private, no-store");
+  next();
+});
 app.use(supportPrivacy);
 
 const mountApiRouter = (version, routePath, router) => {
   app.use(getApiRoutePath(routePath, version), router);
 };
 
-// Pass secured routes
-mountApiRouter(API_VERSIONS.V1, "/google-scripts", googleScriptsRouter);
-mountApiRouter(API_VERSIONS.V1, "/mobile", kokoAppRouter);
+// Stripe webhooks intentionally bypass the browser firewall/rate limiter:
+// requests are authorized by Stripe's signed raw-body verification.
 mountApiRouter(API_VERSIONS.V1, "/webhooks", webhookRouter);
 
 // Firewall
-app.set("trust proxy", true);
+const trustedProxyHops = Number(process.env.TRUST_PROXY_HOPS);
+app.set("trust proxy", Number.isInteger(trustedProxyHops) && trustedProxyHops >= 0 && trustedProxyHops <= 5
+  ? trustedProxyHops : process.env.APP_ENV === "prod" ? 1 : 0);
 
 if (app.get("env") !== "development") {
   app.use(rateLimiter);
@@ -148,6 +164,8 @@ app.get(getApiRoutePath(), (req, res) => {
 
 // Protected routes
 mountApiRouter(API_VERSIONS.V1, "/common", commonRouter);
+mountApiRouter(API_VERSIONS.V1, "/google-scripts", googleScriptsRouter);
+mountApiRouter(API_VERSIONS.V1, "/mobile", kokoAppRouter);
 mountApiRouter(API_VERSIONS.V1, "/security", securityRouter);
 mountApiRouter(API_VERSIONS.V1, "/user", userRouter);
 mountApiRouter(API_VERSIONS.V1, "/event", eventRouter);
@@ -175,6 +193,9 @@ app.use(supportError);
 
 // error handling (not sure if needed)
 app.use((error, req, res, _next) => {
+  if (req.paymentPrivate) {
+    return res.status(error.statusCode || 500).json({ message: error instanceof HttpError ? error.message : "Payment service is temporarily unavailable. Please try again." });
+  }
   console.log(error);
 
   const uploadValidationError = formatUploadValidationError(error);
@@ -203,6 +224,8 @@ app.use((error, req, res, _next) => {
 mongoose.set("strictQuery", true);
 let server;
 let stopBillingWorker;
+let stopWeeklyMembershipReportWorker;
+let stopBirthdayEmailWorker;
 
 mongoose
   .connect(
@@ -210,8 +233,10 @@ mongoose
   )
   .then(async () => {
     console.log("Connected to DB");
-    await Promise.all([BillingRecord.init(), BillingAttention.init(), AccountIdentity.init(), AuthChallenge.init(), AuthRateLimit.init(), SupportConversation.init()]);
+    await Promise.all([RefreshSession.init(), PaymentReturn.init(), BillingRecord.init(), BillingAttention.init(), AccountIdentity.init(), AuthChallenge.init(), AuthRateLimit.init(), PasskeyCredential.init(), PasskeyChallenge.init(), SupportConversation.init(), WeeklyMembershipReportDelivery.init(), BirthdayEmailDelivery.init()]);
     stopBillingWorker = startBillingWorker();
+    stopWeeklyMembershipReportWorker = startWeeklyMembershipReportWorker();
+    stopBirthdayEmailWorker = startBirthdayEmailWorker();
     server = app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
@@ -230,6 +255,8 @@ const gracefulShutdown = async (signal) => {
 
   // Flush Axiom logs
   await stopBillingWorker?.();
+  await stopWeeklyMembershipReportWorker?.();
+  await stopBirthdayEmailWorker?.();
   await flushAxiom();
 
   // Close MongoDB connection

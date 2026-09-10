@@ -1,14 +1,10 @@
 import dotenv from "dotenv";
 dotenv.config();
-import jwt from "jsonwebtoken";
 import dns from "dns";
 import CryptoJS from "crypto-js";
 import moment from "moment-timezone";
-import { DEV_JWT_TIMEOUT, PROD_JWT_TIMEOUT } from "../config/defines.js";
 import { allowedCrawlers } from "../config/access.js";
-
-const JWT_TIMEOUT =
-  process.env.APP_ENV === "prod" ? PROD_JWT_TIMEOUT : DEV_JWT_TIMEOUT;
+export { signSessionToken as jwtSign } from "../auth/session-token.js";
 
 export const IS_PROD = process.env.APP_ENV === "prod";
 
@@ -40,69 +36,6 @@ export const removeModelProperties = (obj, properties) => {
   }
 
   return result;
-};
-
-export const jwtSign = (user) => {
-  return jwt.sign(
-    {
-      version: Number(process.env.AUTH_VERSION ?? 1),
-      sessionVersion: Number(user.sessionVersion ?? 0),
-      image: user.image,
-      name: user.name,
-      surname: user.surname,
-      userId: user.id,
-      customerId: user.subscription?.customerId ?? '',
-      status: user.status,
-      roles: user.roles,
-      email: user.email,
-      region: user.region,
-    },
-    process.env.JWT_STRING,
-    { expiresIn: JWT_TIMEOUT }
-  );
-};
-
-export const jwtRefresh = (token) => {
-  if (
-    typeof token !== "string" ||
-    token.length === 0 ||
-    token.split(".").length !== 3
-  ) {
-    return null;
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_STRING, {
-      ignoreExpiration: true,
-    });
-
-    const newToken = jwt.sign(
-      {
-        version: Number(process.env.AUTH_VERSION ?? 1),
-        sessionVersion: Number(decoded.sessionVersion ?? 0),
-        image: decoded.image,
-        name: decoded.name,
-        surname: decoded.surname,
-        userId: decoded.userId,
-        customerId: decoded.customerId ?? '',
-        roles: decoded.roles,
-        email: decoded.email,
-        region: decoded.region,
-      },
-      process.env.JWT_STRING,
-      { expiresIn: JWT_TIMEOUT }
-    );
-
-    return newToken;
-  } catch (error) {
-    if (
-      !(error instanceof jwt.JsonWebTokenError) &&
-      !(error instanceof jwt.NotBeforeError)
-    ) {
-      console.error("Unexpected error refreshing token:", error);
-    }
-    return null;
-  }
 };
 
 export const encodeForURL = (string) => {

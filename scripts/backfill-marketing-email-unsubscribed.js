@@ -32,12 +32,12 @@ const main = async () => {
     );
 
     if (!apply) {
-      console.log(`[result] Would set unsubscribed=false on ${missing} record(s).`);
+      console.log(`[result] Would suppress ${missing} record(s) whose opt-in cannot be proven.`);
       return;
     }
 
     const result = await MarketingEmail.updateMany(missingQuery, {
-      $set: { unsubscribed: false },
+      $set: { unsubscribed: true, "consent.granted": false, "consent.source": "legacy-unverified" },
     });
 
     await MarketingEmail.createIndexes();

@@ -7,6 +7,7 @@ import { STATISTICS_ABOUT_US_SHEET } from "../util/config/SPREEDSHEATS.js";
 import Statistics from "../models/Statistics.js";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
+import MarketingEmail from "../models/MarketingEmail.js";
 
 export const getTotalMemberCount = async (req, res, next) => {
   let userCount = usersCountCache.get("total");
@@ -104,7 +105,19 @@ export const acceptMarketingEmail = (req, res, next) => {
     return next(new HttpError("Invalid email or city", 422));
   }
 
-  return res.status(202).json({ message: "Marketing email accepted" });
+  res.locals.skipMarketingCapture = true;
+  return MarketingEmail.add({
+    email: req.body.email,
+    city: req.body.city,
+    consent: {
+      granted: true,
+      source: "common/marketing-email",
+      recordedAt: new Date(),
+      textVersion: req.body.marketingConsentVersion || "2026-09-10",
+    },
+  })
+    .then(() => res.status(202).json({ message: "Marketing consent recorded" }))
+    .catch(() => next(new HttpError("Could not record marketing consent", 503)));
 };
 
 // EmailJS remains the established delivery provider for the public contact

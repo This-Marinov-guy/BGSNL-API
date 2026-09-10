@@ -245,7 +245,7 @@ export const sendResendTemplateEmail = (
   });
 };
 
-export const sendInternalNotificationEmail = ({
+export const deliverInternalNotificationEmail = async ({
   receiver,
   subject,
   text,
@@ -253,21 +253,37 @@ export const sendInternalNotificationEmail = ({
   type,
   entityId,
 }) => {
+  const delivery = client.send({
+    from: sender,
+    to: [{ email: receiver }],
+    subject,
+    text,
+    html,
+    category: "internal-notification",
+    custom_variables: {
+      notification_type: type,
+      entity_id: String(entityId),
+    },
+  });
+  let timeout;
+  try {
+    return await Promise.race([
+      delivery,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Mail delivery timed out")), MAIL_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+export const sendInternalNotificationEmail = (message) => {
+  const { receiver, type, entityId } = message;
   const key = `internal:${type}:${entityId}:${receiver}`;
 
   enqueueMail(key, async () => {
-    await client.send({
-      from: sender,
-      to: [{ email: receiver }],
-      subject,
-      text,
-      html,
-      category: "internal-notification",
-      custom_variables: {
-        notification_type: type,
-        entity_id: String(entityId),
-      },
-    });
+    await deliverInternalNotificationEmail(message);
   });
 };
 

@@ -1,5 +1,6 @@
 import AlumniUser from "../../models/AlumniUser.js";
 import AccountIdentity from "../../models/AccountIdentity.js";
+import PasskeyCredential from "../../models/PasskeyCredential.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 
 // ─── Alumni tree layout ───────────────────────────────────────────────────────
@@ -544,7 +545,7 @@ export const findUserByQuery = async (query) => {
 export const convertAlumniToUser = async (alumniId) => {
   const alumniUser = await AlumniUser.findOne({ _id: alumniId });
   if (alumniUser?.subscription?.id) throw new Error("Subscription-backed accounts must change plans through the billing portal");
-  if (alumniUser && (alumniUser.sessionVersion > 0 || await AccountIdentity.exists({ accountId: alumniId }))) throw new Error("Accounts with connected sign-in history must change membership in account settings");
+  if (alumniUser && (alumniUser.sessionVersion > 0 || await AccountIdentity.exists({ accountId: alumniId }) || await PasskeyCredential.exists({ accountId: alumniId }))) throw new Error("Accounts with connected sign-in history must change membership in account settings");
   if (!alumniUser) {
     throw new Error(`Alumni not found: ${alumniId}`);
   }
@@ -584,13 +585,13 @@ try {
       tickets: alumniUser.tickets || [],
       christmas: alumniUser.christmas || [],
       internshipApplications: alumniUser.internshipApplications || [],
+      campaignsSeen: alumniUser.campaignsSeen || [],
       purchaseDate: alumniUser.purchaseDate || new Date(),
       expireDate:
         alumniUser.expireDate ||
         new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
       joinDate: alumniUser.joinDate || new Date(),
-      // Alumni lacks these required User fields — placeholders to be updated by the user
-      birth: new Date("2000-01-01"),
+      birth: alumniUser.birth || undefined,
       phone: alumniUser.phone || "-",
       university: "-",
     });
@@ -621,7 +622,7 @@ try {
 export const convertUserToAlumni = async (userId) => {
   const regularUser = await User.findOne({ _id: userId });
   if (regularUser?.subscription?.id) throw new Error("Subscription-backed accounts must change plans through the billing portal");
-  if (regularUser && (regularUser.sessionVersion > 0 || await AccountIdentity.exists({ accountId: userId }))) throw new Error("Accounts with connected sign-in history must change membership in account settings");
+  if (regularUser && (regularUser.sessionVersion > 0 || await AccountIdentity.exists({ accountId: userId }) || await PasskeyCredential.exists({ accountId: userId }))) throw new Error("Accounts with connected sign-in history must change membership in account settings");
   if (!regularUser) {
     throw new Error(`User not found: ${userId}`);
   }
@@ -644,9 +645,13 @@ export const convertUserToAlumni = async (userId) => {
     existingAlumni.name = regularUser.name;
     existingAlumni.surname = regularUser.surname;
     existingAlumni.phone = regularUser.phone;
+    existingAlumni.birth = regularUser.birth;
     existingAlumni.email = regularUser.email;
     existingAlumni.image = regularUser.image;
     existingAlumni.password = regularUser.password;
+    existingAlumni.campaignsSeen = [...new Set([
+      ...(existingAlumni.campaignsSeen || []), ...(regularUser.campaignsSeen || []),
+    ])];
     existingAlumni.status = regularUser.status || USER_STATUSES[ACTIVE];
     existingAlumni.purchaseDate = regularUser.purchaseDate || new Date();
     existingAlumni.expireDate =
@@ -665,6 +670,7 @@ export const convertUserToAlumni = async (userId) => {
       name: regularUser.name,
       surname: regularUser.surname,
       phone: regularUser.phone,
+      birth: regularUser.birth,
       email: regularUser.email,
       password: regularUser.password,
       image: regularUser.image || "",
@@ -682,6 +688,7 @@ export const convertUserToAlumni = async (userId) => {
       tickets: regularUser.tickets || [],
       christmas: regularUser.christmas || [],
       internshipApplications: regularUser.internshipApplications || [],
+      campaignsSeen: regularUser.campaignsSeen || [],
       joinDate: regularUser.joinDate || new Date(),
     });
 

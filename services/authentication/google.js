@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
+import { verifyPassword } from "./passwords.js";
 import { google } from "googleapis";
 import HttpError from "../../models/Http-error.js";
 import AccountIdentity from "../../models/AccountIdentity.js";
@@ -14,6 +14,23 @@ const random = () => randomBytes(32).toString("base64url");
 export const CHALLENGE_LIFETIME_MS = 5 * 60000;
 
 export const googleClientId = () => process.env.GOOGLE_SIGN_IN_CLIENT_ID?.trim() || null;
+const normalizeEmail = (email) => typeof email === "string" ? email.trim().toLowerCase() : "";
+// Match the actual address, not Gmail dot/plus aliases or Workspace domains.
+export const isGoogleLinkEligible = (email) => /^[^\s@]+@gmail\.com$/.test(normalizeEmail(email));
+export function requireMatchingGoogleEmail(user, identity) {
+  if (!isGoogleLinkEligible(user?.email)) {
+    throw new HttpError("Google connection is only available for BGSNL accounts with a Gmail address (@gmail.com). Please use your BGSNL password.", 403);
+  }
+  if (normalizeEmail(identity?.email) !== normalizeEmail(user.email)) {
+    throw new HttpError("Use the Google account with the same email address as your BGSNL account. A different Google account cannot be connected.", 403);
+  }
+}
+
+export function googleConnectionStatus(user, identity = null) {
+  return { enabled: !!googleClientId(), eligible: isGoogleLinkEligible(user.email),
+    accountEmail: user.email, connected: !!identity, email: identity?.email || null };
+}
+
 export function requireGoogleOrigin(req, _res, next) {
   const origin = req.headers.origin;
   const origins = ["https://bulgariansociety.nl", "https://www.bulgariansociety.nl"];
@@ -41,8 +58,12 @@ export async function limitGoogleRequests(key, maximum = 30, { limits = AuthRate
   if (!count || count.count > maximum) throw new HttpError("Too many sign-in attempts. Please try again in 15 minutes.", 429);
 }
 
-export async function verifyCurrentPassword(user, password, compare = bcrypt.compare) {
-  if (!user?.password || typeof password !== "string" || !password || password.length > 256 || !await compare(password, user.password)) {
+export async function verifyCurrentPassword(user, password, compare = verifyPassword) {
+  const validInput = typeof password === "string" && password.length > 0 && password.length <= 256;
+  // Google/passkey reauthentication uses the same padded verifier, even when
+  // the account has no usable password. Never skip work based on stored state.
+  const matches = await compare(validInput ? password : undefined, user?.password);
+  if (!validInput || !user?.password || !matches) {
     throw new HttpError("Please confirm your current BGSNL password.", 403);
   }
 }
@@ -51,13 +72,17 @@ export async function createGoogleChallenge({ purpose, origin, proof, user, pass
   const clientId = googleClientId();
   if (!clientId) throw new HttpError("Google sign-in has not been enabled yet. Please use your password.", 503);
   if (!["login", "link"].includes(purpose) || !/^[a-zA-Z0-9_-]{43,128}$/.test(proof || "")) throw new HttpError("Invalid sign-in challenge", 422);
-  if (purpose === "link") await verifyPassword(user, password);
+  if (purpose === "link") {
+    requireMatchingGoogleEmail(user, user);
+    await verifyPassword(user, password);
+  }
   const challenge = await challenges.create({
     _id: random(), nonce: random(), proofHash: digest(proof), origin, purpose,
-    ...(purpose === "link" ? { accountId: user.id, passwordHash: digest(user.password), sessionVersion: Number(user.sessionVersion ?? 0) } : {}),
+    ...(purpose === "link" ? { accountId: user.id, accountEmail: normalizeEmail(user.email), passwordHash: digest(user.password), sessionVersion: Number(user.sessionVersion ?? 0) } : {}),
     expiresAt: new Date(Date.now() + CHALLENGE_LIFETIME_MS),
   });
-  return { challengeId: challenge._id, nonce: challenge.nonce, clientId, expiresAt: challenge.expiresAt };
+  return { challengeId: challenge._id, nonce: challenge.nonce, clientId, expiresAt: challenge.expiresAt,
+    ...(purpose === "link" ? { loginHint: challenge.accountEmail } : {}) };
 }
 
 let verifier;
@@ -103,18 +128,26 @@ export async function consumeGoogleChallenge({ challengeId, credential, proof, p
   if (purpose === "link") {
     const owner = await findAccount(challenge.accountId);
     if (!user || owner?.id !== user.id || challenge.passwordHash !== digest(user.password) ||
-        Number(challenge.sessionVersion ?? 0) !== Number(user.sessionVersion ?? 0)) throw new HttpError("Your account changed. Please start linking again.", 409);
+        Number(challenge.sessionVersion ?? 0) !== Number(user.sessionVersion ?? 0) ||
+        challenge.accountEmail !== normalizeEmail(owner.email) || challenge.accountEmail !== normalizeEmail(user.email)) {
+      throw new HttpError("Your account changed. Please start linking again.", 409);
+    }
+    requireMatchingGoogleEmail(owner, user);
   }
   const identity = await verify(credential, challenge.nonce);
   if (!await challenges.findOneAndDelete(query)) throw new HttpError("This Google sign-in request was already used. Please start again.", 409);
+  if (purpose === "link") requireMatchingGoogleEmail(user, identity);
   return identity;
 }
 
-export async function findGoogleAccount(subject, { identities = AccountIdentity, findAccount = findUserById } = {}) {
+export async function findGoogleAccount(verifiedIdentity, { identities = AccountIdentity, findAccount = findUserById } = {}) {
+  const { subject } = verifiedIdentity;
   const identity = await identities.findOne({ provider: "google", subject });
   const user = identity ? await findAccount(identity.accountId) : null;
   // Never auto-link by email or create a member account from a Google token.
   if (!user) throw new HttpError("This Google account is not connected. Sign in with your BGSNL password and connect Google in Settings first.", 403);
+  // Existing connections cannot bypass the same-address policy on later logins.
+  requireMatchingGoogleEmail(user, verifiedIdentity);
   if (!await identities.exists({ _id: identity._id, provider: "google", subject })) {
     throw new HttpError("Google was disconnected during sign-in. Please use your BGSNL password.", 401);
   }
@@ -122,6 +155,7 @@ export async function findGoogleAccount(subject, { identities = AccountIdentity,
 }
 
 export async function changeGoogleIdentity(user, identity = null, { identities = AccountIdentity, startSession = () => mongoose.startSession() } = {}) {
+  if (identity) requireMatchingGoogleEmail(user, identity);
   const session = await startSession();
   let account;
   try {
@@ -134,6 +168,8 @@ export async function changeGoogleIdentity(user, identity = null, { identities =
         $inc: { identityRevision: 1, ...(!identity ? { sessionVersion: 1 } : {}) },
       }, { new: true, session });
       if (!account) throw new HttpError("Your account changed. Please try again.", 409);
+      // Check the fresh, transaction-fenced profile in case its email changed.
+      if (identity) requireMatchingGoogleEmail(account, identity);
       const existing = await identities.findOne({ provider: "google", accountId: account.id }).session(session);
       if (!identity) {
         if (existing) await identities.deleteOne({ _id: existing._id, accountId: account.id }, { session });
