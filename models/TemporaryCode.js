@@ -8,6 +8,9 @@ const temporaryCodeSchema = new Schema({
   life: { type: Number, required: true, default: 3 },
 });
 
+temporaryCodeSchema.add({ expiresAt: Date });
+temporaryCodeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
 temporaryCodeSchema.static(
   "findOneOrCreate",
   async function findOneOrCreate(condition, doc) {

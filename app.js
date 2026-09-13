@@ -19,6 +19,7 @@ import { createErrorEvent } from "./util/logging/axiom-log-models.js";
 import { REGIONS, STRIPE_WEBHOOK_ROUTE } from "./util/config/defines.js";
 import futureEventRouter from "./routes/Events/future-events-routes.js";
 import wordpressRouter from "./routes/Integration/wordpress-routes.js";
+import atlasTriggerRouter from "./routes/Integration/atlas-triggers.js";
 import googleScriptsRouter from "./routes/Integration/google-scripts.js";
 import webhookRouter from "./routes/Webhooks/webhook-routes.js";
 import kokoAppRouter from "./routes/Integration/koko-app-data.js";
@@ -41,19 +42,14 @@ import {
 } from "./util/config/api-versions.js";
 import { formatUploadValidationError } from "./middleware/upload-validation-error.js";
 import { startBillingWorker } from "./services/subscriptions/reminders.js";
-import BillingRecord from "./models/BillingRecord.js";
-import PaymentReturn from "./models/PaymentReturn.js";
-import BillingAttention from "./models/BillingAttention.js";
-import AccountIdentity from "./models/AccountIdentity.js";
+import TemporaryCode from "./models/TemporaryCode.js";
 import AuthChallenge from "./models/AuthChallenge.js";
-import AuthRateLimit from "./models/AuthRateLimit.js";
-import RefreshSession from "./models/RefreshSession.js";
-import PasskeyCredential from "./models/PasskeyCredential.js";
-import PasskeyChallenge from "./models/PasskeyChallenge.js";
+import PasswordResetChallenge from "./models/PasswordResetChallenge.js";
+import ProfileChange from "./models/ProfileChange.js";
+import { redisClient, closeRedis } from "./services/storage/redis.js";
 import SupportConversation from "./models/SupportConversation.js";
-import WeeklyMembershipReportDelivery from "./models/WeeklyMembershipReportDelivery.js";
 import { startWeeklyMembershipReportWorker } from "./services/background-services/weekly-membership-report.js";
-import BirthdayEmailDelivery from "./models/BirthdayEmailDelivery.js";
+import { startMemberEventAnnouncementWorker } from "./services/events/member-event-announcements.js";
 import { startBirthdayEmailWorker } from "./services/background-services/birthday-emails.js";
 import supportRouter, { supportError, supportPrivacy } from "./routes/support-routes.js";
 import backofficeRouter from "./routes/backoffice-routes.js";
@@ -165,6 +161,7 @@ app.get(getApiRoutePath(), (req, res) => {
 // Protected routes
 mountApiRouter(API_VERSIONS.V1, "/common", commonRouter);
 mountApiRouter(API_VERSIONS.V1, "/google-scripts", googleScriptsRouter);
+mountApiRouter(API_VERSIONS.V1, "/integrations/atlas", atlasTriggerRouter);
 mountApiRouter(API_VERSIONS.V1, "/mobile", kokoAppRouter);
 mountApiRouter(API_VERSIONS.V1, "/security", securityRouter);
 mountApiRouter(API_VERSIONS.V1, "/user", userRouter);
@@ -226,6 +223,7 @@ let server;
 let stopBillingWorker;
 let stopWeeklyMembershipReportWorker;
 let stopBirthdayEmailWorker;
+let stopMemberEventAnnouncementWorker;
 
 mongoose
   .connect(
@@ -233,10 +231,11 @@ mongoose
   )
   .then(async () => {
     console.log("Connected to DB");
-    await Promise.all([RefreshSession.init(), PaymentReturn.init(), BillingRecord.init(), BillingAttention.init(), AccountIdentity.init(), AuthChallenge.init(), AuthRateLimit.init(), PasskeyCredential.init(), PasskeyChallenge.init(), SupportConversation.init(), WeeklyMembershipReportDelivery.init(), BirthdayEmailDelivery.init()]);
+    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), redisClient()]);
     stopBillingWorker = startBillingWorker();
     stopWeeklyMembershipReportWorker = startWeeklyMembershipReportWorker();
     stopBirthdayEmailWorker = startBirthdayEmailWorker();
+    stopMemberEventAnnouncementWorker = startMemberEventAnnouncementWorker();
     server = app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
@@ -245,7 +244,7 @@ mongoose
 // Graceful shutdown handler
 const gracefulShutdown = async (signal) => {
   console.log(`\n${signal} received. Starting graceful shutdown...`);
-  
+
   // Stop accepting new connections
   if (server) {
     server.close(() => {
@@ -257,6 +256,7 @@ const gracefulShutdown = async (signal) => {
   await stopBillingWorker?.();
   await stopWeeklyMembershipReportWorker?.();
   await stopBirthdayEmailWorker?.();
+  await stopMemberEventAnnouncementWorker?.();
   await flushAxiom();
 
   // Close MongoDB connection

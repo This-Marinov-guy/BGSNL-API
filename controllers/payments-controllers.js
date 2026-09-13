@@ -9,6 +9,7 @@ import {
   findUserById,
 } from "../services/main-services/user-service.js";
 import { checkDiscountsOnEvents } from "../services/main-services/event-action-service.js";
+import { isTicketSaleClosed } from "../util/functions/helpers.js";
 import {
   handleGuestTicketPurchase,
   handleMemberTicketPurchase,
@@ -21,6 +22,7 @@ import { createReturnedCheckout, createFreePaymentReturn, preparePaymentReturn, 
 import { withBillingLease } from "../services/subscriptions/lease.js";
 import {
   isExistingMemberTicket,
+  isExistingEventTicket,
   isRestrictedTicketAccount,
   memberTicketClaimKey,
   memberTicketDuplicateMatcher,
@@ -138,17 +140,19 @@ export const createTicketCheckoutSession = async ({
 
     await assertOwned();
     await BillingRecord.updateOne(
-      { _id: claimKey, owner: record.owner },
+      { _id: claimKey },
       {
         $set: {
           data: {
+            reservedAt: new Date(),
             sessionId: session.id,
             sessionUrl: session.url,
             expiresAt: session.expires_at || expiresAt,
           },
         },
         $unset: { completedAt: 1 },
-      }
+      },
+      { upsert: true },
     );
 
     return { url: session.url };
@@ -302,7 +306,8 @@ export const postCheckoutNoFile = async (req, res, next) => {
   let { quantity } = req.body;
   let checkoutType = inferCheckoutType(req, userId);
   let member = null;
-  let restrictedGuestMetadata = null;
+  let restrictedGuestMetadata = req.emailTicketCheckout && checkoutType === "guest"
+    ? guestMetadataForAccount(req.account) : null;
   if (checkoutType === "member") {
     try {
       member = isRestrictedTicketAccount(req.account)
@@ -341,9 +346,13 @@ export const postCheckoutNoFile = async (req, res, next) => {
     return next(new HttpError("Event not found", 404));
   }
 
+  if (isTicketSaleClosed(event)) {
+    return next(new HttpError("Ticket sale is closed", 400));
+  }
+
   const isNormalTicket = normalTicket === "true" || normalTicket === true;
   const alreadyRegistered = checkoutType === "member" && event.guestList.some(
-    (ticket) => isExistingMemberTicket(ticket, {
+    (ticket) => (req.emailTicketCheckout ? isExistingEventTicket : isExistingMemberTicket)(ticket, {
       userId: effectiveUserId,
       userIds: member?.accountAliases,
       email: member?.email,
@@ -404,7 +413,14 @@ export const postCheckoutNoFile = async (req, res, next) => {
   return res.status(200).json(result);
 };
 
-export const postCheckoutFile = async (req, res, next) => {
+export const postCheckoutFile = async (req, res, next, {
+  loadEvent = (id) => Event.findById(id),
+  reconcile = reconcileAccount,
+  generateTicket = generateAndUploadEventTicket,
+  resolvePrice = resolveTicketPriceId,
+  stripeForRegion = createStripeClient,
+  createCheckout = createTicketCheckoutSession,
+} = {}) => {
   const { origin_url, eventId, normalTicket } = req.body;
   paymentOrigin(origin_url);
   const { userId } = extractUserFromRequest(req);
@@ -412,12 +428,13 @@ export const postCheckoutFile = async (req, res, next) => {
   let { quantity } = req.body;
   let checkoutType = inferCheckoutType(req, userId);
   let member = null;
-  let restrictedGuestMetadata = null;
+  let restrictedGuestMetadata = req.emailTicketCheckout && checkoutType === "guest"
+    ? guestMetadataForAccount(req.account) : null;
   if (checkoutType === "member") {
     try {
       member = isRestrictedTicketAccount(req.account)
         ? req.account
-        : (await reconcileAccount(req.account))?.user;
+        : (await reconcile(req.account))?.user;
       if (!member) return next(new HttpError("Could not load member", 401));
       if (!accountEntitlements(member).memberDiscount) {
         checkoutType = "guest";
@@ -442,13 +459,17 @@ export const postCheckoutFile = async (req, res, next) => {
 
   let event;
   try {
-    event = await Event.findById(eventId);
+    event = await loadEvent(eventId);
   } catch (_) {
     return next(new HttpError("Could not load event", 500));
   }
 
   if (!event) {
     return next(new HttpError("Event not found", 404));
+  }
+
+  if (isTicketSaleClosed(event)) {
+    return next(new HttpError("Ticket sale is closed", 400));
   }
 
   const isNormalTicket = normalTicket === "true" || normalTicket === true;
@@ -464,7 +485,7 @@ export const postCheckoutFile = async (req, res, next) => {
     }
 
     const alreadyRegistered = event.guestList.some(
-      (ticket) => isExistingMemberTicket(ticket, {
+      (ticket) => (req.emailTicketCheckout ? isExistingEventTicket : isExistingMemberTicket)(ticket, {
         userId: effectiveUserId,
         userIds: member.accountAliases,
         email: member.email,
@@ -483,7 +504,7 @@ export const postCheckoutFile = async (req, res, next) => {
         ? process.env.BUCKET_MEMBER_TICKETS
         : process.env.BUCKET_GUEST_TICKETS;
 
-    fileLocation = await generateAndUploadEventTicket({
+    fileLocation = await generateTicket({
       event,
       checkoutType,
       bucketName,
@@ -502,7 +523,9 @@ export const postCheckoutFile = async (req, res, next) => {
   const isFreeCheckout =
     event.isFree || (checkoutType === "member" && !isNormalTicket && event.isMemberFree);
 
-  if (isFreeCheckout) {
+  // Even free email tickets go through Checkout confirmation: opening a link
+  // (including mail scanning) must never issue a ticket.
+  if (isFreeCheckout && !req.emailTicketCheckout) {
     const metadata = {
       ...req.body,
       ...restrictedGuestMetadata,
@@ -537,24 +560,27 @@ export const postCheckoutFile = async (req, res, next) => {
     });
   }
 
-  const priceId = await resolveTicketPriceId(
+  const priceId = isFreeCheckout ? null : await resolvePrice(
     event,
     checkoutType,
     effectiveUserId,
     isNormalTicket
   );
 
-  if (!priceId) {
+  if (!isFreeCheckout && !priceId) {
     return next(new HttpError("No price configured for this event", 500));
   }
 
-  const stripeClient = createStripeClient(event.region);
+  const stripeClient = stripeForRegion(event.region);
 
-  const lineItems = [{ price: priceId, quantity }];
+  const lineItems = isFreeCheckout
+    ? [{ price_data: { currency: "eur", product_data: { name: event.title }, unit_amount: 0 }, quantity }]
+    : [{ price: priceId, quantity }];
   lineItems.push(...resolveAddonLineItems(event, addOns));
 
   const checkoutData = {
     mode: "payment",
+    ...(req.emailTicketCheckout ? { customer_email: req.account.email } : {}),
     allow_promotion_codes: true,
     line_items: lineItems,
     success_url: `${origin_url}/success`,
@@ -576,7 +602,7 @@ export const postCheckoutFile = async (req, res, next) => {
   //   checkoutData.customer = customerId;
   // }
 
-  const result = await createTicketCheckoutSession({
+  const result = await createCheckout({
     stripeClient,
     checkoutData,
     checkoutType,

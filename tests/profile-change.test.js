@@ -6,6 +6,7 @@ import { createConfirmProfile } from "../controllers/profile-change-controller.j
 import ProfileChange from "../models/ProfileChange.js";
 import { signSessionToken, verifySessionToken } from "../util/auth/session-token.js";
 import { requestClientAddress } from "../util/auth/request-client.js";
+import { PROFILE_CHANGE_CONFIRM_TEMPLATE } from "../util/config/defines.js";
 
 process.env.JWT_STRING = "isolated-profile-tests-no-real-secret-or-accounts";
 process.env.AUTH_VERSION = "1";
@@ -68,7 +69,7 @@ function harness() {
   };
   const input = (extra = {}) => ({ password: "New-password123", origin: "https://www.bulgariansociety.nl",
     claims: { userId: live.id, sessionVersion: live.sessionVersion, auth_time: Math.floor(clock / 1000) }, ...extra });
-  const token = (index = emails.length - 1) => emails[index].text.match(/#token=([A-Za-z0-9_-]{43})/)[1];
+  const token = (index = emails.length - 1) => emails[index].templateVariables.url.match(/#token=([A-Za-z0-9_-]{43})/)[1];
   return { user, input, dependencies, emails, token, row: () => row, live: () => live, deleted: () => deleted, advance: (amount) => { clock += amount; } };
 }
 
@@ -80,7 +81,8 @@ test("profile changes await email approval and store only token and password has
   assert.equal(h.row().passwordHash, "new-bcrypt-hash"); assert.equal(h.row().approvalHash.length, 64);
   assert.ok(!JSON.stringify(h.row()).includes(h.token())); assert.ok(!JSON.stringify(h.row()).includes("New-password123"));
   assert.equal(h.emails[0].to[0].email, h.user().email);
-  assert.match(h.emails[0].text, /account\/confirm#token=/);
+  assert.equal(h.emails[0].templateId, PROFILE_CHANGE_CONFIRM_TEMPLATE);
+  assert.match(h.emails[0].templateVariables.url, /account\/confirm#token=/);
 });
 test("password confirmation is single-use, revokes sessions and preserves restrictions and Google", async () => {
   const h = harness(); await requestProfileChange(h.user(), h.input(), h.dependencies);

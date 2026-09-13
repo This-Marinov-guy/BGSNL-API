@@ -1,8 +1,9 @@
+import { isVerifiedMemberEventNavigation } from "../services/events/member-event-links.js";
 import crypto from "crypto";
 import HttpError from "../models/Http-error.js";
 import { allowedOrigins, ssrServerKey } from "../util/config/access.js";
 import { requestClientAddress, trustedWebsiteRequest } from "../util/auth/request-client.js";
-import AuthRateLimit from "../models/AuthRateLimit.js";
+import { redisRateLimits as AuthRateLimit } from "../services/storage/rate-limits.js";
 import { isConfiguredServiceRequest } from "./pass-secure.js";
 
 /** True only for the SSR server presenting its server-only shared key. */
@@ -20,7 +21,7 @@ const browserOrigin = (value) => {
   try { return new URL(value).origin; } catch { return null; }
 };
 
-/** A Mongo-backed limiter shared by API instances, including read requests. */
+/** A Redis-backed limiter shared by API instances, including read requests. */
 export const rateLimiter = async (req, res, next) => {
   if (isTrustedServerRequest(req)) return next();
 
@@ -55,6 +56,7 @@ export const rateLimiter = async (req, res, next) => {
 };
 
 export const firewall = (req, res, next) => {
+  if (isVerifiedMemberEventNavigation(req)) return next();
   if (isTrustedServerRequest(req) || isConfiguredServiceRequest(req)) return next();
 
   // Origin is CORS admission, never identity. Sensitive routes also verify a

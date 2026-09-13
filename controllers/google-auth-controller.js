@@ -1,6 +1,6 @@
 import HttpError from "../models/Http-error.js";
 import { requestClientAddress } from "../util/auth/request-client.js";
-import AccountIdentity from "../models/AccountIdentity.js";
+import { embeddedIdentities as AccountIdentity } from "../services/authentication/embedded-credentials.js";
 import { sessions } from "../services/authentication/sessions.js";
 import { buildLoginResponse } from "../services/authentication/login.js";
 import {

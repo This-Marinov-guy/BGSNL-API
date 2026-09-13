@@ -25,6 +25,14 @@ export const isEventTimerFinished = (timer) => {
   return timer.valueOf() < new Date().valueOf();
 };
 
+// Single source of truth for "can a ticket still be bought for this event":
+// an organizer's manual closure, the ticket window expiring, or selling out.
+// Every purchase-facing endpoint must call this before creating a checkout.
+export const isTicketSaleClosed = (event) => {
+  const ticketsRemaining = Number(event.ticketLimit) - (event.guestList?.length || 0);
+  return event.isSaleClosed === true || ticketsRemaining <= 0 || isEventTimerFinished(event.ticketTimer);
+};
+
 export const removeModelProperties = (obj, properties) => {
   const result = obj.toObject(); // Convert Mongoose document to plain JavaScript object
   properties.forEach((prop) => delete result[prop]);

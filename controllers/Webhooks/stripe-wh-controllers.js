@@ -1,4 +1,5 @@
 import HttpError from "../../models/Http-error.js";
+import { captureMemberRevenueEvent } from "../../services/subscriptions/revenue-sharing.js";
 import BillingRecord from "../../models/BillingRecord.js";
 import { createStripeClient, getStripeKey, STRIPE_KEYS } from "../../util/config/stripe.js";
 import { stripeId, invoiceSubscriptionId } from "../../util/subscriptions/policy.js";
@@ -50,13 +51,14 @@ export const postWebhookCheckout = async (req, res, next) => {
   } catch { return res.status(400).json({ message: "Invalid Stripe webhook signature or configuration" }); }
   try {
     const object = event.data.object;
+    await captureMemberRevenueEvent(event, region, { stripe });
     if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
       const session = await stripe.checkout.sessions.retrieve(object.id);
       if (["paid", "no_payment_required"].includes(session.payment_status) ||
           (session.mode === "subscription" && session.status === "complete" && session.subscription)) {
         const key = `checkout-event:${region}:${session.id}`;
         await withBillingLease(key, async ({ record }) => {
-          if (record.completedAt) return;
+          if (record.completedAt || session.metadata?.bgsnlFulfilled === "1") return;
           if (session.mode === "subscription") {
             if (session.metadata?.method === "membership_checkout") await completeMembershipCheckout(session, region);
             else if (["signup", "alumni-signup", "alumni_migration", "unlock_account"].includes(session.metadata?.method)) {
@@ -67,7 +69,8 @@ export const postWebhookCheckout = async (req, res, next) => {
             if (session.metadata?.method === "buy_guest_ticket") await handleGuestTicketPurchase(session.metadata, data);
             if (session.metadata?.method === "buy_member_ticket") await handleMemberTicketPurchase(session.metadata, data);
           }
-          await BillingRecord.updateOne({ _id: key }, { $set: { completedAt: new Date() } });
+          await stripe.checkout.sessions.update(session.id, { metadata: { bgsnlFulfilled: "1" } });
+          await BillingRecord.updateOne({ _id: key }, { $set: { completedAt: new Date() } }, { upsert: true });
         });
       }
     } else if (event.type.startsWith("customer.subscription.") || event.type.startsWith("invoice.")) {

@@ -11,7 +11,7 @@ import {
 import { authMiddleware, adminMiddleware, requireBenefits } from "../middleware/authorization.js";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
 import logoUpload from "../middleware/logo-upload.js";
-import { ACCESS_1 } from "../util/config/defines.js";
+import { ACCESS_2 } from "../util/config/defines.js";
 import dotenv from "dotenv";
 import { validateRequest } from "../middleware/validate-request.js";
 import {
@@ -29,12 +29,12 @@ const internshipRouter = express.Router();
 internshipRouter.get("/list", getInternshipsList);
 
 // Admin: full list including inactive
-internshipRouter.get("/admin-list", adminMiddleware(ACCESS_1), getAllInternshipsAdmin);
+internshipRouter.get("/admin-list", adminMiddleware(ACCESS_2), getAllInternshipsAdmin);
 
 // Admin CRUD
 internshipRouter.post(
   "/add",
-  adminMiddleware(ACCESS_1),
+  adminMiddleware(ACCESS_2),
   logoUpload(process.env.BUCKET_DOCUMENTS).single("logo"),
   addInternshipValidators,
   validateRequest,
@@ -43,7 +43,7 @@ internshipRouter.post(
 
 internshipRouter.patch(
   "/edit/:id",
-  adminMiddleware(ACCESS_1),
+  adminMiddleware(ACCESS_2),
   logoUpload(process.env.BUCKET_DOCUMENTS).single("logo"),
   editInternshipValidators,
   validateRequest,
@@ -52,7 +52,7 @@ internshipRouter.patch(
 
 internshipRouter.patch(
   "/reorder",
-  adminMiddleware(ACCESS_1),
+  adminMiddleware(ACCESS_2),
   reorderInternshipsValidators,
   validateRequest,
   reorderInternships
@@ -60,7 +60,7 @@ internshipRouter.patch(
 
 internshipRouter.delete(
   "/delete/:id",
-  adminMiddleware(ACCESS_1),
+  adminMiddleware(ACCESS_2),
   deleteInternshipValidators,
   validateRequest,
   deleteInternship

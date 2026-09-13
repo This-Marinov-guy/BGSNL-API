@@ -1,37 +1,22 @@
-import { createHash } from "node:crypto";
 import moment from "moment-timezone";
 import User from "../../models/User.js";
 import AlumniUser from "../../models/AlumniUser.js";
-import BirthdayEmailDelivery from "../../models/BirthdayEmailDelivery.js";
-import { sendEmail, useDomakinMailer } from "./email-provider.js";
-import { NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME } from "../../util/config/defines.js";
+import { createEmailRunGuard, isEmailSchedulerProcess } from "./email-run-guard.js";
+const birthdayRuns = createEmailRunGuard();
+import { queueDomakinTemplateEmail } from "./domakin-mailer.js";
+import { BIRTHDAY_TEMPLATE } from "../../util/config/defines.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 
 export const BIRTHDAY_EMAIL_TIME_ZONE = "Europe/Amsterdam";
 export const BIRTHDAY_EMAIL_HOUR = 10;
 export const BIRTHDAY_EMAIL_INTERVAL_MS = 60 * 1000;
 
-const escapeHtml = (value) => String(value ?? "")
-  .replaceAll("&", "&amp;")
-  .replaceAll("<", "&lt;")
-  .replaceAll(">", "&gt;")
-  .replaceAll('"', "&quot;")
-  .replaceAll("'", "&#039;");
-
-const recipientHash = (email) => createHash("sha256")
-  .update(String(email).trim().toLowerCase())
-  .digest("hex")
-  .slice(0, 24);
-
-const deliveryId = (dateKey, email) => `birthday:${dateKey}:${recipientHash(email)}`;
-const duplicateKey = (error) => error?.code === 11000;
-
 export const getBirthdayWorkerConfig = (env = process.env) => {
   const explicitlyConfigured = env.BIRTHDAY_EMAIL_WORKER_ENABLED !== undefined;
   return {
-    enabled: explicitlyConfigured
+    enabled: isEmailSchedulerProcess(env) && (explicitlyConfigured
       ? env.BIRTHDAY_EMAIL_WORKER_ENABLED === "true"
-      : env.NODE_ENV === "production",
+      : env.NODE_ENV === "production"),
     timeZone: BIRTHDAY_EMAIL_TIME_ZONE,
   };
 };
@@ -83,36 +68,17 @@ export const loadBirthdayRecipients = async ({
   return [...unique.values()];
 };
 
+// The balloon-pop/confetti animation and green Bulgarian Society Netherlands
+// header/footer shell live in Domakin Mailer's own "birthday" template
+// (templates/bulgariansociety/birthday--<uuid>.html); this only supplies the
+// per-recipient variable.
 export const birthdayNotification = ({ name }) => {
   const firstName = String(name || "there").trim() || "there";
-  return {
-    subject: "Happy birthday from Bulgarian Society Netherlands!",
-    text: `Happy birthday, ${firstName}!\n\nWishing you a wonderful day from everyone at Bulgarian Society Netherlands.`,
-    html: `<p>Happy birthday, ${escapeHtml(firstName)}!</p><p>Wishing you a wonderful day from everyone at Bulgarian Society Netherlands.</p>`,
-  };
+  return { templateId: BIRTHDAY_TEMPLATE, templateVariables: { name: firstName } };
 };
 
-export async function deliverBirthdayEmail({ receiver, notification }) {
-  const delivery = sendEmail({
-    from: { email: NO_REPLY_EMAIL, name: NO_REPLY_EMAIL_NAME },
-    to: [{ email: receiver }],
-    ...notification,
-    category: "birthday-greeting",
-  });
-  let timeout;
-  try {
-    await Promise.race([
-      delivery,
-      new Promise((_, reject) => {
-        timeout = setTimeout(
-          () => reject(new Error("Mail delivery timed out")),
-          useDomakinMailer() ? 100000 : 60000
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(timeout);
-  }
+export async function deliverBirthdayEmail({ receiver, notification, send = queueDomakinTemplateEmail }) {
+  await send(notification.templateId, receiver, notification.templateVariables);
 }
 
 export const processBirthdayEmails = async ({
@@ -120,7 +86,7 @@ export const processBirthdayEmails = async ({
   config = getBirthdayWorkerConfig(),
   MemberModel = User,
   AlumniModel = AlumniUser,
-  DeliveryModel = BirthdayEmailDelivery,
+  runGuard = birthdayRuns,
   send = deliverBirthdayEmail,
 } = {}) => {
   if (!config.enabled) return { status: "disabled", sent: 0 };
@@ -139,22 +105,9 @@ export const processBirthdayEmails = async ({
   let failed = 0;
 
   for (const recipient of recipients) {
-    const id = deliveryId(schedule.dateKey, recipient.email);
-    try {
-      await DeliveryModel.create({
-        _id: id,
-        dateKey: schedule.dateKey,
-        recipientHash: recipientHash(recipient.email),
-        accountId: String(recipient._id),
-        accountType: recipient.accountType,
-        attemptedAt: new Date(now),
-      });
-    } catch (error) {
-      if (duplicateKey(error)) {
-        skipped += 1;
-        continue;
-      }
-      throw error;
+    if (!runGuard.claim(schedule.dateKey, recipient.email)) {
+      skipped += 1;
+      continue;
     }
 
     try {
@@ -162,16 +115,8 @@ export const processBirthdayEmails = async ({
         receiver: recipient.email,
         notification: birthdayNotification({ name: recipient.name }),
       });
-      await DeliveryModel.updateOne(
-        { _id: id, completedAt: { $exists: false } },
-        { $set: { completedAt: new Date() }, $unset: { lastDeliveryError: 1 } }
-      );
       sent += 1;
     } catch (error) {
-      await DeliveryModel.updateOne(
-        { _id: id },
-        { $set: { lastDeliveryError: "Provider delivery failed or was not confirmed" } }
-      );
       failed += 1;
       console.error("Birthday email delivery was not confirmed", { dateKey: schedule.dateKey, code: error?.code });
     }

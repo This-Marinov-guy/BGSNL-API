@@ -46,6 +46,24 @@ test("failed payment immediately locks future-dated accounts and replay creates 
   assert.equal(h.account.subscription.hasBenefits, false);
   assert.equal(h.jobs.length, 1);
 });
+test("an expired reminder job is not recreated until the account recovers and a new failure begins", async () => {
+  const h = makeHarness();
+  h.live.status = "past_due";
+  await h.sync();
+  const episode = h.account.subscription.failureEpisode;
+  h.jobs.length = 0;
+  h.dependencies.attention.updateOne = async () => ({ matchedCount: 0 });
+  await h.sync();
+  assert.equal(h.jobs.length, 0);
+  assert.equal(h.account.subscription.failureEpisode, episode);
+  h.live.status = "active";
+  await h.sync();
+  assert.equal(h.account.subscription.failureEpisode, undefined);
+  h.live.status = "past_due";
+  await h.sync();
+  assert.equal(h.jobs.length, 1);
+  assert.notEqual(h.account.subscription.failureEpisode, episode);
+});
 test("reordered webhook delivery always reads current Stripe state, never restores an unpaid account", async () => {
   const h = makeHarness();
   h.live.status = "past_due";
@@ -193,4 +211,30 @@ test("a recovered paid plan change clears an abandoned free-alumni request", asy
   h.live.status = "canceled";
   await h.sync();
   assert.deepEqual(h.account.roles, ["member"]);
+});
+
+test("Connect enrolment persists on renewal, turns off for Alumni and resumes on a Member return", async () => {
+  const { memberRevenueAllocation } = await import("../util/config/member-revenue.js");
+  const h = makeHarness();
+  h.dependencies.readRevenueAllocation = async () => ({
+    ...memberRevenueAllocation(MEMBERSHIP_PLANS[0], "amsterdam", { MEMBER_REVENUE_SHARING_ENABLED: "true" }),
+    subscriptionId: h.live.id, customerId: h.live.customer,
+  });
+  await h.sync(); assert.equal(h.account.subscription.connected, true);
+  await h.sync(); assert.equal(h.account.subscription.connected, true);
+  h.live.items.data[0].price.id = MEMBERSHIP_PLANS.find(p => p.type === "alumni").priceId;
+  await h.sync(); assert.equal(h.account.subscription.connected, false);
+  h.live.items.data[0].price.id = MEMBERSHIP_PLANS[0].priceId;
+  await h.sync(); assert.equal(h.account.subscription.connected, true);
+  h.dependencies.readRevenueAllocation = async () => null;
+  await h.sync(); assert.equal(h.account.subscription.connected, false);
+});
+
+test("an Alumni account awaiting an unpaid Member switch stays disconnected", async () => {
+  const h = makeHarness(); h.account.roles = ["alumni"];
+  h.account.subscription.connected = true;
+  h.live.status = "past_due";
+  h.dependencies.readRevenueAllocation = () => assert.fail("Alumni must not be marked connected");
+  await h.sync();
+  assert.equal(h.account.subscription.connected, false);
 });

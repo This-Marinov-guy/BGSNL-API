@@ -141,3 +141,43 @@ test("the Stripe catalog must use the configured recurring EUR periods", async (
     await assert.rejects(membershipPrices({ prices: { retrieve: async (id) => ({ ...await retrieve(id), ...overrides }) } }));
   }
 });
+
+test("new regional Member checkouts keep central prices and persist allocation across ambiguous retries", async () => {
+  const prior = process.env.MEMBER_REVENUE_SHARING_ENABLED;
+  process.env.MEMBER_REVENUE_SHARING_ENABLED = "true";
+  try {
+    const h = checkoutHarness(); h.user.region = "amsterdam"; h.failNext();
+    await assert.rejects(h.reserve(), /Network interrupted/);
+    h.user.region = "rotterdam";
+    await h.reserve();
+    assert.deepEqual(h.calls[0], h.calls[1]);
+    assert.equal(h.record.data.revenueAllocation.region, "amsterdam");
+    assert.equal(h.calls[0].data.line_items[0].price, MEMBERSHIP_PLANS[0].priceId);
+    assert.equal(h.calls[0].data.subscription_data.metadata.bgsnlRevenueOperation, h.record.data.operationId);
+    assert.equal(h.calls[0].data.subscription_data.transfer_data, undefined);
+    const alumni = checkoutHarness(); alumni.user.region = "amsterdam";
+    alumni.options.plan = MEMBERSHIP_PLANS.find(p => p.type === "alumni");
+    await alumni.reserve();
+    assert.equal(alumni.record.data.revenueAllocation, null);
+    assert.equal(alumni.calls[0].data.subscription_data.metadata.bgsnlRevenueOperation, undefined);
+  } finally {
+    if (prior === undefined) delete process.env.MEMBER_REVENUE_SHARING_ENABLED;
+    else process.env.MEMBER_REVENUE_SHARING_ENABLED = prior;
+  }
+});
+
+test("enabling revenue sharing does not retroactively enrol an in-flight checkout", async () => {
+  const prior = process.env.MEMBER_REVENUE_SHARING_ENABLED;
+  try {
+    process.env.MEMBER_REVENUE_SHARING_ENABLED = "false";
+    const h = checkoutHarness(); h.user.region = "amsterdam"; h.failNext();
+    await assert.rejects(h.reserve(), /Network interrupted/);
+    process.env.MEMBER_REVENUE_SHARING_ENABLED = "true";
+    await h.reserve();
+    assert.deepEqual(h.calls[0], h.calls[1]);
+    assert.equal(h.record.data.revenueAllocation, null);
+  } finally {
+    if (prior === undefined) delete process.env.MEMBER_REVENUE_SHARING_ENABLED;
+    else process.env.MEMBER_REVENUE_SHARING_ENABLED = prior;
+  }
+});

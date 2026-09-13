@@ -6,7 +6,7 @@
 - Running subscriptions change through a Stripe portal confirmation flow on the **same subscription item**. Stripe previews charges/credits, and the dedicated portal configuration invoices prorations immediately. No second subscription is created for a plan change. See [Stripe's portal confirmation flow](https://docs.stripe.com/customer-management/portal-deep-links).
 - Healthy cancellations take effect at period end. A delinquent account can cancel immediately through the recovery portal. Cancellation does not restore paid benefits or imply an outstanding debt has been settled.
 - Tier 0 is free alumni with no paid benefits. When selected from a running subscription, the customer must confirm cancellation in Stripe; conversion happens only when that subscription actually ends.
-- Member/alumni conversions use a MongoDB transaction. Profile fields, tickets, documents, applications and administrative assignments are retained. The previous collection record is archived, not deleted; aliases resolve old account IDs and sessions. Existing active duplicates fail closed for manual reconciliation.
+- Member/alumni conversions use a MongoDB transaction. Profile fields, tickets, documents, applications and administrative assignments are retained. The previous collection record is deleted in the transaction; aliases on the current account resolve old IDs and sessions. Existing active duplicates fail closed for manual reconciliation.
 - Failed/overdue payments immediately lock benefits when the signed webhook is processed, regardless of a future local expiry date or staff role. The backend independently refreshes Stripe state on benefit requests. Pending asynchronous payments do not trigger failure emails while processing.
 - Login, profile editing and billing remain accessible. A billing verification outage removes access to benefits in responses without falsely marking a payment failed or lifting an administrative suspension.
 - Discounts, promotion-code retrieval, internship applications, alumni quotes and member-only actions have server-side entitlement checks. JWT roles/status are replaced by current database values on authenticated requests and token refresh.
@@ -17,7 +17,7 @@
 ## Required production configuration
 
 1. Deploy the API before the website. Deploying the new website alone is not compatible with the old API's subscription/status endpoints.
-2. Use MongoDB Atlas or another **replica set** supporting transactions. The application initializes `BillingRecord` and `BillingAttention` indexes before listening. Keep durable billing records; deleting them removes deduplication history.
+2. Use MongoDB Atlas or another **replica set** supporting transactions. The API requires the dedicated Redis container for checkout/session state and coordination. Financial history and regional allocations live on Stripe. Follow [storage-and-redis.md](storage-and-redis.md) for the coordinated migration.
 3. Keep the existing `STRIPE_NL_SECRET_KEY` and `STRIPE_NL_WEBHOOK_CH_KEY` configured. Membership prices must exist in that Stripe account. Historical regional subscriptions are resolved by a successful subscription retrieval **and matching customer**, then their Stripe account is persisted.
 4. Configure the signed endpoint `POST /api/v1/webhooks/stripe-payments?region=netherlands`. Existing unversioned `/api/webhooks/stripe-payments` requests still resolve to v1. Each distinct regional Stripe account needs its matching region and signing secret.
 5. Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `invoice.paid`, `invoice.payment_failed`, `invoice.payment_action_required`, `invoice.voided`, `invoice.marked_uncollectible`, and subscription `created`, `updated`, `deleted`, `paused`, `resumed`, `pending_update_applied`, `pending_update_expired`. The handler also safely reconciles other subscription/invoice events.
@@ -32,7 +32,11 @@ Failed records rotate behind other accounts; reminder retries back off for five 
 
 One email is queued when an unresolved payment failure is discovered. A second is eligible **48 hours after the first send attempt**, only if the problem still needs action. Recovery, payment processing, cancellation and webhook retries do not create extra emails. The message links to `/user#settings`; it contains no short-lived portal URL or payment secrets.
 
-The two-email limit is per continuous delinquency episode, not per webhook or Stripe retry. Email slots are claimed durably **before** contacting Mailtrap. Because Mailtrap and MongoDB cannot share a delivery transaction, an ambiguous send failure is recorded and is not retried as another email. Thus there are at most two application delivery attempts; delivery is not guaranteed, and a crash/provider failure may result in fewer. Inspect `BillingAttention.lastDeliveryError` and application logs. Configure Stripe's own automatic payment emails deliberately if the total customer-facing email limit must also include Stripe-generated messages.
+Redis reminder jobs expire 30 days after the failure episode starts, or sooner
+after resolution. An expired job is not recreated for that same episode. Pending
+checkout data also expires after 30 days; background retries do not renew it.
+
+The two-email limit is per continuous delinquency episode, not per webhook or Stripe retry. Email slots are claimed durably **before** contacting Mailtrap. Because Mailtrap and Redis cannot share a delivery transaction, an ambiguous send failure is recorded and is not retried as another email. Thus there are at most two application delivery attempts; delivery is not guaranteed, and a crash/provider failure may result in fewer. The current reminder job is in Redis; resolved jobs expire after one day. Configure Stripe's own automatic payment emails deliberately if the total customer-facing email limit must also include Stripe-generated messages.
 
 ## API contracts
 
@@ -75,3 +79,10 @@ Before rollout, verify in Stripe test mode: member → alumni → member, both m
 - Public hall-of-fame pages may retain their normal frontend cache briefly after a status change. Private benefit endpoints do not use those public caches.
 - Previously downloaded tickets/files, copied promotion codes and existing external chat/group access cannot be recalled by a website check. Promotion codes have been removed from new public frontend bundles, but previously public codes should be rotated with partners. Enforcing redemption or removing external group members requires the relevant provider integration; this change does not claim to do that.
 - The raw checkout/webhook handler no longer logs or reflects Stripe metadata containing old registration data. Existing historic logs/Stripe metadata are not deleted by this change.
+
+## Regional Member revenue
+
+New Member subscriptions can allocate 80% less attributable Stripe fees to their
+configured regional Connect account. Both Member and Alumni billing stay on the
+central account. See [member-revenue-sharing.md](member-revenue-sharing.md) for
+eligibility, renewals, fee recovery, configuration and review limits.

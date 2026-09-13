@@ -1,13 +1,14 @@
-import { sendEmail, useDomakinMailer } from "../background-services/email-provider.js";
+import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
 import BillingAttention from "../../models/BillingAttention.js";
 import User from "../../models/User.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import BillingRecord from "../../models/BillingRecord.js";
 import { createStripeClient } from "../../util/config/stripe.js";
 import { completeMembershipCheckout } from "./checkout.js";
-import { NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, USER_URL } from "../../util/config/defines.js";
+import { USER_URL, SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE } from "../../util/config/defines.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 import { reconcileAccount, reconcileSubscription } from "./reconcile.js";
+import { processMemberRevenueMaintenance } from "./revenue-fees.js";
 
 export const REMINDER_DELAY_MS = 48 * 60 * 60 * 1000;
 export const nextReminderSlot = (job, now = Date.now()) => {
@@ -15,24 +16,10 @@ export const nextReminderSlot = (job, now = Date.now()) => {
   return job.firstAttemptAt ? "secondAttemptAt" : "firstAttemptAt";
 };
 
-export async function deliverBillingReminder({ email, second }) {
-  const message = "We could not collect your subscription payment. Your account benefits are locked. " +
-    "Please sign in and open Manage billing to update your payment method and pay the outstanding invoice, " +
-    "or cancel your subscription in the billing portal. Changing your card alone does not restore benefits until payment succeeds. " +
-    "Cancelling stops the subscription; it does not restore paid benefits or automatically settle an outstanding invoice.";
-  const delivery = sendEmail({
-    from: { email: NO_REPLY_EMAIL, name: NO_REPLY_EMAIL_NAME }, to: [{ email }],
-    subject: second ? "Reminder: your subscription payment needs attention" : "Your subscription payment needs attention",
-    text: `${message}\n\nManage your subscription: ${USER_URL}#settings`,
-    html: `<p>${message}</p><p><a href="${USER_URL}#settings">Manage your subscription</a></p>`,
-    category: "subscription-payment-attention",
-  });
-  let timeout;
-  try {
-    await Promise.race([delivery, new Promise((_, reject) => {
-      timeout = setTimeout(() => reject(new Error("Mail delivery timed out")), useDomakinMailer() ? 100000 : 60000);
-    })]);
-  } finally { clearTimeout(timeout); }
+// The branded header/footer shell lives in Domakin Mailer's own
+// "subscription-payment-attention" template.
+export async function deliverBillingReminder({ email, second, send = queueDomakinTemplateEmail }) {
+  await send(SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE, email, { second: !!second, manageUrl: `${USER_URL}#settings` });
 }
 
 export async function processBillingReminders({ send = deliverBillingReminder, attention = BillingAttention, reconcile = reconcileSubscription } = {}) {
@@ -86,6 +73,9 @@ export function startBillingWorker() {
     if (stopped || running) return;
     running = (async () => {
       await processBillingReminders();
+      // A reporting or Connect failure must not block membership recovery.
+      try { await processMemberRevenueMaintenance(); }
+      catch (error) { console.error("Member revenue sharing postponed", { code: error.code }); }
       // Recover paid checkouts even if their initial webhook was never delivered.
       const checkouts = await BillingRecord.find({ "data.sessionId": { $exists: true }, completedAt: null })
         .sort({ updatedAt: 1 }).limit(25);
@@ -96,11 +86,11 @@ export function startBillingWorker() {
           const payment = await stripe.checkout.sessions.retrieve(checkout.data.sessionId);
           if (payment.status === "complete") await completeMembershipCheckout(payment, checkout.data.stripeRegion);
           if (payment.status === "expired") {
-            await BillingRecord.updateOne({ _id: checkout.id }, { $unset: { "data.registration": 1 }, $set: { completedAt: new Date() } });
-          } else await BillingRecord.updateOne({ _id: checkout.id }, { $set: { updatedAt: new Date() } });
+            await BillingRecord.updateOne({ _id: checkout._id }, { $unset: { "data.registration": 1 }, $set: { completedAt: new Date() } });
+          } else await BillingRecord.updateOne({ _id: checkout._id }, { $set: { updatedAt: new Date() } });
         } catch (error) {
-          await BillingRecord.updateOne({ _id: checkout.id }, { $set: { updatedAt: new Date() } });
-          console.error("Checkout reconciliation postponed", { checkoutId: checkout.id, code: error.code });
+          await BillingRecord.updateOne({ _id: checkout._id }, { $set: { updatedAt: new Date() } });
+          console.error("Checkout reconciliation postponed", { checkoutId: checkout._id, code: error.code });
         }
       }
       // Bounded recovery sweep; the oldest snapshots go first. Webhooks remain

@@ -4,6 +4,8 @@ import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const Schema = mongoose.Schema;
 const eventSchema = new Schema({
+  memberAnnouncementQueuedAt: Date,
+  memberAnnouncementCompletedAt: Date,
   createdAt: { type: Date, immutable: true, default: createCurrentDate },
   lastUpdate: {
     timestamp: { type: Date },
@@ -179,5 +181,7 @@ eventSchema.static(
     return one || this.create(doc);
   }
 );
+
+eventSchema.index({ memberAnnouncementQueuedAt: 1, memberAnnouncementCompletedAt: 1 });
 
 export default mongoose.model("Event", eventSchema);

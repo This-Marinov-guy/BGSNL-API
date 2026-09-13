@@ -7,13 +7,17 @@ import HttpError from "../../models/Http-error.js";
 import { createStripeClient } from "../../util/config/stripe.js";
 import { DEFAULT_REGION, USER_URL } from "../../util/config/defines.js";
 import { chooseRandomAvatar, decryptData } from "../../util/functions/helpers.js";
-import { findUserById, findUserByEmail, normalizeEmail } from "../main-services/user-service.js";
-import { MEMBERSHIP_PLANS, FREE_ALUMNI_PLAN, planForPrice, stripeId, ENDED_SUBSCRIPTION_STATUSES, accountEntitlements } from "../../util/subscriptions/policy.js";
+import { findUserById, findUserByEmail, findUserByQuery, normalizeEmail } from "../main-services/user-service.js";
+import { MEMBERSHIP_PLANS, FREE_ALUMNI_PLAN, planForPrice, stripeId, ENDED_SUBSCRIPTION_STATUSES, accountEntitlements, accountType } from "../../util/subscriptions/policy.js";
 import { persistSubscriptionAccount } from "./accounts.js";
 import { withBillingLease } from "./lease.js";
 import { canonicalStripeRegion, reconcileAccount, reconcileSubscription, readStripeSubscription } from "./reconcile.js";
 import { alumniWelcomeEmail, welcomeEmail } from "../background-services/email-transporter.js";
 import { newPaymentToken, preparePaymentReturn } from "../payments/payment-return.js";
+import { hasMemberConnectAllocation } from "./connected.js";
+import { memberRevenueMetadata } from "./stripe-revenue-state.js";
+import { memberRevenueAllocation } from "../../util/config/member-revenue.js";
+import { registerMemberRevenueSubscription } from "./revenue-sharing.js";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 export function billingReturnUrl(value) {
@@ -43,11 +47,15 @@ async function portalConfiguration(stripe, region, locked) {
   const key = `portal-config:v1:${region}:${locked ? "recovery" : hash(MEMBERSHIP_PLANS.map((p) => p.priceId).join(","))}`;
   return withBillingLease(key, async ({ record }) => {
     if (record.data?.configurationId) return record.data.configurationId;
+    for await (const configuration of stripe.billingPortal.configurations.list({ limit: 100 })) {
+      if (configuration.active && configuration.metadata?.bgsnlConfigurationKey === key) return configuration.id;
+    }
     const products = new Map();
     if (!locked) for (const plan of await membershipPrices(stripe)) {
       products.set(plan.product, [...(products.get(plan.product) || []), plan.priceId]);
     }
     const configuration = await stripe.billingPortal.configurations.create({
+      metadata: { bgsnlConfigurationKey: key },
       business_profile: { headline: "Manage your BGSNL subscription" },
       default_return_url: `${USER_URL}#settings`,
       features: {
@@ -60,7 +68,7 @@ async function portalConfiguration(stripe, region, locked) {
         },
       },
     }, { idempotencyKey: key });
-    await BillingRecord.updateOne({ _id: key }, { $set: { data: { configurationId: configuration.id } } });
+
     return configuration.id;
   });
 }
@@ -118,18 +126,22 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
     const stripe = dependencies.stripe || createStripeClient(region);
     let data = record.data || {};
     if (data.sessionId) {
-      const previous = await stripe.checkout.sessions.retrieve(data.sessionId);
+      const previousStripe = data.stripeRegion && data.stripeRegion !== region ?
+        dependencies.previousStripe || createStripeClient(data.stripeRegion) : stripe;
+      const previous = await previousStripe.checkout.sessions.retrieve(data.sessionId);
       if (previous.status === "open") {
         if (data.priceId !== plan.priceId) throw new HttpError("A different checkout is already open. Complete it or let it expire before choosing another plan.", 409);
         return previous;
       }
       if (previous.status === "complete" && !record.completedAt) throw new HttpError("Your payment is being processed. Please refresh your account shortly.", 409);
-      data = { customerId: data.customerId };
+      data = { customerId: !data.stripeRegion || data.stripeRegion === region ? data.customerId : undefined };
     }
+    if (data.operationId && data.stripeRegion && data.stripeRegion !== region) throw new HttpError("A checkout is still pending on your previous billing account. Please retry after it completes or expires.", 409);
     if (data.operationId && data.priceId !== plan.priceId) throw new HttpError("Another checkout is being created. Please retry the original plan shortly.", 409);
-    const customerId = user?.subscription?.customerId || data.customerId ||
+    const sameStripeAccount = !user?.subscription?.stripeRegion || user.subscription.stripeRegion === region;
+    const customerId = (sameStripeAccount ? user?.subscription?.customerId : undefined) || data.customerId ||
       (await stripe.customers.create({ email: user?.email || registration.email }, { idempotencyKey: `customer:${key}` })).id;
-    if (user && !user.subscription?.customerId) {
+    if (user && !user.subscription?.id && !user.subscription?.customerId) {
       if (!user.subscription) user.subscription = {};
       user.subscription.customerId = customerId;
       user.subscription.stripeRegion = region;
@@ -139,11 +151,13 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
     await assertNoExistingSubscription(stripe, customerId);
     // Persist the operation before contacting Stripe. Network retries use the
     // same idempotency key, so concurrent clicks cannot make duplicate checkouts.
-    data = { ...data, operationId: data.operationId || randomUUID(), paymentReturnToken: data.paymentReturnToken || newPaymentToken(), customerId, priceId: plan.priceId,
+    const revenueAllocation = data.operationId ? data.revenueAllocation :
+      region === DEFAULT_REGION ? memberRevenueAllocation(plan, user?.region || registration?.region) : null;
+    data = { ...data, reservedAt: data.reservedAt || (data.operationId ? record.createdAt : new Date()), revenueAllocation, operationId: data.operationId || randomUUID(), paymentReturnToken: data.paymentReturnToken || newPaymentToken(), customerId, priceId: plan.priceId,
       userId: user?.id, registration: user ? undefined : data.registration || registration, stripeRegion: region,
       returnUrl: data.returnUrl || billingReturnUrl(returnUrl) };
     if (!user) registrationPasswordHash(data.registration);
-    await records.updateOne({ _id: key }, { $set: { data }, $unset: { completedAt: 1 } });
+    await records.updateOne({ _id: key }, { $set: { data }, $unset: { completedAt: 1 } }, { upsert: true });
     const origin = new URL(data.returnUrl).origin;
     const receipt = await prepareReturn({ token: data.paymentReturnToken, origin, kind: "subscription", region,
       returnPath: user ? "/user#settings" : plan.type === "alumni" ? "/alumni/register" : `/${registration?.region || region}/signup` });
@@ -153,7 +167,8 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
       success_url: receipt.success_url,
       cancel_url: receipt.cancel_url,
       metadata: { method: "membership_checkout", checkoutKey: key, paymentReturnId: receipt.id },
-      subscription_data: { metadata: { bgsnlCheckoutKey: key } },
+      subscription_data: { metadata: { bgsnlCheckoutKey: key,
+        ...memberRevenueMetadata(data.revenueAllocation, customerId, data.operationId) } },
     }, { idempotencyKey: `checkout:${data.operationId}` });
     await assertOwned();
     await receipt.bind(session.id);
@@ -182,7 +197,7 @@ export async function startMembershipChange(user, { priceId, returnUrl, dependen
     return { url: billingReturnUrl(returnUrl) };
   }
   return checkout({ key: `account-checkout:${user.id}`, user, plan, returnUrl,
-    region: user.subscription?.stripeRegion || DEFAULT_REGION });
+    region: DEFAULT_REGION });
 }
 
 export async function startMembershipSignup(body, file, { findAccount = findUserByEmail, checkout = reserveCheckout } = {}) {
@@ -215,11 +230,17 @@ export async function completeMembershipCheckout(session, region, {
   const subscriptionId = stripeId(session.subscription);
   await withLease(key, async ({ record, assertOwned }) => {
     const data = record.data;
-    if (!data || data.sessionId !== session.id || data.customerId !== stripeId(session.customer) ||
+    if (!data) {
+      const existing = await findUserByQuery({ "subscription.id": subscriptionId });
+      if (existing?.subscription?.customerId === stripeId(session.customer)) return;
+      throw new Error("Checkout registration state is unavailable; restore Redis before fulfilling this payment");
+    }
+    if ( data.sessionId !== session.id || data.customerId !== stripeId(session.customer) ||
         canonicalStripeRegion(data.stripeRegion) !== canonicalStripeRegion(region)) throw new Error("Checkout ownership mismatch");
     if (record.completedAt) return;
     const { sub, state } = await readSubscription(stripeClient(region), subscriptionId);
     if (stripeId(sub.customer) !== data.customerId || !state.plan || state.plan.priceId !== data.priceId) throw new Error("Checkout price mismatch");
+    const revenueAllocation = await registerMemberRevenueSubscription(sub, { records });
     let user = data.userId ? await findUserById(data.userId) : await findUserByEmail(data.registration.email);
     if (user?.subscription?.id && user.subscription.id !== subscriptionId) {
       const previous = await reconcileAccount(user);
@@ -240,7 +261,8 @@ export async function completeMembershipCheckout(session, region, {
     }
     // Until reconciliation completes, no benefits are granted by checkout alone.
     if (created || ["active", "locked", "payment_awaiting"].includes(user.status)) user.status = "payment_awaiting";
-    user.subscription = { id: subscriptionId, customerId: data.customerId, stripeRegion: canonicalStripeRegion(region), period: state.plan.period };
+    user.subscription = { id: subscriptionId, customerId: data.customerId, stripeRegion: canonicalStripeRegion(region), period: state.plan.period, priceId: state.plan.priceId };
+    user.subscription.connected = accountType(user) === "member" && hasMemberConnectAllocation(user.subscription, revenueAllocation);
     await assertOwned();
     await user.save();
     await records.updateOne({ _id: key }, { $set: { completedAt: new Date() }, $unset: { "data.registration": 1 } });

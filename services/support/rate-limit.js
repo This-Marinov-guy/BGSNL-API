@@ -1,4 +1,4 @@
-import AuthRateLimit from "../../models/AuthRateLimit.js";
+import { redisRateLimits as AuthRateLimit } from "../../services/storage/rate-limits.js";
 import HttpError from "../../models/Http-error.js";
 import { requestClientAddress } from "../../util/auth/request-client.js";
 import { digest } from "./policy.js";

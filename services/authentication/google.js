@@ -3,9 +3,10 @@ import mongoose from "mongoose";
 import { verifyPassword } from "./passwords.js";
 import { google } from "googleapis";
 import HttpError from "../../models/Http-error.js";
-import AccountIdentity from "../../models/AccountIdentity.js";
+import { embeddedIdentities as AccountIdentity } from "../../services/authentication/embedded-credentials.js";
+import { lockAccountCredentials } from "./embedded-credentials.js";
 import AuthChallenge from "../../models/AuthChallenge.js";
-import AuthRateLimit from "../../models/AuthRateLimit.js";
+import { redisRateLimits as AuthRateLimit } from "../../services/storage/rate-limits.js";
 import { findUserById } from "../main-services/user-service.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 
@@ -122,7 +123,7 @@ export async function consumeGoogleChallenge({ challengeId, credential, proof, p
   challenges = AuthChallenge, verify = verifyGoogleCredential, findAccount = findUserById,
 } = {}) {
   if (typeof proof !== "string" || !/^[a-zA-Z0-9_-]{43,128}$/.test(proof)) throw new HttpError("Invalid sign-in challenge", 422);
-  const query = { _id: challengeId, purpose, origin, proofHash: digest(proof), expiresAt: { $gt: new Date() } };
+  const query = { kind: { $ne: "passkey" }, _id: challengeId, purpose, origin, proofHash: digest(proof), expiresAt: { $gt: new Date() } };
   const challenge = await challenges.findOne(query);
   if (!challenge) throw new HttpError("This Google sign-in request expired or was already used. Please start again.", 409);
   if (purpose === "link") {
@@ -154,12 +155,13 @@ export async function findGoogleAccount(verifiedIdentity, { identities = Account
   return user;
 }
 
-export async function changeGoogleIdentity(user, identity = null, { identities = AccountIdentity, startSession = () => mongoose.startSession() } = {}) {
+export async function changeGoogleIdentity(user, identity = null, { identities = AccountIdentity, lock = lockAccountCredentials, startSession = () => mongoose.startSession() } = {}) {
   if (identity) requireMatchingGoogleEmail(user, identity);
   const session = await startSession();
   let account;
   try {
     await session.withTransaction(async () => {
+      await lock(session);
       // Writing the source profile fences simultaneous member/alumni migration,
       // password changes and identity changes in the same database transaction.
       const sessionVersion = Number(user.sessionVersion ?? 0);

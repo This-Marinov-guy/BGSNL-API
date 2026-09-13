@@ -14,7 +14,6 @@ import moment from "moment";
 import { ACTIVE, PAYMENT_AWAITING, USER_STATUSES } from "../../util/config/enums.js";
 import { recountMemberStatistics, recountAlumniStatistics } from "../background-services/statistics-service.js";
 import { getStripeSubscriptionCreatedDate } from "../side-services/stripe.js";
-import BillingRecord from "../../models/BillingRecord.js";
 import {
   isMemberPriceCheckout,
   isRestrictedTicketAccount,
@@ -393,18 +392,7 @@ export const handleMemberTicketPurchase = async (metadata, paymentData) => {
         { session: databaseSession }
       );
 
-      if (memberPriceApplied) {
-        await BillingRecord.updateOne(
-          { _id: memberTicketClaimKey(eventId, userId) },
-          {
-            $set: {
-              completedAt: new Date(),
-              "data.transactionId": transactionId,
-            },
-          },
-          { upsert: true, session: databaseSession }
-        );
-      }
+
     });
   } catch (err) {
     throw new HttpError(err.message, 500);

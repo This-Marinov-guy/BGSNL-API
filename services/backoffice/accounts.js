@@ -2,6 +2,7 @@ import AlumniUser from "../../models/AlumniUser.js";
 import HttpError from "../../models/Http-error.js";
 import User from "../../models/User.js";
 import {
+  ACCESS_2,
   ACTIVE_MEMBER,
   ADMIN,
   ALUMNI,
@@ -18,15 +19,14 @@ import {
 import { USER_STATUSES } from "../../util/config/enums.js";
 
 export const ACCOUNT_TYPES = Object.freeze({ MEMBER, ALUMNI });
+export const PROTECTED_ROLES = Object.freeze([ADMIN, SUPER_ADMIN]);
 export const EDITABLE_ROLES = Object.freeze([
   ACTIVE_MEMBER,
   COMMITTEE_MEMBER,
   BOARD_MEMBER,
   SOCIETY_ADMIN,
-  ADMIN,
   SUPPORT,
   VIP,
-  SUPER_ADMIN,
 ]);
 export const EDITABLE_STATUSES = Object.freeze(Object.values(USER_STATUSES));
 export const EDITABLE_CITIES = Object.freeze([DEFAULT_REGION, ...REGIONS]);
@@ -177,8 +177,19 @@ const versionFilter = (revision) => revision === 0
   ? { $or: [{ __v: 0 }, { __v: { $exists: false } }] }
   : { __v: revision };
 
-const publicOptions = () => ({
-  cities: EDITABLE_CITIES,
+// Board members reach this panel (ACCESS_3) without the unrestricted access
+// ACCESS_2 roles have; they may only see and edit accounts in their own
+// region. Returns null when the actor is unrestricted, otherwise the region
+// they are confined to ("" if they have none on file, which matches nothing).
+const regionScopeFor = (actor) => {
+  const roles = Array.isArray(actor?.roles) ? actor.roles : [];
+  if (roles.some((role) => ACCESS_2.includes(role))) return null;
+  const region = typeof actor?.region === "string" ? actor.region.trim().toLowerCase() : "";
+  return EDITABLE_CITIES.includes(region) ? region : "";
+};
+
+const publicOptions = (citiesOverride) => ({
+  cities: citiesOverride ?? EDITABLE_CITIES,
   roles: EDITABLE_ROLES,
   statuses: EDITABLE_STATUSES,
 });
@@ -189,14 +200,17 @@ export const createAccountsBackofficeService = ({
 } = {}) => {
   const models = { member: memberModel, alumni: alumniModel };
 
-  const list = async (query = {}) => {
+  const list = async (query = {}, actor) => {
     const type = query.type === ALUMNI ? ALUMNI : MEMBER;
     const page = integerInRange(query.page, 1, 1, 100000);
     const pageSize = integerInRange(query.pageSize, 25, 10, 100);
-    const city = typeof query.city === "string" ? query.city.toLowerCase() : "";
+    const scope = regionScopeFor(actor);
     const search = typeof query.search === "string" ? query.search : "";
     const Model = modelForType(type, models);
-    const filter = buildAccountListFilter({ city, search, type });
+    // A region-scoped actor with no valid region on file gets a filter that
+    // matches nothing, rather than falling through to an unrestricted list.
+    const filter = scope === "" ? { _id: null } :
+      buildAccountListFilter({ city: scope !== null ? scope : (typeof query.city === "string" ? query.city.toLowerCase() : ""), search, type });
 
     const [records, total] = await Promise.all([
       Model.find(filter)
@@ -215,7 +229,7 @@ export const createAccountsBackofficeService = ({
       pageSize,
       total,
       totalPages,
-      options: publicOptions(),
+      options: publicOptions(scope !== null ? (scope ? [scope] : []) : undefined),
     };
   };
 
@@ -227,6 +241,12 @@ export const createAccountsBackofficeService = ({
 
     const existing = await Model.findById(id).select(LIST_FIELDS).lean();
     if (!existing) throw new HttpError("Account not found", 404);
+
+    const scope = regionScopeFor(actor);
+    if (scope !== null) {
+      const existingRegion = typeof existing.region === "string" ? existing.region.trim().toLowerCase() : "";
+      if (!scope || existingRegion !== scope) throw new HttpError("You can only manage accounts in your own region", 403);
+    }
 
     const next = {
       name: requiredText(body.name, "First name", 80),
@@ -245,6 +265,7 @@ export const createAccountsBackofficeService = ({
       profession: optionalText(body.profession, "Profession", 180),
     };
     if (next.region && !EDITABLE_CITIES.includes(next.region)) throw new HttpError("City is invalid", 422);
+    if (scope !== null && next.region !== scope) throw new HttpError("You can only manage accounts in your own region", 403);
     if (type === MEMBER && !next.birth) throw new HttpError("Date of birth is required", 422);
 
     const requestedStatus = typeof body.status === "string" ? body.status : existing.status;
@@ -257,9 +278,11 @@ export const createAccountsBackofficeService = ({
       throw new HttpError("Account roles are invalid", 422);
     }
     const baseRole = type === MEMBER ? MEMBER : ALUMNI;
-    next.roles = [...new Set([baseRole, ...body.roles])];
-
     const existingRoles = Array.isArray(existing.roles) ? existing.roles : [];
+    // Privileged roles are controlled outside this panel. Never derive them
+    // from the request or drop them when saving the editable role selection.
+    const protectedRoles = existingRoles.filter((role) => PROTECTED_ROLES.includes(role));
+    next.roles = [...new Set([baseRole, ...protectedRoles, ...body.roles])];
     const rolesChanged = JSON.stringify([...existingRoles].sort()) !== JSON.stringify([...next.roles].sort());
     const statusChanged = existing.status !== next.status;
     const actorId = String(actor?._id ?? actor?.id ?? "");
@@ -291,7 +314,7 @@ export const createAccountsBackofficeService = ({
 
     const securityChanged = rolesChanged || statusChanged;
     const updated = await Model.findOneAndUpdate(
-      { _id: id, ...versionFilter(revision) },
+      { _id: id, ...versionFilter(revision), roles: existing.roles ?? { $exists: false } },
       {
         $set: next,
         $inc: { __v: 1, ...(securityChanged ? { sessionVersion: 1 } : {}) },

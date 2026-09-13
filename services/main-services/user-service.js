@@ -1,6 +1,7 @@
+import { persistSubscriptionAccount } from "../subscriptions/accounts.js";
 import AlumniUser from "../../models/AlumniUser.js";
-import AccountIdentity from "../../models/AccountIdentity.js";
-import PasskeyCredential from "../../models/PasskeyCredential.js";
+import { embeddedIdentities as AccountIdentity } from "../../services/authentication/embedded-credentials.js";
+import { embeddedPasskeys as PasskeyCredential } from "../../services/authentication/embedded-credentials.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 
 // ─── Alumni tree layout ───────────────────────────────────────────────────────
@@ -532,172 +533,22 @@ export const findUserByQuery = async (query) => {
   }
 };
 
-/**
- * Converts an alumni user back into a regular User.
- * Deletes the alumni record and creates a User preserving all available data.
- * Required User fields not present on alumni (birth and university) are
- * filled with placeholders — the user should update them after conversion.
- *
- * @param {string} alumniId - e.g. "alumni_<ObjectId>"
- * @returns {{ userId: string, email: string }}
- * @throws {Error} if the alumni is not found, ID is malformed, or a user already exists
- */
+// Legacy non-subscription conversions use the same atomic profile move as
+// billing. All available profile fields and aliases survive; no archive remains.
+async function convertLegacyAccount(Model, id, type) {
+  const account = await Model.findById(id);
+  if (!account) throw new Error("Account not found");
+  if (account.subscription?.id) throw new Error("Subscription-backed accounts must change plans through the billing portal");
+  if (account.sessionVersion > 0 || await AccountIdentity.exists({ accountId: id }) || await PasskeyCredential.exists({ accountId: id })) {
+    throw new Error("Accounts with connected sign-in history must change membership in account settings");
+  }
+  return persistSubscriptionAccount(account, {}, { type, tier: 0 }, async () => {});
+}
 export const convertAlumniToUser = async (alumniId) => {
-  const alumniUser = await AlumniUser.findOne({ _id: alumniId });
-  if (alumniUser?.subscription?.id) throw new Error("Subscription-backed accounts must change plans through the billing portal");
-  if (alumniUser && (alumniUser.sessionVersion > 0 || await AccountIdentity.exists({ accountId: alumniId }) || await PasskeyCredential.exists({ accountId: alumniId }))) throw new Error("Accounts with connected sign-in history must change membership in account settings");
-  if (!alumniUser) {
-    throw new Error(`Alumni not found: ${alumniId}`);
-  }
-
-  const idMatch = alumniUser._id.match(/^alumni_(.*)/);
-  if (!idMatch?.[1]) {
-    throw new Error(`Alumni ID format is invalid: ${alumniUser._id}`);
-  }
-
-  const userId = `member_${idMatch[1]}`;
-
-  const existing = await User.findOne({
-    $or: [{ _id: userId }, { email: alumniUser.email }],
-  });
-  if (existing) {
-    throw new Error(
-      `A user with ID "${userId}" or email "${alumniUser.email}" already exists`,
-    );
-  }
-
-  const sess = await mongoose.startSession();
-  sess.startTransaction();
-
-try {
-    const newUser = new User({
-      _id: userId,
-      name: alumniUser.name,
-      region: "", //TODO: better fill out
-      surname: alumniUser.surname,
-      email: alumniUser.email,
-      password: alumniUser.password,
-      image: alumniUser.image || "-",
-      status: alumniUser.status || USER_STATUSES[ACTIVE],
-      roles: ["member"],
-      subscription: alumniUser.subscription || {},
-      documents: alumniUser.documents || [],
-      tickets: alumniUser.tickets || [],
-      christmas: alumniUser.christmas || [],
-      internshipApplications: alumniUser.internshipApplications || [],
-      campaignsSeen: alumniUser.campaignsSeen || [],
-      purchaseDate: alumniUser.purchaseDate || new Date(),
-      expireDate:
-        alumniUser.expireDate ||
-        new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
-      joinDate: alumniUser.joinDate || new Date(),
-      birth: alumniUser.birth || undefined,
-      phone: alumniUser.phone || "-",
-      university: "-",
-    });
-
-    await newUser.save({ session: sess });
-    await AlumniUser.deleteOne({ _id: alumniUser._id }, { session: sess });
-
-    await sess.commitTransaction();
-
-    return { userId: newUser._id, email: newUser.email };
-  } catch (err) {
-    await sess.abortTransaction();
-    throw err;
-  } finally {
-    sess.endSession();
-  }
+  const user = await convertLegacyAccount(AlumniUser, alumniId, "member");
+  return { userId: user.id, email: user.email };
 };
-
-/**
- * Converts a regular User into an alumni user.
- * If an alumni record already exists for this user (same ID or email) it is updated
- * rather than re-created. The original User record is marked as alumni-migrated.
- *
- * @param {string} userId - e.g. "member_<ObjectId>"
- * @returns {{ alumniId: string, userId: string, email: string, action: "created" | "updated" }}
- * @throws {Error} if the user is not found or the ID format is invalid
- */
 export const convertUserToAlumni = async (userId) => {
-  const regularUser = await User.findOne({ _id: userId });
-  if (regularUser?.subscription?.id) throw new Error("Subscription-backed accounts must change plans through the billing portal");
-  if (regularUser && (regularUser.sessionVersion > 0 || await AccountIdentity.exists({ accountId: userId }) || await PasskeyCredential.exists({ accountId: userId }))) throw new Error("Accounts with connected sign-in history must change membership in account settings");
-  if (!regularUser) {
-    throw new Error(`User not found: ${userId}`);
-  }
-
-  const idMatch = regularUser._id.match(/^member_(.*)/);
-  const objectIdPart = idMatch?.[1] ?? regularUser._id.toString();
-  if (!objectIdPart) {
-    throw new Error(`User ID format is invalid: ${regularUser._id}`);
-  }
-
-  const alumniId = `alumni_${objectIdPart}`;
-
-  const existingAlumni = await AlumniUser.findOne({
-    $or: [{ _id: alumniId }, { email: regularUser.email }],
-  });
-
-  let result;
-
-  if (existingAlumni) {
-    existingAlumni.name = regularUser.name;
-    existingAlumni.surname = regularUser.surname;
-    existingAlumni.phone = regularUser.phone;
-    existingAlumni.birth = regularUser.birth;
-    existingAlumni.email = regularUser.email;
-    existingAlumni.image = regularUser.image;
-    existingAlumni.password = regularUser.password;
-    existingAlumni.campaignsSeen = [...new Set([
-      ...(existingAlumni.campaignsSeen || []), ...(regularUser.campaignsSeen || []),
-    ])];
-    existingAlumni.status = regularUser.status || USER_STATUSES[ACTIVE];
-    existingAlumni.purchaseDate = regularUser.purchaseDate || new Date();
-    existingAlumni.expireDate =
-      regularUser.expireDate ||
-      new Date(new Date().setFullYear(new Date().getFullYear() + 1));
-
-    if (!existingAlumni.roles.includes(ALUMNI)) {
-      existingAlumni.roles.push(ALUMNI);
-    }
-
-    await existingAlumni.save();
-    result = { action: "updated", alumniId: existingAlumni._id };
-  } else {
-    const newAlumniUser = new AlumniUser({
-      _id: alumniId,
-      name: regularUser.name,
-      surname: regularUser.surname,
-      phone: regularUser.phone,
-      birth: regularUser.birth,
-      email: regularUser.email,
-      password: regularUser.password,
-      image: regularUser.image || "",
-      status: regularUser.status || USER_STATUSES[ACTIVE],
-      tier: 0, // TODO: change this
-      subscription: {
-        ...regularUser.subscription,
-        period: 1,
-      },
-      roles: [ALUMNI],
-      purchaseDate: regularUser.purchaseDate || new Date(),
-      expireDate:
-        regularUser.expireDate ||
-        new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
-      tickets: regularUser.tickets || [],
-      christmas: regularUser.christmas || [],
-      internshipApplications: regularUser.internshipApplications || [],
-      campaignsSeen: regularUser.campaignsSeen || [],
-      joinDate: regularUser.joinDate || new Date(),
-    });
-
-    await newAlumniUser.save();
-    result = { action: "created", alumniId: newAlumniUser._id };
-  }
-
-  regularUser.status = USER_STATUSES[ALUMNI_MIGRATED];
-  await regularUser.save();
-
-  return { ...result, userId: regularUser._id, email: regularUser.email };
+  const alumni = await convertLegacyAccount(User, userId, "alumni");
+  return { action: "created", alumniId: alumni.id, userId, email: alumni.email };
 };

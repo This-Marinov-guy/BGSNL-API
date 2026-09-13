@@ -5,10 +5,13 @@ import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 import { createCurrentDate } from "../util/functions/currentDate.js";
 import { subscriptionSchema, sharedMembershipFields } from "./SubscriptionFields.js";
 
+import { accountSecurityFields, accountSecurityIndexes } from "./AccountSecurityFields.js";
+
 const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
   ...sharedMembershipFields,
+  ...accountSecurityFields,
   _id: {
     type: String,
     default: () => "member_" + new mongoose.Types.ObjectId(),
@@ -64,6 +67,7 @@ const userSchema = new Schema({
 });
 
 userSchema.plugin(uniqueValidator);
+accountSecurityIndexes(userSchema);
 userSchema.index({ "subscription.id": 1, status: 1 });
 userSchema.index({ accountAliases: 1 });
 userSchema.index({ "subscription.syncedAt": 1, status: 1 });

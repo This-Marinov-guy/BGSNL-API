@@ -3,7 +3,7 @@ import { queueDomakinTemplateEmail } from "./domakin-mailer.js";
 import { Resend } from "resend";
 import dotenv from "dotenv";
 import { WHATS_APP } from "../../util/config/LINKS.js";
-import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE, ALUMNI_TEMPLATE } from "../../util/config/defines.js";
+import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE, ALUMNI_TEMPLATE, EVENT_DRAFT_REMINDER_TEMPLATE } from "../../util/config/defines.js";
 import moment from "moment-timezone";
 import { MOMENT_DATE_TIME } from "../../util/functions/dateConvert.js";
 export { queueDomakinTemplateEmail } from "./domakin-mailer.js";
@@ -287,41 +287,16 @@ export const sendInternalNotificationEmail = (message) => {
   });
 };
 
-const escapeEmailHtml = (value) =>
-  String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-
+// The branded header/footer shell lives in Domakin Mailer's own
+// "event-draft-reminder" template (templates/bulgariansociety/event-draft-reminder--<uuid>.html).
 export const buildEventDraftReminderEmail = ({ eventTitle, continueUrl }) => {
   const title =
     String(eventTitle || "Untitled event").replace(/[\r\n]+/g, " ").trim() ||
     "Untitled event";
-  const safeTitle = escapeEmailHtml(title);
-  const safeContinueUrl = escapeEmailHtml(continueUrl);
 
   return {
-    subject: `Continue your event draft — ${title}`,
-    text: [
-      `Your event draft “${title}” is saved and ready to continue.`,
-      "",
-      `Continue editing: ${continueUrl}`,
-      "",
-      "Sign in with a Bulgarian Society Netherlands team account that has access to this draft.",
-    ].join("\n"),
-    html: `<!doctype html>
-      <html lang="en">
-        <body style="margin:0;padding:24px;background:#f3f6f4;font-family:Arial,sans-serif;color:#17201c;">
-          <div style="max-width:600px;margin:0 auto;padding:32px;border-radius:16px;background:#ffffff;box-shadow:0 16px 44px rgba(32,60,49,.10);">
-            <h1 style="margin:0 0 12px;font-size:26px;line-height:1.2;">Continue your event draft</h1>
-            <p style="margin:0 0 24px;font-size:16px;line-height:1.55;">Your draft <strong>${safeTitle}</strong> is saved and ready when you are.</p>
-            <a href="${safeContinueUrl}" style="display:inline-block;padding:13px 20px;border-radius:10px;background:#017363;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">Continue editing</a>
-            <p style="margin:24px 0 0;color:#66716b;font-size:14px;line-height:1.5;">Sign in with a Bulgarian Society Netherlands team account that has access to this draft.</p>
-          </div>
-        </body>
-      </html>`,
+    templateId: EVENT_DRAFT_REMINDER_TEMPLATE,
+    templateVariables: { eventTitle: title, continueUrl },
   };
 };
 
@@ -331,18 +306,10 @@ export const sendEventDraftReminderEmail = ({
   eventTitle,
   continueUrl,
 }) => {
-  const message = buildEventDraftReminderEmail({ eventTitle, continueUrl });
+  const { templateId, templateVariables } = buildEventDraftReminderEmail({ eventTitle, continueUrl });
 
   enqueueMail(`event-draft-reminder:${eventId}:${receiver}`, async () => {
-    await client.send({
-      from: sender,
-      to: [{ email: receiver }],
-      ...message,
-      category: "event-draft-reminder",
-      custom_variables: {
-        event_draft_id: String(eventId),
-      },
-    });
+    await queueDomakinTemplateEmail(templateId, receiver, templateVariables);
   });
 };
 

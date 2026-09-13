@@ -14,6 +14,11 @@ const equalKey = (provided, expected) => {
 export const isConfiguredServiceRequest = (req) =>
   ["GOOGLE_SCRIPTS_PASS", "KOKO_APP_PASS"].some((name) =>
     equalKey(suppliedKey(req), process.env[name])
+  ) || (
+    req.method === "POST" &&
+    /^\/api\/v1\/integrations\/atlas\/member-event-announcement\/?$/.test(req.path || "") &&
+    process.env.ATLAS_EVENT_TRIGGER_SECRET?.length >= 32 &&
+    equalKey(suppliedKey(req), process.env.ATLAS_EVENT_TRIGGER_SECRET)
   );
 
 /**

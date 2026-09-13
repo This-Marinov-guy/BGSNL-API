@@ -11,6 +11,11 @@ import bcrypt from "bcryptjs";
 // production here), start app.js, or send Stripe/email/Google requests.
 dotenv.config();
 const databaseName = process.env.BGSNL_PASSWORD_TEST_DB;
+// Redis must point at a dedicated local fixture namespace for this opt-in suite.
+if (databaseName) {
+  assert.match(process.env.BGSNL_REDIS_URL || "", /^redis:\/\/[^/]*127\.0\.0\.1:6389\/15$/);
+  process.env.BGSNL_REDIS_PREFIX = "bgsnl-password-tests:";
+}
 const safeName = (name) => /^bgsnl_flow_test_passwords(?:_[a-z0-9]+)?$/.test(name || "");
 test("development Mongo password flows", { skip: !databaseName, timeout: 180000 }, async (t) => {
   assert.ok(safeName(databaseName), "Only the dedicated password-test DB namespace is allowed");
@@ -31,10 +36,10 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
   // All regional keys become fake before importing any service; even a missed
   // dependency stub cannot authenticate with Stripe. No values are printed.
   for (const key of Object.keys(process.env)) if (/STRIPE.*(?:SECRET_KEY|WEBHOOK)/.test(key)) process.env[key] = "sk_test_password_fixture_not_a_real_key";
-  const [{ default: User }, { default: Alumni }, { default: BillingRecord }, { default: RefreshSession }, { default: Reset }, { default: Profile }, { default: Identity },
+  const [{ default: User }, { default: Alumni }, { default: BillingRecord }, { default: RefreshSession }, { default: Reset }, { default: Profile },
     passwords, checkout, security, helpers, loginService, tokens, policy, legacy, resetService, profileService] = await Promise.all([
     import("../models/User.js"), import("../models/AlumniUser.js"), import("../models/BillingRecord.js"), import("../models/RefreshSession.js"),
-    import("../models/PasswordResetChallenge.js"), import("../models/ProfileChange.js"), import("../models/AccountIdentity.js"),
+    import("../models/PasswordResetChallenge.js"), import("../models/ProfileChange.js"),
     import("../services/authentication/passwords.js"), import("../services/subscriptions/checkout.js"), import("../controllers/security-controller.js"),
     import("../util/functions/helpers.js"), import("../services/authentication/login.js"), import("../util/auth/session-token.js"),
     import("../util/subscriptions/policy.js"), import("../services/main-services/stripe-webhook-service.js"),
@@ -58,7 +63,6 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
       // Exact records created by THIS run only; no dropDatabase/dropCollection.
       for (const Model of [Reset, Profile]) await Model.deleteMany({ _id: { $in: owned } });
       await RefreshSession.deleteMany({ accountId: { $in: owned } });
-      await Identity.deleteMany({ accountId: { $in: owned } });
       await BillingRecord.deleteMany({ _id: { $in: checkoutKeys } });
       for (const Model of [User, Alumni]) await Model.deleteMany({ _id: { $in: owned }, email: { $in: emails } });
       assert.equal(await User.countDocuments({ email: { $in: emails } }) + await Alumni.countDocuments({ email: { $in: emails } }), 0);
@@ -68,7 +72,7 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
   assert.equal(mongoose.connection.name, databaseName);
   for (const Model of [User, Alumni]) assert.equal(await Model.exists({ email: { $not: /@password-tests\.bgsnl\.invalid$/ } }), null,
     "Database contains non-fixture accounts; no writes allowed");
-  const allowedCollections = [User, Alumni, BillingRecord, RefreshSession, Reset, Profile, Identity];
+  const allowedCollections = [User, Alumni, Reset, Profile];
   const existingCollections = await mongoose.connection.db.listCollections({}, { nameOnly: true }).toArray();
   assert.ok(existingCollections.every((c) => allowedCollections.some((Model) => Model.collection.name === c.name)), "Unexpected collections: refusing this database");
   isolationVerified = true;
@@ -184,7 +188,7 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
     const logged = await assertLogin(user.email, "Reset-password-123!", user.password), messages = [];
     await profileService.requestProfileChange(user, { password: raw, origin: "http://localhost:3001", claims: logged.claims }, { deliver: async (message) => messages.push(message) });
     const pending = await Profile.findById(user.id); assert.equal(bcrypt.getRounds(pending.passwordHash), 12);
-    const approval = messages[0].text.match(/#token=([\w-]+)/)[1];
+    const approval = messages[0].templateVariables.url.match(/#token=([\w-]+)/)[1];
     await profileService.confirmProfileChange(approval, { deliver: async () => {} });
     user = await User.findById(user.id); assert.equal(user.password, pending.passwordHash);
     await assertLogin(user.email, raw, user.password);

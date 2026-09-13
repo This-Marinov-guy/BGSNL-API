@@ -36,6 +36,13 @@ export const ACCESS_4 = [...ACCESS_3, COMMITTEE_MEMBER, ACTIVE_MEMBER];
 
 export const LIMITLESS_ACCOUNT = [SUPER_ADMIN, ADMIN, VIP];
 
+// A billing hold ("locked"/"payment_awaiting") should not block admin/super
+// admin from running admin panels — staff running the org should not need a
+// paid membership. A genuine administrative hold (frozen/suspended) is not in
+// this list and must keep blocking everyone, admins included.
+export const BILLING_LOCK_EXEMPT = [SUPER_ADMIN, ADMIN];
+export const BILLING_LOCKED_STATUSES = ["locked", "payment_awaiting"];
+
 // event status
 export const EVENT_OPENED = "opened";
 export const EVENT_DRAFT = "draft";
@@ -55,6 +62,14 @@ export const MEMBERSHIP_EXPIRED_TEMPLATE =
 export const DELOITTE_TEMPLATE = "7e8088d0-3408-4875-ae5d-21a810fe0c7d";
 export const PWC_TEMPLATE = "5947c9b6-795a-4bb7-aa23-916b317a8156";
 export const ALUMNI_TEMPLATE = "55b52240-b23e-4109-b0f4-2741989be36d";
+// Domakin Mailer-only templates (no matching Mailtrap-hosted template; sent
+// via queueDomakinTemplateEmail directly, not the legacy/domakin sendEmail switch).
+export const BIRTHDAY_TEMPLATE = "9b3cd024-9282-4c71-b93e-d20be8fee659";
+export const EVENT_DRAFT_REMINDER_TEMPLATE = "8e788a4c-8396-4490-97b8-c5371f829411";
+export const SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE = "19c7266b-ed3c-4b30-af54-e2258f64cd53";
+export const PROFILE_CHANGE_CONFIRM_TEMPLATE = "a4b567c0-40b3-4898-ae1e-98182d7f3189";
+export const SIGN_IN_DETAILS_CHANGED_TEMPLATE = "ade176ca-11ed-414b-8d13-553bf4340e59";
+export const MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE = "2cf8d31e-8239-4d5f-9ed3-8288a49b74b8";
 export const NON_SOCIETY_EVENT_RESEND_TEMPLATE = "gala-festival-invitation-1";
 export const NON_SOCIETY_EVENT_RESEND_EVENT_ID = "69e5c915af9057b6bce64686";
 export const NON_SOCIETY_EVENT_RESEND_TEST_EMAILS = [

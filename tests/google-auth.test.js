@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import { signSessionToken } from "../util/auth/session-token.js";
 import User from "../models/User.js";
 import AlumniUser from "../models/AlumniUser.js";
-import AccountIdentity from "../models/AccountIdentity.js";
 import AuthChallenge from "../models/AuthChallenge.js";
 import { createAuthMiddleware } from "../middleware/authorization.js";
 import { refreshToken } from "../controllers/users-controllers.js";
@@ -215,7 +214,7 @@ function identityHarness() {
     deleteOne: async (query, options) => { assert.equal(options.session, session); rows = rows.filter((row) => row._id !== query._id); },
     updateOne: async (query, update) => Object.assign(rows.find((row) => row._id === query._id), update.$set),
   };
-  return { user, dependencies: { identities, startSession: async () => session }, rows: () => rows,
+  return { user, dependencies: { identities, lock: async () => {}, startSession: async () => session }, rows: () => rows,
     add: (row) => rows.push({ provider: "google", _id: "existing", ...row }), changePassword: () => { live.password = "changed"; },
     changeEmail: (email) => { live.email = email; }, live: () => live, revoke: () => { live.sessionVersion++; } };
 }
@@ -269,8 +268,10 @@ test("an ineligible account can still disconnect an old Google identity", async 
   assert.equal(h.rows().length, 0); assert.equal(h.live().sessionVersion, 1);
 });
 test("database indexes enforce global identity ownership and challenge expiry", () => {
-  const unique = AccountIdentity.schema.indexes().filter(([, options]) => options.unique).map(([index]) => index);
-  assert.deepEqual(unique, [{ provider: 1, subject: 1 }, { provider: 1, accountId: 1 }]);
+  for (const Model of [User, AlumniUser]) {
+    assert.ok(Model.schema.indexes().some(([index, options]) => index["identities.subject"] && options.unique));
+    assert.equal(Model.schema.path("identities").options.select, false);
+  }
   assert.ok(AuthChallenge.schema.indexes().some(([index, options]) => index.expiresAt && options.expireAfterSeconds === 0));
 });
 

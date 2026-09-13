@@ -1,3 +1,4 @@
+import { temporaryRecordStore } from "../services/storage/temporary-records.js";
 import mongoose from "mongoose";
 
 const schema = new mongoose.Schema({
@@ -10,4 +11,4 @@ const schema = new mongoose.Schema({
 schema.index({ approvalHash: 1 }, { unique: true, sparse: true });
 schema.index({ newEmailHash: 1 }, { unique: true, sparse: true });
 schema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-export default mongoose.model("ProfileChange", schema);
+export default temporaryRecordStore("ProfileChange", schema);

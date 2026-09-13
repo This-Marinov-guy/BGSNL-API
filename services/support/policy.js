@@ -1,12 +1,18 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import HttpError from "../../models/Http-error.js";
+import { BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT } from "../../util/config/defines.js";
 
 export const SUPPORT_STATUSES = ["open", "in_progress", "waiting_for_you", "resolved", "closed"];
-export const SUPPORT_ROLES = ["super_admin", "admin", "society_board_member", "support"];
+export const SUPPORT_ROLES = ["super_admin", "admin", "support"];
 export const MAX_MESSAGES = 200;
 export const GUEST_ACCESS_MS = 90 * 24 * 60 * 60 * 1000;
 export const digest = (value) => createHash("sha256").update(value).digest("hex");
-export const isSupportStaff = (account) => account?.status === "active" && SUPPORT_ROLES.some((role) => account.roles?.includes(role));
+export const isSupportStaff = (account) => {
+  if (!SUPPORT_ROLES.some((role) => account?.roles?.includes(role))) return false;
+  if (account.status === "active") return true;
+  // A billing hold does not block admin/super admin from staffing support.
+  return BILLING_LOCKED_STATUSES.includes(account.status) && BILLING_LOCK_EXEMPT.some((role) => account.roles?.includes(role));
+};
 export const accountIds = (account) => account ? [...new Set([String(account._id || account.id), ...(account.accountAliases || []).map(String)])] : [];
 
 export function textValue(value, label, max, required = true) {

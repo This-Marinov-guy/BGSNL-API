@@ -744,6 +744,7 @@ export const addEvent = async (req, res, next) => {
 
   //create event
   event = new Event({
+    memberAnnouncementQueuedAt: new Date(),
     lastUpdate: getFingerprintLite(req),
     memberOnly,
     hidden,
@@ -862,6 +863,7 @@ export const editEvent = async (req, res, next) => {
 
   if (wasDraft) {
     event = new Event({
+      memberAnnouncementQueuedAt: new Date(),
       _id: draft._id,
       createdAt: draft.createdAt,
       lastUpdate: draft.lastUpdate,

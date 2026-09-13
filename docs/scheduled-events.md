@@ -4,18 +4,23 @@ This file is the inventory of recurring work started by the BGSNL API process.
 Update it whenever a recurring worker, cron job, or externally scheduled API
 task is added, removed, or changes frequency.
 
-Last reviewed: 10 September 2026.
+Last reviewed: 11 September 2026.
+
+Database-triggered work is inventoried in [triggers.md](triggers.md).
 
 ## Active schedule
 
 | Job | Schedule | Time zone | Enabled when | Main effect |
 | --- | --- | --- | --- | --- |
 | Billing maintenance | Immediately after API startup, then every 60 seconds | Not calendar-based | `NODE_ENV=production` or `BILLING_WORKER_ENABLED=true`; `BILLING_WORKER_ENABLED=false` always disables it | Processes payment reminders, recovers Checkout sessions, and refreshes stale subscription state |
+| Regional Member revenue | Within the billing worker, approximately every 60 seconds | UTC for monthly fee reports | Billing worker enabled and `MEMBER_REVENUE_SHARING_ENABLED=true` | Reconciles new Member invoice allocations, actual Stripe fees and regional Connect transfers; see [member-revenue-sharing.md](member-revenue-sharing.md) |
 | Weekly membership summary | First check after API startup, then every 5 minutes; a new report becomes due Monday at 00:05 | `Europe/Amsterdam` | Internal notifications are enabled and the API is in production, or `WEEKLY_MEMBERSHIP_REPORT_ENABLED=true`; setting the flag to `false` disables it | Emails the completed Monday–Sunday member/alumni totals per city to every internal-notification subscriber |
 | Birthday greetings | First check after API startup, then every minute; a daily greeting becomes due at 10:00 | `Europe/Amsterdam` | `NODE_ENV=production` or `BIRTHDAY_EMAIL_WORKER_ENABLED=true`; setting the flag to `false` disables it | Sends one non-promotional birthday greeting to each current Member or Alumni account with a valid stored date of birth |
+| Member event announcements | Immediately after API startup, then every minute; an authenticated Atlas notification can request an earlier pass | Not calendar-based | `NODE_ENV=production` or `EVENT_ANNOUNCEMENTS_ENABLED=true`; `false` disables it | Delivers pending publication announcements with personal encrypted ticket links; recovers missed trigger notifications |
 
-All workers start only after MongoDB connects and their required indexes are
-ready. They stop accepting new work during graceful API shutdown.
+All workers start only after MongoDB and Redis are ready and the required
+account/temporary-code indexes exist. In PM2 cluster mode, only worker 0 runs
+birthday, weekly-summary and event-announcement schedules. They stop accepting new work during graceful API shutdown.
 
 ## Birthday greetings
 
@@ -29,10 +34,9 @@ both current Member and Alumni collections and skips accounts without a real
 stored date of birth. Migrated/archived source copies are excluded and a shared
 email address receives no more than one greeting.
 
-`birthdayemaildeliveries` stores a hash of the recipient address and a delivery
-claim before the provider is contacted. This prevents duplicates across restarts
-and multiple API instances. Ambiguous provider failures are recorded but not
-automatically retried, because retrying can create a duplicate greeting.
+The separate delivery collection has been removed. The scheduler remembers
+attempted inboxes only in the running process, without outcomes or Mongo logs.
+A restart can repeat a greeting; see [storage-and-redis.md](storage-and-redis.md).
 
 Configuration:
 
@@ -83,8 +87,7 @@ Source:
 The report covers the last fully completed ISO week: Monday 00:00 inclusive to
 the following Monday 00:00 exclusive. It becomes eligible at 00:05 on Monday
 in `Europe/Amsterdam`, including daylight-saving changes. A process starting
-later in the week sends the latest completed report if no delivery receipt
-exists, providing a catch-up after downtime.
+later in the week sends the latest completed report if it has not attempted it in this process, providing a catch-up after downtime.
 
 The message contains:
 
@@ -108,12 +111,11 @@ INTERNAL_NOTIFICATION_SUBSCRIBERS=first@example.com,second@example.com
 WEEKLY_MEMBERSHIP_REPORT_ENABLED=true
 ```
 
-Each recipient receives a separate message. The
-`weeklymembershipreportdeliveries` collection stores one delivery claim per
-reporting week and recipient. A claim is recorded before provider delivery, so
-restarts and concurrent API instances cannot create duplicate sends. An
-ambiguous provider failure is recorded and is not automatically retried, because
-the provider may already have accepted the email.
+Each recipient receives a separate message.
+
+Weekly delivery records have been removed. A process-local schedule guard avoids
+repeating a week's sends during the same process lifetime. Restarts can repeat
+an email; there is no persistent delivery receipt or outcome log.
 
 ## Operational timers that are not scheduled jobs
 

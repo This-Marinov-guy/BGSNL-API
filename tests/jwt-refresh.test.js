@@ -5,7 +5,6 @@ import { signSessionToken, verifySessionToken, SESSION_LIFETIME_SECONDS, ACCESS_
 import { createSessionService, ROTATION_GRACE_MS } from "../services/authentication/sessions.js";
 import { createAuthMiddleware } from "../middleware/authorization.js";
 import { memorySessionStore } from "./fixtures/session-store.mjs";
-import RefreshSession from "../models/RefreshSession.js";
 import { sessionAction } from "../controllers/session-controller.js";
 
 process.env.JWT_STRING = "isolated-session-tests-only-strong-placeholder";
@@ -19,7 +18,7 @@ function harness() {
   const service = createSessionService({ records, findAccount: async () => user, now: () => time });
   return { records, service, at(value) { time = value; }, user(value) { user = value; }, claims: (packet) => verifySessionToken(packet.token, { now: time }) };
 }
-test("access JWTs last 15 minutes; refresh grants expire with an indexed TTL and store only a hash", async () => {
+test("access JWTs last 15 minutes; refresh grants expire at their absolute deadline and store only a hash", async () => {
   const h = harness(), packet = await h.service.start(account), claims = h.claims(packet);
   assert.equal(claims.userId, account.id); assert.deepEqual(claims.roles, account.roles);
   assert.equal(claims.auth_time, start / 1000); assert.equal(claims.exp - claims.iat, ACCESS_LIFETIME_SECONDS);
@@ -27,7 +26,6 @@ test("access JWTs last 15 minutes; refresh grants expire with an indexed TTL and
   assert.equal(claims.token_use, "access"); assert.equal(claims.sessionVersion, 2);
   const row = h.records.rows.get(claims.sid);
   assert.equal(row.tokenHash.length, 64); assert.ok(!JSON.stringify(row).includes(packet.refreshToken));
-  assert.ok(RefreshSession.schema.indexes().some(([keys, options]) => keys.expiresAt === 1 && options.expireAfterSeconds === 0));
   assert.ok(verifySessionToken(packet.token, { now: start + ACCESS_LIFETIME_SECONDS * 1000 - 1 }));
   assert.throws(() => verifySessionToken(packet.token, { now: start + ACCESS_LIFETIME_SECONDS * 1000 }));
 });

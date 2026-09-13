@@ -1,35 +1,33 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import BillingRecord from "../../models/BillingRecord.js";
+import TemporaryCode from "../../models/TemporaryCode.js";
 import HttpError from "../../models/Http-error.js";
+import { redisClient, redisPrefix } from "../storage/redis.js";
 
-export async function withBillingLease(key, work) {
-  const owner = randomUUID();
-  try {
-    await BillingRecord.updateOne({ _id: key }, { $setOnInsert: { leaseUntil: new Date(0) } }, { upsert: true });
-  } catch (error) { if (error.code !== 11000) throw error; }
-  const record = await BillingRecord.findOneAndUpdate({
-    _id: key, leaseUntil: { $lte: new Date() },
-  }, { $set: { owner, leaseUntil: new Date(Date.now() + 120000) } }, { new: true });
-  if (!record) throw new HttpError("A billing update is already in progress. Please try again shortly.", 409);
-  let lost = false;
-  const heartbeat = setInterval(() => {
-    BillingRecord.updateOne({ _id: key, owner }, { $set: { leaseUntil: new Date(Date.now() + 120000) } })
-      .then((result) => { if (!result.matchedCount) lost = true; })
-      .catch(() => { lost = true; });
-  }, 20000);
-  heartbeat.unref();
+const renew = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) else return 0 end`;
+const release = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`;
+export async function withBillingLease(key, work, { clientFor = redisClient, records = BillingRecord, fences = TemporaryCode.collection } = {}) {
+  const client = await clientFor(), owner = randomUUID();
+  const lockKey = `${redisPrefix()}lease:${createHash("sha256").update(key).digest("hex")}`;
+  if (!await client.set(lockKey, owner, { NX: true, PX: 120000 })) throw new HttpError("A billing update is already in progress. Please try again shortly.", 409);
+  let lost = false, heartbeat;
   const assertOwned = async (session) => {
-    // A write inside the account transaction fences out a competing worker;
-    // merely reading the lease would not detect a takeover before commit.
-    const result = lost ? null : await BillingRecord.updateOne({ _id: key, owner, leaseUntil: { $gt: new Date() } },
-      { $set: { leaseUntil: new Date(Date.now() + 120000) } }, { ...(session ? { session } : {}) });
-    if (!result?.matchedCount) {
-      throw new Error("Billing lease lost; refusing a stale account update");
+    if (lost || !await client.eval(renew, { keys: [lockKey], arguments: [owner, "120000"] })) throw new Error("Billing lease lost; refusing a stale account update");
+    if (session) {
+      // Redis cannot fence a Mongo transaction. A single tiny expiring marker
+      // makes a takeover conflict with the old worker's account transaction.
+      const result = await fences.updateOne({ _id: lockKey, owner }, { $inc: { revision: 1 } }, { session });
+      if (!result.matchedCount) throw new Error("Billing transaction fence lost");
     }
   };
-  try { return await work({ record, assertOwned }); }
-  finally {
+  try {
+    await fences.updateOne({ _id: lockKey }, { $set: { owner, expiresAt: new Date(Date.now() + 86400000) } }, { upsert: true });
+    heartbeat = setInterval(() => { assertOwned().catch(() => { lost = true; }); }, 20000);
+    heartbeat.unref();
+    const record = await records.findById(key) || { _id: key };
+    return await work({ record: { ...record, owner }, assertOwned });
+  } finally {
     clearInterval(heartbeat);
-    await BillingRecord.updateOne({ _id: key, owner }, { $set: { leaseUntil: new Date(0) }, $unset: { owner: 1 } });
+    await client.eval(release, { keys: [lockKey], arguments: [owner] }).catch(() => console.error("Redis lease release deferred to expiry"));
   }
 }

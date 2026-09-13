@@ -1,11 +1,6 @@
-import mongoose from "mongoose";
-
-const schema = new mongoose.Schema({
-  _id: String, subscriptionId: { type: String, required: true }, stripeRegion: String,
-  invoiceId: String, startedAt: Date, resolvedAt: Date,
-  firstAttemptAt: Date, secondAttemptAt: Date, nextAttemptAt: Date,
-  lastDeliveryError: String,
-}, { timestamps: true });
-schema.index({ resolvedAt: 1, nextAttemptAt: 1 });
-schema.index({ subscriptionId: 1, stripeRegion: 1 }, { unique: true, partialFilterExpression: { resolvedAt: null } });
-export default mongoose.model("BillingAttention", schema);
+import { redisRecordStore } from "../services/storage/redis-records.js";
+import { reminderDeadline } from "../services/storage/retention.js";
+// No job survives beyond 30 days from the start of its failure episode.
+export default redisRecordStore("billing-reminder", {
+  expiresAtFor: reminderDeadline,
+});

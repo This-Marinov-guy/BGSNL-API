@@ -1,8 +1,10 @@
+import { registerMemberRevenueSubscription } from "./revenue-sharing.js";
+import { hasMemberConnectAllocation } from "./connected.js";
 import { randomUUID } from "node:crypto";
 import BillingAttention from "../../models/BillingAttention.js";
 import { createStripeClient, STRIPE_KEYS } from "../../util/config/stripe.js";
 import { DEFAULT_REGION } from "../../util/config/defines.js";
-import { stripeId, subscriptionState, CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
+import { stripeId, subscriptionState, CURRENT_ACCOUNT_FILTER, accountType } from "../../util/subscriptions/policy.js";
 import { withBillingLease } from "./lease.js";
 import { findBillingAccount, persistSubscriptionAccount } from "./accounts.js";
 import { membershipReportingSnapshot, refreshMembershipReporting } from "./reporting.js";
@@ -57,7 +59,7 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
   const {
     withLease = withBillingLease, findAccount = findBillingAccount,
     readSubscription = readStripeSubscription, persistAccount = persistSubscriptionAccount,
-    attention = BillingAttention, stripe = createStripeClient(region), onChanged = refreshMembershipReporting,
+    readRevenueAllocation = registerMemberRevenueSubscription, attention = BillingAttention, stripe = createStripeClient(region), onChanged = refreshMembershipReporting,
   } = dependencies;
   return withLease(`subscription:${region}:${subscriptionId}`, async ({ assertOwned }) => {
     const user = await findAccount({ "subscription.id": subscriptionId });
@@ -69,14 +71,16 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
         (expectedCustomerId && stripeId(sub.customer) !== expectedCustomerId)) throw new Error("Subscription ownership mismatch");
     const now = new Date();
     let episode = user.subscription.failureEpisode;
-    if (state.reminderNeeded || (episode && state.paymentFailed)) {
+    if (!episode && state.reminderNeeded) {
       const reminder = await attention.findOneAndUpdate({ subscriptionId, stripeRegion: region, resolvedAt: null }, { $setOnInsert: {
         _id: episode || randomUUID(),
         subscriptionId, stripeRegion: region, invoiceId: state.failureInvoiceId,
         startedAt: now, nextAttemptAt: now, resolvedAt: null,
       } }, { upsert: true, new: true });
       episode = reminder._id;
-    } else if (episode && (state.hasBenefits || state.ended)) {
+      // Keep the current episode ID on the account after its Redis job expires.
+      // Reconciliation must not recreate it and repeat the same reminders.
+    } else if (episode && !state.paymentFailed && !state.reminderNeeded && (state.hasBenefits || state.ended)) {
       await attention.updateOne({ _id: episode }, { $set: { resolvedAt: now }, $unset: { nextAttemptAt: 1 } });
       episode = undefined;
     }
@@ -105,6 +109,8 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
       ...(subscription.currentPeriodEnd ? { expireDate: subscription.currentPeriodEnd } : {}),
     };
     const plan = freeAlumni ? { type: "alumni", tier: 0 } : state.hasBenefits && canSetStatus ? state.plan : null;
+    subscription.connected = (plan?.type || accountType(user)) === "member" && state.plan?.type === "member" &&
+      hasMemberConnectAllocation(subscription, await readRevenueAllocation(sub));
     const saved = await persistAccount(user, fields, plan, assertOwned);
     if (previousReporting !== membershipReportingSnapshot(saved)) {
       // Exports are ancillary: they must never roll back a committed billing change.

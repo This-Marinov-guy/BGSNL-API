@@ -4,6 +4,7 @@ import { findUserById } from "../services/main-services/user-service.js";
 import { accountEntitlements } from "../util/subscriptions/policy.js";
 import { reconcileAccount } from "../services/subscriptions/reconcile.js";
 import { sessions } from "../services/authentication/sessions.js";
+import { BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT } from "../util/config/defines.js";
 
 export const createAuthMiddleware = ({ findAccount = findUserById, validateSession = sessions.validate } = {}) => async (req, res, next) => {
   const token = req.headers.authorization?.match(/^Bearer (\S+)$/i)?.[1];
@@ -50,7 +51,10 @@ export const requireBenefits = (benefit = "hasBenefits") => async (req, res, nex
 export const adminMiddleware = (requiredRoles = []) => (req, res, next) =>
   authMiddleware(req, res, (error) => {
     if (error) return next(error);
-    if (req.account.status !== "active" || !requiredRoles.some((role) => req.account.roles?.includes(role))) {
+    const { status, roles } = req.account;
+    const statusOk = status === "active" ||
+      (BILLING_LOCKED_STATUSES.includes(status) && BILLING_LOCK_EXEMPT.some((role) => roles?.includes(role)));
+    if (!statusOk || !requiredRoles.some((role) => roles?.includes(role))) {
       return next(new HttpError("No access for such request", 403));
     }
     return next();

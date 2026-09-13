@@ -5,8 +5,10 @@ import { isoCBOR } from "@simplewebauthn/server/helpers";
 import { validationResult } from "express-validator";
 import { passkeyRelyingParty, requirePasskeyOrigin, preparePasskey, registerPasskey, authenticatePasskey, removePasskey, listPasskeys, limitPasskeyRequests, PASSKEY_LIMIT } from "../services/authentication/passkeys.js";
 import { passkeyCredentialValidators, passkeyRegistrationOptionsValidators, passkeyRemoveValidators } from "../validation/passkey-auth-validators.js";
-import PasskeyCredential from "../models/PasskeyCredential.js";
-import PasskeyChallenge from "../models/PasskeyChallenge.js";
+import mongoose from "mongoose";
+import { passkeySchema } from "../models/AccountSecurityFields.js";
+const PasskeyCredential = mongoose.model("PasskeySchemaFixture", passkeySchema);
+import PasskeyChallenge from "../models/AuthChallenge.js";
 import { redactSensitive } from "../middleware/axiom-logger.js";
 
 const origin = "https://www.bulgariansociety.nl";
@@ -69,7 +71,7 @@ function harness() {
     },
     endSession: async () => { calls.ends++; },
   };
-  const dependencies = { credentials, challenges, startSession: async () => session,
+  const dependencies = { lock: async () => {}, credentials, challenges, startSession: async () => session,
     verifyPassword: async (account, password) => { calls.passwordChecks++; assert.equal(account, user); if (password !== "correct-password") throw new Error("Wrong password"); },
     findAccount: async (id) => id === user.id ? user : null };
   const keyPair = generateKeyPairSync("ec", { namedCurve: "prime256v1" });

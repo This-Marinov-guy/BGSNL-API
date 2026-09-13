@@ -16,7 +16,7 @@ import {
 } from "../../services/background-services/google-spreadsheets.js";
 import {
   decodeFromURL,
-  isEventTimerFinished,
+  isTicketSaleClosed,
   removeModelProperties,
 } from "../../util/functions/helpers.js";
 import {
@@ -135,13 +135,7 @@ export const getEventPurchaseAvailability = async (req, res, next) => {
       return next(new HttpError("No event was found", 404));
     }
 
-    let status = true;
-    const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const expired = isEventTimerFinished(event.ticketTimer);
-
-    if (ticketsRemaining <= 0 || expired) {
-      status = false;
-    }
+    const status = !isTicketSaleClosed(event);
 
     res.status(200).json({ status });
   } catch (error) {
@@ -169,14 +163,7 @@ export const getEventById = async (req, res, next) => {
       return next(new HttpError("No event was found", 404));
     }
 
-    let status = true;
-
-    const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const expired = isEventTimerFinished(event.ticketTimer);
-
-    if (ticketsRemaining <= 0 || expired) {
-      status = false;
-    }    
+    const status = !isTicketSaleClosed(event);
 
     return res.status(200).json({ event: serializePublicEvent(event), status });
   } catch (err) {
@@ -291,9 +278,7 @@ export const checkTicketEligibility = async (req, res, next) => {
     return next(new HttpError("No event was found", 404));
   }
 
-  const ticketsRemaining = event.ticketLimit - event.guestList.length;
-  const expired = isEventTimerFinished(event.ticketTimer);
-  if (ticketsRemaining <= 0 || expired) {
+  if (isTicketSaleClosed(event)) {
     return next(new HttpError("Ticket sale is closed", 400));
   }
 
@@ -376,11 +361,8 @@ export const postAddMemberToEvent = async (req, res, next) => {
     return next(new HttpError("Could not find such event", 404));
   }
 
-  const ticketsRemaining =
-    societyEvent.ticketLimit - societyEvent.guestList.length;
-
-  if (ticketsRemaining <= 0) {
-    return next(new HttpError("Tickets are sold out", 500));
+  if (isTicketSaleClosed(societyEvent)) {
+    return next(new HttpError("Ticket sale is closed", 400));
   }
 
   let targetUser;
@@ -459,11 +441,8 @@ export const postAddGuestToEvent = async (req, res, next) => {
     return next(new HttpError("Could not find such event", 404));
   }
 
-  const ticketsRemaining =
-    societyEvent.ticketLimit - societyEvent.guestList.length;
-
-  if (ticketsRemaining <= 0) {
-    return next(new HttpError("Tickets are sold out", 500));
+  if (isTicketSaleClosed(societyEvent)) {
+    return next(new HttpError("Ticket sale is closed", 400));
   }
 
   const safeQuantity = Number(quantity) > 0 ? Number(quantity) : 1;

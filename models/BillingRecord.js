@@ -1,10 +1,7 @@
-import mongoose from "mongoose";
-
-// Durable leases, checkout reservations and delivery receipts. No TTL on
-// receipts: an old replay must not recreate a subscription or send more mail.
-const schema = new mongoose.Schema({
-  _id: String, owner: String, leaseUntil: Date, completedAt: Date,
-  data: mongoose.Schema.Types.Mixed,
-}, { timestamps: true });
-schema.index({ completedAt: 1, updatedAt: 1 }, { partialFilterExpression: { "data.sessionId": { $exists: true } } });
-export default mongoose.model("BillingRecord", schema);
+import { redisRecordStore } from "../services/storage/redis-records.js";
+import { checkoutDeadline } from "../services/storage/retention.js";
+// Recovery has a fixed 30-day window; polling and retries cannot renew it.
+// Stripe metadata handles historical replays after completed state expires.
+export default redisRecordStore("checkout-state", {
+  expiresAtFor: checkoutDeadline,
+});

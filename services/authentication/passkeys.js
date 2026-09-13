@@ -2,9 +2,9 @@ import { createHash, randomBytes } from "node:crypto";
 import mongoose from "mongoose";
 import { generateRegistrationOptions, verifyRegistrationResponse, generateAuthenticationOptions, verifyAuthenticationResponse } from "@simplewebauthn/server";
 import HttpError from "../../models/Http-error.js";
-import PasskeyCredential from "../../models/PasskeyCredential.js";
-import PasskeyChallenge from "../../models/PasskeyChallenge.js";
-import AuthRateLimit from "../../models/AuthRateLimit.js";
+import { embeddedPasskeys as PasskeyCredential, lockAccountCredentials } from "./embedded-credentials.js";
+import PasskeyChallenge from "../../models/AuthChallenge.js";
+import { redisRateLimits as AuthRateLimit } from "../../services/storage/rate-limits.js";
 import { verifyCurrentPassword } from "./google.js";
 import { findUserById } from "../main-services/user-service.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
@@ -96,7 +96,7 @@ export async function preparePasskey({ purpose, origin, proof, user, password, n
     // Discoverable login: no email lookup or account enumeration.
     options = await loginOptions({ rpID: rpId, userVerification: "required", timeout: 60000, allowCredentials: [] });
   }
-  const challenge = await challenges.create({ _id: random(), purpose, origin, rpId,
+  const challenge = await challenges.create({ _id: random(), kind: "passkey", purpose, origin, rpId,
     challenge: options.challenge, proofHash: digest(proof), ...security,
     expiresAt: new Date(now + PASSKEY_CHALLENGE_MS) });
   return { challengeId: challenge._id, options, expiresAt: challenge.expiresAt };
@@ -105,7 +105,7 @@ export async function preparePasskey({ purpose, origin, proof, user, password, n
 function challengeQuery({ purpose, origin, proof, challengeId }) {
   const { rpId } = passkeyRelyingParty(origin);
   if (!validProof(proof) || !validProof(challengeId)) throw new HttpError("Invalid passkey challenge.", 422);
-  return { _id: challengeId, purpose, origin, rpId, proofHash: digest(proof), expiresAt: { $gt: new Date() } };
+  return { kind: "passkey", _id: challengeId, purpose, origin, rpId, proofHash: digest(proof), expiresAt: { $gt: new Date() } };
 }
 
 async function fenceAccount(user, session, revoke = false) {
@@ -121,7 +121,7 @@ async function fenceAccount(user, session, revoke = false) {
 
 export async function registerPasskey({ origin, proof, challengeId, credential, user }, {
   challenges = PasskeyChallenge, credentials = PasskeyCredential, verify = verifyRegistrationResponse,
-  startSession = () => mongoose.startSession(),
+  startSession = () => mongoose.startSession(), lock = lockAccountCredentials,
 } = {}) {
   const query = challengeQuery({ origin, proof, challengeId, purpose: "register" });
   const challenge = await challenges.findOne(query);
@@ -139,6 +139,7 @@ export async function registerPasskey({ origin, proof, challengeId, credential, 
   const session = await startSession();
   try {
     await session.withTransaction(async () => {
+      await lock(session);
       await fenceAccount(user, session);
       if (!await challenges.findOneAndDelete(query, { session })) throw changed();
       if (await credentials.countDocuments({ accountId: user.id, rpId: challenge.rpId }).session(session) >= PASSKEY_LIMIT) {

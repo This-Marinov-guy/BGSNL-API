@@ -19,7 +19,7 @@ export const getCityData = async (req, res, next) => {
 
   try {
     const cacheKey = `cityData:${city}`;
-    const cachedData = eventsCache.get(cacheKey);
+    const cachedData = await eventsCache.get(cacheKey);
     if (cachedData) {
       return res.status(200).json({
         status: true,
@@ -31,7 +31,7 @@ export const getCityData = async (req, res, next) => {
 
     const data = await getPresenceStatsOfCity(SPREADSHEETS_ID[city].events);
     // Cache the data for 24 hours
-    eventsCache.set(cacheKey, data, 24 * 3600);
+    await eventsCache.set(cacheKey, data, 24 * 3600);
 
     return res.status(200).json({
       status: true,

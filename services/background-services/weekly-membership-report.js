@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import moment from "moment-timezone";
 import User from "../../models/User.js";
 import AlumniUser from "../../models/AlumniUser.js";
-import WeeklyMembershipReportDelivery from "../../models/WeeklyMembershipReportDelivery.js";
+import { createEmailRunGuard, isEmailSchedulerProcess } from "./email-run-guard.js";
+const reportRuns = createEmailRunGuard();
 import { REGIONS } from "../../util/config/defines.js";
 import {
   areInternalNotificationsEnabled,
@@ -57,7 +57,7 @@ export const getWeeklyMembershipReportConfig = (env = process.env) => {
     ? areInternalNotificationsEnabled(env.WEEKLY_MEMBERSHIP_REPORT_ENABLED)
     : env.NODE_ENV === "production";
   return {
-    enabled: notifications.enabled && reportEnabled,
+    enabled: isEmailSchedulerProcess(env) && notifications.enabled && reportEnabled,
     subscribers: notifications.subscribers,
     timeZone: WEEKLY_MEMBERSHIP_REPORT_TIME_ZONE,
   };
@@ -207,22 +207,12 @@ export const buildWeeklyMembershipSummaryNotification = ({
   };
 };
 
-const deliveryId = (reportKey, receiver) => {
-  const recipientHash = createHash("sha256")
-    .update(receiver.trim().toLowerCase())
-    .digest("hex")
-    .slice(0, 24);
-  return `${REPORT_TYPE}:${reportKey}:${recipientHash}`;
-};
-
-const duplicateKey = (error) => error?.code === 11000;
-
 export const processWeeklyMembershipReport = async ({
   now = new Date(),
   config = getWeeklyMembershipReportConfig(),
   MemberModel = User,
   AlumniModel = AlumniUser,
-  DeliveryModel = WeeklyMembershipReportDelivery,
+  runGuard = reportRuns,
   send = deliverInternalNotificationEmail,
 } = {}) => {
   if (!config.enabled || config.subscribers.length === 0) {
@@ -234,12 +224,8 @@ export const processWeeklyMembershipReport = async ({
     return { status: "not-due", sent: 0, reportKey: period.key };
   }
 
-  const ids = config.subscribers.map((receiver) => deliveryId(period.key, receiver));
-  const attempted = await DeliveryModel.countDocuments({
-    _id: { $in: ids },
-    attemptedAt: { $exists: true },
-  });
-  if (attempted === ids.length) {
+  const receivers = [...new Set(config.subscribers.map((email) => email.trim().toLowerCase()))];
+  if (receivers.every((email) => runGuard.has(period.key, email))) {
     return { status: "already-processed", sent: 0, reportKey: period.key };
   }
 
@@ -257,48 +243,16 @@ export const processWeeklyMembershipReport = async ({
   let skipped = 0;
   let failed = 0;
 
-  for (const rawReceiver of config.subscribers) {
-    const receiver = rawReceiver.trim().toLowerCase();
-    const id = deliveryId(period.key, receiver);
-    let claim;
-    try {
-      claim = await DeliveryModel.findOneAndUpdate(
-        { _id: id, attemptedAt: { $exists: false } },
-        {
-          $setOnInsert: {
-            reportKey: period.key,
-            receiver,
-            periodStart: period.periodStart,
-            periodEnd: period.periodEnd,
-          },
-          $set: { attemptedAt: new Date(now) },
-        },
-        { upsert: true, new: true }
-      );
-    } catch (error) {
-      if (duplicateKey(error)) {
-        skipped += 1;
-        continue;
-      }
-      throw error;
-    }
-    if (!claim) {
+  for (const receiver of receivers) {
+    if (!runGuard.claim(period.key, receiver)) {
       skipped += 1;
       continue;
     }
 
     try {
       await send({ receiver, ...notification });
-      await DeliveryModel.updateOne(
-        { _id: id, completedAt: { $exists: false } },
-        { $set: { completedAt: new Date() }, $unset: { lastDeliveryError: 1 } }
-      );
       sent += 1;
     } catch (error) {
-      await DeliveryModel.updateOne(
-        { _id: id },
-        { $set: { lastDeliveryError: "Provider delivery failed or was not confirmed" } }
-      );
       failed += 1;
       console.error("Weekly membership report delivery was not confirmed", {
         reportKey: period.key,

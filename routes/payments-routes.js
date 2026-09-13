@@ -1,4 +1,5 @@
 import express from "express";
+import { createMemberEventCheckoutHandler } from "../controllers/member-event-checkout-controller.js";
 import { paymentResult } from "../controllers/payment-return-controller.js";
 import {
   donationConfig,
@@ -31,6 +32,8 @@ const paymentRouter = express.Router();
 const formDataUpload = multer({ storage: multer.memoryStorage() });
 
 paymentRouter.post("/result", paymentResult);
+
+paymentRouter.get("/event-ticket", createMemberEventCheckoutHandler({ checkout: postCheckoutFile }));
 
 paymentRouter.get("/donation/config", donationConfig);
 

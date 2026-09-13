@@ -47,8 +47,8 @@ export const memberTicketDuplicateMatcher = ({ userId, userIds, email }) => {
   };
 };
 
-export const isExistingMemberTicket = (ticket, { userId, userIds, email }) => {
-  if (!ticket || ticket.refunded === true || ticket.type !== "member") return false;
+export const isExistingEventTicket = (ticket, { userId, userIds, email }) => {
+  if (!ticket || ticket.refunded === true) return false;
 
   const accountIds = memberAccountIds({ userId, userIds });
   if (accountIds.includes(String(ticket.userId || ""))) return true;
@@ -56,3 +56,6 @@ export const isExistingMemberTicket = (ticket, { userId, userIds, email }) => {
   const expectedEmail = normalizeEmail(email);
   return Boolean(expectedEmail && normalizeEmail(ticket.email) === expectedEmail);
 };
+
+export const isExistingMemberTicket = (ticket, member) =>
+  ticket?.type === "member" && isExistingEventTicket(ticket, member);

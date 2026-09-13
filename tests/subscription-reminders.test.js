@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { processBillingReminders, nextReminderSlot, REMINDER_DELAY_MS } from "../services/subscriptions/reminders.js";
+import { processBillingReminders, nextReminderSlot, REMINDER_DELAY_MS, deliverBillingReminder } from "../services/subscriptions/reminders.js";
+import { SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE, USER_URL } from "../util/config/defines.js";
 
 const harness = () => {
   const job = { _id: "episode", subscriptionId: "sub_one", stripeRegion: "netherlands", nextAttemptAt: new Date(0) };
@@ -76,4 +77,9 @@ test("in-flight payments are postponed without consuming or accelerating email s
 test("resolved episodes and used second slots never become eligible again", () => {
   assert.equal(nextReminderSlot({ nextAttemptAt: new Date(0), resolvedAt: new Date() }), null);
   assert.equal(nextReminderSlot({ nextAttemptAt: new Date(0), secondAttemptAt: new Date() }), null);
+});
+test("billing reminder queues the Domakin Mailer template with the manage-billing link", async () => {
+  const calls = [];
+  await deliverBillingReminder({ email: "member@example.test", second: true, send: async (...args) => calls.push(args) });
+  assert.deepEqual(calls, [[SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE, "member@example.test", { second: true, manageUrl: `${USER_URL}#settings` }]]);
 });

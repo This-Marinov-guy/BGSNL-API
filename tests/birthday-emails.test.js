@@ -1,12 +1,15 @@
+import { createEmailRunGuard } from "../services/background-services/email-run-guard.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
   birthdayNotification,
+  deliverBirthdayEmail,
   getBirthdaySchedule,
   getBirthdayWorkerConfig,
   loadBirthdayRecipients,
   processBirthdayEmails,
 } from "../services/background-services/birthday-emails.js";
+import { BIRTHDAY_TEMPLATE } from "../util/config/defines.js";
 
 const recordsModel = (records, seen) => ({
   find(query) {
@@ -15,27 +18,6 @@ const recordsModel = (records, seen) => ({
   },
 });
 
-const deliveryHarness = () => {
-  const records = new Map();
-  return {
-    records,
-    DeliveryModel: {
-      create: async (record) => {
-        if (records.has(record._id)) {
-          const error = new Error("duplicate");
-          error.code = 11000;
-          throw error;
-        }
-        records.set(record._id, structuredClone(record));
-      },
-      updateOne: async ({ _id }, update) => {
-        const record = records.get(_id);
-        Object.assign(record, update.$set || {});
-        for (const key of Object.keys(update.$unset || {})) delete record[key];
-      },
-    },
-  };
-};
 
 test("birthday scheduler uses 10:00 Europe/Amsterdam across daylight saving time", () => {
   const summer = getBirthdaySchedule(new Date("2026-09-10T08:00:00.000Z"));
@@ -70,15 +52,15 @@ test("birthday recipients query both account collections and never duplicate an 
   assert.equal(seen[0].$expr.$and[1].$eq[1], 10);
 });
 
-test("delivery is at most once per recipient per Amsterdam calendar day", async () => {
-  const harness = deliveryHarness();
+test("birthday scheduler sends once per inbox per day within one process", async () => {
+  const runGuard = createEmailRunGuard();
   const messages = [];
   const dependencies = {
     now: new Date("2026-09-10T08:00:00.000Z"),
     config: { enabled: true, timeZone: "Europe/Amsterdam" },
     MemberModel: recordsModel([{ _id: "member_1", email: "member@example.test", name: "Mila" }], []),
     AlumniModel: recordsModel([{ _id: "alumni_1", email: "alumni@example.test", name: "Alex" }], []),
-    DeliveryModel: harness.DeliveryModel,
+    runGuard,
     send: async (message) => messages.push(message),
   };
   const first = await processBirthdayEmails(dependencies);
@@ -86,12 +68,32 @@ test("delivery is at most once per recipient per Amsterdam calendar day", async 
   assert.deepEqual({ sent: first.sent, skipped: first.skipped, failed: first.failed }, { sent: 2, skipped: 0, failed: 0 });
   assert.deepEqual({ sent: replay.sent, skipped: replay.skipped, failed: replay.failed }, { sent: 0, skipped: 2, failed: 0 });
   assert.equal(messages.length, 2);
-  assert.match(messages[0].notification.subject, /Happy birthday/);
-  assert.ok([...harness.records.values()].every((record) => record.completedAt));
+  assert.equal(messages[0].notification.templateId, BIRTHDAY_TEMPLATE);
 });
 
-test("birthday email content escapes names and does not contain a promotion", () => {
-  const message = birthdayNotification({ name: "<Mila>" });
-  assert.match(message.html, /&lt;Mila&gt;/);
-  assert.doesNotMatch(message.text, /discount|offer|buy/i);
+test("birthday notification targets the Domakin Mailer birthday template with the recipient's name", () => {
+  const message = birthdayNotification({ name: "Mila" });
+  assert.equal(message.templateId, BIRTHDAY_TEMPLATE);
+  assert.deepEqual(message.templateVariables, { name: "Mila" });
+});
+
+test("birthday notification falls back to a friendly greeting for a blank name", () => {
+  const message = birthdayNotification({ name: "   " });
+  assert.deepEqual(message.templateVariables, { name: "there" });
+});
+
+test("delivering a birthday email queues it through Domakin Mailer with the recipient and variables", async () => {
+  const calls = [];
+  await deliverBirthdayEmail({
+    receiver: "mila@example.test",
+    notification: birthdayNotification({ name: "Mila" }),
+    send: async (...args) => calls.push(args),
+  });
+  assert.deepEqual(calls, [[BIRTHDAY_TEMPLATE, "mila@example.test", { name: "Mila" }]]);
+});
+
+
+test("only one PM2 worker runs email schedules without delivery tables", () => {
+  assert.equal(getBirthdayWorkerConfig({ NODE_ENV: "production", NODE_APP_INSTANCE: "0" }).enabled, true);
+  assert.equal(getBirthdayWorkerConfig({ NODE_ENV: "production", NODE_APP_INSTANCE: "1" }).enabled, false);
 });

@@ -10,7 +10,7 @@ import HttpError from "../models/Http-error.js";
 import MarketingEmail from "../models/MarketingEmail.js";
 
 export const getTotalMemberCount = async (req, res, next) => {
-  let userCount = usersCountCache.get("total");
+  let userCount = await usersCountCache.get("total");
 
   if (userCount) {
     return res.status(200).json({
@@ -20,7 +20,7 @@ export const getTotalMemberCount = async (req, res, next) => {
 
   try {
     userCount = await User.countDocuments();
-    usersCountCache.set("total", userCount);
+    await usersCountCache.set("total", userCount);
   } catch (err) {
     console.error("Error counting users:", err.message);
     userCount = "-";
@@ -32,7 +32,7 @@ export const getTotalMemberCount = async (req, res, next) => {
 };
 
 export const getMemberCount = async (req, res, next) => {
-  let userCount = usersCountCache.get("members");
+  let userCount = await usersCountCache.get("members");
 
   if (userCount) {
     return res.status(200).json({
@@ -42,7 +42,7 @@ export const getMemberCount = async (req, res, next) => {
 
   try {
     userCount = await User.countDocuments({ expireDate: { $gt: new Date() } });
-    usersCountCache.set("members", userCount);
+    await usersCountCache.set("members", userCount);
   } catch (err) {
     console.error("Error counting users:", err.message);
     userCount = "-";
@@ -54,7 +54,7 @@ export const getMemberCount = async (req, res, next) => {
 };
 
 export const getActiveMemberCount = async (req, res, next) => {
-  let userCount = usersCountCache.get("activeMembers");
+  let userCount = await usersCountCache.get("activeMembers");
 
   if (userCount) {
     return res.status(200).json({
@@ -67,7 +67,7 @@ export const getActiveMemberCount = async (req, res, next) => {
       expireDate: { $gt: new Date() },
       $expr: { $gt: [{ $size: "$roles" }, 1] },
     });
-    usersCountCache.set("activeMembers", userCount);
+    await usersCountCache.set("activeMembers", userCount);
   } catch (err) {
     console.error("Error counting users:", err.message);
     userCount = "-";

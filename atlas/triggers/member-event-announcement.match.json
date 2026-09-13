@@ -1,0 +1,18 @@
+{
+  "fullDocument.memberAnnouncementQueuedAt": { "$type": "date" },
+  "fullDocument.memberAnnouncementCompletedAt": { "$exists": false },
+  "fullDocument.hidden": { "$ne": true },
+  "fullDocument.status": { "$nin": ["draft", "archived"] },
+  "$or": [
+    { "operationType": { "$in": ["insert", "replace"] } },
+    {
+      "operationType": "update",
+      "$or": [
+        { "updateDescription.updatedFields.memberAnnouncementQueuedAt": { "$exists": true } },
+        { "updateDescription.updatedFields.hidden": false },
+        { "updateDescription.updatedFields.status": "opened" },
+        { "updateDescription.removedFields": "hidden" }
+      ]
+    }
+  ]
+}

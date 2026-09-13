@@ -1,3 +1,4 @@
+import { createEmailRunGuard } from "../services/background-services/email-run-guard.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -85,31 +86,9 @@ test("builds a privacy-minimal city table", () => {
   assert.equal(notification.type, "weekly-membership-summary");
 });
 
-const deliveryHarness = () => {
-  const records = new Map();
-  const DeliveryModel = {
-    countDocuments: async ({ _id }) => _id.$in.filter((id) => records.get(id)?.attemptedAt).length,
-    findOneAndUpdate: async (query, update) => {
-      if (records.get(query._id)?.attemptedAt) {
-        const error = new Error("duplicate");
-        error.code = 11000;
-        throw error;
-      }
-      const record = { _id: query._id, ...update.$setOnInsert, ...update.$set };
-      records.set(query._id, record);
-      return structuredClone(record);
-    },
-    updateOne: async (query, update) => {
-      const record = records.get(query._id);
-      Object.assign(record, update.$set);
-      for (const key of Object.keys(update.$unset || {})) delete record[key];
-    },
-  };
-  return { records, DeliveryModel };
-};
 
 test("sends each recipient once even when the scheduler processes the week again", async () => {
-  const harness = deliveryHarness();
+  const runGuard = createEmailRunGuard();
   const messages = [];
   const dependencies = {
     now: new Date("2026-09-10T10:00:00.000Z"),
@@ -120,7 +99,7 @@ test("sends each recipient once even when the scheduler processes the week again
     },
     MemberModel: aggregateModel([{ _id: "amsterdam", count: 2 }]),
     AlumniModel: aggregateModel([{ _id: "amsterdam", count: 1 }]),
-    DeliveryModel: harness.DeliveryModel,
+    runGuard,
     send: async (message) => messages.push(message),
   };
   const first = await processWeeklyMembershipReport(dependencies);
@@ -132,11 +111,10 @@ test("sends each recipient once even when the scheduler processes the week again
   assert.deepEqual(messages.map(({ receiver }) => receiver), [
     "one@example.com", "two@example.com",
   ]);
-  assert.ok([...harness.records.values()].every((record) => record.completedAt));
 });
 
-test("records an ambiguous provider failure and does not risk a duplicate retry", async () => {
-  const harness = deliveryHarness();
+test("an ambiguous provider failure is not retried within the same process", async () => {
+  const runGuard = createEmailRunGuard();
   let calls = 0;
   const dependencies = {
     now: new Date("2026-09-10T10:00:00.000Z"),
@@ -147,7 +125,7 @@ test("records an ambiguous provider failure and does not risk a duplicate retry"
     },
     MemberModel: aggregateModel([]),
     AlumniModel: aggregateModel([]),
-    DeliveryModel: harness.DeliveryModel,
+    runGuard,
     send: async () => { calls += 1; throw new Error("timeout"); },
   };
   const first = await processWeeklyMembershipReport(dependencies);
@@ -155,6 +133,4 @@ test("records an ambiguous provider failure and does not risk a duplicate retry"
   assert.equal(first.status, "delivery-failed");
   assert.equal(replay.status, "already-processed");
   assert.equal(calls, 1);
-  assert.equal([...harness.records.values()][0].lastDeliveryError,
-    "Provider delivery failed or was not confirmed");
 });

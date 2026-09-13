@@ -6,6 +6,7 @@ import Event from "../models/Event.js";
 import EventDraft from "../models/EventDraft.js";
 import { buildEventDraftReminderEmail } from "../services/background-services/email-transporter.js";
 import { eventDraftReminderValidators } from "../validation/form-validators.js";
+import { EVENT_DRAFT_REMINDER_TEMPLATE } from "../util/config/defines.js";
 
 const validateDraftReminder = async ({ email, eventId }) => {
   const req = { body: { email }, params: { eventId } };
@@ -82,19 +83,17 @@ test("draft reminder validation requires a draft id and valid email", async () =
   );
 });
 
-test("draft reminder email contains a safe continue link", () => {
+test("draft reminder email targets the Domakin Mailer template with a normalized title and continue link", () => {
   const message = buildEventDraftReminderEmail({
     eventTitle: "Board <planning>\r\nnight",
     continueUrl:
       "https://bulgariansociety.nl/user/edit-event/507f1f77bcf86cd799439011?from=email&draft=1",
   });
 
-  assert.equal(
-    message.subject,
-    "Continue your event draft — Board <planning> night"
-  );
-  assert.match(message.text, /\/user\/edit-event\/507f1f77bcf86cd799439011/);
-  assert.match(message.html, /Board &lt;planning&gt; night/);
-  assert.match(message.html, /\?from=email&amp;draft=1/);
-  assert.doesNotMatch(message.html, /Board <planning>/);
+  assert.equal(message.templateId, EVENT_DRAFT_REMINDER_TEMPLATE);
+  assert.deepEqual(message.templateVariables, {
+    eventTitle: "Board <planning> night",
+    continueUrl:
+      "https://bulgariansociety.nl/user/edit-event/507f1f77bcf86cd799439011?from=email&draft=1",
+  });
 });

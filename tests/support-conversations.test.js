@@ -65,12 +65,18 @@ test("membership migration preserves ownership through server account aliases", 
   assert.equal((await service.list({ account: migrated })).conversations.length, 1);
 });
 
-test("locked members can seek help; inactive staff cannot access the support inbox", async () => {
+test("locked members can seek help; a billing hold does not block admin staff, but a real hold still does", async () => {
   const { service } = setup(); const locked = { ...member, status: "locked" };
   const report = await service.create(createInput(), { account: locked });
   assert.equal((await service.get(report.id, { account: locked })).id, report.id);
-  assert.equal(isSupportStaff({ ...admin, status: "locked" }), false);
-  await assert.rejects(service.list({ account: { ...admin, status: "locked" }, staff: true }), { statusCode: 403 });
+
+  // A billing hold (locked/payment_awaiting) is waived for admin/super admin.
+  assert.equal(isSupportStaff({ ...admin, status: "locked" }), true);
+  await service.list({ account: { ...admin, status: "locked" }, staff: true });
+
+  // A genuine administrative hold (frozen/suspended) still blocks everyone.
+  assert.equal(isSupportStaff({ ...admin, status: "frozen" }), false);
+  await assert.rejects(service.list({ account: { ...admin, status: "frozen" }, staff: true }), { statusCode: 403 });
 });
 
 test("the support role grants support-staff authorization while inactive support users remain denied", () => {

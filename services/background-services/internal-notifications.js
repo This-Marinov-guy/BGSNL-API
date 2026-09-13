@@ -127,11 +127,27 @@ export const buildSupportTicketNotification = (ticket) => {
       ["Device", device],
       ["Viewport", viewport],
       ["Submitted", formatDateTime(ticket?.createdAt ?? new Date())],
-      ["Open inbox", "https://www.bulgariansociety.nl/user/support"],
+      ["Open inbox", "https://www.bulgariansociety.nl/user/dashboard/support"],
     ],
   });
   return { ...message, subject: `New support ticket #${reference} — ${subject}`, type: "support-ticket-created", entityId: present(ticket?.id, reference) };
 };
+
+export const buildAccessRequestNotification = (request) => ({
+  ...renderNotification({
+    eyebrow: "Internal notification",
+    title: "Administration access requested",
+    rows: [
+      ["Account ID", request.accountId],
+      ["Email", request.email],
+      ["Requested access", request.accesses.join(", ")],
+      ["Submitted", formatDateTime(request.createdAt)],
+    ],
+  }),
+  subject: "Administration access requested",
+  type: "administration-access-request",
+  entityId: request.id,
+});
 
 export const createInternalNotificationService = ({
   config = getInternalNotificationConfig(),
@@ -148,6 +164,9 @@ export const createInternalNotificationService = ({
   };
 
   return {
+    notifyAccessRequested(request) {
+      return queue(buildAccessRequestNotification(request));
+    },
     notifyInternshipApplicationCreated(application) {
       return queue(buildInternshipApplicationNotification(application));
     },
@@ -192,3 +211,5 @@ export const notifySupportTicketCreated = (ticket) => {
     return 0;
   }
 };
+
+export const notifyAccessRequested = (request) => internalNotificationService.notifyAccessRequested(request);
