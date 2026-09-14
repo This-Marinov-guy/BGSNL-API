@@ -59,7 +59,7 @@ export const readDatabaseCollection = async (req, res, next) => {
         documents = await Event.find({}).select([
           "_id", "region", "title", "date", "correctedDate", "location",
           "status", "ticketTimer", "ticketLimit", "isSaleClosed", "isFree",
-          "isMemberFree", "memberOnly", "hidden", "createdAt", "lastUpdate.timestamp",
+          "isMemberFree", "memberOnly", "hidden", "createdAt", "metadata.updatedAt",
         ].join(" ")).lean();
         break;
       case "users":

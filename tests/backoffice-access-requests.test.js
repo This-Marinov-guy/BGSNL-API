@@ -29,7 +29,7 @@ test("access requests notify internal recipients with authenticated identity and
 test("forged identity, privileged roles, unknown areas and malformed selections cannot request access", async () => {
   const { service, messages, limits } = fixture();
   for (const body of [null, {}, { accesses: [] }, { accesses: "events" }, { accesses: ["events", "events"] },
-    { accesses: ["admin"] }, { accesses: ["super_admin"] }, { accesses: ["toString"] },
+    { accesses: ["event-analytics"] }, { accesses: ["member-statistics"] }, { accesses: ["admin"] }, { accesses: ["super_admin"] }, { accesses: ["toString"] },
     { accesses: ["events"], email: "someone@example.test" }, { accesses: ["events"], id: "another-user" }]) {
     await assert.rejects(service.request({ account: member, body }), { code: 422 });
   }

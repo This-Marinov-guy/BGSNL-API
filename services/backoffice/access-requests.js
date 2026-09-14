@@ -9,8 +9,6 @@ const areas = {
   internships: { title: "Internships", roles: ACCESS_2 },
   members: { title: "Members", roles: ACCESS_3 },
   support: { title: "Support tickets", roles: ["super_admin", "admin", "support"] },
-  "event-analytics": { title: "Event analytics", roles: ACCESS_3 },
-  "member-statistics": { title: "Member statistics", roles: ACCESS_3 },
 };
 
 export const createAccessRequestService = ({ notify = notifyAccessRequested, limit = consumeSupportLimit } = {}) => ({

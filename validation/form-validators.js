@@ -602,7 +602,9 @@ const commonEventAdminValidators = [
     .optional({ checkFalsy: true })
     .custom((value) => validateJsonValue(value, eventJsonObject))
     .withMessage("Draft data has an invalid format"),
-  requiredText("region", "Region", 80, isPublishedEvent),
+  requiredText("region", "Region", 80),
+  body("region").if(body("status").equals(EVENT_DRAFT))
+    .isIn([...REGIONS, DEFAULT_REGION]).withMessage("Choose a valid region before saving a draft"),
   requiredText("title", "Title", 200, isPublishedEvent),
   body("date")
     .if(isPublishedEvent)

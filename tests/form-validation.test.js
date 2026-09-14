@@ -218,13 +218,13 @@ test("ticket JSON fields are rejected before controllers parse them", async () =
 
 test("event drafts allow incomplete fields while validating draft JSON", async () => {
   const validDraft = await validate(addEventValidators, {
-    body: { status: "draft", draftData: "{}" },
+    body: { status: "draft", region: "groningen", draftData: "{}" },
     files: {},
   });
   assert.equal(validDraft.nextCalled, true);
 
   const invalidDraft = await validate(addEventValidators, {
-    body: { status: "draft", draftData: "{bad-json" },
+    body: { status: "draft", region: "groningen", draftData: "{bad-json" },
     files: {},
   });
   assert.equal(invalidDraft.response.statusCode, 422);

@@ -5,7 +5,7 @@ import { validationResult } from "express-validator";
 import Event from "../models/Event.js";
 import EventDraft from "../models/EventDraft.js";
 import { buildEventDraftReminderEmail } from "../services/background-services/email-transporter.js";
-import { eventDraftReminderValidators } from "../validation/form-validators.js";
+import { addEventValidators, editEventValidators, eventDraftReminderValidators } from "../validation/form-validators.js";
 import { EVENT_DRAFT_REMINDER_TEMPLATE } from "../util/config/defines.js";
 
 const validateDraftReminder = async ({ email, eventId }) => {
@@ -18,6 +18,7 @@ const validateDraftReminder = async ({ email, eventId }) => {
 
 test("an incomplete event draft validates in its own collection", async () => {
   const event = new EventDraft({
+    region: "groningen",
     draftData: {
       title: "An idea in progress",
       location: "",
@@ -96,4 +97,24 @@ test("draft reminder email targets the Domakin Mailer template with a normalized
     continueUrl:
       "https://bulgariansociety.nl/user/edit-event/507f1f77bcf86cd799439011?from=email&draft=1",
   });
+});
+
+
+test("drafts require a valid region even when other fields are incomplete", async () => {
+  for (const region of [undefined, "", "   ", "unknown"]) {
+    await assert.rejects(new EventDraft({ region }).validate(), error => Boolean(error.errors.region));
+  }
+  await assert.doesNotReject(new EventDraft({ region: "netherlands" }).validate());
+});
+
+test("create and update draft requests require a region before reaching image processing or persistence", async () => {
+  for (const validators of [addEventValidators, editEventValidators]) {
+    for (const region of [undefined, "", "   ", "unknown", "groningen"]) {
+      const req = { body: { status: "draft", region, draftData: JSON.stringify({ title: "An incomplete draft" }) }, params: { eventId: "507f1f77bcf86cd799439011" }, files: {} };
+      for (const validator of validators) await validator.run(req);
+      const errors = validationResult(req).array();
+      if (region === "groningen") assert.deepEqual(errors, []);
+      else assert.ok(errors.some(error => (error.path ?? error.param) === "region"), JSON.stringify(errors));
+    }
+  }
 });

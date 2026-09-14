@@ -1,4 +1,5 @@
 import express from "express";
+import { updateEventSales } from "../../controllers/Events/event-sales-controller.js";
 import dotenv from "dotenv";
 import multer from "multer";
 import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList, sendEventDraftReminder } from "../../controllers/Events/future-events-action-controller.js";
@@ -46,6 +47,8 @@ futureEventRouter.get(
     adminMiddleware(ACCESS_4),
     fetchFullDataEventsList
 );
+
+futureEventRouter.patch("/sales/:eventId", adminMiddleware(ACCESS_4), updateEventSales);
 
 const eventImageUploads = upload.fields([
     { name: 'images', maxCount: 4 },

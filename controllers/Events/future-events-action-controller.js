@@ -36,7 +36,7 @@ import {
 import { eventToSpreadsheet } from "../../services/background-services/google-spreadsheets.js";
 import { notifyEventCreated } from "../../services/background-services/internal-notifications.js";
 import { sendEventDraftReminderEmail } from "../../services/background-services/email-transporter.js";
-import { getFingerprintLite } from "../../services/main-services/user-service.js";
+import { stampEventMetadata } from "../../services/events/event-metadata.js";
 import {
   addOrUpdateEvent,
   deleteCalendarEvent,
@@ -49,6 +49,7 @@ import {
   ACCESS_2,
   ACCESS_4,
   DEFAULT_REGION,
+  REGIONS,
   EVENT_DRAFT,
   EVENT_OPENED,
   HOME_URL,
@@ -125,7 +126,11 @@ const optionalNumber = (value) => {
 };
 
 const saveEventDraft = async (req, res, next, existingDraft = null) => {
-  const draftData = parseJsonSafely(req.body.draftData, {});
+  const region = typeof req.body.region === "string" ? req.body.region.trim() : "";
+  if (![...REGIONS, DEFAULT_REGION].includes(region)) {
+    return next(new HttpError("Choose a region before saving a draft", 422));
+  }
+  const draftData = { ...parseJsonSafely(req.body.draftData, {}), region };
   const event = existingDraft ?? new EventDraft();
   const folder =
     event.folder ||
@@ -203,9 +208,9 @@ const saveEventDraft = async (req, res, next, existingDraft = null) => {
   }
 
   event.status = EVENT_DRAFT;
-  event.lastUpdate = getFingerprintLite(req);
+  stampEventMetadata(event, req);
   event.folder = folder;
-  event.region = draftData.region || undefined;
+  event.region = region;
   event.title = draftData.title || "";
   event.description = draftData.description || "";
   event.date = optionalDate(draftData.date);
@@ -745,7 +750,6 @@ export const addEvent = async (req, res, next) => {
   //create event
   event = new Event({
     memberAnnouncementQueuedAt: new Date(),
-    lastUpdate: getFingerprintLite(req),
     memberOnly,
     hidden,
     extraInputsForm,
@@ -787,6 +791,7 @@ export const addEvent = async (req, res, next) => {
     googleEventId: "",
     addOns,
   });
+  stampEventMetadata(event, req);
 
   try {
     await event.save();
@@ -866,7 +871,6 @@ export const editEvent = async (req, res, next) => {
       memberAnnouncementQueuedAt: new Date(),
       _id: draft._id,
       createdAt: draft.createdAt,
-      lastUpdate: draft.lastUpdate,
       region: draft.region,
       title: draft.title,
       description: draft.description,
@@ -1094,7 +1098,7 @@ export const editEvent = async (req, res, next) => {
   }
 
 
-  event.lastUpdate = getFingerprintLite(req);
+  stampEventMetadata(event, req, { source: wasDraft ? draft : undefined });
   event.extraInputsForm = extraInputsForm;
   event.subEvent = subEvent;
 
@@ -1488,6 +1492,7 @@ export const deleteEvent = async (req, res, next) => {
 
   try {
     event.status = "archived";
+    stampEventMetadata(event, req);
     await event.save();
   } catch (err) {
     console.log(err);

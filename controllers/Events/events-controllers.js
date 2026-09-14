@@ -40,7 +40,7 @@ import {
   NON_SOCIETY_EVENT_RESEND_TEMPLATE,
 } from "../../util/config/defines.js";
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
-import { publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
+import { futureEventDateFilter, publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
 
 const objectIdPattern = /^[a-f\d]{24}$/i;
 const publicEventIdentifierQuery = (identifier) => objectIdPattern.test(String(identifier || ""))
@@ -186,11 +186,13 @@ export const getEvents = async (req, res, next) => {
       events = await Event.find({
         region,
         ...publicEventQuery,
+        ...futureEventDateFilter(),
       });
     } else {
       events = await Event.find({
         region: { $ne: DEFAULT_REGION },
         ...publicEventQuery,
+        ...futureEventDateFilter(),
       });
     }
   } catch (err) {

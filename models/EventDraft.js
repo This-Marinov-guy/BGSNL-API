@@ -1,20 +1,18 @@
 import mongoose from "mongoose";
-import { EVENT_DRAFT } from "../util/config/defines.js";
+import { eventMetadataSchema } from "./EventMetadata.js";
+import { EVENT_DRAFT, REGIONS, DEFAULT_REGION } from "../util/config/defines.js";
 import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const eventDraftSchema = new mongoose.Schema({
+  metadata: { type: eventMetadataSchema, default: undefined },
   createdAt: { type: Date, immutable: true, default: createCurrentDate },
-  lastUpdate: {
-    timestamp: { type: Date },
-    id: { type: String },
-  },
   status: {
     type: String,
     immutable: true,
     default: EVENT_DRAFT,
     enum: [EVENT_DRAFT],
   },
-  region: { type: String },
+  region: { type: String, required: true, trim: true, enum: [...REGIONS, DEFAULT_REGION] },
   title: { type: String, default: "" },
   description: { type: String, default: "" },
   date: { type: Date },
