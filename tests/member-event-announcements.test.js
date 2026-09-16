@@ -4,7 +4,7 @@ import test from "node:test";
 import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { buildMemberEventEmail, announcementWorkerEnabled, processMemberEventAnnouncements } from "../services/events/member-event-announcements.js";
-import { createMemberEventLink, verifyMemberEventLink, isCurrentEventMember, memberEventPrice } from "../services/events/member-event-links.js";
+import { createMemberEventLink, verifyMemberEventLink, isCurrentEventMember, memberEventPrice, memberEventPreferencesUrl } from "../services/events/member-event-links.js";
 import { createMemberEventCheckoutHandler } from "../controllers/member-event-checkout-controller.js";
 import { buildReq } from "../util/logging/axiom-log-models.js";
 import { ACCESS_4, MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE } from "../util/config/defines.js";
@@ -83,7 +83,7 @@ test("worker is production-only by default and requires explicit publication mar
   assert.equal(h.calls.eventQueries[0].memberAnnouncementCompletedAt.$exists, false);
   assert.deepEqual(h.calls.eventQueries[0].status.$nin, ["draft", "archived"]);
   assert.equal(h.calls.memberQueries[0].status, "active");
-  assert.ok(h.calls.memberQueries[0].expireDate.$gt instanceof Date);
+  assert.ok(h.calls.memberQueries[0].$or[0].expireDate.$gt instanceof Date);
 });
 
 test("repeated and concurrent worker runs within one process send once per inbox", async () => {
@@ -107,6 +107,7 @@ function checkoutHarness({ eventRecord = event, account = member, reconcile, che
   const calls = { reads: 0, checkout: [], errors: [], headers: {} };
   const handler = createMemberEventCheckoutHandler({
     verify: (input) => verifyMemberEventLink(input, { env }),
+    preferencesUrl: (e, m) => memberEventPreferencesUrl(e, m, { env }),
     EventModel: { async findById() { calls.reads++; return structuredClone(eventRecord); } },
     MemberModel: { async findById() { calls.reads++; return structuredClone(account); } },
     reconcile: reconcile || (async (user) => ({ user })),
@@ -159,10 +160,10 @@ test("sold-out, hidden, closed and expired events cannot start payment", async (
   }
 });
 
-test("events requiring choices use the normal purchase form and late duplicates retry as guests", async () => {
+test("events requiring choices use the scoped preferences page and late duplicates retry as guests", async () => {
   for (const patch of [{ extraInputsForm: [{ name: "meal" }] }, { addOns: { isEnabled: true, isMandatory: true } }, { ticketLink: "https://tickets.example.test" }]) {
     const h = checkoutHarness({ eventRecord: { ...event, ...patch } }); await h.run();
-    assert.equal(h.calls.checkout.length, 0); assert.match(h.calls.headers.Location, /purchase-ticket/);
+    assert.equal(h.calls.checkout.length, 0); assert.match(h.calls.headers.Location, patch.ticketLink ? /purchase-ticket/ : /payment\/event-ticket\/start\?token=e1\./);
   }
   const duplicate = checkoutHarness({ result: (req) => req.body.method === "buy_member_ticket"
     ? { alreadyRegistered: true } : { url: "https://checkout.stripe.com/c/pay/guest" } }); await duplicate.run();
@@ -392,4 +393,10 @@ test("email guest checkout uses guest price, prefilled details and guest fulfill
     if (mode === "all-free") assert.equal(data.line_items[0].price_data.unit_amount, 0);
     else assert.equal(data.line_items[0].price, "price_guest");
   }
+});
+
+
+test("active VIP announcement eligibility has no expiry date", () => {
+  assert.equal(isCurrentEventMember({ ...member, roles: ["member", "vip"], expireDate: new Date(0) }), true);
+  assert.equal(isCurrentEventMember({ ...member, roles: ["member", "vip"], expireDate: new Date(0), status: "suspended" }), false);
 });

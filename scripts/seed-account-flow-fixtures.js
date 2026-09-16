@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 
 dotenv.config();
@@ -150,7 +150,7 @@ const fixtureEmail = new RegExp(`@${FIXTURE_DOMAIN.replaceAll(".", "\\.")}$`, "i
 
 async function assertDatabaseIsIsolated() {
   const [foreignMember, foreignAlumni] = await Promise.all([
-    User.exists({ email: { $not: fixtureEmail } }),
+    MemberUser.exists({ email: { $not: fixtureEmail } }),
     AlumniUser.exists({ email: { $not: fixtureEmail } }),
   ]);
   if (foreignMember || foreignAlumni) {
@@ -159,7 +159,7 @@ async function assertDatabaseIsIsolated() {
 }
 
 function validateFixtures(fixtures) {
-  for (const [Model, records] of [[User, fixtures.users], [AlumniUser, fixtures.alumni]]) {
+  for (const [Model, records] of [[MemberUser, fixtures.users], [AlumniUser, fixtures.alumni]]) {
     for (const data of records) {
       const error = new Model(data).validateSync();
       if (error) throw error;
@@ -219,7 +219,7 @@ async function main() {
     }
     await assertDatabaseIsIsolated();
     const [members, alumniAccounts] = await Promise.all([
-      seedModel(User, fixtures.users),
+      seedModel(MemberUser, fixtures.users),
       seedModel(AlumniUser, fixtures.alumni),
     ]);
     console.log(JSON.stringify({ databaseName, members, alumni: alumniAccounts }, null, 2));

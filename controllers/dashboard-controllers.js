@@ -1,8 +1,8 @@
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
-import { ACCESS_2, SUBSCRIPTIONS } from "../util/config/defines.js";
+import { ALL_MEMBER_REGIONS_ACCESS, ALL_EVENT_REGIONS_ACCESS, SUBSCRIPTIONS } from "../util/config/defines.js";
 import moment from "moment-timezone";
 
 /**
@@ -11,7 +11,7 @@ import moment from "moment-timezone";
  */
 export const getMembers = async (req, res, next) => {
   const { roles, region } = extractUserFromRequest(req);
-  const isAdmin = roles.some((r) => ACCESS_2.includes(r));
+  const isAdmin = roles.some((r) => ALL_MEMBER_REGIONS_ACCESS.includes(r));
 
   const filterRegion = req.query.region;
 
@@ -25,7 +25,7 @@ export const getMembers = async (req, res, next) => {
       query.region = filterRegion;
     }
 
-    const users = await User.find(query)
+    const users = await MemberUser.find(query)
       .select(
         "name surname email roles region status purchaseDate expireDate subscription tickets image phone university otherUniversityName profession"
       )
@@ -106,7 +106,7 @@ export const getMembers = async (req, res, next) => {
  */
 export const getEventsAnalytics = async (req, res, next) => {
   const { roles, region } = extractUserFromRequest(req);
-  const isAdmin = roles.some((r) => ACCESS_2.includes(r));
+  const isAdmin = roles.some((r) => ALL_EVENT_REGIONS_ACCESS.includes(r));
 
   const filterRegion = req.query.region;
   const fromDate = req.query.from;

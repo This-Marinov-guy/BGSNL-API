@@ -4,7 +4,7 @@ dotenv.config();
 import mongoose from "mongoose";
 import { fileURLToPath } from "url";
 import path from "path";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 import Event from "../models/Event.js";
 import NonSocietyEvent from "../models/NonSocietyEvent.js";
@@ -120,7 +120,7 @@ export const createCandidateCollector = (fallbackDate = new Date()) => {
 };
 
 const collectMembers = async (collector, summary) => {
-  const cursor = User.find({})
+  const cursor = MemberUser.find({})
     .select("email region joinDate purchaseDate")
     .lean()
     .cursor();

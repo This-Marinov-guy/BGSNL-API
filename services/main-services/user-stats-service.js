@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import moment from "moment-timezone";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 
 const AGE_BUCKETS = [
@@ -49,9 +49,9 @@ const sortData = (dataObject, sortByValueDesc = true, limit = null) => {
 
 export const generateAnonymizedUserStatsXls = async (filter = {}) => {
   const today = moment();
-  
+
   // Fetch regular users with active (non-expired) memberships only
-  const users = await User.find(filter, {
+  const users = await MemberUser.find(filter, {
     status: 1,
     roles: 1,
     subscription: 1,
@@ -84,10 +84,10 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
     .lean();
 
   // Separate paid alumni from free tier alumni
-  const paidAlumni = alumniUsers.filter(a => 
+  const paidAlumni = alumniUsers.filter(a =>
     a.tier > 0 && a.expireDate && moment(a.expireDate).isAfter(today)
   );
-  
+
   const freeAlumni = alumniUsers.filter(a => a.tier === 0);
 
   const totalUsers = activeUsers.length;
@@ -103,8 +103,8 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
   const byUniversity = {};
   const byPurchaseYear = {};
   const byCourse = {};
-  const byUserType = { 
-    "Members (Active)": totalUsers, 
+  const byUserType = {
+    "Members (Active)": totalUsers,
     "Alumni (Paid Tier)": totalPaidAlumni,
     "Alumni (Free Tier)": totalFreeAlumni
   };
@@ -169,7 +169,7 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
 
     // purchase year
     if (a.purchaseDate) increment(byPurchaseYear, moment(a.purchaseDate).format("YYYY"));
-    
+
     // Note: Alumni don't have region, university, course, or birth fields
   }
 
@@ -189,13 +189,13 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
 
     // purchase year
     if (a.purchaseDate) increment(byPurchaseYear, moment(a.purchaseDate).format("YYYY"));
-    
+
     // Note: Alumni don't have region, university, course, or birth fields
   }
 
   // Create a single comprehensive report
   const wb = XLSX.utils.book_new();
-  
+
   // Create single worksheet
   const wsData = [];
   const addSection = (title, rowSpacing = 1) => {
@@ -204,21 +204,21 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
       wsData.push([]);
     }
   };
-  
+
   // Add data table with optional limits
   const addDataTable = (title, headers, dataMap, sortDesc = true, limit = null, spacing = 1) => {
     wsData.push([title]);
     wsData.push(headers);
-    
+
     const sortedData = sortData(dataMap, sortDesc, limit);
     sortedData.forEach(([key, value]) => {
       wsData.push([key, value]);
     });
-    
+
     for (let i = 0; i < spacing; i++) {
       wsData.push([]);
     }
-    
+
     // Return row count for chart positioning
     return sortedData.length + 2; // headers + title + data rows
   };
@@ -234,48 +234,48 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
   wsData.push(["Calendar Subscribed (MMM 2025)", calendarSubscribed]);
   wsData.push(["Note: Expired member accounts excluded"]);
   wsData.push([]);
-  
-  // User Type Distribution
+
+  // MemberUser Type Distribution
   addSection("User Type Distribution");
   addDataTable("Users by Type", ["Type", "Count"], byUserType, true, null, 2);
-  
+
   // Demographics
   addSection("Demographics");
   wsData.push(["Note: Age data only available for Regular Users (Alumni profiles don't include birth dates)"]);
   wsData.push([]);
   addDataTable("Age Distribution", ["Age Group", "Count"], byAgeBucket, false, null, 2);
-  
+
   // Regions
   addSection("Regional Distribution");
   wsData.push(["Note: Region data only available for Regular Users"]);
   wsData.push([]);
   addDataTable("Members by Region", ["Region", "Count"], byRegion, true, null, 2);
-  
+
   // Universities
   addSection("Educational Institutions");
   wsData.push(["Note: University data only available for Regular Users"]);
   wsData.push([]);
   addDataTable("Top Universities", ["University", "Count"], byUniversity, true, 15, 2);
-  
+
   // Courses/Specialties (NEW)
   addSection("Student Specialties");
   wsData.push(["Note: Course data only available for Regular Users"]);
   wsData.push([]);
   addDataTable("Top Fields of Study", ["Field/Course", "Count"], byCourse, true, 15, 2);
-  
+
   // // Purchase Year
   // addSection("Membership Acquisition");
   // addDataTable("Members by Purchase Year", ["Year", "Count"], byPurchaseYear, false, null, 0);
 
   // Create the worksheet from our data
   const ws = XLSX.utils.aoa_to_sheet(wsData);
-  
+
   // Add column width metadata
   ws['!cols'] = [
     { wch: 30 }, // Column A width
     { wch: 15 }, // Column B width
   ];
-  
+
   XLSX.utils.book_append_sheet(wb, ws, "User Statistics");
 
   const filename = `user_stats_${moment().format("YYYY-MM-DD_HHmmss")}.xls`;

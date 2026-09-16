@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
 import HttpError from "../../models/Http-error.js";
-import { ACCESS_2, ACCESS_4, EVENT_OPENED } from "../../util/config/defines.js";
+import { ALL_EVENT_REGIONS_ACCESS, ACCESS_4, EVENT_OPENED } from "../../util/config/defines.js";
 import { stampEventMetadata } from "../../services/events/event-metadata.js";
 import { dispatchSitemapRefresh } from "../../services/public-content/sitemap-dispatch.js";
 
@@ -13,7 +13,7 @@ export const createEventSalesHandler = ({ EventModel = Event, refresh = dispatch
     if (typeof req.body?.isSaleClosed !== "boolean") throw new HttpError("Sales status must be true or false", 400);
     const event = await EventModel.findById(req.params.eventId);
     if (!event) throw new HttpError("No such event", 404);
-    if (!roles.some((role) => ACCESS_2.includes(role)) && (!req.user?.region || event.region !== req.user.region || event.region === "netherlands")) {
+    if (!roles.some((role) => ALL_EVENT_REGIONS_ACCESS.includes(role)) && (!req.user?.region || event.region !== req.user.region || event.region === "netherlands")) {
       throw new HttpError("You can only manage sales for your region", 403);
     }
     if (["draft", "archived", "cancelled"].includes(event.status)) throw new HttpError("Sales cannot be changed for this event", 409);

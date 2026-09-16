@@ -51,6 +51,7 @@ import SupportConversation from "./models/SupportConversation.js";
 import { startWeeklyMembershipReportWorker } from "./services/background-services/weekly-membership-report.js";
 import { startMemberEventAnnouncementWorker } from "./services/events/member-event-announcements.js";
 import { startBirthdayEmailWorker } from "./services/background-services/birthday-emails.js";
+import { startEventDraftCleanupWorker } from "./services/background-services/event-draft-cleanup.js";
 import supportRouter, { supportError, supportPrivacy } from "./routes/support-routes.js";
 import backofficeRouter from "./routes/backoffice-routes.js";
 
@@ -224,6 +225,7 @@ let stopBillingWorker;
 let stopWeeklyMembershipReportWorker;
 let stopBirthdayEmailWorker;
 let stopMemberEventAnnouncementWorker;
+let stopEventDraftCleanupWorker;
 
 mongoose
   .connect(
@@ -236,6 +238,7 @@ mongoose
     stopWeeklyMembershipReportWorker = startWeeklyMembershipReportWorker();
     stopBirthdayEmailWorker = startBirthdayEmailWorker();
     stopMemberEventAnnouncementWorker = startMemberEventAnnouncementWorker();
+    stopEventDraftCleanupWorker = startEventDraftCleanupWorker();
     server = app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
@@ -257,6 +260,7 @@ const gracefulShutdown = async (signal) => {
   await stopWeeklyMembershipReportWorker?.();
   await stopBirthdayEmailWorker?.();
   await stopMemberEventAnnouncementWorker?.();
+  await stopEventDraftCleanupWorker?.();
   await flushAxiom();
 
   // Close MongoDB connection

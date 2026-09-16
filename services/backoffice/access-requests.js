@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import HttpError from "../../models/Http-error.js";
-import { ACCESS_2, ACCESS_3, ACCESS_4, BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT } from "../../util/config/defines.js";
+import { ACCESS_2, MEMBER_ADMIN_ACCESS, ACCESS_4, BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT } from "../../util/config/defines.js";
 import { notifyAccessRequested } from "../background-services/internal-notifications.js";
 import { consumeSupportLimit } from "../support/rate-limit.js";
 
 const areas = {
   events: { title: "Events", roles: ACCESS_4 },
   internships: { title: "Internships", roles: ACCESS_2 },
-  members: { title: "Members", roles: ACCESS_3 },
+  members: { title: "Members", roles: MEMBER_ADMIN_ACCESS },
   support: { title: "Support tickets", roles: ["super_admin", "admin", "support"] },
 };
 

@@ -393,7 +393,7 @@ export const computeAlumniTreeLayout = async () => {
   return _flattenTree(root);
 };
 // ─────────────────────────────────────────────────────────────────────────────
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import mongoose from "mongoose";
 import {
   USER_STATUSES,
@@ -448,7 +448,7 @@ export const findUserByEmail = async (email) => {
       ...CURRENT_ACCOUNT_FILTER,
     };
     const emailRegex = buildEmailRegex(normalizedEmail);
-    const userQuery = User.findOne({
+    const userQuery = MemberUser.findOne({
       email: emailRegex,
       ...excludeMembershipActive,
     });
@@ -469,15 +469,15 @@ export const findUserByEmail = async (email) => {
 export const findUserById = async (id) => {
   if (typeof id !== "string" || !id) return null;
   const query = { $or: [{ _id: id }, { accountAliases: id }], ...CURRENT_ACCOUNT_FILTER };
-  const [member, alumni] = await Promise.all([User.findOne(query), AlumniUser.findOne(query)]);
+  const [member, alumni] = await Promise.all([MemberUser.findOne(query), AlumniUser.findOne(query)]);
   if (alumni || member) return alumni || member;
   // Legacy conversions used paired IDs. Never resolve an old authenticated ID
   // by email alone: that address may since have been changed or reassigned.
-  const archived = await User.findById(id) || await AlumniUser.findById(id);
+  const archived = await MemberUser.findById(id) || await AlumniUser.findById(id);
   if (!archived || !CURRENT_ACCOUNT_FILTER.status.$nin.includes(archived.status)) return null;
   const match = id.match(/^(member|alumni)_(.+)$/);
   if (!match) return null;
-  const Target = match[1] === "member" ? AlumniUser : User;
+  const Target = match[1] === "member" ? AlumniUser : MemberUser;
   const counterpartId = `${match[1] === "member" ? "alumni" : "member"}_${match[2]}`;
   return Target.findOne({ _id: counterpartId, ...CURRENT_ACCOUNT_FILTER });
 };
@@ -487,7 +487,7 @@ export const findUserByName = async (name, surname) => {
     const excludeMembershipActive = {
       ...CURRENT_ACCOUNT_FILTER,
     };
-    const userQuery = User.findOne({
+    const userQuery = MemberUser.findOne({
       name,
       surname,
       ...excludeMembershipActive,
@@ -518,7 +518,7 @@ export const findUserByQuery = async (query) => {
     const excludeMembershipActive = {
       ...CURRENT_ACCOUNT_FILTER,
     };
-    const userQuery = User.findOne({ ...query, ...excludeMembershipActive });
+    const userQuery = MemberUser.findOne({ ...query, ...excludeMembershipActive });
     const alumniQuery = AlumniUser.findOne({
       ...query,
       ...excludeMembershipActive,
@@ -549,6 +549,6 @@ export const convertAlumniToUser = async (alumniId) => {
   return { userId: user.id, email: user.email };
 };
 export const convertUserToAlumni = async (userId) => {
-  const alumni = await convertLegacyAccount(User, userId, "alumni");
+  const alumni = await convertLegacyAccount(MemberUser, userId, "alumni");
   return { action: "created", alumniId: alumni.id, userId, email: alumni.email };
 };

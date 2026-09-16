@@ -1,4 +1,6 @@
+import { checkoutPromoAudience, prepareEventPromoCheckout } from "../services/tickets/event-promo-codes.js";
 import dotenv from "dotenv";
+import { createHash } from "node:crypto";
 dotenv.config();
 import HttpError from "../models/Http-error.js";
 import Event from "../models/Event.js";
@@ -8,7 +10,7 @@ import { createStripeClient, getStripeKey } from "../util/config/stripe.js";
 import {
   findUserById,
 } from "../services/main-services/user-service.js";
-import { checkDiscountsOnEvents } from "../services/main-services/event-action-service.js";
+import { resolveEventTicketPricing } from "../services/main-services/event-action-service.js";
 import { isTicketSaleClosed } from "../util/functions/helpers.js";
 import {
   handleGuestTicketPurchase,
@@ -29,20 +31,48 @@ import {
   normalizeCheckoutQuantity,
 } from "../services/tickets/member-ticket-policy.js";
 
-// Resolves the correct Stripe priceId from the DB, applying early/late-bird and promotion discounts.
+const toTicketPrice = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+};
+
+const priceInfoToLineItem = (event, priceInfo, quantity) => {
+  if (!priceInfo) return null;
+  if (priceInfo.priceId) return { price: priceInfo.priceId, quantity };
+
+  const amount = Math.round(Number(priceInfo.price) * 100);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+
+  const priceData = {
+    currency: "eur",
+    unit_amount: amount,
+  };
+
+  if (priceInfo.productId) {
+    priceData.product = priceInfo.productId;
+  } else {
+    priceData.product_data = { name: event.title };
+  }
+
+  return { price_data: priceData, quantity };
+};
+
+// Resolves the correct ticket price from the DB, applying early/late-bird and promotion discounts.
 // For guest checkout it always resolves guest price.
 // For member checkout normalTicket=true falls back to guest price.
-export const resolveTicketPriceId = async (
+export const resolveTicketPriceInfo = async (
   event,
   checkoutType = "guest",
   userId = "",
   normalTicket = false
 ) => {
-  const ev = checkDiscountsOnEvents(event);
-  const p = ev.product;
+  const productId = event?.product?.id;
+  const { tiers } = resolveEventTicketPricing(event);
+  const withProductId = (tier) => tier ? { ...tier, productId } : null;
 
   if (checkoutType !== "member") {
-    return p?.guest?.priceId ?? null;
+    return withProductId(tiers.guest);
   }
 
   if (!userId) {
@@ -50,7 +80,7 @@ export const resolveTicketPriceId = async (
   }
 
   if (normalTicket) {
-    return p?.guest?.priceId ?? null;
+    return withProductId(tiers.guest);
   }
 
   let user;
@@ -62,10 +92,28 @@ export const resolveTicketPriceId = async (
   if (!user || !accountEntitlements(user).memberDiscount) return null;
 
   const isActiveMember = user.roles?.some((role) => ACCESS_4.includes(role));
-  if (isActiveMember && p?.activeMember?.priceId) {
-    return p.activeMember.priceId;
+  if (isActiveMember && tiers.activeMember?.priceId) {
+    return withProductId(tiers.activeMember);
   }
-  return p?.member?.priceId ?? null;
+  return withProductId(tiers.member);
+};
+
+export const resolveTicketPriceId = async (...args) => {
+  const priceInfo = await resolveTicketPriceInfo(...args);
+  return priceInfo?.priceId ?? null;
+};
+
+export const resolveTicketLineItem = async (
+  event,
+  checkoutType = "guest",
+  userId = "",
+  normalTicket = false,
+  quantity = 1
+) => {
+  const priceInfo = await resolveTicketPriceInfo(event, checkoutType, userId, normalTicket);
+  const numericPrice = toTicketPrice(priceInfo?.price);
+  if (!priceInfo?.priceId && numericPrice === null) return null;
+  return priceInfoToLineItem(event, priceInfo, quantity);
 };
 
 const inferCheckoutType = (req, userId) => {
@@ -102,17 +150,32 @@ export const createTicketCheckoutSession = async ({
   eventId,
   userId,
   member,
-}) => {
-  const createSession = (data) => createReturnedCheckout({ stripe: stripeClient, checkoutData: data,
-    region: data.metadata.region, returnPath: `/${data.metadata.region}/purchase-ticket/${eventId}` });
+  event,
+}, {
+  createReturned = createReturnedCheckout,
+  lease = withBillingLease,
+  hasDuplicate = query => Event.exists(query),
+  updateRecord = (...args) => BillingRecord.updateOne(...args),
+} = {}) => {
+  const promoSignature = JSON.stringify([checkoutPromoAudience(checkoutType, member),
+    (event?.product?.promoCodes ?? []).map(promo => [promo.id, promo.code, promo.active, promo.audiences])]);
+  const choicesSignature = createHash("sha256").update(JSON.stringify([
+    checkoutData.line_items, checkoutData.metadata?.preferences || "", checkoutData.metadata?.addOns || "",
+  ])).digest("hex");
+  const createSession = async (data) => {
+    const prepared = await prepareEventPromoCheckout({ stripe: stripeClient, event,
+      audience: checkoutPromoAudience(checkoutType, member), checkoutData: data });
+    return createReturned({ stripe: stripeClient, checkoutData: prepared,
+      region: data.metadata.region, returnPath: `/${data.metadata.region}/purchase-ticket/${eventId}` });
+  };
   if (checkoutType !== "member" || isNormalTicket) {
     const session = await createSession(checkoutData);
     return { url: session.url };
   }
 
   const claimKey = memberTicketClaimKey(eventId, userId);
-  return withBillingLease(claimKey, async ({ record, assertOwned }) => {
-    const duplicate = await Event.exists({
+  return lease(claimKey, async ({ record, assertOwned }) => {
+    const duplicate = await hasDuplicate({
       _id: eventId,
       guestList: {
         $elemMatch: memberTicketDuplicateMatcher({
@@ -127,7 +190,9 @@ export const createTicketCheckoutSession = async ({
 
     const storedExpiry = Number(record.data?.expiresAt || 0) * 1000;
     if (record.data?.sessionUrl && storedExpiry > Date.now()) {
-      return { url: record.data.sessionUrl };
+      if (record.data.promoSignature === promoSignature && record.data.choicesSignature === choicesSignature) return { url: record.data.sessionUrl };
+      // A role or promo change must not retain a previously eligible discount.
+      await stripeClient.checkout.sessions.expire(record.data.sessionId);
     }
 
     // Stripe requires Checkout sessions to remain open for at least 30 minutes.
@@ -139,11 +204,13 @@ export const createTicketCheckoutSession = async ({
     });
 
     await assertOwned();
-    await BillingRecord.updateOne(
+    await updateRecord(
       { _id: claimKey },
       {
         $set: {
           data: {
+            promoSignature,
+            choicesSignature,
             reservedAt: new Date(),
             sessionId: session.id,
             sessionUrl: session.url,
@@ -362,20 +429,21 @@ export const postCheckoutNoFile = async (req, res, next) => {
     return res.status(200).json({ alreadyRegistered: true });
   }
 
-  const priceId = await resolveTicketPriceId(
+  const ticketLineItem = await resolveTicketLineItem(
     event,
     checkoutType,
     effectiveUserId,
-    isNormalTicket
+    isNormalTicket,
+    quantity
   );
 
-  if (!priceId) {
+  if (!ticketLineItem) {
     return next(new HttpError("No price configured for this event", 500));
   }
 
   const stripeClient = createStripeClient(event.region);
 
-  const lineItems = [{ price: priceId, quantity }];
+  const lineItems = [ticketLineItem];
   lineItems.push(...resolveAddonLineItems(event, addOns));
 
   const checkoutData = {
@@ -408,6 +476,7 @@ export const postCheckoutNoFile = async (req, res, next) => {
     eventId,
     userId: effectiveUserId,
     member,
+    event,
   });
 
   return res.status(200).json(result);
@@ -417,7 +486,8 @@ export const postCheckoutFile = async (req, res, next, {
   loadEvent = (id) => Event.findById(id),
   reconcile = reconcileAccount,
   generateTicket = generateAndUploadEventTicket,
-  resolvePrice = resolveTicketPriceId,
+  resolvePrice,
+  resolveLineItem,
   stripeForRegion = createStripeClient,
   createCheckout = createTicketCheckoutSession,
 } = {}) => {
@@ -560,14 +630,17 @@ export const postCheckoutFile = async (req, res, next, {
     });
   }
 
-  const priceId = isFreeCheckout ? null : await resolvePrice(
-    event,
-    checkoutType,
-    effectiveUserId,
-    isNormalTicket
-  );
+  const resolveCheckoutLineItem = resolveLineItem
+    ? () => resolveLineItem(event, checkoutType, effectiveUserId, isNormalTicket, quantity)
+    : resolvePrice
+      ? async () => {
+          const priceId = await resolvePrice(event, checkoutType, effectiveUserId, isNormalTicket);
+          return priceId ? { price: priceId, quantity } : null;
+        }
+      : () => resolveTicketLineItem(event, checkoutType, effectiveUserId, isNormalTicket, quantity);
+  const ticketLineItem = isFreeCheckout ? null : await resolveCheckoutLineItem();
 
-  if (!isFreeCheckout && !priceId) {
+  if (!isFreeCheckout && !ticketLineItem) {
     return next(new HttpError("No price configured for this event", 500));
   }
 
@@ -575,7 +648,7 @@ export const postCheckoutFile = async (req, res, next, {
 
   const lineItems = isFreeCheckout
     ? [{ price_data: { currency: "eur", product_data: { name: event.title }, unit_amount: 0 }, quantity }]
-    : [{ price: priceId, quantity }];
+    : [ticketLineItem];
   lineItems.push(...resolveAddonLineItems(event, addOns));
 
   const checkoutData = {
@@ -610,6 +683,7 @@ export const postCheckoutFile = async (req, res, next, {
     eventId,
     userId: effectiveUserId,
     member,
+    event,
   });
 
   return res.status(200).json(result);

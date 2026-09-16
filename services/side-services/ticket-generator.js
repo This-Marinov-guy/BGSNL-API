@@ -5,7 +5,7 @@ import path from "path";
 import QRCode from "qrcode";
 import sharp from "sharp";
 import { fileURLToPath } from "url";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 
 const DEFAULT_TICKET_COLOR = "#faf9f6";
 const DEFAULT_TICKET_WIDTH = 1500;
@@ -335,7 +335,7 @@ const resolveTicketHolder = async ({
 
     let user = null;
     try {
-      user = await User.findById(userId);
+      user = await MemberUser.findById(userId);
     } catch (_) {
       user = null;
     }

@@ -136,3 +136,19 @@ test("processing one invoice cannot conceal another unpaid invoice needing atten
   assert.equal(state.reminderNeeded, true);
   assert.equal(state.failureInvoiceId, "in_failed");
 });
+
+
+test("VIP ignores membership expiry but keeps Stripe verification and account restrictions", () => {
+  const user = { status: "active", roles: ["member", "vip"], expireDate: new Date(0) };
+  assert.equal(accountEntitlements(user, now).nonExpiring, true);
+  assert.equal(accountEntitlements(user, now).hasBenefits, true);
+  const subscription = { id: "sub_owner", syncedAt: new Date(now), status: "active", hasBenefits: true };
+  assert.equal(accountEntitlements({ ...user, subscription }, now).hasBenefits, true);
+  assert.equal(accountEntitlements({ ...user, subscription }, now + 300001).hasBenefits, false);
+  assert.equal(accountEntitlements({ ...user, subscription: { ...subscription, hasBenefits: false, lockReason: "payment_failed" } }, now).hasBenefits, false);
+  for (const status of ["locked", "payment_awaiting", "frozen", "suspended", "membership-migrated"]) {
+    assert.equal(accountEntitlements({ ...user, status }, now).hasBenefits, false);
+  }
+  assert.equal(accountEntitlements({ ...user, roles: ["member"] }, now).hasBenefits, false);
+  assert.equal(accountEntitlements({ ...user, roles: ["alumni", "vip"], tier: 0 }, now).hasBenefits, false);
+});

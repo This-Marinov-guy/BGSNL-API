@@ -20,19 +20,30 @@ export const STRIPE_WEBHOOK_ROUTE = "/stripe-payments";
 // member roles
 export const SUPER_ADMIN = "super_admin";
 export const ADMIN = "admin";
-export const SOCIETY_ADMIN = "society_board_member";
+export const NATIONAL_BOARD_MEMBER = "national_board_member";
+export const SOCIETY_ADMIN = NATIONAL_BOARD_MEMBER;
 export const SUPPORT = "support";
 export const ACTIVE_MEMBER = "active_member";
-export const BOARD_MEMBER = "board_member";
-export const COMMITTEE_MEMBER = "committee_member";
+export const REGIONAL_BOARD_MEMBER = "regional_board_member";
+export const BOARD_MEMBER = REGIONAL_BOARD_MEMBER;
+export const REGIONAL_COMMITTEE_MEMBER = "regional_committee_member";
+export const COMMITTEE_MEMBER = REGIONAL_COMMITTEE_MEMBER;
 export const MEMBER = "member";
 export const ALUMNI = "alumni";
 export const VIP = "vip";
 
+// National committee permissions are scoped explicitly below.
+export const NATIONAL_COMMITTEE_MEMBER = "national_committee_member";
+
 export const ACCESS_1 = [SUPER_ADMIN];
-export const ACCESS_2 = [...ACCESS_1, ADMIN, SOCIETY_ADMIN];
-export const ACCESS_3 = [...ACCESS_2, BOARD_MEMBER];
-export const ACCESS_4 = [...ACCESS_3, COMMITTEE_MEMBER, ACTIVE_MEMBER];
+export const ACCESS_2 = [...ACCESS_1, ADMIN, SOCIETY_ADMIN, "society_board_member"];
+export const ACCESS_3 = [...ACCESS_2, BOARD_MEMBER, "board_member"];
+export const ACCESS_4 = [...ACCESS_3, COMMITTEE_MEMBER, ACTIVE_MEMBER, "committee_member", NATIONAL_COMMITTEE_MEMBER];
+export const ALL_EVENT_REGIONS_ACCESS = [...ACCESS_2, NATIONAL_COMMITTEE_MEMBER];
+export const EVENT_MANAGEMENT_ACCESS = [...ACCESS_3, NATIONAL_COMMITTEE_MEMBER];
+export const ALL_MEMBER_REGIONS_ACCESS = [...ACCESS_2, NATIONAL_COMMITTEE_MEMBER];
+export const MEMBER_ADMIN_ACCESS = [...ACCESS_3, NATIONAL_COMMITTEE_MEMBER];
+
 
 export const LIMITLESS_ACCOUNT = [SUPER_ADMIN, ADMIN, VIP];
 

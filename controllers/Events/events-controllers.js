@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import { validationResult } from "express-validator";
 import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
 import HttpError from "../../models/Http-error.js";
@@ -369,7 +369,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
 
   let targetUser;
   try {
-    targetUser = await User.findOne({ _id: userId });
+    targetUser = await MemberUser.findOne({ _id: userId });
   } catch (err) {
     new HttpError("Could not find a user with provided id", 404);
   }

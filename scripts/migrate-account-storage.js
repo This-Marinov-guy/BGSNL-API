@@ -14,7 +14,7 @@ import AuthChallenge from "../models/AuthChallenge.js";
 import PasswordResetChallenge from "../models/PasswordResetChallenge.js";
 import ProfileChange from "../models/ProfileChange.js";
 import TemporaryCode from "../models/TemporaryCode.js";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 import { createStripeClient } from "../util/config/stripe.js";
 import { memberRevenueMetadata, readMemberRevenueAllocation } from "../services/subscriptions/stripe-revenue-state.js";
@@ -116,7 +116,7 @@ export async function migrateAccountStorage(db, { apply = false, dropLegacy = fa
     const saved = await db.collection(change.collection).findOne({ _id: change.original._id });
     for (const key of Object.keys(fields)) if (EJSON.stringify(saved[key]) !== EJSON.stringify(fields[key])) throw new Error("Embedded account verification failed");
   }
-  for (const Model of [User, AlumniUser]) await Model.createIndexes();
+  for (const Model of [MemberUser, AlumniUser]) await Model.createIndexes();
   for (const store of [TemporaryCode, AuthChallenge, PasswordResetChallenge, ProfileChange]) await store.init();
   await db.collection("temporarycodes").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   // Legacy numeric codes had no TTL. Retain a short cutover grace period only.

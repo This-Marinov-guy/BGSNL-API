@@ -9,7 +9,7 @@ import { loginValidators, signupCheckoutValidators, editUserValidators, changePa
 import { startMembershipSignup, reserveCheckout } from "../services/subscriptions/checkout.js";
 import { MEMBERSHIP_PLANS } from "../util/subscriptions/policy.js";
 import { encryptData } from "../util/functions/helpers.js";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import { readDatabaseCollection } from "../controllers/Integration/google-scripts-controllers.js";
 
 process.env.CRYPTO_ENCRYPTION_KEY = "password-hashing-test-only-encryption-key";
@@ -104,7 +104,7 @@ test("public direct-signup routes remain disabled; hashing refactoring does not 
   }
 });
 test("the legacy user-data export excludes password hashes at the database query", async (t) => {
-  t.mock.method(User, "find", () => ({ select: (projection) => {
+  t.mock.method(MemberUser, "find", () => ({ select: (projection) => {
     assert.doesNotMatch(projection, /password/i);
     return { lean: async () => [{ name: "Fixture" }] };
   } }));

@@ -2,7 +2,7 @@ import { hashPassword } from "../authentication/passwords.js";
 import HttpError from "../../models/Http-error.js";
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { sendTicketEmail, welcomeEmail, alumniWelcomeEmail } from "../background-services/email-transporter.js";
 import { alumniToSpreadsheet, eventToSpreadsheet, usersToSpreadsheet } from "../background-services/google-spreadsheets.js";
@@ -176,7 +176,7 @@ export const handleUserSignup = async (metadata, paymentData, {
     DEFAULT_REGION,
   ]);
 
-  const createdUser = new User({
+  const createdUser = new MemberUser({
     status:
       paymentStatus === "unpaid"
         ? USER_STATUSES[PAYMENT_AWAITING]

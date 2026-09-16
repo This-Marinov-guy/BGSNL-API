@@ -1,11 +1,11 @@
 import mongoose from "mongoose";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { lockAccountCredentials } from "../authentication/embedded-credentials.js";
 import { CURRENT_ACCOUNT_FILTER, accountType } from "../../util/subscriptions/policy.js";
 
 export async function findBillingAccount(query, session = null) {
-  const [member, alumni] = await Promise.all([User, AlumniUser].map((Model) =>
+  const [member, alumni] = await Promise.all([MemberUser, AlumniUser].map((Model) =>
     Model.findOne({ ...query, ...CURRENT_ACCOUNT_FILTER }).session(session)));
   if (member && alumni && member.subscription?.id === alumni.subscription?.id && member.subscription?.id) {
     throw new Error("Multiple accounts own the same subscription; reconciliation is required");
@@ -41,7 +41,7 @@ export async function persistSubscriptionAccount(user, fields, plan, assertOwned
         saved = await source.save({ session });
         return;
       }
-      const Target = targetType === "alumni" ? AlumniUser : User;
+      const Target = targetType === "alumni" ? AlumniUser : MemberUser;
       const aliases = [...new Set([String(source._id), ...(source.accountAliases || [])])];
       const existing = await Target.findOne({ $or: [
         { _id: { $in: aliases } }, { accountAliases: { $in: aliases } }, { email: source.email },

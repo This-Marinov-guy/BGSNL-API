@@ -45,3 +45,12 @@ test("admins can manage events across regions", async () => {
   const r = await run({ data: { region: "amsterdam" }, user: { userId: "admin", roles: ["admin"], region: "groningen" } });
   assert.equal(r.error, undefined); assert.equal(r.saved, true);
 });
+
+
+test("national committee can manage regional and national event sales", async () => {
+  for (const region of ["amsterdam", "netherlands"]) {
+    const r = await run({ data: { region }, user: { userId: "committee", roles: ["national_committee_member"], region: "groningen" } });
+    assert.equal(r.error, undefined);
+    assert.equal(r.saved, true);
+  }
+});

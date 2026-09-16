@@ -15,8 +15,8 @@ const encryptionKey = (env) => {
 export const eventPageUrl = (event) => `${HOME_URL}/${encodeURIComponent(event.region)}/event-details/${encodeURIComponent(event.slug || event.id || event._id)}`;
 export const eventPurchaseUrl = (event) => `${HOME_URL}/${encodeURIComponent(event.region)}/purchase-ticket/${encodeURIComponent(event.id || event._id)}`;
 
-export function createMemberEventLink(event, member, { env = process.env } = {}) {
-  const expiresAt = Math.min(new Date(event.correctedDate || event.date).getTime(), new Date(event.ticketTimer).getTime());
+export function createMemberEventToken(event, member, { env = process.env, ttlMs = Infinity, now = Date.now() } = {}) {
+  const expiresAt = Math.min(new Date(event.correctedDate || event.date).getTime(), new Date(event.ticketTimer).getTime(), now + ttlMs);
   if (!Number.isFinite(expiresAt)) throw new Error("Event ticket deadline is missing");
   const eventId = String(event.id || event._id);
   const memberId = String(member.id || member._id);
@@ -28,6 +28,11 @@ export function createMemberEventLink(event, member, { env = process.env } = {})
     cipher.final(),
   ]);
   const token = `e1.${Buffer.concat([iv, ciphertext, cipher.getAuthTag()]).toString("base64url")}`;
+  return token;
+}
+
+export function createMemberEventLink(event, member, { env = process.env } = {}) {
+  const token = createMemberEventToken(event, member, { env });
   const base = (env.EVENT_ANNOUNCEMENT_API_URL || "https://kanatitsa.bulgariansociety.nl/api/v1").replace(/\/+$/, "");
   const url = new URL(base);
   if (url.username || url.password || url.search || url.hash || (url.protocol !== "https:" && !(env.NODE_ENV !== "production" && url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)))) {
@@ -57,10 +62,12 @@ export function verifyMemberEventLink({ token }, { env = process.env, now = Date
 }
 
 export const linkMatchesMember = (claims, member) => claims.email === emailHash(member.email);
-export const isCurrentEventMember = (member, now = Date.now()) => member?.status === "active" && new Date(member.expireDate).getTime() > now && !member.roles?.includes("alumni");
-export const isPublicUpcomingEvent = (event, now = Date.now()) => event && !event.hidden && !["draft", "archived"].includes(event.status) && new Date(event.correctedDate || event.date).getTime() > now;
+export const isCurrentEventMember = (member, now = Date.now()) => member?.status === "active" && (member.roles?.includes("vip") || new Date(member.expireDate).getTime() > now) && !member.roles?.includes("alumni");
+export const isPublicUpcomingEvent = (event, now = Date.now()) => event && !event.hidden && !["draft", "archived", "cancelled"].includes(event.status) && new Date(event.correctedDate || event.date).getTime() > now;
 export const isEventOnSale = (event, now = Date.now()) => isPublicUpcomingEvent(event, now) && !event.isSaleClosed && new Date(event.ticketTimer).getTime() > now && Number(event.ticketLimit) > (event.guestList?.length || 0);
-export const requiresEventChoices = (event) => Boolean(event.extraInputsForm?.length || (event.addOns?.isEnabled && event.addOns?.isMandatory));
+export const requiresEventChoices = (event) => Boolean(event.extraInputsForm?.length || (event.addOns?.isEnabled && (event.addOns?.items?.length || event.addOns?.isMandatory)));
+export const memberEventPreferencesUrl = (event, member, options) =>
+  `${HOME_URL}/payment/event-ticket/start?token=${createMemberEventToken(event, member, { ...options, ttlMs: 30 * 60 * 1000 })}`;
 
 export function memberEventPrice(event, member) {
   if (event.isFree || event.isMemberFree) return { price: 0 };

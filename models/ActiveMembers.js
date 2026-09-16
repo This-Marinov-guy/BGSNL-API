@@ -28,4 +28,4 @@ const activeMemberSchema = new Schema({
 
 activeMemberSchema.plugin(uniqueValidator);
 
-export default mongoose.model("ActiveMember", activeMemberSchema);
+export default mongoose.model("ActiveMember", activeMemberSchema, "activeMembers");

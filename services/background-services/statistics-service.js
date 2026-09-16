@@ -1,4 +1,4 @@
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import Statistics from "../../models/Statistics.js";
 import HttpError from "../../models/Http-error.js";
@@ -50,7 +50,7 @@ const parseDateBoundary = (value, boundary, label) => {
 const _recountMemberStatistics = async () => {
   try {
     const today = new Date();
-    const memberCount = await User.countDocuments({
+    const memberCount = await MemberUser.countDocuments({
       expireDate: { $gt: today },
       status: "active",
     });
@@ -164,7 +164,7 @@ export const getUsersByDateRange = async (startDate, endDate = null) => {
   let regionGroups, alumniUsers;
   try {
     [regionGroups, alumniUsers] = await Promise.all([
-      User.aggregate([
+      MemberUser.aggregate([
         { $match: dateFilter },
         {
           $group: {

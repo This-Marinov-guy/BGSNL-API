@@ -35,6 +35,19 @@ const addOns = (value) => !value?.isEnabled ? { isEnabled: false } : {
   })),
 };
 
+const relatedEvents = (value) => {
+  if (!value || !Array.isArray(value.links)) return undefined;
+  const links = value.links.flatMap((link) => {
+    if (typeof link?.name !== "string" || !link.name.trim() || typeof link?.href !== "string") return [];
+    try {
+      const url = new URL(link.href);
+      if (!["http:", "https:"].includes(url.protocol)) return [];
+      return [{ name: link.name, href: url.href }];
+    } catch { return []; }
+  });
+  return links.length ? { description: typeof value.description === "string" && value.description.trim() ? value.description : "You might also like", links } : undefined;
+};
+
 /**
  * Browser/SSR-safe event shape. Never return a Mongoose model or redact by
  * deletion: promotion codes, Stripe price IDs, attendee details, cloud folder
@@ -47,6 +60,7 @@ export const serializePublicEvent = (record, { checkout = false } = {}) => {
   const availableTickets = Math.max(0, Number(source.ticketLimit || 0) - (source.guestList?.length || 0));
   const discounted = checkDiscountsOnEvents({ ...source, product: source.product ? structuredClone(source.product) : source.product });
 
+  const recommendations = relatedEvents(source.subEvent);
   const result = {
     id: String(source.id || source._id),
     ...(source.slug ? { slug: source.slug } : {}),
@@ -60,6 +74,7 @@ export const serializePublicEvent = (record, { checkout = false } = {}) => {
     date: source.date,
     ...(source.correctedDate ? { correctedDate: source.correctedDate } : {}),
     location: source.location,
+    ...(recommendations ? { subEvent: recommendations } : {}),
     ticketTimer: source.ticketTimer,
     ticketLimit: source.ticketLimit,
     ticketsRemaining: availableTickets,

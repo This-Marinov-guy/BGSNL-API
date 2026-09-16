@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config();
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import { usersCountCache } from "../util/config/caches.js";
 import { readSpreadsheetRows } from "../services/background-services/google-spreadsheets.js";
 import { STATISTICS_ABOUT_US_SHEET } from "../util/config/SPREEDSHEATS.js";
@@ -19,7 +19,7 @@ export const getTotalMemberCount = async (req, res, next) => {
   }
 
   try {
-    userCount = await User.countDocuments();
+    userCount = await MemberUser.countDocuments();
     await usersCountCache.set("total", userCount);
   } catch (err) {
     console.error("Error counting users:", err.message);
@@ -41,7 +41,7 @@ export const getMemberCount = async (req, res, next) => {
   }
 
   try {
-    userCount = await User.countDocuments({ expireDate: { $gt: new Date() } });
+    userCount = await MemberUser.countDocuments({ expireDate: { $gt: new Date() } });
     await usersCountCache.set("members", userCount);
   } catch (err) {
     console.error("Error counting users:", err.message);
@@ -63,7 +63,7 @@ export const getActiveMemberCount = async (req, res, next) => {
   }
 
   try {
-    userCount = await User.countDocuments({
+    userCount = await MemberUser.countDocuments({
       expireDate: { $gt: new Date() },
       $expr: { $gt: [{ $size: "$roles" }, 1] },
     });

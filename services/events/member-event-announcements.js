@@ -1,5 +1,5 @@
 import Event from "../../models/Event.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import { createEmailRunGuard, isEmailSchedulerProcess } from "../background-services/email-run-guard.js";
 const announcementRuns = createEmailRunGuard();
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
@@ -42,7 +42,7 @@ export function buildMemberEventEmail({ event, member, ticketUrl }) {
   };
 }
 
-export async function processMemberEventAnnouncements({ now = new Date(), enabled = announcementWorkerEnabled(), EventModel = Event, MemberModel = User, runGuard = announcementRuns, send = deliverTemplateMessage, makeLink = createMemberEventLink } = {}) {
+export async function processMemberEventAnnouncements({ now = new Date(), enabled = announcementWorkerEnabled(), EventModel = Event, MemberModel = MemberUser, runGuard = announcementRuns, send = deliverTemplateMessage, makeLink = createMemberEventLink } = {}) {
   if (!enabled) return { sent: 0, failed: 0, skipped: 0 };
   // No createdAt backfill: only explicit publication markers from this feature
   // can trigger a mailing. Ordinary edits cannot queue another announcement.
@@ -53,7 +53,7 @@ export async function processMemberEventAnnouncements({ now = new Date(), enable
       await EventModel.updateOne({ _id: event._id }, { $set: { memberAnnouncementCompletedAt: now } });
       continue;
     }
-    const members = await MemberModel.find({ status: "active", expireDate: { $gt: now } }).select("_id name surname email roles status expireDate").lean();
+    const members = await MemberModel.find({ status: "active", $or: [{ expireDate: { $gt: now } }, { roles: "vip" }] }).select("_id name surname email roles status expireDate").lean();
     const seen = new Set();
     for (const member of members) {
       const email = String(member.email || "").trim().toLowerCase();

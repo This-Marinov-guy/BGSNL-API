@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { hashPassword, registrationPasswordHash } from "../authentication/passwords.js";
 import BillingRecord from "../../models/BillingRecord.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import HttpError from "../../models/Http-error.js";
 import { createStripeClient } from "../../util/config/stripe.js";
@@ -251,7 +251,7 @@ export async function completeMembershipCheckout(session, region, {
     if (user && !data.userId && user.subscription?.id !== subscriptionId) throw new Error("Signup email already belongs to another account");
     const created = !user;
     if (!user) {
-      const Model = state.plan.type === "alumni" ? AlumniUser : User;
+      const Model = state.plan.type === "alumni" ? AlumniUser : MemberUser;
       const storedHash = registrationPasswordHash(data.registration);
       const registration = { ...data.registration };
       delete registration.password;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { signSessionToken } from "../util/auth/session-token.js";
 import mongoose from "mongoose";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 import TemporaryCode from "../models/TemporaryCode.js";
 import { createAuthMiddleware, requireBenefits } from "../middleware/authorization.js";
@@ -36,8 +36,8 @@ test("forged tokens are rejected before any account lookup", async () => {
   assert.equal(error.statusCode, 401); assert.equal(lookedUp, false);
 });
 test("legacy account resolution cannot authenticate a different owner of a reused email", async (t) => {
-  t.mock.method(User, "findOne", async () => null);
-  t.mock.method(User, "findById", async () => ({ id: "member_original", status: "alumni-migrated", email: "reused@example.test" }));
+  t.mock.method(MemberUser, "findOne", async () => null);
+  t.mock.method(MemberUser, "findById", async () => ({ id: "member_original", status: "alumni-migrated", email: "reused@example.test" }));
   t.mock.method(AlumniUser, "findOne", async (query) => {
     assert.equal(query.email, undefined);
     if (query._id) assert.equal(query._id, "alumni_original");
@@ -47,18 +47,18 @@ test("legacy account resolution cannot authenticate a different owner of a reuse
 });
 test("legacy paired account IDs remain usable after an email change", async (t) => {
   const current = { id: "alumni_original", email: "updated@example.test" };
-  t.mock.method(User, "findOne", async () => null);
-  t.mock.method(User, "findById", async () => ({ status: "alumni-migrated", email: "old@example.test" }));
+  t.mock.method(MemberUser, "findOne", async () => null);
+  t.mock.method(MemberUser, "findById", async () => ({ status: "alumni-migrated", email: "old@example.test" }));
   t.mock.method(AlumniUser, "findOne", async (query) => query._id === current.id ? current : null);
   assert.equal(await findUserById("member_original"), current);
 });
 test("round-trip migration preserves profile, tickets, documents, aliases and Stripe identity", async (t) => {
-  const documents = { User: new Map(), AlumniUser: new Map() };
+  const documents = { MemberUser: new Map(), AlumniUser: new Map() };
   const session = { withTransaction: async (run) => run(), endSession: async () => {} };
   t.mock.method(mongoose, "startSession", async () => session);
   session.inTransaction = () => true;
   t.mock.method(TemporaryCode.collection, "updateOne", async (_query, _update, options) => { assert.equal(options.session, session); });
-  for (const Model of [User, AlumniUser]) {
+  for (const Model of [MemberUser, AlumniUser]) {
     const store = documents[Model.modelName];
     t.mock.method(Model, "deleteOne", async ({ _id }) => ({ deletedCount: store.delete(String(_id)) ? 1 : 0 }));
     t.mock.method(Model, "findById", (id) => ({ select: () => ({ session: async () => store.get(String(id)) }) }));
@@ -73,14 +73,14 @@ test("round-trip migration preserves profile, tickets, documents, aliases and St
       return this;
     });
   }
-  const source = new User({ _id: "member_original", status: "active", roles: ["member", "admin"],
+  const source = new MemberUser({ _id: "member_original", status: "active", roles: ["member", "admin"],
     name: "Test", surname: "Person", email: "test@example.test", password: "hashed-password",
     birth: new Date("2000-01-01"), phone: "+31600000000", university: "University", region: "groningen", profession: "Engineer",
     image: "avatar.png", expireDate: new Date("2030-01-01"), documents: [new mongoose.Types.ObjectId()],
     tickets: [{ event: "Saved event", image: "ticket.png" }], internshipApplications: [new mongoose.Types.ObjectId()],
     subscription: { id: "sub_same", customerId: "cus_same", stripeRegion: "netherlands", period: 6, connected: true },
   });
-  documents.User.set(source.id, source);
+  documents.MemberUser.set(source.id, source);
   source.sessionVersion = 2;
   source.campaignsSeen = ["whats-new-2026-09"];
   source.identityRevision = 4;
@@ -94,12 +94,12 @@ test("round-trip migration preserves profile, tickets, documents, aliases and St
   const alumni = await persistSubscriptionAccount(source, { status: "active", subscription: source.subscription.toObject() }, { type: "alumni", tier: 4 }, owned);
   assert.equal(alumni.subscription.connected, false);
   assert.equal(alumni.constructor.modelName, "AlumniUser"); assert.equal(alumni.tier, 4);
-  assert.equal(alumni.id, "alumni_archived"); assert.equal(documents.User.has(source.id), false);
+  assert.equal(alumni.id, "alumni_archived"); assert.equal(documents.MemberUser.has(source.id), false);
   assert.equal(alumni.birth.toISOString(), "2000-01-01T00:00:00.000Z");
   assert.ok(alumni.roles.includes("admin")); assert.ok(alumni.accountAliases.includes(source.id));
   alumni.email = "updated@example.test";
   const member = await persistSubscriptionAccount(alumni, { status: "active", subscription: { ...alumni.subscription.toObject(), connected: true } }, { type: "member", period: 12 }, owned);
-  assert.equal(member.constructor.modelName, "User"); assert.equal(member.id, "member_original");
+  assert.equal(member.constructor.modelName, "MemberUser"); assert.equal(member.id, "member_original");
   assert.equal(member.email, "updated@example.test");
   assert.equal(member.sessionVersion, 2);
   assert.equal(member.identityRevision, 4);
@@ -119,8 +119,8 @@ test("a lost lease prevents any account transaction writes", async (t) => {
   const session = { withTransaction: async (run) => run(), endSession: async () => {} };
   t.mock.method(mongoose, "startSession", async () => session);
   let reads = 0;
-  t.mock.method(User, "findById", () => { reads++; throw new Error("Unexpected account read"); });
-  await assert.rejects(persistSubscriptionAccount(new User(), {}, null, async () => { throw new Error("Lease lost"); }), /Lease lost/);
+  t.mock.method(MemberUser, "findById", () => { reads++; throw new Error("Unexpected account read"); });
+  await assert.rejects(persistSubscriptionAccount(new MemberUser(), {}, null, async () => { throw new Error("Lease lost"); }), /Lease lost/);
   assert.equal(reads, 0);
 });
 test("distributed billing lease blocks a concurrent worker and releases only its own lock", async () => {

@@ -44,3 +44,18 @@ test("the public event projection does not leak operational or attendee data", (
   assert.equal(event.product.guest.price, 12);
   assert.equal(event.addOns.items[0].price, 2);
 });
+
+test("public event recommendations retain safe links without private nested fields", () => {
+  const event = serializePublicEvent({ _id: "main", subEvent: {
+    description: "More association events", privateData: "secret",
+    links: [
+      { name: "Dinner", href: "https://www.bulgariansociety.nl/amsterdam/event-details/dinner", priceId: "private-price" },
+      { name: "Unsafe", href: "javascript:alert(1)" },
+      { name: "Broken", href: "invalid" },
+      { name: "", href: "https://example.test" },
+    ],
+  } });
+  assert.deepEqual(event.subEvent, { description: "More association events", links: [{ name: "Dinner", href: "https://www.bulgariansociety.nl/amsterdam/event-details/dinner" }] });
+  assert.equal(serializePublicEvent({ _id: "main", subEvent: { links: [] } }).subEvent, undefined);
+  assert.equal(serializePublicEvent({ _id: "main", subEvent: { links: event.subEvent.links } }).subEvent.description, "You might also like");
+});

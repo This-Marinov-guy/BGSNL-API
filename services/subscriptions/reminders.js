@@ -1,6 +1,6 @@
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
 import BillingAttention from "../../models/BillingAttention.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import BillingRecord from "../../models/BillingRecord.js";
 import { createStripeClient } from "../../util/config/stripe.js";
@@ -95,7 +95,7 @@ export function startBillingWorker() {
       }
       // Bounded recovery sweep; the oldest snapshots go first. Webhooks remain
       // the immediate path, and benefit requests also reconcile with Stripe.
-      for (const Model of [User, AlumniUser]) {
+      for (const Model of [MemberUser, AlumniUser]) {
         const users = await Model.find({ ...CURRENT_ACCOUNT_FILTER,
           "subscription.id": { $exists: true, $nin: [null, ""] },
           $or: [{ "subscription.syncedAt": { $exists: false } },

@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import Event from "../../models/Event.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 dotenv.config();
 
 // TODO: find a way to make this work with 2 db connections
@@ -66,7 +66,7 @@ export const readDatabaseCollection = async (req, res, next) => {
         // Explicitly allow only the fields required by the spreadsheet import.
         // Do not add account credentials, roles, subscription, documents,
         // tickets, campaign state, recovery/session fields or arbitrary model data.
-        documents = await User.find({}).select([
+        documents = await MemberUser.find({}).select([
           "_id", "name", "surname", "email", "phone", "region", "status",
           "university", "otherUniversityName", "graduationDate", "course",
           "profession", "joinDate", "purchaseDate", "expireDate",

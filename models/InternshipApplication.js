@@ -17,4 +17,4 @@ const internshipApplicationSchema = new Schema({
   createdAt: { type: Date, default: createCurrentDate, required: true },
 });
 
-export default mongoose.model("InternshipApplication", internshipApplicationSchema);
+export default mongoose.model("InternshipApplication", internshipApplicationSchema, "internshipApplications");

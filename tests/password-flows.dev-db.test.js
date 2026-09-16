@@ -36,9 +36,9 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
   // All regional keys become fake before importing any service; even a missed
   // dependency stub cannot authenticate with Stripe. No values are printed.
   for (const key of Object.keys(process.env)) if (/STRIPE.*(?:SECRET_KEY|WEBHOOK)/.test(key)) process.env[key] = "sk_test_password_fixture_not_a_real_key";
-  const [{ default: User }, { default: Alumni }, { default: BillingRecord }, { default: RefreshSession }, { default: Reset }, { default: Profile },
+  const [{ default: MemberUser }, { default: Alumni }, { default: BillingRecord }, { default: RefreshSession }, { default: Reset }, { default: Profile },
     passwords, checkout, security, helpers, loginService, tokens, policy, legacy, resetService, profileService] = await Promise.all([
-    import("../models/User.js"), import("../models/AlumniUser.js"), import("../models/BillingRecord.js"), import("../models/RefreshSession.js"),
+    import("../models/MemberUser.js"), import("../models/AlumniUser.js"), import("../models/BillingRecord.js"), import("../models/RefreshSession.js"),
     import("../models/PasswordResetChallenge.js"), import("../models/ProfileChange.js"),
     import("../services/authentication/passwords.js"), import("../services/subscriptions/checkout.js"), import("../controllers/security-controller.js"),
     import("../util/functions/helpers.js"), import("../services/authentication/login.js"), import("../util/auth/session-token.js"),
@@ -59,26 +59,26 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
       assert.equal(mongoose.connection.name, databaseName);
       assert.ok(safeName(mongoose.connection.name));
       assert.ok(emails.every((email) => email.startsWith(`${run}-`) && email.endsWith(`@${domain}`)));
-      const owned = (await Promise.all([User.find({ email: { $in: emails } }).select("_id").lean(), Alumni.find({ email: { $in: emails } }).select("_id").lean()])).flat().map((u) => u._id);
+      const owned = (await Promise.all([MemberUser.find({ email: { $in: emails } }).select("_id").lean(), Alumni.find({ email: { $in: emails } }).select("_id").lean()])).flat().map((u) => u._id);
       // Exact records created by THIS run only; no dropDatabase/dropCollection.
       for (const Model of [Reset, Profile]) await Model.deleteMany({ _id: { $in: owned } });
       await RefreshSession.deleteMany({ accountId: { $in: owned } });
       await BillingRecord.deleteMany({ _id: { $in: checkoutKeys } });
-      for (const Model of [User, Alumni]) await Model.deleteMany({ _id: { $in: owned }, email: { $in: emails } });
-      assert.equal(await User.countDocuments({ email: { $in: emails } }) + await Alumni.countDocuments({ email: { $in: emails } }), 0);
+      for (const Model of [MemberUser, Alumni]) await Model.deleteMany({ _id: { $in: owned }, email: { $in: emails } });
+      assert.equal(await MemberUser.countDocuments({ email: { $in: emails } }) + await Alumni.countDocuments({ email: { $in: emails } }), 0);
       t.diagnostic(`Cleaned this run's ${owned.length} synthetic accounts and associated auth/checkout records from ${databaseName}.`);
     } finally { await mongoose.disconnect(); }
   });
   assert.equal(mongoose.connection.name, databaseName);
-  for (const Model of [User, Alumni]) assert.equal(await Model.exists({ email: { $not: /@password-tests\.bgsnl\.invalid$/ } }), null,
+  for (const Model of [MemberUser, Alumni]) assert.equal(await Model.exists({ email: { $not: /@password-tests\.bgsnl\.invalid$/ } }), null,
     "Database contains non-fixture accounts; no writes allowed");
-  const allowedCollections = [User, Alumni, Reset, Profile];
+  const allowedCollections = [MemberUser, Alumni, Reset, Profile];
   const existingCollections = await mongoose.connection.db.listCollections({}, { nameOnly: true }).toArray();
   assert.ok(existingCollections.every((c) => allowedCollections.some((Model) => Model.collection.name === c.name)), "Unexpected collections: refusing this database");
   isolationVerified = true;
   for (const Model of allowedCollections) await Model.createCollection();
   // Only these two indexes are required for real unique-account behaviour.
-  await User.collection.createIndex({ email: 1 }, { unique: true });
+  await MemberUser.collection.createIndex({ email: 1 }, { unique: true });
   await Alumni.collection.createIndex({ email: 1 }, { unique: true });
   t.diagnostic(`Verified isolated DB: ${databaseName}; Stripe, email and all outbound HTTP disabled.`);
   const raw = "  Password-dev-fixture-123!  ";
@@ -98,7 +98,7 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
     assert.equal(res.code, 201);
     const claims = tokens.verifySessionToken(res.body.token);
     assert.ok(await RefreshSession.exists({ _id: claims.sid, accountId: claims.userId }));
-    const user = await User.findOne({ email }) || await Alumni.findOne({ email });
+    const user = await MemberUser.findOne({ email }) || await Alumni.findOne({ email });
     assert.equal(user.password, storedHash, "login must not rewrite the existing hash");
     const rejected = response(); let error;
     await login({ body: { email, password: "Wrong-password-123" } }, rejected, (value) => { error = value; });
@@ -123,7 +123,7 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
     const record = await BillingRecord.findById(key), storedHash = passwords.registrationPasswordHash(record.data.registration);
     assert.equal(bcrypt.getRounds(storedHash), 12);
     for (const secret of [raw, input.password, storedHash]) assert.ok(!JSON.stringify(stripeCalls).includes(secret), "No password or hash may reach Stripe");
-    assert.equal(await User.exists({ email: input.email }), null); assert.equal(await Alumni.exists({ email: input.email }), null);
+    assert.equal(await MemberUser.exists({ email: input.email }), null); assert.equal(await Alumni.exists({ email: input.email }), null);
     const session = { id: sessionId, mode: "subscription", status: "complete", subscription: subscriptionId, customer: customerId,
       metadata: { checkoutKey: key, password: "ignored-client-metadata" } };
     let notifications = 0;
@@ -136,7 +136,7 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
   }
   for (const plan of [memberPlan, alumniPlan]) await t.test(`${plan.type}: paid checkout stores one hash, webhook preserves it, replay is harmless and login works`, async () => {
     const h = await paid(`paid-${plan.type}`, plan); await h.complete(); await h.complete();
-    const user = await User.findOne({ email: h.input.email }) || await Alumni.findOne({ email: h.input.email });
+    const user = await MemberUser.findOne({ email: h.input.email }) || await Alumni.findOne({ email: h.input.email });
     assert.equal(user.password, h.storedHash); assert.equal(h.notices(), 1);
     const record = await BillingRecord.findById(h.key); assert.ok(record.completedAt); assert.equal(record.data.registration, undefined);
     await assertLogin(user.email, raw, h.storedHash);
@@ -156,41 +156,41 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
     const h = await paid("corrupt-pending", memberPlan);
     await BillingRecord.updateOne({ _id: h.key }, { $set: { "data.registration.password": "plaintext-not-a-hash" } });
     await assert.rejects(h.complete(), /password hash is invalid/);
-    assert.equal(await User.exists({ email: h.input.email }), null); assert.equal(h.notices(), 0);
+    assert.equal(await MemberUser.exists({ email: h.input.email }), null); assert.equal(h.notices(), 0);
   });
   for (const [plan, handler] of [[memberPlan, security.signup], [alumniPlan, security.alumniSignup]]) await t.test(`${plan.type}: internal non-payment account creation hashes the original password once`, async () => {
     const input = body(`direct-${plan.type}`, plan), res = response();
     await handler({ body: input }, res, (error) => { throw error; }, { notify: noop, sync: noop });
     assert.equal(res.code, 201);
-    const user = await User.findOne({ email: input.email }) || await Alumni.findOne({ email: input.email });
+    const user = await MemberUser.findOne({ email: input.email }) || await Alumni.findOne({ email: input.email });
     assert.equal(bcrypt.getRounds(user.password), 12); await assertLogin(user.email, raw, user.password);
   });
   for (const [plan, handler] of [[memberPlan, legacy.handleUserSignup], [alumniPlan, legacy.handleAlumniSignup]]) await t.test(`${plan.type}: old encrypted Stripe metadata remains compatible`, async () => {
     const input = body(`legacy-${plan.type}`, plan);
     await handler(input, { subscriptionId: `sub_legacy_${plan.type}`, customerId: `cus_legacy_${plan.type}`, paymentStatus: "paid", stripeRegion: "netherlands" },
       { resolveJoinDate: async () => new Date(), notify: noop, sync: noop, recount: noop });
-    const user = await User.findOne({ email: input.email }) || await Alumni.findOne({ email: input.email });
+    const user = await MemberUser.findOne({ email: input.email }) || await Alumni.findOne({ email: input.email });
     assert.equal(bcrypt.getRounds(user.password), 12); await assertLogin(user.email, raw, user.password);
   });
   await t.test("existing bcrypt accounts keep their passwords and hashes without migration", async () => {
     for (const [cost, value] of [[4, "oldpass"], [10, "Ab1" + "б".repeat(60)], [12, raw]]) {
       const input = body(`existing-${cost}`), stored = await bcrypt.hash(value, cost);
-      const user = await User.create({ ...input, password: stored, image: "/fixture.png", expireDate: new Date(Date.now() + 86400000) });
+      const user = await MemberUser.create({ ...input, password: stored, image: "/fixture.png", expireDate: new Date(Date.now() + 86400000) });
       await assertLogin(user.email, value, stored);
     }
   });
   await t.test("password reset and emailed profile change use the same hash policy with real Mongo transactions", async () => {
     const input = body("reset-profile"), stored = await passwords.hashPassword(raw);
-    let user = await User.create({ ...input, password: stored, image: "/fixture.png", expireDate: new Date(Date.now() + 86400000) });
+    let user = await MemberUser.create({ ...input, password: stored, image: "/fixture.png", expireDate: new Date(Date.now() + 86400000) });
     const code = await resetService.issuePasswordReset(user);
     await resetService.completePasswordReset(user, code, "Reset-password-123!");
-    user = await User.findById(user.id); assert.equal(bcrypt.getRounds(user.password), 12);
+    user = await MemberUser.findById(user.id); assert.equal(bcrypt.getRounds(user.password), 12);
     const logged = await assertLogin(user.email, "Reset-password-123!", user.password), messages = [];
     await profileService.requestProfileChange(user, { password: raw, origin: "http://localhost:3001", claims: logged.claims }, { deliver: async (message) => messages.push(message) });
     const pending = await Profile.findById(user.id); assert.equal(bcrypt.getRounds(pending.passwordHash), 12);
     const approval = messages[0].templateVariables.url.match(/#token=([\w-]+)/)[1];
     await profileService.confirmProfileChange(approval, { deliver: async () => {} });
-    user = await User.findById(user.id); assert.equal(user.password, pending.passwordHash);
+    user = await MemberUser.findById(user.id); assert.equal(user.password, pending.passwordHash);
     await assertLogin(user.email, raw, user.password);
   });
 });

@@ -1,5 +1,5 @@
 import {
-  ALUMNI, MEMBER, LIMITLESS_ACCOUNT, SUBSCRIPTIONS, ALUMNI_TIER_BY_PRICE_ID,
+  ALUMNI, MEMBER, VIP, LIMITLESS_ACCOUNT, SUBSCRIPTIONS, ALUMNI_TIER_BY_PRICE_ID,
   ALUMNI_PRICE_TIER_1, ALUMNI_PRICE_TIER_2, ALUMNI_PRICE_TIER_3, ALUMNI_PRICE_TIER_4,
 } from "../config/defines.js";
 
@@ -74,15 +74,16 @@ export function subscriptionState(subscription, unpaidInvoices = [], now = Date.
 // Token claims and browser state are never used to grant benefits.
 export function accountEntitlements(user, now = Date.now()) {
   const isAlumni = accountType(user) === ALUMNI;
+  const nonExpiring = !!user?.roles?.includes(VIP);
   const sub = user?.subscription;
   const hasSubscription = !!sub?.id;
   const fresh = sub?.syncedAt && now - new Date(sub.syncedAt).getTime() < 5 * 60 * 1000;
   const legacyAccess = !hasSubscription && (user?.roles?.some((role) => LIMITLESS_ACCOUNT.includes(role)) ||
     new Date(user?.expireDate).getTime() > now);
   const hasBenefits = user?.status === "active" && !(isAlumni && user?.tier === 0) &&
-    (hasSubscription ? !!fresh && sub.hasBenefits === true && new Date(user.expireDate).getTime() > now : !!legacyAccess);
+    (hasSubscription ? !!fresh && sub.hasBenefits === true && (nonExpiring || new Date(user.expireDate).getTime() > now) : !!legacyAccess);
   return {
-    isAlumni, tier: isAlumni ? user?.tier ?? 0 : null,
+    nonExpiring, isAlumni, tier: isAlumni ? user?.tier ?? 0 : null,
     isSubscribed: hasSubscription && !ENDED_SUBSCRIPTION_STATUSES.includes(sub.status),
     hasBenefits, memberDiscount: hasBenefits && !isAlumni,
     billingLocked: hasSubscription && !!sub.lockReason,

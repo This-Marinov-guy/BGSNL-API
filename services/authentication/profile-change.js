@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import { hashPassword as createPasswordHash, validNewPassword, PASSWORD_MESSAGE } from "./passwords.js";
 import ProfileChange from "../../models/ProfileChange.js";
 import { embeddedIdentities as AccountIdentity } from "../../services/authentication/embedded-credentials.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import HttpError from "../../models/Http-error.js";
 import { findUserById, normalizeEmail } from "../main-services/user-service.js";
@@ -42,7 +42,7 @@ export function profileChangeEmail(record, token, stage) {
 
 async function availableEmail(email, accountId, session) {
   if (!email) return;
-  for (const Model of [User, AlumniUser]) {
+  for (const Model of [MemberUser, AlumniUser]) {
     const other = await Model.findOne({ ...CURRENT_ACCOUNT_FILTER, email }).session(session);
     if (other && other.id !== accountId) throw new HttpError("That email is already used by another account. Please request a different email from your profile.", 409);
   }

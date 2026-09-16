@@ -1,5 +1,5 @@
 import moment from "moment-timezone";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { createEmailRunGuard, isEmailSchedulerProcess } from "./email-run-guard.js";
 const reportRuns = createEmailRunGuard();
@@ -93,7 +93,7 @@ const countGroups = (groups) => {
 export const loadWeeklyMembershipSummary = async ({
   periodStart,
   periodEnd,
-  MemberModel = User,
+  MemberModel = MemberUser,
   AlumniModel = AlumniUser,
 } = {}) => {
   const pipeline = [
@@ -210,7 +210,7 @@ export const buildWeeklyMembershipSummaryNotification = ({
 export const processWeeklyMembershipReport = async ({
   now = new Date(),
   config = getWeeklyMembershipReportConfig(),
-  MemberModel = User,
+  MemberModel = MemberUser,
   AlumniModel = AlumniUser,
   runGuard = reportRuns,
   send = deliverInternalNotificationEmail,

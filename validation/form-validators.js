@@ -1,4 +1,5 @@
-import { body, param } from "express-validator";
+import { validEventPromoCodes } from "../services/tickets/event-promo-codes.js";
+import { body, param, validationResult } from "express-validator";
 import {
   ALUMNI,
   DEFAULT_REGION,
@@ -494,28 +495,7 @@ const eventBirdPrice = (value, timerField) => {
   );
 };
 
-const eventPromoCodes = (value) =>
-  Array.isArray(value) &&
-  value.length <= 100 &&
-  value.every(
-    (item) =>
-      eventJsonObject(item) &&
-      isNonEmptyString(item.code) &&
-      item.code.length <= 100 &&
-      [1, 2, "1", "2"].includes(item.discountType) &&
-      Number.isFinite(Number(item.discount)) &&
-      Number(item.discount) > 0 &&
-      (Number(item.discountType) !== 2 || Number(item.discount) <= 100) &&
-      (item.useLimit === "" ||
-        item.useLimit === null ||
-        item.useLimit === undefined ||
-        (Number.isInteger(Number(item.useLimit)) && Number(item.useLimit) >= 1)) &&
-      (item.minAmount === "" ||
-        item.minAmount === null ||
-        item.minAmount === undefined ||
-        (Number.isFinite(Number(item.minAmount)) && Number(item.minAmount) >= 0.01)) &&
-      (item.active === undefined || isBooleanLike(item.active))
-  );
+const eventPromoCodes = validEventPromoCodes;
 
 const eventSubEvent = (value) => {
   if (value === null) return true;
@@ -685,6 +665,27 @@ const commonEventAdminValidators = [
   optionalJson("imagesOrder", "Image order", eventImagesOrder),
   optionalJson("existingImages", "Existing images", eventExistingImages),
 ];
+
+// Readiness is derived from saved data, never from a client-supplied flag.
+// Reuse publication validation without executing controllers or external APIs.
+export async function isEventDraftReady(draft) {
+  const data = draft.draftData;
+  if (!eventJsonObject(data)) return false;
+  if (![...REGIONS, DEFAULT_REGION].includes(draft.region)) return false;
+  if (![draft.poster, draft.ticketImg].every(value => typeof value === "string" && /^https?:\/\/[^\s]+$/i.test(value))) return false;
+  if (data.extraImagesValidation) return false;
+  if (isTrueLike(data.lateBird?.isEnabled) && !isParsableDate(data.lateBird.startTimer)) return false;
+  const promoCodes = isTrueLike(data.promoCodes?.isEnabled) ? data.promoCodes.codes : [];
+  if (isTrueLike(data.promoCodes?.isEnabled) && (!Array.isArray(promoCodes) || !promoCodes.length)) return false;
+  if (!eventPromoCodes(promoCodes)) return false;
+  if (promoCodes.some(code => !code.id && code.timeLimit && new Date(code.timeLimit).getTime() <= Date.now())) return false;
+  const bodyData = { ...data, region: draft.region, status: EVENT_OPENED, promoCodes };
+  delete bodyData.draftData;
+  const req = { body: Object.fromEntries(Object.entries(bodyData).map(([key, value]) =>
+    [key, ((value && typeof value === "object") || value === null) ? JSON.stringify(value) : value])), params: {}, files: {} };
+  for (const validator of commonEventAdminValidators) await validator.run(req);
+  return validationResult(req).isEmpty();
+}
 
 export const checkEmailValidators = [requiredEmail()];
 

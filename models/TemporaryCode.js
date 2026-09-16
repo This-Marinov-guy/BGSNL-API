@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { TEMPORARY_RECORDS_COLLECTION } from "../services/storage/temporary-records.js";
 
 const Schema = mongoose.Schema;
 
@@ -20,4 +21,6 @@ temporaryCodeSchema.static(
   }
 );
 
-export default mongoose.model("TemporaryCode", temporaryCodeSchema);
+// Shares its physical collection with services/storage/temporary-records.js's
+// models (see TEMPORARY_RECORDS_COLLECTION there for why it's configurable).
+export default mongoose.model("TemporaryCode", temporaryCodeSchema, TEMPORARY_RECORDS_COLLECTION);

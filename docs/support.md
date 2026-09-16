@@ -18,7 +18,7 @@ use the existing v1 URL rewrite, including dynamic conversation IDs.
   expires after 90 days. Losing/clearing browser data loses guest access;
   knowing an ID or email does not restore it. Signing in does not automatically
   attach guest reports to the account.
-- Only active `super_admin`, `admin`, `society_board_member` and dedicated
+- Only active `super_admin`, `admin` and dedicated
   `support` accounts can use `/inbox` endpoints. The `support` role does not
   inherit unrelated event or member-administration access. Local
   board/committee roles do not get access to private site-wide reports. Every

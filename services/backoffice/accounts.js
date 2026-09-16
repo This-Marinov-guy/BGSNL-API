@@ -1,33 +1,22 @@
+import { canManageAccountType, canEditProtectedAccount, accountRoleOptions, MEMBER_ACCOUNT_ROLES, normalizeRoleNames } from "../../util/config/account-roles.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import HttpError from "../../models/Http-error.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import {
-  ACCESS_2,
-  ACTIVE_MEMBER,
+  ALL_MEMBER_REGIONS_ACCESS,
   ADMIN,
   ALUMNI,
-  BOARD_MEMBER,
-  COMMITTEE_MEMBER,
   DEFAULT_REGION,
   MEMBER,
   REGIONS,
-  SOCIETY_ADMIN,
   SUPER_ADMIN,
-  SUPPORT,
   VIP,
 } from "../../util/config/defines.js";
 import { USER_STATUSES } from "../../util/config/enums.js";
 
 export const ACCOUNT_TYPES = Object.freeze({ MEMBER, ALUMNI });
-export const PROTECTED_ROLES = Object.freeze([ADMIN, SUPER_ADMIN]);
-export const EDITABLE_ROLES = Object.freeze([
-  ACTIVE_MEMBER,
-  COMMITTEE_MEMBER,
-  BOARD_MEMBER,
-  SOCIETY_ADMIN,
-  SUPPORT,
-  VIP,
-]);
+export const PROTECTED_ROLES = Object.freeze([ADMIN, SUPER_ADMIN, VIP]);
+export const EDITABLE_ROLES = MEMBER_ACCOUNT_ROLES;
 export const EDITABLE_STATUSES = Object.freeze(Object.values(USER_STATUSES));
 export const EDITABLE_CITIES = Object.freeze([DEFAULT_REGION, ...REGIONS]);
 
@@ -35,7 +24,7 @@ const LIST_FIELDS = [
   "_id", "__v", "name", "surname", "email", "phone", "status", "roles",
   "region", "birth", "image", "university", "otherUniversityName",
   "graduationDate", "course", "studentNumber", "profession", "tier",
-  "joinDate", "purchaseDate", "expireDate", "subscription.id",
+  "joinDate", "purchaseDate", "expireDate", "subscription.id", "subscription.customerId", "subscription.period",
 ].join(" ");
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -51,8 +40,12 @@ export const buildAccountSearchPattern = (value) => {
     .join("[\\s()+.\\-]*");
 };
 
-export const buildAccountListFilter = ({ city, search, type }) => {
+export const buildAccountListFilter = ({ city, search, type, status = "" }) => {
   const filter = {};
+  if (status !== "") {
+    if (!EDITABLE_STATUSES.includes(status)) throw new HttpError("Account status filter is invalid", 422);
+    filter.status = status;
+  }
   if (city === "unassigned") {
     filter.$or = [{ region: { $exists: false } }, { region: "" }, { region: null }];
   } else if (EDITABLE_CITIES.includes(city)) {
@@ -115,7 +108,7 @@ const summary = (record, type) => ({
   email: record.email || "",
   phone: record.phone || "",
   status: record.status || "",
-  roles: Array.isArray(record.roles) ? record.roles : [],
+  roles: normalizeRoleNames(record.roles),
   region: record.region || "",
   birth: record.birth || null,
   image: record.image || "",
@@ -129,7 +122,13 @@ const summary = (record, type) => ({
   joinDate: record.joinDate || null,
   purchaseDate: record.purchaseDate || null,
   expireDate: record.expireDate || null,
+  nonExpiring: record.roles?.includes(VIP) || false,
   hasSubscription: Boolean(record.subscription?.id),
+  subscription: {
+    id: record.subscription?.id || null,
+    customerId: record.subscription?.customerId || null,
+    period: Number.isFinite(record.subscription?.period) && record.subscription.period > 0 ? record.subscription.period : null,
+  },
 });
 
 const requiredText = (value, label, max = 100) => {
@@ -178,30 +177,31 @@ const versionFilter = (revision) => revision === 0
   : { __v: revision };
 
 // Board members reach this panel (ACCESS_3) without the unrestricted access
-// ACCESS_2 roles have; they may only see and edit accounts in their own
+// ALL_MEMBER_REGIONS_ACCESS roles have; they may only see and edit accounts in their own
 // region. Returns null when the actor is unrestricted, otherwise the region
 // they are confined to ("" if they have none on file, which matches nothing).
 const regionScopeFor = (actor) => {
   const roles = Array.isArray(actor?.roles) ? actor.roles : [];
-  if (roles.some((role) => ACCESS_2.includes(role))) return null;
+  if (roles.some((role) => ALL_MEMBER_REGIONS_ACCESS.includes(role))) return null;
   const region = typeof actor?.region === "string" ? actor.region.trim().toLowerCase() : "";
   return EDITABLE_CITIES.includes(region) ? region : "";
 };
 
-const publicOptions = (citiesOverride) => ({
+const publicOptions = (type, citiesOverride) => ({
   cities: citiesOverride ?? EDITABLE_CITIES,
-  roles: EDITABLE_ROLES,
+  roles: accountRoleOptions(type),
   statuses: EDITABLE_STATUSES,
 });
 
 export const createAccountsBackofficeService = ({
-  memberModel = User,
+  memberModel = MemberUser,
   alumniModel = AlumniUser,
 } = {}) => {
   const models = { member: memberModel, alumni: alumniModel };
 
   const list = async (query = {}, actor) => {
     const type = query.type === ALUMNI ? ALUMNI : MEMBER;
+    if (!canManageAccountType(actor?.roles, type)) throw new HttpError("No access to Alumni administration", 403);
     const page = integerInRange(query.page, 1, 1, 100000);
     const pageSize = integerInRange(query.pageSize, 25, 10, 100);
     const scope = regionScopeFor(actor);
@@ -210,15 +210,17 @@ export const createAccountsBackofficeService = ({
     // A region-scoped actor with no valid region on file gets a filter that
     // matches nothing, rather than falling through to an unrestricted list.
     const filter = scope === "" ? { _id: null } :
-      buildAccountListFilter({ city: scope !== null ? scope : (typeof query.city === "string" ? query.city.toLowerCase() : ""), search, type });
+      buildAccountListFilter({ city: scope !== null ? scope : (typeof query.city === "string" ? query.city.toLowerCase() : ""), search, type, status: query.status });
 
     const [records, total] = await Promise.all([
-      Model.find(filter)
-        .select(LIST_FIELDS)
-        .sort({ surname: 1, name: 1, email: 1, _id: 1 })
-        .skip((page - 1) * pageSize)
-        .limit(pageSize)
-        .lean(),
+      Model.aggregate([
+        { $match: filter },
+        { $addFields: { lockedOrder: { $cond: [{ $eq: ["$status", "locked"] }, 1, 0] } } },
+        { $sort: { lockedOrder: 1, surname: 1, name: 1, email: 1, _id: 1 } },
+        { $skip: (page - 1) * pageSize },
+        { $limit: pageSize },
+        { $project: Object.fromEntries(LIST_FIELDS.split(" ").map(field => [field, 1])) },
+      ]),
       Model.countDocuments(filter),
     ]);
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -229,11 +231,12 @@ export const createAccountsBackofficeService = ({
       pageSize,
       total,
       totalPages,
-      options: publicOptions(scope !== null ? (scope ? [scope] : []) : undefined),
+      options: publicOptions(type, scope !== null ? (scope ? [scope] : []) : undefined),
     };
   };
 
   const update = async ({ type, id, body = {}, actor }) => {
+    if (!canManageAccountType(actor?.roles, type)) throw new HttpError("No access to Alumni administration", 403);
     const Model = modelForType(type, models);
     if (typeof id !== "string" || !id || id.length > 100) throw new HttpError("Account ID is invalid", 422);
     const revision = Number(body.revision);
@@ -241,6 +244,9 @@ export const createAccountsBackofficeService = ({
 
     const existing = await Model.findById(id).select(LIST_FIELDS).lean();
     if (!existing) throw new HttpError("Account not found", 404);
+    if (!canEditProtectedAccount(actor?.roles, existing.roles)) {
+      throw new HttpError("Only Super Admins can edit Admin, Super Admin or VIP accounts", 403);
+    }
 
     const scope = regionScopeFor(actor);
     if (scope !== null) {
@@ -274,11 +280,11 @@ export const createAccountsBackofficeService = ({
     }
     next.status = requestedStatus;
 
-    if (!Array.isArray(body.roles) || body.roles.some((role) => !EDITABLE_ROLES.includes(role))) {
+    if (!Array.isArray(body.roles) || body.roles.some((role) => !accountRoleOptions(type).includes(role))) {
       throw new HttpError("Account roles are invalid", 422);
     }
     const baseRole = type === MEMBER ? MEMBER : ALUMNI;
-    const existingRoles = Array.isArray(existing.roles) ? existing.roles : [];
+    const existingRoles = normalizeRoleNames(existing.roles);
     // Privileged roles are controlled outside this panel. Never derive them
     // from the request or drop them when saving the editable role selection.
     const protectedRoles = existingRoles.filter((role) => PROTECTED_ROLES.includes(role));
@@ -322,7 +328,7 @@ export const createAccountsBackofficeService = ({
       { new: true, runValidators: true },
     ).select(LIST_FIELDS).lean();
     if (!updated) throw new HttpError("This account was changed by someone else. Refresh and try again.", 409);
-    return { account: summary(updated, type), options: publicOptions() };
+    return { account: summary(updated, type), options: publicOptions(type) };
   };
 
   return { list, update };

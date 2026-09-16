@@ -69,4 +69,4 @@ const schema = new mongoose.Schema({
 schema.index({ ownerAccountId: 1, lastMessageAt: -1, _id: -1 });
 schema.index({ status: 1, lastMessageAt: -1, _id: -1 });
 schema.index({ lastMessageAt: -1, _id: -1 });
-export default mongoose.model("SupportConversation", schema);
+export default mongoose.model("SupportConversation", schema, "supportConversations");

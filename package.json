@@ -18,7 +18,7 @@
     "test:passkeys": "node --test tests/passkeys.test.js tests/subscription-auth-and-migration.test.js",
     "lint": "eslint .",
     "start": "node app.js",
-    "dev": "APP_ENV=dev PORT=8080 nodemon app.js",
+    "dev": "APP_ENV=dev PORT=8080 nodemon --exec \"node --env-file=.env.dev\" app.js",
     "start-server": "node app.js",
     "repair-join-dates": "node scripts/repair-join-dates-from-subscriptions.js",
     "backfill-marketing-emails": "node scripts/backfill-marketing-emails.js",

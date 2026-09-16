@@ -56,9 +56,11 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
+            set -eu
             cd /root/bgsnl-api
             git pull origin master
             cd /root
             docker compose build --no-cache bgsnl-api
+            docker compose run --rm --no-deps bgsnl-api node migrations/run.js
             docker compose up -d --build bgsnl-api
             docker system prune -f

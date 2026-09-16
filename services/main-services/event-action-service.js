@@ -1,8 +1,9 @@
+import { audiencesForPromo } from "../tickets/event-promo-codes.js";
 import moment from "moment";
 import mongoose from "mongoose";
 import HttpError from "../../models/Http-error.js";
 import Event from "../../models/Event.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { addPrice, addProduct, refundStripePayment } from "../side-services/stripe.js";
 import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
@@ -141,182 +142,175 @@ export const updateEventPrices = async (
   return product;
 };
 
-export const checkDiscountsOnEvents = (event) => {
-  if (!event.product) {
-    return event;
-  }
+const ticketPriceValue = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+};
 
-  let guestDiscounted = false;
-  let memberDiscounted = false;
+const money = (value) => Math.round(Number(value) * 100) / 100;
 
-  if (
-    event?.promotion &&
-    event?.promotion?.guest?.isEnabled &&
-    event?.promotion?.guest?.startTimer < new Date() &&
-    event?.promotion?.guest?.endTimer > new Date()
-  ) {
-    guestDiscounted = true;
+const ticketTierKeys = ["guest", "member"];
 
-    const discountedPrice =
-      Math.round(
-        event.product.guest.price * (100 - event.promotion.guest.discount)
-      ) / 100;
+const birdStagePriority = ["lateBird", "earlyBird"];
 
-    event.product["guest"] = {
-      discount: event.promotion.guest.discount,
-      originalPrice: event.product.guest.price,
-      price: discountedPrice,
-      priceId: event.promotion.guest.priceId,
-    };
-  }
+const birdStageTierFields = {
+  guest: { price: "price", priceId: "priceId" },
+  member: { price: "memberPrice", priceId: "memberPriceId" },
+};
 
-  if (
-    event?.promotion &&
-    event?.promotion?.member?.isEnabled &&
-    event?.promotion?.member?.startTimer < new Date() &&
-    event?.promotion?.member?.endTimer > new Date()
-  ) {
-    memberDiscounted = true;
+const cleanTicketTier = (tier) => {
+  const price = ticketPriceValue(tier?.price);
+  if (price === null) return null;
 
-    const discountedPrice =
-      Math.round(
-        event.product.member.price * (100 - event.promotion.member.discount)
-      ) / 100;
+  return {
+    price: tier.price,
+    ...(tier.priceId ? { priceId: tier.priceId } : {}),
+  };
+};
 
-    event.product["member"] = {
-      discount: event.promotion.member.discount,
-      originalPrice: event.product.member.price,
-      price: discountedPrice,
-      priceId: event.promotion.member.priceId,
-    };
-  }
+const pricesMatch = (left, right) => {
+  const leftValue = ticketPriceValue(left);
+  const rightValue = ticketPriceValue(right);
+  return leftValue !== null && rightValue !== null && money(leftValue) === money(rightValue);
+};
 
-  if (guestDiscounted && memberDiscounted) {
-    return event;
-  }
+const discountedPrice = (price, discount) => {
+  const numericPrice = ticketPriceValue(price);
+  const numericDiscount = Number(discount);
+  if (numericPrice === null || !Number.isFinite(numericDiscount)) return null;
+  return money(numericPrice * (100 - numericDiscount) / 100);
+};
 
-  // Helper function to check if a bird condition is met
-  const checkBirdCondition = (bird, event) => {
-    if (!bird || !bird.isEnabled) {
-      return false;
-    }
+const isPromotionActive = (promotion, now) =>
+  promotion?.isEnabled === true &&
+  promotion.startTimer &&
+  promotion.endTimer &&
+  new Date(promotion.startTimer) < now &&
+  new Date(promotion.endTimer) > now;
 
-    // Calculate guest count (considering excludeMembers)
-    let guestCount = event?.guestList?.length ?? 0;
-    if (bird.excludeMembers && guestCount > 0) {
-      guestCount = event.guestList.filter((g) => g.type !== "member").length;
-    }
+const applyPromotionToTier = ({ tier, baseTier, promotion }) => {
+  const price = discountedPrice(tier?.price, promotion?.discount);
+  if (price === null) return tier;
 
-    // Check timer condition
-    const startTimer = bird.startTimer;
-    const ticketTimer = bird.ticketTimer; // This is the end timer
-    const now = moment();
-
-    // Check if both timers are empty/null/undefined
-    const hasStartTimer =
-      startTimer && startTimer !== "" && startTimer !== null;
-    const hasTicketTimer =
-      ticketTimer && ticketTimer !== null && ticketTimer !== undefined;
-    const hasNoTimerValues = !hasStartTimer && !hasTicketTimer;
-
-    // Check if timer condition is met
-    let timerMet = false;
-    if (hasNoTimerValues) {
-      // If both timers have no values, timer condition is met (no restrictions)
-      timerMet = true;
-    } else {
-      let startTimerMet = false; // Default to true if not provided
-      let ticketTimerMet = false; // Default to true if not provided
-
-      if (hasStartTimer) {
-        // startTimer should be in the past (event has started)
-        startTimerMet = moment(startTimer).isBefore(now);
-      }
-
-      if (hasTicketTimer) {
-        // ticketTimer (end timer) should be in the future (event hasn't ended)
-        ticketTimerMet = moment(ticketTimer).isAfter(now);
-      }
-
-      // At least one timer conditions must be met
-      timerMet = startTimerMet || ticketTimerMet;
-    }
-
-    // Check limit condition
-    const ticketLimit = bird.ticketLimit;
-    const hasNoLimitValue =
-      ticketLimit === null || ticketLimit === undefined || ticketLimit === "";
-
-    // Check if limit condition is met
-    let limitMet = false;
-    if (hasNoLimitValue) {
-      // If no limit value, limit condition is met (no restrictions)
-      limitMet = true;
-    } else if (ticketLimit > guestCount) {
-      // If limit exists and is greater than guest count, condition is met
-      limitMet = true;
-    }
-
-    // Special case: If both timer and limit have no values, condition is NOT met
-    if (hasNoTimerValues && hasNoLimitValue) {
-      return false;
-    }
-
-    // Both conditions must be met
-    return timerMet && limitMet;
+  const result = {
+    discount: promotion.discount,
+    originalPrice: tier.price,
+    price,
   };
 
-  // Check early bird first (priority if both are met)
-  let earlyBirdMet = false;
-  let lateBirdMet = false;
-
-  if (event?.earlyBird) {
-    earlyBirdMet = checkBirdCondition(event.earlyBird, event);
+  if (pricesMatch(tier.price, baseTier?.price) && promotion.priceId) {
+    result.priceId = promotion.priceId;
   }
 
-  if (event?.lateBird) {
-    lateBirdMet = checkBirdCondition(event.lateBird, event);
+  return result;
+};
+
+const birdTier = (bird, tierKey) => {
+  const fields = birdStageTierFields[tierKey];
+  if (!fields) return null;
+
+  return cleanTicketTier({
+    price: bird?.[fields.price],
+    priceId: bird?.[fields.priceId],
+  });
+};
+
+const checkBirdCondition = (bird, event, now) => {
+  if (!bird || !bird.isEnabled) {
+    return false;
   }
 
-  // Apply early bird if condition is met (priority over late bird)
-  if (earlyBirdMet) {
-    const earlyBird = event.earlyBird;
-    event.product["earlyBird"] = true;
-    event.product["lateBird"] = false;
-
-    event.product["guest"] = {
-      price: earlyBird.price,
-      priceId: earlyBird.priceId,
-    };
-    event.product["member"] = {
-      price: earlyBird.memberPrice,
-      priceId: earlyBird.memberPriceId,
-    };
-
-    return event;
+  let guestCount = event?.guestList?.length ?? 0;
+  if (bird.excludeMembers && guestCount > 0) {
+    guestCount = event.guestList.filter((guest) => guest.type !== "member").length;
   }
 
-  // Apply late bird if condition is met
-  if (lateBirdMet) {
-    const lateBird = event.lateBird;
-    event.product["earlyBird"] = false;
-    event.product["lateBird"] = true;
+  const startTimer = bird.startTimer;
+  const ticketTimer = bird.ticketTimer;
+  const hasStartTimer = Boolean(startTimer);
+  const hasTicketTimer = Boolean(ticketTimer);
+  const hasNoTimerValues = !hasStartTimer && !hasTicketTimer;
+  const hasNoLimitValue =
+    bird.ticketLimit === null || bird.ticketLimit === undefined || bird.ticketLimit === "";
 
-    event.product["guest"] = {
-      price: lateBird.price,
-      priceId: lateBird.priceId,
-    };
-    event.product["member"] = {
-      price: lateBird.memberPrice,
-      priceId: lateBird.memberPriceId,
-    };
-
-    return event;
+  if (hasNoTimerValues && hasNoLimitValue) {
+    return false;
   }
 
-  // Neither condition is met
-  event.product["earlyBird"] = false;
-  event.product["lateBird"] = false;
+  const timerMet =
+    hasNoTimerValues ||
+    ((!hasStartTimer || new Date(startTimer) <= now) &&
+      (!hasTicketTimer || new Date(ticketTimer) > now));
+  const limitMet =
+    hasNoLimitValue || Number(bird.ticketLimit) > guestCount;
+
+  return timerMet && limitMet;
+};
+
+const activeBirdStage = (event, now) => {
+  for (const key of birdStagePriority) {
+    if (checkBirdCondition(event[key], event, now)) {
+      return { key, config: event[key] };
+    }
+  }
+  return null;
+};
+
+export const resolveEventTicketPricing = (event, { now = new Date() } = {}) => {
+  const product = event?.product;
+  if (!product) {
+    return {
+      stage: "standard",
+      flags: { earlyBird: false, lateBird: false },
+      tiers: {},
+    };
+  }
+
+  const stage = activeBirdStage(event, now);
+  const tiers = {};
+
+  for (const tierKey of ticketTierKeys) {
+    const baseTier = cleanTicketTier(product[tierKey]);
+    if (!baseTier) continue;
+
+    const stageTier = stage ? birdTier(stage.config, tierKey) : null;
+    const activeTier = stageTier ?? baseTier;
+    const promotion = event.promotion?.[tierKey];
+
+    tiers[tierKey] = isPromotionActive(promotion, now)
+      ? applyPromotionToTier({ tier: activeTier, baseTier, promotion })
+      : activeTier;
+  }
+
+  const activeMemberTier = cleanTicketTier(product.activeMember);
+  if (activeMemberTier) {
+    tiers.activeMember = activeMemberTier;
+  }
+
+  return {
+    stage: stage?.key ?? "standard",
+    flags: {
+      earlyBird: stage?.key === "earlyBird",
+      lateBird: stage?.key === "lateBird",
+    },
+    tiers,
+  };
+};
+
+export const checkDiscountsOnEvents = (event, options = {}) => {
+  if (!event?.product) return event;
+
+  const pricing = resolveEventTicketPricing(event, options);
+  event.product = {
+    ...event.product,
+    earlyBird: pricing.flags.earlyBird,
+    lateBird: pricing.flags.lateBird,
+  };
+
+  for (const [tierKey, tier] of Object.entries(pricing.tiers)) {
+    event.product[tierKey] = tier;
+  }
 
   return event;
 };
@@ -327,7 +321,10 @@ export const checkDiscountsOnEvents = (event) => {
  * @param {number} totalAmount - The purchase amount in euros
  * @returns {object} - { valid: boolean, reason: string, discountedAmount: number }
  */
-export const validatePromocodeForPurchase = (promocode, totalAmount) => {
+export const validatePromocodeForPurchase = (promocode, totalAmount, audience = "guest") => {
+  if (!audiencesForPromo(promocode).includes(audience) || promocode.exhausted) {
+    return { valid: false, reason: "This promo code is not available for this ticket", discountedAmount: totalAmount };
+  }
   // Check if promocode is active
   if (!promocode.active) {
     return {
@@ -341,7 +338,7 @@ export const validatePromocodeForPurchase = (promocode, totalAmount) => {
   if (promocode.timeLimit) {
     const now = new Date();
     const expirationDate = new Date(promocode.timeLimit);
-    if (now > expirationDate) {
+    if (now >= expirationDate) {
       return {
         valid: false,
         reason: "This promocode has expired",
@@ -407,8 +404,6 @@ export const getApplicablePrice = (event, userType = 'guest') => {
   }
 
   const product = event.product;
-  
-  // Map userType to product properties
   const typeMapping = {
     guest: 'guest',
     member: 'member',
@@ -416,21 +411,42 @@ export const getApplicablePrice = (event, userType = 'guest') => {
   };
 
   const priceType = typeMapping[userType] || 'guest';
-  const priceInfo = product[priceType];
+  const alreadyResolved =
+    product.earlyBird === true ||
+    product.lateBird === true ||
+    product[priceType]?.originalPrice !== undefined ||
+    product[priceType]?.discount !== undefined;
+  const pricing = alreadyResolved
+    ? {
+        flags: {
+          earlyBird: product.earlyBird === true,
+          lateBird: product.lateBird === true,
+        },
+        tiers: product,
+      }
+    : resolveEventTicketPricing(event);
+  const priceInfo = pricing.tiers[priceType];
 
   if (!priceInfo) {
     return null;
   }
 
+  const price = ticketPriceValue(priceInfo.price);
+  const originalPrice = ticketPriceValue(priceInfo.originalPrice);
+  const discountPercentage = Number(priceInfo.discount);
+  const hasDiscount =
+    (Number.isFinite(discountPercentage) && discountPercentage > 0) ||
+    (price !== null && originalPrice !== null && originalPrice > price);
+
   return {
     price: priceInfo.price,
     priceId: priceInfo.priceId,
     discountInfo: {
-      hasDiscount: priceInfo.discount ? true : false,
+      hasDiscount,
       originalPrice: priceInfo.originalPrice,
       discountPercentage: priceInfo.discount,
-      isEarlyBird: product.earlyBird || false,
-      isLateBird: product.lateBird || false,
+      isEarlyBird: pricing.flags.earlyBird,
+      isLateBird: pricing.flags.lateBird,
     },
   };
 };
@@ -443,9 +459,7 @@ export const getApplicablePrice = (event, userType = 'guest') => {
  * @returns {object} - Complete pricing information
  */
 export const calculateFinalPrice = (event, userType = 'guest', promocodeString = null) => {
-  // Get the base price (with early bird / late bird / promotion applied)
-  const eventWithDiscounts = checkDiscountsOnEvents(event);
-  const priceInfo = getApplicablePrice(eventWithDiscounts, userType);
+  const priceInfo = getApplicablePrice(event, userType);
 
   if (!priceInfo) {
     return {
@@ -460,7 +474,7 @@ export const calculateFinalPrice = (event, userType = 'guest', promocodeString =
 
   // Apply promocode if provided
   if (promocodeString) {
-    const promocode = findPromocodeByCode(eventWithDiscounts, promocodeString);
+    const promocode = findPromocodeByCode(event, promocodeString);
     
     if (!promocode) {
       return {
@@ -472,7 +486,7 @@ export const calculateFinalPrice = (event, userType = 'guest', promocodeString =
       };
     }
 
-    const validation = validatePromocodeForPurchase(promocode, priceInfo.price);
+    const validation = validatePromocodeForPurchase(promocode, priceInfo.price, userType);
     
     if (!validation.valid) {
       return {
@@ -508,7 +522,7 @@ export const calculateFinalPrice = (event, userType = 'guest', promocodeString =
 
 /**
  * Refunds tickets for an event by issuing Stripe refunds and marking guests as refunded.
- * Also removes the ticket from User/AlumniUser.tickets for member-type guests (best-effort).
+ * Also removes the ticket from MemberUser/AlumniUser.tickets for member-type guests (best-effort).
  *
  * @param {string} eventId - The MongoDB ID of the event
  * @param {string|null} reason - Optional reason for the refund (stored in Stripe metadata and DB)
@@ -589,7 +603,7 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
     throw new HttpError("Failed to persist refund status", 500);
   }
 
-  // Best-effort: remove tickets from User/AlumniUser.tickets for member-type guests
+  // Best-effort: remove tickets from MemberUser/AlumniUser.tickets for member-type guests
   const refundedMemberGuests = [...results.success, ...results.skipped].filter((r) => {
     const guest = event.guestList.find((g) => g._id.toString() === r.id);
     return guest && guest.type === "member";
@@ -606,8 +620,8 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
         const sess = await mongoose.startSession();
         sess.startTransaction();
 
-        // Try regular User first, then AlumniUser
-        let targetUser = await User.findOne({ email: r.email }).session(sess);
+        // Try regular MemberUser first, then AlumniUser
+        let targetUser = await MemberUser.findOne({ email: r.email }).session(sess);
         if (!targetUser) {
           targetUser = await AlumniUser.findOne({ email: r.email }).session(sess);
         }

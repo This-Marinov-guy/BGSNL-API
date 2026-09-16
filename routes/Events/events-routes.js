@@ -18,7 +18,7 @@ import {
 import fileUpload from "../../middleware/file-upload.js";
 import dotenv from "dotenv";
 import { adminMiddleware, authMiddleware, optionalAuthMiddleware, requireBenefits } from "../../middleware/authorization.js";
-import { ACCESS_3 } from "../../util/config/defines.js";
+import { EVENT_MANAGEMENT_ACCESS } from "../../util/config/defines.js";
 import { validateRequest } from "../../middleware/validate-request.js";
 import {
   checkTicketEligibilityValidators,
@@ -70,7 +70,7 @@ eventRouter.post(
 
 eventRouter.post(
   "/purchase-ticket/guest",
-  adminMiddleware(ACCESS_3),
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
   formDataUpload.none(),
   guestTicketValidators,
   validateRequest,
@@ -79,7 +79,7 @@ eventRouter.post(
 
 eventRouter.post(
   "/purchase-ticket/member",
-  adminMiddleware(ACCESS_3),
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
   fileUpload(process.env.BUCKET_MEMBER_TICKETS).single("image"),
   manualMemberTicketValidators,
   validateRequest,
@@ -97,7 +97,7 @@ eventRouter.post(
 
 eventRouter.post(
   "/non-society-event/resend-email",
-  adminMiddleware(ACCESS_3),
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
   nonSocietyEmailValidators,
   validateRequest,
   postSendNonSocietyEventResendEmail
@@ -105,7 +105,7 @@ eventRouter.post(
 
 eventRouter.post(
   "/non-society-event/final-reminder-email",
-  adminMiddleware(ACCESS_3),
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
   nonSocietyEmailValidators,
   validateRequest,
   postSendNonSocietyEventFinalReminderEmail
@@ -113,13 +113,13 @@ eventRouter.post(
 
 eventRouter.post(
   "/sync-calendar-events",
-  adminMiddleware(ACCESS_3),
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
   postSyncEventsCalendar
 );
 
 eventRouter.patch(
   '/check-guest-list',
-  adminMiddleware(ACCESS_3),
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
   guestCheckInValidators,
   validateRequest,
   updatePresence

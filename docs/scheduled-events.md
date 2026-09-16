@@ -4,7 +4,7 @@ This file is the inventory of recurring work started by the BGSNL API process.
 Update it whenever a recurring worker, cron job, or externally scheduled API
 task is added, removed, or changes frequency.
 
-Last reviewed: 11 September 2026.
+Last reviewed: 15 September 2026.
 
 Database-triggered work is inventoried in [triggers.md](triggers.md).
 
@@ -17,10 +17,40 @@ Database-triggered work is inventoried in [triggers.md](triggers.md).
 | Weekly membership summary | First check after API startup, then every 5 minutes; a new report becomes due Monday at 00:05 | `Europe/Amsterdam` | Internal notifications are enabled and the API is in production, or `WEEKLY_MEMBERSHIP_REPORT_ENABLED=true`; setting the flag to `false` disables it | Emails the completed Monday–Sunday member/alumni totals per city to every internal-notification subscriber |
 | Birthday greetings | First check after API startup, then every minute; a daily greeting becomes due at 10:00 | `Europe/Amsterdam` | `NODE_ENV=production` or `BIRTHDAY_EMAIL_WORKER_ENABLED=true`; setting the flag to `false` disables it | Sends one non-promotional birthday greeting to each current Member or Alumni account with a valid stored date of birth |
 | Member event announcements | Immediately after API startup, then every minute; an authenticated Atlas notification can request an earlier pass | Not calendar-based | `NODE_ENV=production` or `EVENT_ANNOUNCEMENTS_ENABLED=true`; `false` disables it | Delivers pending publication announcements with personal encrypted ticket links; recovers missed trigger notifications |
+| Event draft cleanup | Daily at 03:00; checks every minute and catches up after startup later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_DRAFT_CLEANUP_ENABLED=true`; `false` disables it | Deletes event drafts created more than 30 days ago |
 
 All workers start only after MongoDB and Redis are ready and the required
 account/temporary-code indexes exist. In PM2 cluster mode, only worker 0 runs
-birthday, weekly-summary and event-announcement schedules. They stop accepting new work during graceful API shutdown.
+birthday, weekly-summary, event-announcement and event-draft cleanup schedules. They stop accepting new work during graceful API shutdown.
+
+## Event draft cleanup
+
+Source:
+[`services/background-services/event-draft-cleanup.js`](../services/background-services/event-draft-cleanup.js)
+
+The daily cleanup becomes due at 03:00 in `Europe/Amsterdam`, including daylight
+saving time. It checks on startup and every minute, catching up if the API starts
+later that day. It starts after database/storage initialization and finishes any
+in-flight deletion before shutdown. Failed attempts retry on the next tick.
+
+Only `eventDrafts` records with `status: draft` and a creation date strictly older
+than 30 × 24 hours are deleted. The immutable `createdAt` is authoritative;
+`metadata.createdAt` is a fallback when that field is absent or null. Drafts
+exactly 30 days old, newer drafts, undated records and published events are
+retained. Editing a draft does not reset its age. Media files are retained,
+because published events can share the same assets.
+
+The last successful day is held only in process memory. A restart or another
+server can repeat the idempotent deletion safely; no database logs, delivery
+records or permanent Redis keys are created. Only PM2 worker 0 runs this job.
+
+```dotenv
+# Enabled by default in production; disabled by default in local development.
+EVENT_DRAFT_CLEANUP_ENABLED=true
+```
+
+This worker takes effect when the updated API is deployed and started. Adding
+it to the repository does not run a cleanup against the live database.
 
 ## Birthday greetings
 
@@ -143,5 +173,6 @@ Run the scheduler-specific tests without sending real email:
 ```bash
 npm run test:weekly-membership-report
 npm run test:birthday-emails
+node --test tests/event-draft-cleanup.test.js
 npm run test:subscriptions
 ```

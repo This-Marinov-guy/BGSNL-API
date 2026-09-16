@@ -52,7 +52,7 @@ request and delegates to the usual ticket controller: member pricing, ticket
 image generation, the existing checkout lease, return receipts and Stripe
 webhook fulfillment are reused. Stripe receives the member's email so it is
 prefilled. Repeated clicks reuse the open member Checkout session; an already
-purchased member ticket redirects to the account instead of charging again.
+purchased ticket uses the guest checkout for the additional ticket.
 
 The endpoint redirects straight to Stripe with HTTP 303 and sends no response
 body containing the checkout URL. Request logging omits the encrypted URL and
@@ -61,8 +61,9 @@ create checkouts. Free tickets also require Stripe Checkout confirmation, so a
 mail scanner visiting the GET link cannot issue a free ticket.
 
 Closed, sold-out, hidden, past and expired-sale events cannot start a checkout.
-Events with extra form fields, mandatory add-on choices or external ticketing
-links use their existing website purchase flow to collect the necessary choices.
+Events with any extra form fields or enabled add-ons (including optional add-ons)
+open the dedicated email-ticket preferences page first. External ticketing links
+continue to use the existing website purchase flow.
 Invalid/expired capabilities and changed or ineligible accounts are rejected.
 
 ## Email scheduling
@@ -98,3 +99,68 @@ Member-only free admission does not make an additional guest ticket free; events
 that are free for everyone still use Stripe confirmation before issuing a ticket.
 Membership validation, closed/sold-out events and required event choices retain
 their existing checks. No duplicate-ticket error toast is shown.
+
+
+## Email-ticket preferences
+
+The email GET endpoint checks the current Event and verified member before it
+chooses a destination. Events without choices still go directly to Stripe.
+Events with custom fields or enabled add-ons redirect to
+`/payment/event-ticket/start?token=e1.…` with a newly encrypted continuation
+that expires after 30 minutes or the event sales deadline, whichever is sooner.
+No database collection or additional server-side token store is introduced.
+
+The website immediately redirects to `/payment/event-ticket/<random-id>` before
+rendering HTML. It stores the encrypted capability in an HttpOnly, SameSite=Lax
+cookie restricted to that checkout path, with a 30-minute lifetime and Secure
+in production. The URL identifier is random and carries no identity; it does
+not authorize checkout without the cookie. Each tab can hold its own checkout.
+Both the token handoff and preferences responses disable caching, indexing and
+referrers. HEAD does not issue a cookie or prepare a payment.
+
+The isolated page reuses the normal checkout event summary and mobile summary,
+shows the event's extra inputs and add-on choices, and has no website header,
+footer, account widgets, authentication initialization or analytics. It receives
+only public event details, the applicable ticket price, guest/member pricing
+mode and a revision hash—not the member's name, email, ID, subscription or prior
+answers. The member's details remain on the API and are supplied to the normal
+checkout/ticket fulfillment there.
+
+`POST /api/v1/payment/event-ticket/preferences` validates the capability and
+returns this restricted view. `POST /api/v1/payment/event-ticket/checkout`
+revalidates it, account status, current membership benefits, event availability,
+required answers, allowed options and add-on IDs. Incoming identity, event ID,
+price, ticket quantity, method and return URL cannot override verified records.
+Add-on prices and ticket metadata are reconstructed from the Event. Changes to
+visible prices/options require reviewing the page again. Stripe metadata size
+limits are checked with a readable error instead of silently truncating answers.
+
+The browser submits choices to its same-origin
+`POST /payment/event-ticket/<random-id>/pay` endpoint. That endpoint checks
+Origin, JSON content type and a bounded request size. It retrieves the scoped
+cookie server-side and forwards only the choices and capability, without
+forwarding account cookies or an account Authorization header. No endpoint
+creates or renews an authentication session. The capability cannot be used at
+account endpoints; those still require a normal authenticated session. A stolen
+complete email link remains a bearer capability for this specific ticket flow,
+never general account access.
+
+An existing ticket produces a guest-price preview and guest checkout. A purchase
+completed during the flow is checked again before checkout; the existing guest
+fallback is preserved. Free event/member tickets still require Stripe
+confirmation, and selected paid add-ons are charged normally. Member checkout
+reuse now compares line items, answers and add-ons as well as promo eligibility;
+a changed selection expires the old open session before preparing a new one.
+
+Deployment requires both the API and Next.js changes. No new environment
+variables are needed; existing ticket encryption and server-to-server API keys
+are reused. An expired page asks the recipient to reopen the original email.
+The existing Atlas announcement trigger is not activated by this work.
+
+Verification (all external services mocked):
+
+- API: `node --test tests/member-event-announcements.test.js tests/member-event-preferences.test.js tests/event-promo-codes.test.js`
+- Website: `node --test scripts/event-ticket-preferences.test.mjs`
+
+Stripe checkout session expiration reference:
+https://docs.stripe.com/api/checkout/sessions/expire

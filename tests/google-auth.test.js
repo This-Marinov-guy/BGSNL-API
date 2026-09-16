@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { signSessionToken } from "../util/auth/session-token.js";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 import AuthChallenge from "../models/AuthChallenge.js";
 import { createAuthMiddleware } from "../middleware/authorization.js";
@@ -268,7 +268,7 @@ test("an ineligible account can still disconnect an old Google identity", async 
   assert.equal(h.rows().length, 0); assert.equal(h.live().sessionVersion, 1);
 });
 test("database indexes enforce global identity ownership and challenge expiry", () => {
-  for (const Model of [User, AlumniUser]) {
+  for (const Model of [MemberUser, AlumniUser]) {
     assert.ok(Model.schema.indexes().some(([index, options]) => index["identities.subject"] && options.unique));
     assert.equal(Model.schema.path("identities").options.select, false);
   }
@@ -299,7 +299,7 @@ test("revoked sessions fail authorization and access-token-only refresh is retir
   let error;
   await createAuthMiddleware({ findAccount: async () => user })(req, {}, (value) => { error = value; });
   assert.equal(error.statusCode, 401);
-  t.mock.method(User, "findOne", async () => user);
+  t.mock.method(MemberUser, "findOne", async () => user);
   t.mock.method(AlumniUser, "findOne", async () => null);
   let status, body;
   await refreshToken(req, { status: (value) => { status = value; return { json: (value) => { body = value; } }; } }, () => {});

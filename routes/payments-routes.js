@@ -34,6 +34,9 @@ const formDataUpload = multer({ storage: multer.memoryStorage() });
 paymentRouter.post("/result", paymentResult);
 
 paymentRouter.get("/event-ticket", createMemberEventCheckoutHandler({ checkout: postCheckoutFile }));
+// These scoped capabilities never pass through or establish account authentication.
+paymentRouter.post("/event-ticket/preferences", createMemberEventCheckoutHandler({ mode: "preferences" }));
+paymentRouter.post("/event-ticket/checkout", createMemberEventCheckoutHandler({ mode: "checkout", checkout: postCheckoutFile }));
 
 paymentRouter.get("/donation/config", donationConfig);
 

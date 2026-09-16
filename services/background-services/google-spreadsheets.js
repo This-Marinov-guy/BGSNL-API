@@ -11,7 +11,7 @@ import mongoose from "mongoose";
 import moment from "moment-timezone";
 import Event from "../../models/Event.js";
 import { BGSNL_URL } from "../../util/config/defines.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import {
   IS_PROD,
   refactorToKeyValuePairs,
@@ -830,7 +830,7 @@ const usersToSpreadsheet = (region = null) => {
         status: { $nin: [ALUMNI_MIGRATED, "membership-migrated", "membership_active"] },
       };
 
-      const users = await User.find(query)
+      const users = await MemberUser.find(query)
         .sort({
           purchaseDate: 1,
           _id: -1,

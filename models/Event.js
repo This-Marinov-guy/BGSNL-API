@@ -4,6 +4,75 @@ import { EVENT_OPENED } from "../util/config/defines.js";
 import { createCurrentDate } from "../util/functions/currentDate.js";
 
 const Schema = mongoose.Schema;
+
+const ticketTierSchema = new Schema(
+  {
+    discount: { type: Number },
+    originalPrice: { type: Number },
+    price: { type: Number },
+    priceId: { type: String },
+  },
+  { _id: false }
+);
+
+const ticketPromocodeSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    couponId: { type: String, required: true },
+    customerScoped: { type: Boolean, default: false },
+    audiences: { type: [String], enum: ["guest", "member", "activeMember"], default: ["guest", "member", "activeMember"] },
+    redeemedBefore: { type: Number, default: 0 },
+    exhausted: { type: Boolean, default: false },
+    code: { type: String, required: true },
+    discountType: { type: Number, required: true },
+    discount: { type: Number, required: true },
+    useLimit: { type: Number },
+    timeLimit: { type: Date },
+    minAmount: { type: Number },
+    active: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+const ticketProductSchema = new Schema(
+  {
+    id: { type: String },
+    earlyBird: { type: Boolean, default: false },
+    lateBird: { type: Boolean, default: false },
+    promoCodes: { type: [ticketPromocodeSchema], default: [] },
+    guest: { type: ticketTierSchema, default: undefined },
+    member: { type: ticketTierSchema, default: undefined },
+    activeMember: { type: ticketTierSchema, default: undefined },
+  },
+  { _id: false }
+);
+
+const ticketPromotionSchema = new Schema(
+  {
+    isEnabled: { type: Boolean, required: true, default: false },
+    discount: { type: Number, default: 0 },
+    priceId: { type: String },
+    startTimer: { type: Date },
+    endTimer: { type: Date },
+  },
+  { _id: false }
+);
+
+const ticketBirdStageSchema = new Schema(
+  {
+    isEnabled: { type: Boolean, required: true, default: false },
+    excludeMembers: { type: Boolean, default: false },
+    ticketLimit: { type: Number },
+    ticketTimer: { type: Date },
+    startTimer: { type: Date },
+    price: { type: Number },
+    priceId: { type: String },
+    memberPrice: { type: Number },
+    memberPriceId: { type: String },
+  },
+  { _id: false, strict: false }
+);
+
 const eventSchema = new Schema({
   memberAnnouncementQueuedAt: Date,
   memberAnnouncementCompletedAt: Date,
@@ -24,60 +93,10 @@ const eventSchema = new Schema({
   isSaleClosed: { type: Boolean, required: true, default: false },
   isFree: { type: Boolean, required: true, default: false },
   isMemberFree: { type: Boolean, required: true, default: false },
-  product: {
-    id: { type: String },
-    earlyBird: { type: Boolean, default: false },
-    lateBird: { type: Boolean, default: false },
-    promoCodes: {
-      type: [
-        {
-          id: { type: String, required: true }, // Stripe promotion code ID
-          couponId: { type: String, required: true }, // Stripe coupon ID
-          code: { type: String, required: true }, // The actual code string
-          discountType: { type: Number, required: true }, // 1=fixed, 2=percentage
-          discount: { type: Number, required: true }, // Discount value
-          useLimit: { type: Number, required: false }, // Max redemptions
-          timeLimit: { type: Date, required: false }, // Expiration date
-          minAmount: { type: Number, required: false }, // Minimum purchase amount
-          active: { type: Boolean, default: true }, // Whether the code is active
-        },
-      ],
-      default: [],
-    },
-    guest: {
-      discount: { type: Number },
-      originalPrice: { type: Number },
-      price: { type: Number },
-      priceId: { type: String },
-    },
-    member: {
-      discount: { type: Number },
-      originalPrice: { type: Number },
-      price: { type: Number },
-      priceId: { type: String },
-    },
-    activeMember: {
-      discount: { type: Number },
-      originalPrice: { type: Number },
-      price: { type: Number },
-      priceId: { type: String },
-    },
-  },
+  product: { type: ticketProductSchema, default: undefined },
   promotion: {
-    guest: {
-      isEnabled: { type: Boolean, required: true, default: false },
-      discount: { type: Number, default: 0 },
-      priceId: { type: String },
-      startTimer: { type: Date },
-      endTimer: { type: Date },
-    },
-    member: {
-      isEnabled: { type: Boolean, required: true, default: false },
-      discount: { type: Number },
-      priceId: { type: String },
-      startTimer: { type: Date },
-      endTimer: { type: Date },
-    },
+    guest: { type: ticketPromotionSchema, default: () => ({}) },
+    member: { type: ticketPromotionSchema, default: () => ({}) },
   },
   addOns: {
     isEnabled: { type: Boolean, required: true, default: false },
@@ -115,10 +134,12 @@ const eventSchema = new Schema({
     type: mongoose.Schema.Types.Mixed,
   },
   earlyBird: {
-    type: mongoose.Schema.Types.Mixed,
+    type: ticketBirdStageSchema,
+    default: undefined,
   },
   lateBird: {
-    type: mongoose.Schema.Types.Mixed,
+    type: ticketBirdStageSchema,
+    default: undefined,
   },
   subEvent: {
     description: { type: String, default: "" },

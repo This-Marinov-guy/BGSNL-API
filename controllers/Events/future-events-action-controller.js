@@ -1,3 +1,4 @@
+import { isEventDraftReady } from "../../validation/form-validators.js";
 import Event from "../../models/Event.js";
 import EventDraft from "../../models/EventDraft.js";
 import HttpError from "../../models/Http-error.js";
@@ -46,7 +47,7 @@ import { uniqueEventSlug } from "../../services/public-content/event-slug.js";
 import { publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
 import { dispatchSitemapRefresh } from "../../services/public-content/sitemap-dispatch.js";
 import {
-  ACCESS_2,
+  ALL_EVENT_REGIONS_ACCESS,
   ACCESS_4,
   DEFAULT_REGION,
   REGIONS,
@@ -72,7 +73,7 @@ const websiteOriginForRequest = (req) => {
 };
 
 const hasAdminRegionAccess = (req) =>
-  ACCESS_2.some((role) => req.user?.roles?.includes(role));
+  ALL_EVENT_REGIONS_ACCESS.some((role) => req.user?.roles?.includes(role));
 
 const hasEventRegionAccess = (req, region) =>
   region !== DEFAULT_REGION || hasAdminRegionAccess(req);
@@ -125,7 +126,7 @@ const optionalNumber = (value) => {
   return Number.isFinite(number) ? number : undefined;
 };
 
-const saveEventDraft = async (req, res, next, existingDraft = null) => {
+export const saveEventDraft = async (req, res, next, existingDraft = null) => {
   const region = typeof req.body.region === "string" ? req.body.region.trim() : "";
   if (![...REGIONS, DEFAULT_REGION].includes(region)) {
     return next(new HttpError("Choose a region before saving a draft", 422));
@@ -234,6 +235,7 @@ const saveEventDraft = async (req, res, next, existingDraft = null) => {
   draftData.bgImageExtra = event.bgImageExtra || null;
   draftData.images = event.images ?? [];
   event.draftData = draftData;
+  event.readyToPublish = await isEventDraftReady(event);
 
   if (!existingDraft) {
     event.draftOwner = {
@@ -324,7 +326,8 @@ export const fetchFullDataEvent = async (req, res, next) => {
   }
 
   if (isDraft) {
-    event = removeModelProperties(event, ["guestList", "draftOwner"]);
+    const readyToPublish = await isEventDraftReady(event);
+    event = { ...removeModelProperties(event, ["guestList", "draftOwner"]), readyToPublish };
     return res.status(200).json({ event, status: false });
   }
 
@@ -399,7 +402,10 @@ export const fetchFullDataEventsList = async (req, res, next) => {
   // TODO: remove early, lateBird and add them to a new
   events = [
     ...events.map((event) => removeModelProperties(event, ["guestList"])),
-    ...drafts.map((draft) => removeModelProperties(draft, ["draftOwner"])),
+    ...await Promise.all(drafts.map(async draft => ({
+      ...removeModelProperties(draft, ["draftOwner"]),
+      readyToPublish: await isEventDraftReady(draft),
+    }))),
   ];
 
   res.status(200).json({ events });

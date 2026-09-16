@@ -9,7 +9,7 @@ import { accountSecurityFields, accountSecurityIndexes } from "./AccountSecurity
 
 const Schema = mongoose.Schema;
 
-const userSchema = new Schema({
+const memberUserSchema = new Schema({
   ...sharedMembershipFields,
   ...accountSecurityFields,
   _id: {
@@ -66,12 +66,14 @@ const userSchema = new Schema({
   ],
 });
 
-userSchema.plugin(uniqueValidator);
-accountSecurityIndexes(userSchema);
-userSchema.index({ "subscription.id": 1, status: 1 });
-userSchema.index({ accountAliases: 1 });
-userSchema.index({ "subscription.syncedAt": 1, status: 1 });
-userSchema.index({ "subscription.lastAttemptAt": 1, "subscription.syncedAt": 1 });
-userSchema.index({ joinDate: 1, region: 1 });
+memberUserSchema.plugin(uniqueValidator);
+accountSecurityIndexes(memberUserSchema);
+memberUserSchema.index({ "subscription.id": 1, status: 1 });
+memberUserSchema.index({ accountAliases: 1 });
+memberUserSchema.index({ "subscription.syncedAt": 1, status: 1 });
+memberUserSchema.index({ "subscription.lastAttemptAt": 1, "subscription.syncedAt": 1 });
+memberUserSchema.index({ joinDate: 1, region: 1 });
 
-export default mongoose.model("User", userSchema);
+// Explicit collection name prevents Mongoose from lowercasing it to
+// "memberusers".
+export default mongoose.model("MemberUser", memberUserSchema, "memberUsers");

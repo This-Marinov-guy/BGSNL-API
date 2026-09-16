@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeFile } from "node:fs/promises";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 import { createStripeClient } from "../util/config/stripe.js";
 import { readMemberRevenueAllocation } from "../services/subscriptions/stripe-revenue-state.js";
@@ -20,7 +20,7 @@ export function connectedBackfillChange(doc, type, allocation) {
     update: { $set: sub == null ? { subscription: { connected } } : { "subscription.connected": connected } } };
 }
 
-export async function backfillSubscriptionConnected({ apply = false, backupPath, members = User.collection,
+export async function backfillSubscriptionConnected({ apply = false, backupPath, members = MemberUser.collection,
   alumni = AlumniUser.collection, records, saveBackup = writeFile } = {}) {
   const allocations = new Map();
   if (records) { // Injected legacy fixtures only; production reads Stripe.

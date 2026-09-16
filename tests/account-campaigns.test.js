@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 import { getAccountCampaign, markAccountCampaignSeen } from "../controllers/account-campaigns-controller.js";
 import { ACCOUNT_CAMPAIGN_KEYS } from "../util/config/account-campaigns.js";
@@ -8,7 +8,7 @@ import userRouter from "../routes/users-routes.js";
 
 const campaign = ACCOUNT_CAMPAIGN_KEYS[0];
 
-for (const Model of [User, AlumniUser]) {
+for (const Model of [MemberUser, AlumniUser]) {
   test(`${Model.modelName}: missing history defaults empty; concurrent claims show once on the authenticated account`, async (t) => {
     const account = new Model({ _id: "account-owner", status: "locked" });
     assert.deepEqual([...account.campaignsSeen], []);

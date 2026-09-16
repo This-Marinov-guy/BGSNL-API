@@ -60,4 +60,4 @@ alumniUserSchema.index({ "subscription.syncedAt": 1, status: 1 });
 alumniUserSchema.index({ "subscription.lastAttemptAt": 1, "subscription.syncedAt": 1 });
 alumniUserSchema.index({ joinDate: 1, region: 1 });
 
-export default mongoose.model("AlumniUser", alumniUserSchema);
+export default mongoose.model("AlumniUser", alumniUserSchema, "alumniUsers");

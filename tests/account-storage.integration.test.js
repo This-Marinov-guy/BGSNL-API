@@ -4,7 +4,7 @@ import { preparePasskey, authenticatePasskey } from "../services/authentication/
 import test from "node:test";
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 import TemporaryCode from "../models/TemporaryCode.js";
 import AuthChallenge from "../models/AuthChallenge.js";
@@ -22,19 +22,19 @@ test("embedded credentials and shared temporary codes in an isolated Mongo repli
   // This test only writes its dedicated local database, never the configured app DB.
   assert.equal(mongoose.connection.name, "bgsnl_storage_test");
   await mongoose.connection.dropDatabase();
-  for (const Model of [User, AlumniUser, TemporaryCode, AuthChallenge, ProfileChange, PasswordResetChallenge]) await Model.init();
-  for (const Model of [User, AlumniUser]) await Model.createIndexes();
+  for (const Model of [MemberUser, AlumniUser, TemporaryCode, AuthChallenge, ProfileChange, PasswordResetChallenge]) await Model.init();
+  for (const Model of [MemberUser, AlumniUser]) await Model.createIndexes();
   await TemporaryCode.collection.updateOne({ _id: "coordination:account-credentials" }, { $set: { revision: 0 } }, { upsert: true });
   const seed = (Model, id) => Model.create({ _id: id, email: "storage-fixture@gmail.com", name: "Storage", surname: "Fixture", password: "fixture-hash",
-    image: "fixture.png", expireDate: new Date("2099-01-01"), phone: "fixture", university: "fixture", roles: [Model === User ? "member" : "alumni"] });
-  const member = await seed(User, "member_storage"), alumni = await seed(AlumniUser, "alumni_other");
+    image: "fixture.png", expireDate: new Date("2099-01-01"), phone: "fixture", university: "fixture", roles: [Model === MemberUser ? "member" : "alumni"] });
+  const member = await seed(MemberUser, "member_storage"), alumni = await seed(AlumniUser, "alumni_other");
   await t.test("simultaneous Google linking across collections permits exactly one owner", async () => {
     const results = await Promise.allSettled([member, alumni].map((user) => changeGoogleIdentity(user, { subject: "google-storage", email: user.email })));
     assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
-    assert.equal(await User.countDocuments({ "identities.subject": "google-storage" }) + await AlumniUser.countDocuments({ "identities.subject": "google-storage" }), 1);
+    assert.equal(await MemberUser.countDocuments({ "identities.subject": "google-storage" }) + await AlumniUser.countDocuments({ "identities.subject": "google-storage" }), 1);
     const identity = await embeddedIdentities.findOne({ provider: "google", subject: "google-storage" });
     assert.ok(identity.accountId);
-    const Model = identity.accountId === member.id ? User : AlumniUser;
+    const Model = identity.accountId === member.id ? MemberUser : AlumniUser;
     assert.equal((await Model.findById(identity.accountId).lean()).identities, undefined);
     const selected = await Model.findById(identity.accountId).select("+identities");
     assert.equal(selected.toJSON().identities, undefined);
@@ -55,7 +55,7 @@ test("embedded credentials and shared temporary codes in an isolated Mongo repli
     assert.equal(results.filter((item) => item.status === "fulfilled").length, 1);
     const key = await embeddedPasskeys.findOne({ _id: "key-storage" });
     assert.ok(Buffer.isBuffer(key.publicKey));
-    const owner = await (key.accountId === member.id ? User : AlumniUser).findById(key.accountId);
+    const owner = await (key.accountId === member.id ? MemberUser : AlumniUser).findById(key.accountId);
     const session = await mongoose.startSession();
     try { await session.withTransaction(async () => {
       const filter = { _id: key._id, accountId: key.accountId, counter: 0, revision: 0 };
@@ -63,8 +63,8 @@ test("embedded credentials and shared temporary codes in an isolated Mongo repli
       assert.equal(await embeddedPasskeys.findOneAndUpdate(filter, { $inc: { revision: 1 } }, { session }), null);
     }); } finally { await session.endSession(); }
     // Remove the unrelated fixture before moving the account into that collection.
-    await (owner.constructor === User ? AlumniUser : User).deleteMany({ _id: { $ne: owner.id } });
-    const destination = owner.constructor === User ? "alumni" : "member";
+    await (owner.constructor === MemberUser ? AlumniUser : MemberUser).deleteMany({ _id: { $ne: owner.id } });
+    const destination = owner.constructor === MemberUser ? "alumni" : "member";
     const migrated = await persistSubscriptionAccount(owner, {}, { type: destination, tier: 0 }, async () => {});
     assert.equal(await owner.constructor.countDocuments({ _id: owner.id }), 0);
     assert.equal(migrated.passkeys[0].userHandle, "stable-handle");
@@ -101,7 +101,7 @@ test("embedded credentials and shared temporary codes in an isolated Mongo repli
     const results = await Promise.all([AuthChallenge.findOneAndDelete({ _id: "same-owner" }), AuthChallenge.findOneAndDelete({ _id: "same-owner" })]);
     assert.equal(results.filter(Boolean).length, 1);
     const collections = (await mongoose.connection.db.listCollections({}, { nameOnly: true }).toArray()).map((item) => item.name);
-    assert.ok(collections.includes("temporarycodes"));
+    assert.ok(collections.includes("temporaryCodes"));
     for (const removed of ["accountidentities", "passkeycredentials", "passkeychallenges", "authchallenges", "profilechanges", "passwordresetchallenges"]) assert.equal(collections.includes(removed), false, removed);
   });
 });

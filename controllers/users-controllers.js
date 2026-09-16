@@ -26,7 +26,7 @@ import {
   convertUserToAlumni as convertUserToAlumniService,
 } from "../services/main-services/user-service.js";
 import AlumniUser from "../models/AlumniUser.js";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import Document from "../models/Document.js";
 import mongoose from "mongoose";
 import { ALUMNI } from "../util/config/defines.js";
@@ -66,7 +66,7 @@ export const getCurrentUser = async (req, res, next) => {
   if (!user.phone && String(user._id).startsWith("alumni_")) {
     const linkedMemberId = String(user._id).replace(/^alumni_/, "member_");
     try {
-      const linkedMember = await User.findById(linkedMemberId).select("phone").lean();
+      const linkedMember = await MemberUser.findById(linkedMemberId).select("phone").lean();
       if (linkedMember?.phone && linkedMember.phone !== "-") {
         user.phone = linkedMember.phone;
       }
@@ -360,7 +360,7 @@ export const convertUserToAlumni = async (req, res, next) => {
   try {
     const result = await convertUserToAlumniService(userId);
     return res.status(200).json({
-      message: `User successfully ${result.action} as alumni`,
+      message: `MemberUser successfully ${result.action} as alumni`,
       result,
     });
   } catch (err) {

@@ -4,7 +4,7 @@ dotenv.config();
 import { hashPassword, verifyPassword } from "../services/authentication/passwords.js";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import {
   alumniWelcomeEmail,
   sendNewPasswordEmail,
@@ -117,7 +117,7 @@ export const signup = async (req, res, next, { notify = welcomeEmail, sync = use
 
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(1200);
 
-  const createdUser = new User({
+  const createdUser = new MemberUser({
     status: "freezed",
     region,
     joinDate: new Date(),

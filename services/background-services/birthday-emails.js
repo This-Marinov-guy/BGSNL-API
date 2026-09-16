@@ -1,5 +1,5 @@
 import moment from "moment-timezone";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { createEmailRunGuard, isEmailSchedulerProcess } from "./email-run-guard.js";
 const birthdayRuns = createEmailRunGuard();
@@ -46,7 +46,7 @@ const birthdayQuery = ({ month, day }) => ({
 export const loadBirthdayRecipients = async ({
   month,
   day,
-  MemberModel = User,
+  MemberModel = MemberUser,
   AlumniModel = AlumniUser,
 } = {}) => {
   const query = birthdayQuery({ month, day });
@@ -84,7 +84,7 @@ export async function deliverBirthdayEmail({ receiver, notification, send = queu
 export const processBirthdayEmails = async ({
   now = new Date(),
   config = getBirthdayWorkerConfig(),
-  MemberModel = User,
+  MemberModel = MemberUser,
   AlumniModel = AlumniUser,
   runGuard = birthdayRuns,
   send = deliverBirthdayEmail,

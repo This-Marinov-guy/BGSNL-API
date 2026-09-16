@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 import { MEMBERSHIP_PLANS } from "../util/subscriptions/policy.js";
 import { memberRevenueAllocation } from "../util/config/member-revenue.js";
@@ -12,13 +12,13 @@ const subscription = { id: "sub_one", customerId: "cus_one", stripeRegion: "neth
 const allocation = { ...memberRevenueAllocation(plan, "amsterdam", { MEMBER_REVENUE_SHARING_ENABLED: "true" }), subscriptionId: "sub_one", customerId: "cus_one" };
 
 test("new Member/Alumni accounts explicitly default to connected false", () => {
-  for (const Model of [User, AlumniUser]) {
+  for (const Model of [MemberUser, AlumniUser]) {
     assert.equal(new Model().subscription.connected, false);
     assert.equal(Model.hydrate({ _id: "legacy", subscription: { id: "sub_old" } }).subscription.connected, false);
   }
 });
 test("Alumni cannot inherit true while Member documents retain a verified true value", () => {
-  assert.equal(new User({ subscription: { ...subscription, connected: true } }).subscription.connected, true);
+  assert.equal(new MemberUser({ subscription: { ...subscription, connected: true } }).subscription.connected, true);
   const alumni = new AlumniUser({ subscription: { ...subscription, connected: true } });
   assert.equal(alumni.subscription.connected, false);
   alumni.subscription.connected = true;

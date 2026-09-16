@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import TemporaryCode from "../../models/TemporaryCode.js";
 import HttpError from "../../models/Http-error.js";
@@ -25,7 +25,7 @@ const matches = (item, query) => Object.entries(query).every(([key, value]) => k
 // This repository exposes the small operations used by the authentication
 // service, but stores every credential inside its owning account document.
 // No mongoose model or separate identity/passkey collection is registered.
-export function embeddedCredentialStore(field, { models = [User, AlumniUser] } = {}) {
+export function embeddedCredentialStore(field, { models = [MemberUser, AlumniUser] } = {}) {
   if (!["identities", "passkeys"].includes(field)) throw new Error("Unknown credential field");
   function accountQuery(query) {
     const { accountId, ...credential } = query;

@@ -28,7 +28,7 @@ import {
 } from "../validation/form-validators.js";
 import AlumniUser from "../models/AlumniUser.js";
 import Event from "../models/Event.js";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import { validateRequest } from "../middleware/validate-request.js";
 import {
   formatUploadValidationError,
@@ -787,10 +787,10 @@ test("working member profile updates require a profession", async () => {
 });
 
 test("user model includes the optional profession field", () => {
-  assert.equal(User.schema.path("profession")?.instance, "String");
-  assert.notEqual(User.schema.path("profession")?.isRequired, true);
+  assert.equal(MemberUser.schema.path("profession")?.instance, "String");
+  assert.notEqual(MemberUser.schema.path("profession")?.isRequired, true);
 
-  const workingMember = new User({ profession: "Software engineer" });
+  const workingMember = new MemberUser({ profession: "Software engineer" });
   assert.equal(workingMember.toObject().profession, "Software engineer");
 });
 

@@ -1,4 +1,7 @@
 import mongoose from "mongoose";
+
+export const TEMPORARY_RECORDS_COLLECTION = "temporaryCodes";
+
 const prefixQuery = (query, prefix) => Object.fromEntries(Object.entries(query).map(([key, value]) => {
   if (["$or", "$and"].includes(key)) return [key, value.map((part) => prefixQuery(part, prefix))];
   if (key === "_id") {
@@ -13,7 +16,7 @@ const prefixQuery = (query, prefix) => Object.fromEntries(Object.entries(query).
 export function temporaryRecordStore(name, schema) {
   const prefix = `${name}:`;
   schema.add({ recordType: { type: String, default: name, immutable: true } });
-  const Model = mongoose.model(name, schema, "temporarycodes");
+  const Model = mongoose.model(name, schema, TEMPORARY_RECORDS_COLLECTION);
   const decode = (value) => {
     if (Array.isArray(value)) return value.map(decode);
     if (!value || !value._id) return value;
