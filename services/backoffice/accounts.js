@@ -152,7 +152,7 @@ const emailValue = (value) => {
   return clean;
 };
 
-const dateValue = (value, label) => {
+const dateValue = (value, label, maximum = new Date()) => {
   if (value === "" || value == null) return null;
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw new HttpError(`${label} is invalid`, 422);
@@ -161,7 +161,7 @@ const dateValue = (value, label) => {
   if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
     throw new HttpError(`${label} is invalid`, 422);
   }
-  if (date < new Date("1900-01-01T00:00:00.000Z") || date > new Date()) {
+  if (date < new Date("1900-01-01T00:00:00.000Z") || date > maximum) {
     throw new HttpError(`${label} is outside the allowed range`, 422);
   }
   return date;
@@ -270,6 +270,14 @@ export const createAccountsBackofficeService = ({
       studentNumber: optionalText(body.studentNumber, "Student number", 80),
       profession: optionalText(body.profession, "Profession", 180),
     };
+    if (!existing.roles?.includes(VIP)) {
+      const requestedExpiry = body.expireDate === undefined && existing.expireDate
+        ? new Date(existing.expireDate).toISOString().slice(0, 10)
+        : body.expireDate;
+      const expireDate = dateValue(requestedExpiry, "Membership expiry", new Date("2200-12-31T00:00:00.000Z"));
+      if (!expireDate) throw new HttpError("Membership expiry is required", 422);
+      next.expireDate = expireDate;
+    }
     if (next.region && !EDITABLE_CITIES.includes(next.region)) throw new HttpError("City is invalid", 422);
     if (scope !== null && next.region !== scope) throw new HttpError("You can only manage accounts in your own region", 403);
     if (type === MEMBER && !next.birth) throw new HttpError("Date of birth is required", 422);
@@ -291,9 +299,10 @@ export const createAccountsBackofficeService = ({
     next.roles = [...new Set([baseRole, ...protectedRoles, ...body.roles])];
     const rolesChanged = JSON.stringify([...existingRoles].sort()) !== JSON.stringify([...next.roles].sort());
     const statusChanged = existing.status !== next.status;
+    const expiryChanged = next.expireDate && new Date(existing.expireDate).getTime() !== next.expireDate.getTime();
     const actorId = String(actor?._id ?? actor?.id ?? "");
-    if (actorId === String(existing._id) && (rolesChanged || statusChanged)) {
-      throw new HttpError("You cannot change your own roles or account status", 409);
+    if (actorId === String(existing._id) && (rolesChanged || statusChanged || expiryChanged)) {
+      throw new HttpError("You cannot change your own roles, account status or membership expiry", 409);
     }
 
     const removesSuperAdmin = existing.status === "active" && existingRoles.includes(SUPER_ADMIN) &&
@@ -309,7 +318,8 @@ export const createAccountsBackofficeService = ({
       }
     }
 
-    if (next.email !== String(existing.email || "").replace(/\s+/g, "").toLowerCase()) {
+    const emailChanged = next.email !== String(existing.email || "").replace(/\s+/g, "").toLowerCase();
+    if (emailChanged) {
       const email = exactEmailRegex(next.email);
       const [memberCollision, alumniCollision] = await Promise.all([
         memberModel.exists({ email, ...(type === MEMBER ? { _id: { $ne: id } } : {}) }),
@@ -318,15 +328,33 @@ export const createAccountsBackofficeService = ({
       if (memberCollision || alumniCollision) throw new HttpError("Another account already uses this email", 409);
     }
 
+    // mongoose-unique-validator runs for every value passed to findOneAndUpdate,
+    // including the document's own unchanged email. Its query validator then
+    // treats that value as a duplicate. We already validate unchanged email
+    // from the loaded account and independently check every changed email
+    // across both account collections, so omit it unless it really changed.
+    const update = { ...next };
+    if (!emailChanged) delete update.email;
     const securityChanged = rolesChanged || statusChanged;
-    const updated = await Model.findOneAndUpdate(
-      { _id: id, ...versionFilter(revision), roles: existing.roles ?? { $exists: false } },
-      {
-        $set: next,
-        $inc: { __v: 1, ...(securityChanged ? { sessionVersion: 1 } : {}) },
-      },
-      { new: true, runValidators: true },
-    ).select(LIST_FIELDS).lean();
+    let updated;
+    try {
+      updated = await Model.findOneAndUpdate(
+        { _id: id, ...versionFilter(revision), roles: existing.roles ?? { $exists: false } },
+        {
+          $set: update,
+          $inc: { __v: 1, ...(securityChanged ? { sessionVersion: 1 } : {}) },
+        },
+        { new: true, runValidators: true },
+      ).select(LIST_FIELDS).lean();
+    } catch (error) {
+      const duplicateEmail = error?.code === 11000 &&
+        (!error.keyPattern || Object.hasOwn(error.keyPattern, "email"));
+      const emailValidation = error?.name === "ValidationError" && error.errors?.email;
+      if (duplicateEmail || emailValidation) {
+        throw new HttpError("Another account already uses this email", 409);
+      }
+      throw error;
+    }
     if (!updated) throw new HttpError("This account was changed by someone else. Refresh and try again.", 409);
     return { account: summary(updated, type), options: publicOptions(type) };
   };

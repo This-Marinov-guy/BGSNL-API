@@ -25,6 +25,7 @@ import AlumniUser from "../../models/AlumniUser.js";
 import InternshipApplication from "../../models/InternshipApplication.js";
 import { ALUMNI_MIGRATED } from "../../util/config/enums.js";
 import { INTERNSHIP_SHEET } from "../../util/config/SPREEDSHEATS.js";
+import { enqueueSpreadsheetSync } from "../jobs/spreadsheet-sync-queue.js";
 
 // Lightweight background job queue with concurrency limit and de-duplication
 const MAX_CONCURRENCY = 1;
@@ -169,8 +170,7 @@ const searchInDatabase = (eventName, region) => {
   }
 };
 
-const eventToSpreadsheet = (id) => {
-  enqueueJob(`eventToSpreadsheet:${id}`, async () => {
+export const syncEventToSpreadsheet = async ({ id }) => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       const event = await Event.findById(id);
@@ -533,12 +533,11 @@ const eventToSpreadsheet = (id) => {
       }
     } catch (error) {
       console.error("Error in eventToSpreadsheet:", error);
+      throw error;
     }
-  });
 };
 
-const specialEventsToSpreadsheet = (id) => {
-  enqueueJob(`specialEventsToSpreadsheet:${id}`, async () => {
+export const syncSpecialEventToSpreadsheet = async ({ id }) => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       const nonSocietyEvent = await NonSocietyEvent.findById(id);
@@ -804,12 +803,11 @@ const specialEventsToSpreadsheet = (id) => {
       }
     } catch (err) {
       console.log(err);
+      throw err;
     }
-  });
 };
 
-const usersToSpreadsheet = (region = null) => {
-  enqueueJob(`usersToSpreadsheet:${region ?? "all"}`, async () => {
+export const syncUsersToSpreadsheet = async ({ region = null } = {}) => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.users;
@@ -971,12 +969,11 @@ const usersToSpreadsheet = (region = null) => {
       console.log(`Member Sheet updated for: ${region ?? "Netherlands"}`);
     } catch (error) {
       console.error("Error in usersToSpreadsheet:", error);
+      throw error;
     }
-  });
 };
 
-export const alumniToSpreadsheet = () => {
-  enqueueJob("alumniToSpreadsheet", async () => {
+export const syncAlumniToSpreadsheet = async () => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.alumni;
@@ -1119,8 +1116,8 @@ export const alumniToSpreadsheet = () => {
       console.log(`Member Sheet updated for Alumnis`);
     } catch (error) {
       console.error("Error in alumniToSpreadsheet:", error);
+      throw error;
     }
-  });
 };
 
 /**
@@ -1250,8 +1247,7 @@ export const getPresenceStatsOfCity = async (spreadsheetId) => {
   };
 };
 
-export const internshipApplicationsToSpreadsheet = () => {
-  enqueueJob("internshipApplicationsToSpreadsheet", async () => {
+export const syncInternshipApplicationsToSpreadsheet = async () => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       const spreadsheetId = INTERNSHIP_SHEET;
@@ -1331,9 +1327,15 @@ export const internshipApplicationsToSpreadsheet = () => {
       console.log(`Internship applications sheet updated`);
     } catch (error) {
       console.error("Error in internshipApplicationsToSpreadsheet:", error);
+      throw error;
     }
-  });
 };
+
+const eventToSpreadsheet = (id) => enqueueSpreadsheetSync("event", { id });
+const specialEventsToSpreadsheet = (id) => enqueueSpreadsheetSync("special-event", { id });
+const usersToSpreadsheet = (region = null) => enqueueSpreadsheetSync("members", { region });
+export const alumniToSpreadsheet = () => enqueueSpreadsheetSync("alumni");
+export const internshipApplicationsToSpreadsheet = () => enqueueSpreadsheetSync("internships");
 
 export {
   searchInDatabase,

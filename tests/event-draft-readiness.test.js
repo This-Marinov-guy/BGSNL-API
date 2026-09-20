@@ -9,7 +9,7 @@ const completeDraft = () => new EventDraft({
     title: 'Autumn dinner', region: 'groningen', date: '2027-10-10T18:00:00.000Z', location: 'Groningen',
     ticketTimer: '2027-10-10T17:00:00.000Z', ticketLimit: 100, text: 'An evening together.',
     isFree: false, isMemberFree: false, isTicketLink: false, isSaleClosed: false,
-    guestPrice: 15, memberPrice: 10, activeMemberPrice: 8, bgImage: 1, bgImageSelection: 1,
+    guestPrice: 15, memberPrice: 10, activeMemberPrice: 8,
     earlyBird: { isEnabled: false }, lateBird: { isEnabled: false }, guestPromotion: { isEnabled: false }, memberPromotion: { isEnabled: false },
     addOns: { isEnabled: false, items: [] }, subEvent: null, extraInputsForm: [], promoCodes: { isEnabled: false, codes: [] },
   },

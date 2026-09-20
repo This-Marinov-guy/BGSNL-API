@@ -3,15 +3,17 @@ import { ACCESS_4 } from "../../util/config/defines.js";
 import { accountEntitlements } from "../../util/subscriptions/policy.js";
 
 export const PROMO_AUDIENCES = ["guest", "member", "activeMember"];
-export const audiencesForPromo = promo => promo.audiences ?? PROMO_AUDIENCES;
+export const DEFAULT_PROMO_AUDIENCES = ["guest", "member"];
+export const audiencesForPromo = promo => promo.audiences ?? DEFAULT_PROMO_AUDIENCES;
+export const normalizeEventPromoCode = code => typeof code === "string" ? code.replace(/\s+/g, "").toUpperCase() : "";
 const numberOrNull = value => value === "" || value == null ? null : Number(value);
 const timestamp = value => value ? Math.floor(new Date(value).getTime() / 1000) : null;
 const terms = promo => JSON.stringify([Number(promo.discountType), Number(promo.discount), numberOrNull(promo.useLimit), timestamp(promo.timeLimit), numberOrNull(promo.minAmount)]);
 const plain = value => value?.toObject ? value.toObject() : { ...value };
 
 export function validEventPromoCodes(codes) {
-  return Array.isArray(codes) && codes.length <= 100 && new Set(codes.map(promo => String(promo?.code).trim().toUpperCase())).size === codes.length && codes.every(promo =>
-    promo && typeof promo.code === "string" && /^[a-z0-9-]{1,100}$/i.test(promo.code.trim()) &&
+  return Array.isArray(codes) && codes.length <= 100 && new Set(codes.map(promo => normalizeEventPromoCode(promo?.code))).size === codes.length && codes.every(promo =>
+    promo && typeof promo.code === "string" && /^[A-Z0-9-]{1,100}$/.test(normalizeEventPromoCode(promo.code)) &&
     [1, 2].includes(Number(promo.discountType)) && Number.isFinite(Number(promo.discount)) && Number(promo.discount) >= 0.01 &&
     (Number(promo.discountType) !== 2 || Number(promo.discount) <= 100) &&
     (numberOrNull(promo.useLimit) === null || (Number.isSafeInteger(Number(promo.useLimit)) && Number(promo.useLimit) >= 1)) &&
@@ -50,10 +52,10 @@ export async function syncEventPromoCodes(stripe, productId, incoming, existing 
       const old = input.id ? existing.find(promo => promo.id === input.id) : null;
       if (input.id && !old) throw new HttpError("This promo code does not belong to the event.", 422);
       if (old && terms(input) !== terms(old)) throw new HttpError("Create a new promo code to change a published discount, expiration or redemption limit.", 422);
-      const code = input.code.trim().toUpperCase();
+      const code = normalizeEventPromoCode(input.code);
       const audiences = [...new Set(audiencesForPromo(input))];
       const active = input.active !== false && input.active !== "false";
-      if (old && code === old.code.toUpperCase() && active === old.active && JSON.stringify([...audiences].sort()) === JSON.stringify([...audiencesForPromo(old)].sort())) {
+      if (old && code === normalizeEventPromoCode(old.code) && active === old.active && JSON.stringify([...audiences].sort()) === JSON.stringify([...audiencesForPromo(old)].sort())) {
         prepared.push(plain(old)); continue;
       }
       // An active global code with this spelling would bypass customer scoping.

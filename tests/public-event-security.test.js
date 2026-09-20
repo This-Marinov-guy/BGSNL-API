@@ -34,10 +34,13 @@ test("the public event projection does not leak operational or attendee data", (
     ticketColor: "#fff",
     poster: "poster.png",
     bgImage: 1,
+    bgImageExtra: "background.png",
+    bgImageSelection: 2,
   }, { checkout: true });
 
   const serialized = JSON.stringify(event);
   assert.equal(event.ticketsRemaining, 9);
+  for (const field of ["bgImage", "bgImageExtra", "bgImageSelection"]) assert.equal(Object.hasOwn(event, field), false);
   for (const forbidden of ["Private attendee", "private@example.test", "private-cloud-folder", "private-sheet", "private-calendar-id", "price_private", "PRIVATE", "price_addon_private"]) {
     assert.doesNotMatch(serialized, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }

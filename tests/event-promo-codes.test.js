@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkoutPromoAudience, prepareEventPromoCheckout, syncEventPromoCodes, validEventPromoCodes } from '../services/tickets/event-promo-codes.js';
+import { audiencesForPromo, checkoutPromoAudience, prepareEventPromoCheckout, syncEventPromoCodes, validEventPromoCodes } from '../services/tickets/event-promo-codes.js';
 import { ACTIVE_MEMBER, MEMBER } from '../util/config/defines.js';
 const now = Date.now();
 const input = { code: 'SAVE20', discountType: 2, discount: 20, active: true, audiences: ['guest', 'member', 'activeMember'] };
@@ -20,8 +20,17 @@ const checkoutData = { mode: 'payment', allow_promotion_codes: true, customer_em
 test('promo validation accepts optional limits and rejects malformed values and empty audiences', () => {
   assert.equal(validEventPromoCodes([input]), true);
   assert.equal(validEventPromoCodes([{ ...input, audiences: undefined }]), true);
+  assert.equal(validEventPromoCodes([{ ...input, code: ' save 20 ' }]), true);
+  assert.deepEqual(audiencesForPromo({}), ['guest', 'member']);
   for (const change of [{ audiences: [] }, { audiences: ['admin'] }, { useLimit: 1.5 }, { useLimit: 0 }, { discount: 101 }, { timeLimit: 'bad' }, { code: ' ' }]) assert.equal(validEventPromoCodes([{ ...input, ...change }]), false);
   assert.equal(validEventPromoCodes([input, { ...input, code: 'save20' }]), false);
+  assert.equal(validEventPromoCodes([input, { ...input, code: 'S A V E 2 0' }]), false);
+});
+test('promo code names are stored without whitespace and in uppercase', async () => {
+  const h = harness({ codes: [] });
+  const [result] = await syncEventPromoCodes(h.stripe, 'prod_event', [{ ...input, code: ' save 20 ' }], [], now);
+  assert.equal(result.code, 'SAVE20');
+  assert.equal(h.calls.coupons[0].metadata.code, 'SAVE20');
 });
 test('audience comes from verified account entitlements, with distinct active members', () => {
   const account = { roles: [MEMBER], status: 'active', expireDate: new Date(now + 86400000) };

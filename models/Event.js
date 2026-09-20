@@ -20,7 +20,7 @@ const ticketPromocodeSchema = new Schema(
     id: { type: String, required: true },
     couponId: { type: String, required: true },
     customerScoped: { type: Boolean, default: false },
-    audiences: { type: [String], enum: ["guest", "member", "activeMember"], default: ["guest", "member", "activeMember"] },
+    audiences: { type: [String], enum: ["guest", "member", "activeMember"], default: ["guest", "member"] },
     redeemedBefore: { type: Number, default: 0 },
     exhausted: { type: Boolean, default: false },
     code: { type: String, required: true },
@@ -82,8 +82,8 @@ const eventSchema = new Schema({
   region: { type: String, required: true },
   title: { type: String, required: true },
   // Assigned once at publication. Existing records remain readable without a
-  // slug until the explicit backfill is run; new values are globally unique.
-  slug: { type: String, immutable: true, unique: true, sparse: true, trim: true },
+  // slug until the explicit backfill is run; new values are unique within their region.
+  slug: { type: String, immutable: true, trim: true },
   description: { type: String, default: "" },
   date: { type: Date, required: true },
   correctedDate: { type: Date },
@@ -124,9 +124,6 @@ const eventSchema = new Schema({
   ticketQR: { type: Boolean, required: true, default: true },
   ticketName: { type: Boolean, required: true, default: true },
   poster: { type: String, required: true },
-  bgImage: { type: Number, required: true, default: 1 },
-  bgImageExtra: { type: String },
-  bgImageSelection: { type: Number, default: 1 },
   memberOnly: { type: Boolean, required: true, default: false },
   hidden: { type: Boolean, required: true, default: false },
   googleEventId: { type: String },
@@ -202,5 +199,12 @@ eventSchema.static(
 );
 
 eventSchema.index({ memberAnnouncementQueuedAt: 1, memberAnnouncementCompletedAt: 1 });
+
+// Missing legacy slugs are excluded until backfilled.
+eventSchema.index({ region: 1, slug: 1 }, {
+  name: "event_region_slug_unique",
+  unique: true,
+  partialFilterExpression: { slug: { $type: "string" } },
+});
 
 export default mongoose.model("Event", eventSchema);

@@ -23,6 +23,7 @@ const account = (overrides = {}) => ({
   email: "test@example.com",
   phone: "+31 6 1234 5678",
   birth: new Date("2000-01-01T00:00:00.000Z"),
+  expireDate: new Date("2027-01-01T00:00:00.000Z"),
   region: "amsterdam",
   status: "active",
   roles: [],
@@ -37,6 +38,7 @@ const updateBody = (overrides = {}) => ({
   email: "test@example.com",
   phone: "+31 6 1234 5678",
   birth: "2000-01-01",
+  expireDate: "2027-01-01",
   region: "amsterdam",
   university: "University of Amsterdam",
   otherUniversityName: "",
@@ -100,6 +102,50 @@ test("member role is retained when roles are updated and security sessions are r
   assert.deepEqual(result.account.roles, ["member", "support"]);
   assert.equal(memberModel.state.update.update.$inc.sessionVersion, 1);
   assert.equal(memberModel.state.update.update.$inc.__v, 1);
+});
+
+test("an unchanged email is omitted from account updates", async () => {
+  const memberModel = fakeModel(account({ roles: ["member"] }));
+  const service = createAccountsBackofficeService({
+    memberModel,
+    alumniModel: fakeModel(account({ _id: "alumni_1", roles: ["alumni"] })),
+  });
+
+  await service.update({
+    type: "member",
+    id: "member_1",
+    body: updateBody({ roles: [] }),
+    actor: { _id: "admin", roles: ["admin"] },
+  });
+
+  assert.equal(Object.hasOwn(memberModel.state.update.update.$set, "email"), false);
+});
+
+test("a database duplicate-email conflict reports a useful message", async () => {
+  const memberModel = fakeModel(account({ roles: ["member"] }));
+  memberModel.findOneAndUpdate = () => ({
+    select() { return this; },
+    lean() {
+      return Promise.reject(Object.assign(new Error("Duplicate key"), {
+        code: 11000,
+        keyPattern: { email: 1 },
+      }));
+    },
+  });
+  const service = createAccountsBackofficeService({
+    memberModel,
+    alumniModel: fakeModel(account({ _id: "alumni_1", roles: ["alumni"] })),
+  });
+
+  await assert.rejects(
+    service.update({
+      type: "member",
+      id: "member_1",
+      body: updateBody({ email: "taken@example.com", roles: [] }),
+      actor: { _id: "admin", roles: ["admin"] },
+    }),
+    (error) => error.statusCode === 409 && error.message === "Another account already uses this email",
+  );
 });
 
 test("member and alumni roles cannot be assigned without account migration", async () => {

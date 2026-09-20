@@ -13,7 +13,9 @@ import {
   postSendNonSocietyEventFinalReminderEmail,
   postSendNonSocietyEventResendEmail,
   postSyncEventsCalendar,
-  updatePresence
+  updatePresence,
+  getEventGuestList,
+  updateGuestPresence,
 } from "../../controllers/Events/events-controllers.js";
 import fileUpload from "../../middleware/file-upload.js";
 import dotenv from "dotenv";
@@ -23,6 +25,7 @@ import { validateRequest } from "../../middleware/validate-request.js";
 import {
   checkTicketEligibilityValidators,
   guestCheckInValidators,
+  guestPresenceValidators,
   guestTicketValidators,
   manualMemberTicketValidators,
   nonSocietyEmailValidators,
@@ -123,6 +126,20 @@ eventRouter.patch(
   guestCheckInValidators,
   validateRequest,
   updatePresence
+);
+
+eventRouter.get(
+  "/guest-list/:eventId",
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
+  getEventGuestList
+);
+
+eventRouter.patch(
+  "/guest-presence",
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
+  guestPresenceValidators,
+  validateRequest,
+  updateGuestPresence
 );
 
 export default eventRouter;

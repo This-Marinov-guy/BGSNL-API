@@ -28,7 +28,6 @@ const eventDraftSchema = new mongoose.Schema({
   images: { type: [String], default: [] },
   ticketImg: { type: String },
   poster: { type: String },
-  bgImageExtra: { type: String },
   folder: { type: String },
   draftData: { type: mongoose.Schema.Types.Mixed, default: {} },
   readyToPublish: { type: Boolean, default: false },

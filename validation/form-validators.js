@@ -638,14 +638,6 @@ const commonEventAdminValidators = [
   optionalBoolean("hidden", "Hidden", isPublishedEvent),
   optionalBoolean("isTicketLink", "External ticket link", isPublishedEvent),
   optionalBoolean("isSaleClosed", "Sale closed", isPublishedEvent),
-  body("bgImage")
-    .if(isPublishedEvent)
-    .isInt({ min: 1, max: 100 })
-    .withMessage("Background image is invalid"),
-  body("bgImageSelection")
-    .if(isPublishedEvent)
-    .isInt({ min: 1, max: 2 })
-    .withMessage("Background image selection is invalid"),
   requiredBoolean("isFree", "Free event", isPublishedEvent),
   requiredBoolean("isMemberFree", "Free for members", isPublishedEvent),
   optionalBoolean("ticketQR", "Ticket QR", isPublishedEvent),
@@ -1099,6 +1091,12 @@ export const guestCheckInValidators = [
     .withMessage("Count must be a positive whole number"),
 ];
 
+export const guestPresenceValidators = [
+  requiredMongoId("eventId", "Event ID"),
+  requiredMongoId("guestId", "Guest ID"),
+  body("present").isBoolean().withMessage("Presence must be true or false"),
+];
+
 export const nonSocietyEmailValidators = [
   optionalBoolean("testOnly", "Test-only mode"),
   body("customEmails")
@@ -1130,11 +1128,6 @@ export const addEventValidators = [
     multiple: true,
   }),
   uploadedFile({ field: "images", allowedMimeTypes: IMAGE_MIME_TYPES, multiple: true }),
-  uploadedFile({
-    field: "bgImageExtra",
-    allowedMimeTypes: IMAGE_MIME_TYPES,
-    multiple: true,
-  }),
 ];
 
 export const editEventValidators = [
@@ -1143,11 +1136,6 @@ export const editEventValidators = [
   uploadedFile({ field: "poster", allowedMimeTypes: IMAGE_MIME_TYPES, multiple: true }),
   uploadedFile({ field: "ticketImg", allowedMimeTypes: IMAGE_MIME_TYPES, multiple: true }),
   uploadedFile({ field: "images", allowedMimeTypes: IMAGE_MIME_TYPES, multiple: true }),
-  uploadedFile({
-    field: "bgImageExtra",
-    allowedMimeTypes: IMAGE_MIME_TYPES,
-    multiple: true,
-  }),
 ];
 
 export const deleteEventValidators = [

@@ -385,9 +385,9 @@ export const findPromocodeByCode = (event, code) => {
     return null;
   }
 
-  const upperCode = code.trim().toUpperCase();
+  const upperCode = typeof code === "string" ? code.replace(/\s+/g, "").toUpperCase() : "";
   return event.product.promoCodes.find(
-    (promo) => promo.code === upperCode && promo.active !== false
+    (promo) => (typeof promo.code === "string" ? promo.code.replace(/\s+/g, "").toUpperCase() : "") === upperCode && promo.active !== false
   ) || null;
 };
 

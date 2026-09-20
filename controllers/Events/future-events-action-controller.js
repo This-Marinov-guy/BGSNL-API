@@ -132,6 +132,8 @@ export const saveEventDraft = async (req, res, next, existingDraft = null) => {
     return next(new HttpError("Choose a region before saving a draft", 422));
   }
   const draftData = { ...parseJsonSafely(req.body.draftData, {}), region };
+  // Old clients or saved drafts may still contain the retired background fields.
+  for (const field of ["bgImage", "bgImageExtra", "bgImageSelection"]) delete draftData[field];
   const event = existingDraft ?? new EventDraft();
   const folder =
     event.folder ||
@@ -156,16 +158,6 @@ export const saveEventDraft = async (req, res, next, existingDraft = null) => {
         public_id: "ticket",
         width: 1500,
         height: 485,
-        crop: "fit",
-        format: "jpg",
-      });
-    }
-
-    if (files.bgImageExtra?.[0]) {
-      event.bgImageExtra = await uploadToCloudinary(files.bgImageExtra[0], {
-        folder,
-        public_id: "background",
-        width: 1200,
         crop: "fit",
         format: "jpg",
       });
@@ -232,7 +224,6 @@ export const saveEventDraft = async (req, res, next, existingDraft = null) => {
 
   draftData.poster = event.poster || null;
   draftData.ticketImg = event.ticketImg || null;
-  draftData.bgImageExtra = event.bgImageExtra || null;
   draftData.images = event.images ?? [];
   event.draftData = draftData;
   event.readyToPublish = await isEventDraftReady(event);
@@ -411,6 +402,30 @@ export const fetchFullDataEventsList = async (req, res, next) => {
   res.status(200).json({ events });
 };
 
+export const getEventDraftCount = async (req, res, next) => {
+  const region = String(req.query.region || "").trim();
+  const isAdmin = hasAdminRegionAccess(req);
+
+  if (!REGIONS.includes(region) && region !== DEFAULT_REGION) {
+    return next(new HttpError("A valid region is required", 422));
+  }
+
+  if (region === DEFAULT_REGION && !isAdmin) {
+    return next(new HttpError("Only admins can access Netherlands events", 403));
+  }
+
+  if (!isAdmin && region !== req.user?.region) {
+    return next(new HttpError("No access for this region", 403));
+  }
+
+  try {
+    const draftCount = await EventDraft.countDocuments({ region });
+    return res.status(200).json({ draftCount });
+  } catch {
+    return next(new HttpError("Draft availability could not be loaded", 500));
+  }
+};
+
 export const addEvent = async (req, res, next) => {
   if (isDraftRequest(req)) {
     if (rejectNetherlandsRegionAccess(req, next)) return;
@@ -442,8 +457,6 @@ export const addEvent = async (req, res, next) => {
     ticketColor,
     ticketQR,
     ticketName,
-    bgImage,
-    bgImageSelection,
   } = req.body;
 
   if (rejectNetherlandsRegionAccess(req, next)) {
@@ -513,16 +526,6 @@ export const addEvent = async (req, res, next) => {
     crop: "fit",
     format: "jpg",
   });
-
-  const bgImageExtra = req.files["bgImageExtra"]
-    ? await uploadToCloudinary(req.files["bgImageExtra"][0], {
-        folder,
-        public_id: "background",
-        width: 1200,
-        crop: "fit",
-        format: "jpg",
-      })
-    : "";
 
   let images = [];
 
@@ -748,7 +751,7 @@ export const addEvent = async (req, res, next) => {
   try {
     // A caller may choose a clean slug while the event is still being created;
     // after this save the model and edit handler make it permanent.
-    eventSlug = await uniqueEventSlug(Event, slug || title);
+    eventSlug = await uniqueEventSlug(Event, slug || title, { region, date });
   } catch {
     return next(new HttpError("Could not reserve the event URL. Please try again.", 503));
   }
@@ -782,9 +785,6 @@ export const addEvent = async (req, res, next) => {
     ticketQR: ticketQR === "true",
     ticketName: ticketName === "true",
     poster,
-    bgImage,
-    bgImageExtra,
-    bgImageSelection,
     folder,
     sheetName,
     product,
@@ -893,7 +893,6 @@ export const editEvent = async (req, res, next) => {
       images: draft.images,
       ticketImg: draft.ticketImg,
       poster: draft.poster,
-      bgImageExtra: draft.bgImageExtra,
       folder: draft.folder,
     });
   }
@@ -925,8 +924,6 @@ export const editEvent = async (req, res, next) => {
     ticketName,
     text,
     ticketColor,
-    bgImage,
-    bgImageSelection,
   } = req.body;
 
   if (!wasDraft && slug && slug !== event.slug) {
@@ -935,7 +932,7 @@ export const editEvent = async (req, res, next) => {
 
   if (wasDraft) {
     try {
-      event.slug = await uniqueEventSlug(Event, slug || title, { excludeId: event._id });
+      event.slug = await uniqueEventSlug(Event, slug || title, { excludeId: event._id, region: region || event.region, date });
     } catch {
       return next(new HttpError("Could not reserve the event URL. Please try again.", 503));
     }
@@ -998,16 +995,6 @@ export const editEvent = async (req, res, next) => {
         format: "jpg",
       })
     : null;
-
-  const bgImageExtra = req.files["bgImageExtra"]
-    ? await uploadToCloudinary(req.files["bgImageExtra"][0], {
-        folder,
-        public_id: "background",
-        width: 1200,
-        crop: "fit",
-        format: "jpg",
-      })
-    : "";
 
   let images = [];
 
@@ -1110,7 +1097,6 @@ export const editEvent = async (req, res, next) => {
 
   poster && (event.poster = poster);
   ticketImg && (event.ticketImg = ticketImg);
-  bgImageExtra && (event.bgImageExtra = bgImageExtra);
 
   // TODO: move to service
   if (date) {
@@ -1362,7 +1348,6 @@ export const editEvent = async (req, res, next) => {
   }
 
   event.images = images;
-  event.bgImageSelection = bgImageSelection;
   event.memberOnly = memberOnly;
   event.hidden = hidden;
   event.region = region;
@@ -1382,7 +1367,6 @@ export const editEvent = async (req, res, next) => {
   event.ticketColor = ticketColor;
   event.ticketQR = ticketQR === "true";
   event.ticketName = ticketName === "true";
-  event.bgImage = bgImage;
   event.earlyBird = earlyBird;
   event.lateBird = lateBird;
   event.promotion = {

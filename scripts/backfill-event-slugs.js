@@ -25,7 +25,7 @@ if (!applying) {
       .sort({ createdAt: 1, _id: 1 });
     let updated = 0;
     for (const event of events) {
-      const slug = await uniqueEventSlug(Event, event.title, { excludeId: event._id });
+      const slug = await uniqueEventSlug(Event, event.title, { excludeId: event._id, region: event.region, date: event.date });
       await Event.updateOne({ _id: event._id, $or: [{ slug: { $exists: false } }, { slug: null }, { slug: "" }] }, { $set: { slug } });
       updated += 1;
     }

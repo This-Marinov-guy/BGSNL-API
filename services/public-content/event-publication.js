@@ -92,9 +92,6 @@ export const serializePublicEvent = (record, { checkout = false } = {}) => {
     ticketQR: source.ticketQR === true,
     ticketName: source.ticketName === true,
     poster: source.poster,
-    bgImage: source.bgImage,
-    bgImageExtra: source.bgImageExtra || "",
-    bgImageSelection: source.bgImageSelection,
     ...(product(discounted.product) ? { product: product(discounted.product) } : {}),
   };
 

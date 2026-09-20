@@ -2,7 +2,7 @@ import express from "express";
 import { updateEventSales } from "../../controllers/Events/event-sales-controller.js";
 import dotenv from "dotenv";
 import multer from "multer";
-import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList, sendEventDraftReminder } from "../../controllers/Events/future-events-action-controller.js";
+import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList, getEventDraftCount, sendEventDraftReminder } from "../../controllers/Events/future-events-action-controller.js";
 import { adminMiddleware, optionalAuthMiddleware } from "../../middleware/authorization.js";
 import { ACCESS_4 } from "../../util/config/defines.js";
 import { validateRequest } from "../../middleware/validate-request.js";
@@ -48,12 +48,17 @@ futureEventRouter.get(
     fetchFullDataEventsList
 );
 
+futureEventRouter.get(
+    '/draft-count',
+    adminMiddleware(ACCESS_4),
+    getEventDraftCount
+);
+
 futureEventRouter.patch("/sales/:eventId", adminMiddleware(ACCESS_4), updateEventSales);
 
 const eventImageUploads = upload.fields([
     { name: 'images', maxCount: 4 },
     { name: 'ticketImg', maxCount: 1 },
-    { name: 'bgImageExtra', maxCount: 1 },
     { name: 'poster', maxCount: 1 }
 ]);
 

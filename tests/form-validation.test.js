@@ -14,6 +14,7 @@ import {
   editInternshipValidators,
   generalCheckoutValidators,
   guestCheckInValidators,
+  guestPresenceValidators,
   guestCheckoutValidators,
   guestTicketValidators,
   internshipApplicationValidators,
@@ -190,6 +191,20 @@ test("guest check-in validates eventId/code instead of stale name/email fields",
   assert.equal(nextCalled, true);
 });
 
+test("manual guest-list attendance updates require an event, guest and boolean presence", async () => {
+  const valid = await validate(guestPresenceValidators, {
+    body: { eventId: OBJECT_ID, guestId: OBJECT_ID, present: true },
+  });
+  assert.equal(valid.nextCalled, true);
+
+  const invalid = await validate(guestPresenceValidators, {
+    body: { eventId: OBJECT_ID, guestId: "not-an-id", present: "present" },
+  });
+  assert.equal(invalid.response.statusCode, 422);
+  assert.ok(invalid.response.payload.errors.guestId);
+  assert.ok(invalid.response.payload.errors.present);
+});
+
 test("manual member ticket accepts the controller's eventId contract", async () => {
   const { nextCalled } = await validate(manualMemberTicketValidators, {
     body: { eventId: OBJECT_ID, userId: MEMBER_ID, code: "ticket-123" },
@@ -261,8 +276,6 @@ test("published event validation enforces conditional ticket and builder fields"
       memberOnly: "false",
       isTicketLink: "true",
       isSaleClosed: "false",
-      bgImage: "1",
-      bgImageSelection: "1",
       earlyBird: JSON.stringify({ isEnabled: false }),
       lateBird: JSON.stringify({ isEnabled: false }),
       guestPromotion: JSON.stringify({ isEnabled: false }),
@@ -348,8 +361,6 @@ test("published EventForm multipart payload passes backend validation", async ()
       hidden: "false",
       isTicketLink: "false",
       isSaleClosed: "false",
-      bgImage: "1",
-      bgImageSelection: "1",
       ticketQR: "true",
       ticketName: "true",
       ticketColor: "#faf9f6",

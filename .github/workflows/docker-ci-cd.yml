@@ -62,5 +62,5 @@ jobs:
             cd /root
             docker compose build --no-cache bgsnl-api
             docker compose run --rm --no-deps bgsnl-api node migrations/run.js
-            docker compose up -d --build bgsnl-api
+            docker compose up -d --build bgsnl-api bgsnl-worker
             docker system prune -f

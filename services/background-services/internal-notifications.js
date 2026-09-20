@@ -1,5 +1,7 @@
 import { sendInternalNotificationEmail } from "./email-transporter.js";
 import { getInternalNotificationConfig } from "../../util/config/internal-notifications.js";
+import { HOME_URL } from "../../util/config/defines.js";
+import { formatRegionBadgeLabel, getRegionBadgeTheme } from "../../util/config/region-badges.js";
 
 const DISPLAY_TIME_ZONE = "Europe/Amsterdam";
 
@@ -27,32 +29,66 @@ const formatDateTime = (value) => {
   }).format(date);
 };
 
-const renderNotification = ({ eyebrow, title, rows }) => {
+// Match the BGSNL Mailer content shell (sage canvas, white card, green type),
+// without the customer-facing header and footer artwork.
+const renderRowValue = (value, options) => {
+  const content = escapeHtml(present(value));
+  if (options?.region !== undefined) {
+    const theme = getRegionBadgeTheme(options.region);
+    return `<span style="display:inline-block;padding:5px 10px;border:1px solid ${theme.border};border-radius:999px;background-color:${theme.background};color:${theme.color};font-size:14px;font-weight:700;line-height:1.4;">${content}</span>`;
+  }
+  if (options?.href) {
+    return `<a href="${escapeHtml(options.href)}" style="color:#017363;font-weight:700;text-decoration:underline;overflow-wrap:anywhere;">View event</a>`;
+  }
+  return content.replaceAll("\n", "<br>");
+};
+
+const renderNotification = ({ title, rows }) => {
   const textRows = rows.map(([label, value]) => `${label}: ${present(value)}`);
   const htmlRows = rows
     .map(
-      ([label, value]) => `
+      ([label, value, options]) => `
         <tr>
-          <td style="padding:8px 16px 8px 0;color:#64748b;font-size:14px;vertical-align:top;white-space:nowrap;">${escapeHtml(label)}</td>
-          <td style="padding:8px 0;color:#0f172a;font-size:14px;vertical-align:top;">${escapeHtml(present(value))}</td>
+          <th scope="row" class="notification-label" style="width:32%;padding:12px 16px 12px 0;color:#647067;font-family:Arial,sans-serif;font-size:14px;font-weight:400;line-height:1.6;text-align:left;vertical-align:top;">${escapeHtml(label)}</th>
+          <td class="notification-value" style="padding:12px 0;color:#33403a;font-family:Arial,sans-serif;font-size:16px;line-height:1.6;vertical-align:top;overflow-wrap:anywhere;word-break:break-word;">${renderRowValue(value, options)}</td>
         </tr>`
     )
     .join("");
 
   return {
-    text: [eyebrow, title, "", ...textRows].join("\n"),
+    text: ["Internal notification", title, "", ...textRows].join("\n"),
     html: `<!doctype html>
       <html lang="en">
-        <body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial,sans-serif;">
-          <div style="max-width:640px;margin:0 auto;overflow:hidden;border-radius:16px;background:#ffffff;">
-            <div style="padding:24px;background:#2563eb;color:#ffffff;">
-              <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85;">${escapeHtml(eyebrow)}</div>
-              <h1 style="margin:8px 0 0;font-size:24px;line-height:1.3;font-weight:600;">${escapeHtml(title)}</h1>
-            </div>
-            <div style="padding:20px 24px 24px;">
-              <table role="presentation" style="width:100%;border-collapse:collapse;">${htmlRows}</table>
-            </div>
-          </div>
+        <head>
+          <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>${escapeHtml(title)}</title>
+          <style>
+            body, table, td, th { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+            table, td, th { mso-table-lspace:0pt; mso-table-rspace:0pt; }
+            @media screen and (max-width:620px) {
+              .notification-container { width:100% !important; }
+              .notification-content { padding:28px 20px !important; }
+            }
+            @media screen and (max-width:440px) {
+              .notification-label { display:block !important; width:auto !important; padding:12px 0 2px !important; }
+              .notification-value { display:block !important; width:auto !important; padding:0 0 12px !important; }
+            }
+          </style>
+        </head>
+        <body style="margin:0;padding:0;background-color:#bcd2bf;font-family:Arial,sans-serif;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#bcd2bf" style="background-color:#bcd2bf;">
+            <tr><td align="center" style="padding:28px 12px;">
+              <!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+              <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" class="notification-container" bgcolor="#ffffff" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;">
+                <tr><td class="notification-content" style="padding:36px 40px;font-family:Arial,sans-serif;">
+                  <h1 style="margin:0 0 20px;color:#173f35;font-family:Arial,sans-serif;font-size:24px;line-height:1.3;font-weight:700;">${escapeHtml(title)}</h1>
+                  <table aria-label="Notification details" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;table-layout:fixed;border-collapse:collapse;">${htmlRows}</table>
+                </td></tr>
+              </table>
+              <!--[if mso]></td></tr></table><![endif]-->
+            </td></tr>
+          </table>
         </body>
       </html>`,
   };
@@ -61,7 +97,6 @@ const renderNotification = ({ eyebrow, title, rows }) => {
 export const buildInternshipApplicationNotification = (application) => {
   const position = present(application?.position, "Unspecified position");
   const message = renderNotification({
-    eyebrow: "Internal notification",
     title: "New internship application",
     rows: [
       ["Applicant", application?.name],
@@ -82,19 +117,40 @@ export const buildInternshipApplicationNotification = (application) => {
   };
 };
 
+const formatTicketPrice = (value) => {
+  if (value === undefined || value === null || String(value).trim() === "") return "Not set";
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) return "Not set";
+  return amount === 0 ? "Free" : new Intl.NumberFormat("en-NL", { style: "currency", currency: "EUR" }).format(amount);
+};
+
+const eventPrices = (event) => {
+  if (event?.isFree) return "Free";
+  if (event?.ticketLink) return "See external ticket provider";
+  const product = event?.product;
+  return [
+    !event?.memberOnly && `Guest: ${formatTicketPrice(product?.guest?.price)}`,
+    `Member: ${event?.isMemberFree ? "Free" : formatTicketPrice(product?.member?.price)}`,
+    `Active member: ${event?.isMemberFree ? "Free" : formatTicketPrice(product?.activeMember?.price ?? product?.member?.price)}`,
+  ].filter(Boolean).join("\n");
+};
+
 export const buildEventCreatedNotification = (event) => {
   const title = present(event?.title, "Untitled event");
+  const region = String(event?.region ?? "").trim().toLowerCase();
+  const identifier = event?.slug || event?.id || event?._id;
+  const link = region && identifier
+    ? `${HOME_URL}/${encodeURIComponent(region)}/event-details/${encodeURIComponent(identifier)}`
+    : null;
   const message = renderNotification({
-    eyebrow: "Internal notification",
     title: "New event added",
     rows: [
-      ["Event", title],
-      ["Region", event?.region],
-      ["Date", formatDateTime(event?.date)],
+      ["Title", title],
+      ["Region", formatRegionBadgeLabel(region), { region }],
+      ["Date & time", formatDateTime(event?.date)],
       ["Location", event?.location],
-      ["Visibility", event?.hidden ? "Hidden" : "Visible"],
-      ["Audience", event?.memberOnly ? "Members only" : "Everyone"],
-      ["Event ID", event?._id ?? event?.id],
+      ["Prices", eventPrices(event)],
+      ["Link", link, { href: link }],
     ],
   });
 
@@ -115,7 +171,6 @@ export const buildSupportTicketNotification = (ticket) => {
     ? `${environment.viewport.width} × ${environment.viewport.height}${environment.devicePixelRatio ? ` at ${environment.devicePixelRatio}×` : ""}`
     : "Not provided";
   const message = renderNotification({
-    eyebrow: "Internal notification",
     title: "New website support ticket",
     rows: [
       ["Reference", reference],
@@ -135,7 +190,6 @@ export const buildSupportTicketNotification = (ticket) => {
 
 export const buildAccessRequestNotification = (request) => ({
   ...renderNotification({
-    eyebrow: "Internal notification",
     title: "Administration access requested",
     rows: [
       ["Account ID", request.accountId],

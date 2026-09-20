@@ -1,8 +1,9 @@
 # Scheduled background jobs
 
-This file is the inventory of recurring work started by the BGSNL API process.
-Update it whenever a recurring worker, cron job, or externally scheduled API
-task is added, removed, or changes frequency.
+This file is the inventory of recurring work started by the BGSNL API process
+or its dedicated worker service. Update it whenever a recurring worker, queued
+job, cron job, or externally scheduled API task is added, removed, or changes
+frequency.
 
 Last reviewed: 15 September 2026.
 
@@ -22,6 +23,23 @@ Database-triggered work is inventoried in [triggers.md](triggers.md).
 All workers start only after MongoDB and Redis are ready and the required
 account/temporary-code indexes exist. In PM2 cluster mode, only worker 0 runs
 birthday, weekly-summary, event-announcement and event-draft cleanup schedules. They stop accepting new work during graceful API shutdown.
+
+## Redis spreadsheet worker
+
+Source: [`workers.js`](../workers.js),
+[`services/jobs/spreadsheet-sync-queue.js`](../services/jobs/spreadsheet-sync-queue.js)
+and [`services/jobs/spreadsheet-sync-worker.js`](../services/jobs/spreadsheet-sync-worker.js).
+
+The API places Google Sheets synchronization work in the durable Redis queue
+after the database write succeeds. The `bgsnl-worker` Compose service consumes
+it independently of the two API processes. Event, special-event, member,
+alumni and internship exports are deduplicated by their affected record or
+region, delayed briefly to coalesce rapid updates, and retried up to five times
+with exponential backoff. Completed jobs remain available for one day and
+failed jobs for seven days for operational inspection.
+
+The append-only data-pool export remains on its existing in-process path until
+it has an idempotency key; retrying an append without one could duplicate rows.
 
 ## Event draft cleanup
 
@@ -156,7 +174,7 @@ events:
 | --- | --- | --- |
 | Billing lease heartbeat | Every 20 seconds while a protected billing mutation runs | Keeps the two-minute distributed lease owned by the active process |
 | General email queue timeout | 60 seconds for the legacy provider; 100 seconds for Domakin Mailer | Prevents one delivery from blocking the in-memory mail queue indefinitely |
-| Google Sheets queue timeout | 120 seconds per queued operation | Prevents a stalled Sheets export from blocking later exports |
+| Redis spreadsheet-job retry | Five attempts with exponential backoff, beginning at one second | Recovers transient Google Sheets or network failures without blocking API requests |
 
 ## Not automatically scheduled
 

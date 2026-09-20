@@ -1,3 +1,4 @@
+import { findPublicEvent } from "../../services/public-content/find-public-event.js";
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
@@ -31,6 +32,7 @@ import { extractUserFromRequest } from "../../util/functions/security.js";
 import { findUserById } from "../../services/main-services/user-service.js";
 import {
   ACCESS_4,
+  ALL_EVENT_REGIONS_ACCESS,
   DEFAULT_REGION,
   NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID,
   NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE,
@@ -42,16 +44,33 @@ import {
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
 import { futureEventDateFilter, publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
 
-const objectIdPattern = /^[a-f\d]{24}$/i;
-const publicEventIdentifierQuery = (identifier) => objectIdPattern.test(String(identifier || ""))
-  ? { $or: [{ _id: identifier }, { slug: identifier }] }
-  : { slug: String(identifier || "") };
-const findPublicEvent = (identifier) => Event.findOne({
-  ...publicEventQuery,
-  ...publicEventIdentifierQuery(identifier),
-});
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const serializeGuestListEntry = (guest) => ({
+  id: String(guest._id),
+  name: guest.name,
+  email: guest.email,
+  type: guest.type,
+  status: guest.status,
+  timestamp: guest.timestamp,
+  refunded: Boolean(guest.refunded),
+  preferences: guest.preferences || {},
+  addOns: (guest.addOns || []).map((addOn) => ({
+    title: addOn.title,
+    price: addOn.price,
+  })),
+});
+
+const guestListColumns = (event) => ({
+  addOns: Boolean(event.addOns?.isEnabled && event.addOns.items?.length),
+  preferences: Array.isArray(event.extraInputsForm) && event.extraInputsForm.length > 0,
+});
+
+const canManageEventGuestList = (req, event) => {
+  const { roles, region } = extractUserFromRequest(req);
+  return roles.some((role) => ALL_EVENT_REGIONS_ACCESS.includes(role)) || region === event.region;
+};
 
 const addEmailRecipient = (recipientsByEmail, invalidEmails, email, name = "") => {
   const normalizedEmail = String(email || "").trim().toLowerCase();
@@ -129,7 +148,7 @@ export const getEventPurchaseAvailability = async (req, res, next) => {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    const event = await findPublicEvent(eventId);
+    const event = await findPublicEvent(Event, eventId, req.query?.region);
 
     if (!event) {
       return next(new HttpError("No event was found", 404));
@@ -153,7 +172,7 @@ export const getEventById = async (req, res, next) => {
   }
 
   try {
-    const event = await findPublicEvent(eventId);
+    const event = await findPublicEvent(Event, eventId, req.query?.region);
 
     if (!event) {
       return next(new HttpError("No event was found", 404));
@@ -212,7 +231,7 @@ export const getSoldTicketQuantity = async (req, res, next) => {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    const event = await findPublicEvent(eventId);
+    const event = await findPublicEvent(Event, eventId, req.query?.region);
     if (!event) {
       return next(new HttpError("No event was found", 404));
     }
@@ -917,6 +936,44 @@ export const postSendNonSocietyEventFinalReminderEmail = async (req, res, next) 
   }
 };
 
+
+export const getEventGuestList = async (req, res, next) => {
+  try {
+    const event = await Event.findById(req.params.eventId).select("region title guestList extraInputsForm addOns");
+    if (!event) return next(new HttpError("No event was found", 404));
+    if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
+    return res.status(200).json({
+      eventId: event.id,
+      title: event.title,
+      columns: guestListColumns(event),
+      guestList: event.guestList.map(serializeGuestListEntry),
+    });
+  } catch {
+    return next(new HttpError("The guest list could not be loaded", 500));
+  }
+};
+
+export const updateGuestPresence = async (req, res, next) => {
+  const { eventId, guestId, present } = req.body;
+  try {
+    const event = await Event.findById(eventId);
+    if (!event) return next(new HttpError("No event was found", 404));
+    if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
+    const guest = event.guestList.id(guestId);
+    if (!guest) return next(new HttpError("This guest is no longer in the list", 404));
+    if (guest.refunded) return next(new HttpError("A refunded ticket cannot be checked in", 422));
+    guest.status = present ? 1 : 0;
+    await event.save();
+    eventToSpreadsheet(event.id);
+    return res.status(200).json({
+      status: true,
+      guest: serializeGuestListEntry(guest),
+      sheetSync: "queued",
+    });
+  } catch {
+    return next(new HttpError("Updating guest presence failed", 500));
+  }
+};
 
 // status 0 = noting to update
 // status 1 = success
