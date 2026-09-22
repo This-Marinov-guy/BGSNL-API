@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import HttpError from "../../models/Http-error.js";
 import { BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT } from "../../util/config/defines.js";
 
+export const SUPPORT_TYPES = ["problem", "recommendation"];
 export const SUPPORT_STATUSES = ["open", "in_progress", "waiting_for_you", "resolved", "closed"];
 export const SUPPORT_ROLES = ["super_admin", "admin", "support"];
 export const MAX_MESSAGES = 200;
@@ -129,7 +130,7 @@ export function pageNumber(value = "1") {
 export function publicConversation(record, { staff = false, before } = {}) {
   const output = {
     id: record._id, reference: String(record._id).slice(0, 8).toUpperCase(), subject: record.subject,
-    status: record.status, createdAt: record.createdAt, updatedAt: record.updatedAt,
+    type: record.type || "problem", status: record.status, createdAt: record.createdAt, updatedAt: record.updatedAt,
     lastMessageAt: record.lastMessageAt, lastAuthor: record.lastAuthor,
     messageCount: record.messageCount, revision: record.revision, pagePath: record.pagePath,
     ...(staff ? { contact: record.contact, ownerAccountId: record.ownerAccountId || null, environment: record.environment } : {}),

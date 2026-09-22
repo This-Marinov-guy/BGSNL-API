@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import SupportConversation from "../../models/SupportConversation.js";
 import HttpError from "../../models/Http-error.js";
 import { accountIds, authorizeConversation, digest, GUEST_ACCESS_MS, guestHash, isSupportStaff, MAX_MESSAGES,
-  normalizeContact, pageNumber, publicConversation, safePagePath, supportAttachments, supportEnvironment, SUPPORT_STATUSES, textValue, uuid, validateStatus } from "./policy.js";
+  normalizeContact, pageNumber, publicConversation, safePagePath, supportAttachments, supportEnvironment, SUPPORT_STATUSES, SUPPORT_TYPES, textValue, uuid, validateStatus } from "./policy.js";
 
 export function createSupportService({ records = SupportConversation, now = () => new Date(), notifyNewTicket = () => {} } = {}) {
   const getRecord = (id) => records.findById(uuid(id)).select("+guestSecretHash +requestHash").lean();
@@ -11,13 +11,15 @@ export function createSupportService({ records = SupportConversation, now = () =
   async function create(input, actor, context = {}) {
     const id = uuid(input.id);
     const contact = normalizeContact(input.contact, actor.account);
+    const type = input.type === undefined ? "problem" : input.type;
+    if (!SUPPORT_TYPES.includes(type)) throw new HttpError("Choose a problem report or recommendation.", 422);
     const subject = textValue(input.subject, "Subject", 140);
     const text = textValue(input.text, "Message", 4000);
     const pagePath = safePagePath(input.pagePath);
-    const environment = supportEnvironment(input.environment, context.userAgent);
+    const environment = type === "problem" ? supportEnvironment(input.environment, context.userAgent) : undefined;
     if (input.website) throw new HttpError("Report could not be submitted.", 422);
     const keyHash = actor.account ? undefined : guestHash(actor.secret);
-    const requestHash = digest(JSON.stringify({ subject, text, pagePath, contact }));
+    const requestHash = digest(JSON.stringify({ subject, text, pagePath, contact, ...(type === "recommendation" ? { type } : {}) }));
     const existing = await getRecord(id);
     const replay = (record) => {
       authorizeConversation(record, { ...actor, staff: false }, now().getTime());
@@ -29,7 +31,7 @@ export function createSupportService({ records = SupportConversation, now = () =
     try {
       const record = await records.create({
         _id: id, ownerAccountId: actor.account ? String(actor.account._id || actor.account.id) : null,
-        contact, subject, pagePath, environment, requestHash, status: "open", revision: 0,
+        contact, type, subject, pagePath, environment, requestHash, status: "open", revision: 0,
         ...(keyHash ? { guestSecretHash: keyHash, guestAccessExpiresAt: new Date(createdAt.getTime() + GUEST_ACCESS_MS) } : {}),
         createdAt, updatedAt: createdAt, lastMessageAt: createdAt, lastAuthor: "requester", messageCount: 1,
         messages: [{ id, author: "requester", authorAccountId: actor.account?.id || null, text, attachments: [], kind: "message", createdAt }],
@@ -52,7 +54,7 @@ export function createSupportService({ records = SupportConversation, now = () =
       filter.status = status;
     }
     const currentPage = pageNumber(page);
-    const items = await records.find(filter).select("_id subject status createdAt updatedAt lastMessageAt lastAuthor messageCount revision pagePath contact ownerAccountId")
+    const items = await records.find(filter).select("_id type subject status createdAt updatedAt lastMessageAt lastAuthor messageCount revision pagePath contact ownerAccountId")
       .sort({ lastMessageAt: -1, _id: -1 }).skip((currentPage - 1) * 25).limit(26).lean();
     return { conversations: items.slice(0, 25).map((record) => publicConversation(record, actor)), page: currentPage, hasMore: items.length > 25 };
   }

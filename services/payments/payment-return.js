@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import PaymentReturn from "../../models/PaymentReturn.js";
 import HttpError from "../../models/Http-error.js";
 import { createStripeClient } from "../../util/config/stripe.js";
+import { membershipAccountReady } from "./account-readiness.js";
 
 export const RETURN_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 export const newPaymentToken = () => randomBytes(32).toString("hex");
@@ -89,7 +90,7 @@ export function stripeCheckoutUrl(value) {
 
 // This is a read-only projection. Visiting a result page never fulfils an order,
 // grants benefits, creates an invoice or creates another payment.
-export async function readPaymentReturn(token, { records = PaymentReturn, stripeForRegion = createStripeClient, now = Date.now() } = {}) {
+export async function readPaymentReturn(token, { records = PaymentReturn, stripeForRegion = createStripeClient, accountReady = membershipAccountReady, now = Date.now() } = {}) {
   if (typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)) throw invalidReturn();
   const record = await records.findById(paymentTokenId(token)).lean();
   if (!record || new Date(record.expiresAt).getTime() <= now) throw invalidReturn();
@@ -118,10 +119,14 @@ export async function readPaymentReturn(token, { records = PaymentReturn, stripe
   // Subscription Checkout stores its payment intent on the invoice (Stripe API 2022-08-01).
   const intent = session.payment_intent || session.invoice?.payment_intent;
   const status = checkoutState({ ...session, payment_intent: intent });
+  const setup = record.kind === "subscription" ? {
+    accountReady: status === "success" && await accountReady(session, record.region),
+    isSignup: typeof session.metadata?.checkoutKey === "string" && session.metadata.checkoutKey.startsWith("signup:"),
+  } : {};
   const lines = await stripe.checkout.sessions.listLineItems(session.id, { limit: 100 });
   const invoice = session.invoice;
   const charge = intent?.latest_charge;
-  return { ...base, ...paymentIdentifiers(intent, status), status, amount: session.amount_total, currency: session.currency,
+  return { ...base, ...setup, ...paymentIdentifiers(intent, status), status, amount: session.amount_total, currency: session.currency,
     date: new Date((charge?.created || session.created) * 1000).toISOString(),
     reference: invoice?.number || base.reference,
     items: lines.data.map((item) => ({ description: item.description || "Purchase", quantity: item.quantity, amount: item.amount_total })),

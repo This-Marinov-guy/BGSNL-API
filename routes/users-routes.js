@@ -2,6 +2,8 @@ import express from "express";
 import { param } from "express-validator";
 import { ACCOUNT_CAMPAIGN_KEYS } from "../util/config/account-campaigns.js";
 import { getAccountCampaign, markAccountCampaignSeen } from "../controllers/account-campaigns-controller.js";
+import { wallet } from "../controllers/wallet-controller.js";
+import { walletPublicRateLimit } from "../middleware/wallet-rate-limit.js";
 import {
   getCurrentUser,
   patchUserInfo,
@@ -47,6 +49,13 @@ dotenv.config();
 const userRouter = express.Router();
 
 userRouter.get("/current", authMiddleware, getCurrentUser);
+userRouter.get("/wallet/availability", authMiddleware, wallet.availability);
+userRouter.get("/wallet/card", authMiddleware, wallet.own);
+userRouter.get("/wallet/apple", authMiddleware, createPasswordRateLimit("wallet-issue"), wallet.own);
+userRouter.post("/wallet/google", authMiddleware, createPasswordRateLimit("wallet-issue"), wallet.own);
+userRouter.post("/wallet/card", authMiddleware, createPasswordRateLimit("wallet-create"), wallet.create);
+userRouter.delete("/wallet/card", authMiddleware, createPasswordRateLimit("wallet-revoke"), wallet.revoke);
+userRouter.get("/wallet/public/:token", walletPublicRateLimit, wallet.public);
 
 const campaignValidators = [param("campaign").isIn(ACCOUNT_CAMPAIGN_KEYS).withMessage("Unknown account campaign")];
 userRouter.get("/campaigns/:campaign", authMiddleware, campaignValidators, validateRequest, getAccountCampaign);

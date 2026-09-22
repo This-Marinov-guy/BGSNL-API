@@ -48,6 +48,7 @@ import PasswordResetChallenge from "./models/PasswordResetChallenge.js";
 import ProfileChange from "./models/ProfileChange.js";
 import { redisClient, closeRedis } from "./services/storage/redis.js";
 import SupportConversation from "./models/SupportConversation.js";
+import WalletCard from "./models/WalletCard.js";
 import { startWeeklyMembershipReportWorker } from "./services/background-services/weekly-membership-report.js";
 import { startMemberEventAnnouncementWorker } from "./services/events/member-event-announcements.js";
 import { startBirthdayEmailWorker } from "./services/background-services/birthday-emails.js";
@@ -63,6 +64,7 @@ app.use(apiVersionMiddleware);
 // Payment return capabilities, Stripe documents and personal checkout details
 // must not be captured by request/response analytics.
 app.use((req, res, next) => {
+  req.walletPrivate = /^\/api\/(?:v\d+\/)?user\/wallet(?:\/|$)/.test(req.url);
   req.paymentPrivate = /^\/api\/v\d+\/payment(?:\/|$)/.test(req.url);
   if (req.paymentPrivate) res.set("Cache-Control", "private, no-store");
   next();
@@ -191,6 +193,7 @@ app.use(supportError);
 
 // error handling (not sure if needed)
 app.use((error, req, res, _next) => {
+  if (req.walletPrivate) return res.status(error.statusCode || 500).json({ message: error instanceof HttpError ? error.message : "Membership card service is temporarily unavailable." });
   if (req.paymentPrivate) {
     return res.status(error.statusCode || 500).json({ message: error instanceof HttpError ? error.message : "Payment service is temporarily unavailable. Please try again." });
   }
@@ -233,7 +236,7 @@ mongoose
   )
   .then(async () => {
     console.log("Connected to DB");
-    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), redisClient()]);
+    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), WalletCard.init(), redisClient()]);
     stopBillingWorker = startBillingWorker();
     stopWeeklyMembershipReportWorker = startWeeklyMembershipReportWorker();
     stopBirthdayEmailWorker = startBirthdayEmailWorker();

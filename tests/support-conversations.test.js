@@ -259,3 +259,38 @@ test("Mongo schema provides bounded chat fields and indexed owner/inbox lookups"
   }] });
   assert.ok(tooManyPhotos.validateSync().errors["messages.0.attachments"]);
 });
+
+test("recommendations retain their type through creation, lists, replies and staff notifications", async () => {
+  const notifications = [];
+  const { records, service } = setup({ notifyNewTicket: (ticket) => notifications.push(ticket) });
+  const input = { ...createInput(), type: "recommendation", subject: "More weekend events", text: "Please consider weekend activities.", environment: { browser: "Unneeded diagnostics" } };
+  const actor = { account: member };
+  const created = await service.create(input, actor, { userAgent: "Test Browser" });
+  assert.equal(created.type, "recommendation");
+  assert.equal(records.data.get(created.id).environment, undefined);
+  assert.equal(notifications[0].type, "recommendation");
+  assert.equal((await service.list(actor)).conversations[0].type, "recommendation");
+  assert.equal((await service.list({ account: admin, staff: true })).conversations[0].type, "recommendation");
+  assert.equal((await service.reply(created.id, { id: randomUUID(), text: "Thank you for the idea." }, { account: admin, staff: true })).type, "recommendation");
+  assert.equal((await service.create(input, actor)).id, created.id);
+  assert.equal(notifications.length, 1);
+  await assert.rejects(service.create({ ...input, type: "problem" }, actor), { statusCode: 409 });
+});
+
+test("legacy reports default to problem and retries remain compatible", async () => {
+  const { records, service } = setup();
+  const input = createInput();
+  const created = await service.create(input, guest);
+  delete records.data.get(created.id).type;
+  assert.equal((await service.get(created.id, guest)).type, "problem");
+  assert.equal((await service.create({ ...input, type: "problem" }, guest)).id, created.id);
+  assert.equal((await service.list({ account: admin, staff: true })).conversations[0].type, "problem");
+});
+
+test("unknown recommendation types are rejected before saving a conversation", async () => {
+  const { records, service } = setup();
+  for (const type of [null, "", "unknown", { $ne: "problem" }, ["recommendation"]]) {
+    await assert.rejects(service.create({ ...createInput(), type }, guest), { statusCode: 422 });
+  }
+  assert.equal(records.data.size, 0);
+});

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import uniqueValidator from "mongoose-unique-validator";
+import { automaticWalletCard } from "../services/wallet/provision.js";
 import { ALUMNI } from "../util/config/defines.js";
 import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 import { createCurrentDate } from "../util/functions/currentDate.js";
@@ -53,6 +54,7 @@ const alumniUserSchema = new Schema({
 });
 
 alumniUserSchema.plugin(uniqueValidator);
+alumniUserSchema.plugin(automaticWalletCard);
 accountSecurityIndexes(alumniUserSchema);
 alumniUserSchema.index({ "subscription.id": 1, status: 1 });
 alumniUserSchema.index({ accountAliases: 1 });

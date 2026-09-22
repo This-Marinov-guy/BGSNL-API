@@ -1,3 +1,5 @@
+import { internalCollection } from "../services/migrations/runner.js";
+
 // Consolidate the former Breda region slug under the current Breda–Tilburg
 // region. "bread" is included as an old typo found in legacy data.
 const LEGACY_REGIONS = ["breda", "bread"];
@@ -8,7 +10,7 @@ const applicationCollections = async (db) => {
   const collections = await db.listCollections({}, { nameOnly: true }).toArray();
   return collections
     .map(({ name }) => name)
-    .filter((name) => name && name !== "_migrations" && !name.startsWith("system."));
+    .filter((name) => name && name !== "_migrations" && !internalCollection(name));
 };
 
 export default {

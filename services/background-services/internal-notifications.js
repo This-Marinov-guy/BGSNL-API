@@ -171,9 +171,10 @@ export const buildSupportTicketNotification = (ticket) => {
     ? `${environment.viewport.width} × ${environment.viewport.height}${environment.devicePixelRatio ? ` at ${environment.devicePixelRatio}×` : ""}`
     : "Not provided";
   const message = renderNotification({
-    title: "New website support ticket",
+    title: ticket?.type === "recommendation" ? "New recommendation" : "New website support ticket",
     rows: [
       ["Reference", reference],
+      ["Type", ticket?.type === "recommendation" ? "Recommendation" : "Problem report"],
       ["Subject", subject],
       ["Reporter", ticket?.contact?.name],
       ["Email", ticket?.contact?.email],
@@ -185,7 +186,7 @@ export const buildSupportTicketNotification = (ticket) => {
       ["Open inbox", "https://www.bulgariansociety.nl/user/dashboard/support"],
     ],
   });
-  return { ...message, subject: `New support ticket #${reference} — ${subject}`, type: "support-ticket-created", entityId: present(ticket?.id, reference) };
+  return { ...message, subject: `${ticket?.type === "recommendation" ? "New recommendation" : "New support ticket"} #${reference} — ${subject}`, type: "support-ticket-created", entityId: present(ticket?.id, reference) };
 };
 
 export const buildAccessRequestNotification = (request) => ({

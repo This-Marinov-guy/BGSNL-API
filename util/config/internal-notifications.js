@@ -5,6 +5,19 @@ export const DEFAULT_INTERNAL_NOTIFICATION_SUBSCRIBERS = Object.freeze([
   "bulgariansocietynetherlands@gmail.com",
 ]);
 
+export const DEFAULT_DEVELOPER_NOTIFICATION_SUBSCRIBERS = Object.freeze([
+  "vladislavmarinov3142@gmail.com",
+]);
+
+export const getDeveloperNotificationConfig = (env = process.env) => ({
+  enabled: env.DEVELOPER_NOTIFICATIONS_ENABLED === undefined
+    ? true : areInternalNotificationsEnabled(env.DEVELOPER_NOTIFICATIONS_ENABLED),
+  subscribers: env.DEVELOPER_NOTIFICATION_SUBSCRIBERS === undefined
+    ? [...DEFAULT_DEVELOPER_NOTIFICATION_SUBSCRIBERS]
+    : String(env.DEVELOPER_NOTIFICATION_SUBSCRIBERS).trim()
+      ? parseInternalNotificationSubscribers(env.DEVELOPER_NOTIFICATION_SUBSCRIBERS) : [],
+});
+
 export const parseInternalNotificationSubscribers = (value) => {
   const candidates = value
     ? String(value).split(",")

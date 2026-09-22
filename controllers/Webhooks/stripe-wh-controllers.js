@@ -48,6 +48,7 @@ export const postWebhookCheckout = async (req, res, next) => {
     stripe = createStripeClient(requestedRegion);
     event = stripe.webhooks.constructEvent(req.body, req.headers["stripe-signature"], getStripeKey("webhookSecretKey", requestedRegion));
     region = canonicalStripeRegion(requestedRegion);
+    res.locals.verifiedWebhookEvent = { eventId: event.id, eventType: event.type, livemode: event.livemode };
   } catch { return res.status(400).json({ message: "Invalid Stripe webhook signature or configuration" }); }
   try {
     const object = event.data.object;

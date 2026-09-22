@@ -104,7 +104,7 @@ export const logError = (err, { req, meta, payload } = {}) => {
  * Express middleware – logs API requests using fixed-field info model (req, res, headers).
  */
 export const axiomLogger = (req, res, next) => {
-  if (req.paymentPrivate || req.supportPrivate || !axiom || process.env.APP_ENV === "dev") {
+  if (req.walletPrivate || req.paymentPrivate || req.supportPrivate || !axiom || process.env.APP_ENV === "dev") {
     return next();
   }
 
@@ -154,7 +154,7 @@ export const axiomLogger = (req, res, next) => {
     ingestLog(log);
   };
 
-  next();
+  return next();
 };
 
 export default axiomLogger;

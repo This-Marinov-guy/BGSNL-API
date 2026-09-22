@@ -1,89 +1,68 @@
-import dotenv from "dotenv";
-dotenv.config();
-
-import { readdir } from "node:fs/promises";
+import "dotenv/config";
+import { readdir, mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import mongoose from "mongoose";
+import { MongoClient } from "mongodb";
+import { runMigrations, recoverMigrationRun, safeError } from "../services/migrations/runner.js";
 
-/**
- * Deploy-time migration runner.
- *
- * Every file in this directory (other than this one) must export
- * `{ id, up(db) }`. Each migration runs at most once: after it completes,
- * its id is recorded in the `_migrations` collection, and future runs skip
- * it. Migrations run in filename order, so name them "001-...", "002-...".
- *
- * A migration that throws stops the whole run with a non-zero exit code.
- * Wired into .github/workflows/docker-ci-cd.yml to run against the freshly
- * built image before the live container is replaced, so a failed migration
- * blocks the deploy instead of shipping code the database isn't ready for.
- */
+const directory = path.dirname(fileURLToPath(import.meta.url));
+// eslint-disable-next-line no-process-env
+const env = process.env;
+const secrets = [env.DB_PASS, env.DB_USER, env.MIGRATION_MONGO_URI];
+const signal = new AbortController();
+process.once("SIGTERM", () => signal.abort());
+process.once("SIGINT", () => signal.abort());
 
-const MIGRATIONS_DIR = path.dirname(fileURLToPath(import.meta.url));
-const TRACKING_COLLECTION = "_migrations";
+async function loadMigrations() {
+  const files = (await readdir(directory)).filter(file => /^\d+-.+\.js$/.test(file)).sort();
+  return Promise.all(files.map(async file => {
+    const migration = (await import(pathToFileURL(path.join(directory, file)).href)).default;
+    if (!migration || typeof migration.id !== "string" || typeof migration.up !== "function") throw new Error(`${file} must export default { id, up(db) }`);
+    return migration;
+  }));
+}
 
-const getMongoUri = () =>
-  // eslint-disable-next-line no-process-env
-  `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB}`;
+async function saveResult(result) {
+  if (!env.MIGRATION_OUTPUT_DIR) return;
+  await mkdir(env.MIGRATION_OUTPUT_DIR, { recursive: true, mode: 0o700 });
+  await writeFile(path.join(env.MIGRATION_OUTPUT_DIR, "result.json"), JSON.stringify(result, null, 2), { mode: 0o600 });
+  // Written last: the deployment script must never resume an old API based only
+  // on an exit code or incomplete output from a killed migration process.
+  if (result.safeToResume) await writeFile(path.join(env.MIGRATION_OUTPUT_DIR, "rollback.status"), "rolled-back\n", { mode: 0o600 });
+}
 
-const loadMigrations = async () => {
-  const entries = await readdir(MIGRATIONS_DIR, { withFileTypes: true });
-  const files = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".js") && entry.name !== "run.js")
-    .map((entry) => entry.name)
-    .sort();
-
-  const migrations = [];
-  for (const file of files) {
-    const module = await import(pathToFileURL(path.join(MIGRATIONS_DIR, file)).href);
-    const migration = module.default;
-    if (!migration || typeof migration.id !== "string" || typeof migration.up !== "function") {
-      throw new Error(`${file} must export default { id, up(db) }`);
-    }
-    migrations.push(migration);
+async function main() {
+  // Never let a reused output directory carry an old safe-to-resume marker.
+  if (env.MIGRATION_OUTPUT_DIR) {
+    await rm(path.join(env.MIGRATION_OUTPUT_DIR, "rollback.status"), { force: true });
+    await rm(path.join(env.MIGRATION_OUTPUT_DIR, "result.json"), { force: true });
   }
-  return migrations;
-};
-
-const main = async () => {
-  mongoose.set("strictQuery", true);
-  await mongoose.connect(getMongoUri(), { autoCreate: false, autoIndex: false });
-
+  const args = process.argv.slice(2);
+  if (args.some(arg => arg !== "--writers-stopped" && !/^--recover=[a-f\d-]{36}$/.test(arg))) throw new Error("Use --writers-stopped, optionally with --recover=<run-id>");
+  if (!args.includes("--writers-stopped")) throw new Error("Stop database writers and pass --writers-stopped before migrating");
+  const recovery = args.find(arg => arg.startsWith("--recover="))?.slice(10);
+  let uri = env.MIGRATION_MONGO_URI;
+  if (!uri) {
+    if (!env.DB_USER || !env.DB_PASS || !env.DB) throw new Error("Missing migration database configuration");
+    uri = `mongodb+srv://${encodeURIComponent(env.DB_USER)}:${encodeURIComponent(env.DB_PASS)}@${env.DB}`;
+  }
+  const migrations = recovery ? null : await loadMigrations();
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 15000, readPreference: "primary", writeConcern: { w: "majority" } });
   try {
-    const db = mongoose.connection.db;
-    const tracking = db.collection(TRACKING_COLLECTION);
-    const migrations = await loadMigrations();
+    await client.connect();
+    const options = { writersStopped: true, signal: signal.signal, secrets, revision: env.DEPLOY_REVISION || "unknown" };
+    const result = recovery ? await recoverMigrationRun(client.db(), recovery, options) : await runMigrations(client.db(), migrations, options);
+    if (recovery) console.log(JSON.stringify({ phase: "recovery-result", ...result }));
+    await saveResult(result);
+  } catch (error) {
+    const result = error.result || { status: "blocked", safeToResume: false };
+    console.error(JSON.stringify({ phase: "runner-failed", ...result, error: safeError(error.cause || error, secrets) }));
+    await saveResult(result);
+    process.exitCode = 1;
+  } finally { await client.close(); }
+}
 
-    if (!migrations.length) {
-      console.log("[migrations] No migration files found.");
-      return;
-    }
-
-    const applied = new Set(
-      (await tracking.find({}, { projection: { _id: 1 } }).toArray()).map((doc) => doc._id)
-    );
-
-    for (const migration of migrations) {
-      if (applied.has(migration.id)) {
-        console.log(`[migrations] Skipping ${migration.id} (already applied).`);
-        continue;
-      }
-
-      console.log(`[migrations] Applying ${migration.id}...`);
-      await migration.up(db);
-      await tracking.insertOne({ _id: migration.id, appliedAt: new Date() });
-      console.log(`[migrations] Applied ${migration.id}.`);
-    }
-  } finally {
-    await mongoose.connection.close();
-  }
-};
-
-main().catch(async (error) => {
-  console.error(`[migrations] Failed: ${error.message}`);
-  if (mongoose.connection.readyState !== 0) {
-    await mongoose.connection.close();
-  }
+main().catch(error => {
+  console.error(JSON.stringify({ phase: "startup-failed", error: safeError(error, secrets) }));
   process.exitCode = 1;
 });

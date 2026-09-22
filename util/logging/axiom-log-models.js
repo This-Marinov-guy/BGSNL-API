@@ -28,6 +28,7 @@ const REQ_HEADER_KEYS = [
  * @param {object} redact - Redact function for sensitive data
  */
 export function buildReq(req, redact) {
+  if (req.walletPrivate) return { method: req.method, url: "/api/user/wallet", path: "/api/user/wallet" };
   if (/\/payment\/event-ticket(?:[/?]|$)/.test(req.originalUrl || req.url || "")) {
     return { method: req.method, url: "/api/payment/event-ticket", path: "/api/payment/event-ticket" };
   }

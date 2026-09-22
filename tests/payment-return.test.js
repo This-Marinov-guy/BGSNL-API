@@ -97,6 +97,24 @@ test("paid details come only from Stripe and omit checkout metadata and customer
   assert.equal(JSON.stringify(result).includes("never-expose-intent-secret"), false);
 });
 
+test("paid signup waits for account readiness without permitting another checkout", async () => {
+  const h = harness(); await h.prepare(); h.data.get(id).kind = "subscription";
+  h.session.metadata.checkoutKey = "signup:privatehash";
+  let ready = false;
+  const deps = { ...h.deps, accountReady: async (session, region) => {
+    assert.equal(session.id, "cs_verified"); assert.equal(region, "groningen"); return ready;
+  } };
+  const waiting = await readPaymentReturn(token, deps);
+  assert.equal(waiting.status, "success"); assert.equal(waiting.accountReady, false); assert.equal(waiting.isSignup, true);
+  assert.equal(waiting.retryUrl, null);
+  ready = true;
+  for (let i = 0; i < 3; i++) assert.equal((await readPaymentReturn(token, deps)).accountReady, true);
+  assert.equal(h.calls.length, 0, "polls never create payments");
+  assert.doesNotMatch(JSON.stringify(waiting), /privatehash|private@example/);
+  h.session.payment_status = "unpaid"; h.session.payment_intent = null;
+  assert.equal((await readPaymentReturn(token, { ...deps, accountReady: () => { throw new Error("must not check unpaid setup"); } })).accountReady, false);
+});
+
 test("failed payments expose their intent ID, not a failed charge as a transaction", async () => {
   const h = harness({ status: "open", payment_status: "unpaid", payment_intent: {
     id: "pi_declined", status: "requires_payment_method", last_payment_error: { code: "card_declined" }, latest_charge: "ch_failed",

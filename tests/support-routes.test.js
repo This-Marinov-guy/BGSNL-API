@@ -90,3 +90,15 @@ test("an active support-role account can use the staff inbox without broader adm
   assert.equal(response.status, 200);
   assert.deepEqual(response.body.conversations, []);
 });
+
+test("the real support route accepts recommendations and exposes their type on read", async () => {
+  const records = memorySupportStore();
+  const router = createSupportRouter({ service: createSupportService({ records }), throttle: async () => {} });
+  const id = randomUUID(); const secret = "c".repeat(64);
+  const created = await request(router, { method: "POST", secret, body: { id, type: "recommendation", subject: "Weekend activities", text: "An idea for the society.", contact: { name: "Guest", email: "guest@example.test" }, pagePath: "/user" } });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.conversation.type, "recommendation");
+  const read = await request(router, { url: `/conversations/${id}`, secret });
+  assert.equal(read.body.conversation.type, "recommendation");
+  assert.equal(records.data.get(id).environment, undefined);
+});

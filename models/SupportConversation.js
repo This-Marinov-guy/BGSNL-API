@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { MAX_MESSAGES, SUPPORT_STATUSES } from "../services/support/policy.js";
+import { MAX_MESSAGES, SUPPORT_STATUSES, SUPPORT_TYPES } from "../services/support/policy.js";
 
 const attachmentSchema = new mongoose.Schema({
   type: { type: String, enum: ["image"], required: true },
@@ -52,6 +52,7 @@ const schema = new mongoose.Schema({
     email: { type: String, maxlength: 254 }, phone: { type: String, maxlength: 40 },
     source: { type: String, enum: ["account", "guest"], required: true },
   },
+  type: { type: String, enum: SUPPORT_TYPES, default: "problem" },
   subject: { type: String, required: true, maxlength: 140 },
   pagePath: { type: String, required: true, maxlength: 500 },
   environment: { type: environmentSchema, default: undefined },
