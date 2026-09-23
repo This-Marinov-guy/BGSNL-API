@@ -2,7 +2,7 @@ import express from "express";
 import { updateEventSales } from "../../controllers/Events/event-sales-controller.js";
 import dotenv from "dotenv";
 import multer from "multer";
-import { addEvent, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList, getEventDraftCount, sendEventDraftReminder } from "../../controllers/Events/future-events-action-controller.js";
+import { addEvent, archiveExpiredEvents, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList, getEventDraftCount, sendEventDraftReminder } from "../../controllers/Events/future-events-action-controller.js";
 import { adminMiddleware, optionalAuthMiddleware } from "../../middleware/authorization.js";
 import { ACCESS_4 } from "../../util/config/defines.js";
 import { validateRequest } from "../../middleware/validate-request.js";
@@ -41,6 +41,8 @@ futureEventRouter.get(
     optionalAuthMiddleware,
     fetchFullDataEvent
 );
+
+futureEventRouter.post("/archive-expired", archiveExpiredEvents);
 
 futureEventRouter.get(
     '/full-data-events-list',

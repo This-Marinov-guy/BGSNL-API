@@ -20,7 +20,7 @@ import {
 import fileUpload from "../../middleware/file-upload.js";
 import dotenv from "dotenv";
 import { adminMiddleware, authMiddleware, optionalAuthMiddleware, requireBenefits } from "../../middleware/authorization.js";
-import { EVENT_MANAGEMENT_ACCESS } from "../../util/config/defines.js";
+import { EVENT_MANAGEMENT_ACCESS, COMMITTEE_MEMBER } from "../../util/config/defines.js";
 import { validateRequest } from "../../middleware/validate-request.js";
 import {
   checkTicketEligibilityValidators,
@@ -129,8 +129,8 @@ eventRouter.patch(
 );
 
 eventRouter.get(
-  "/guest-list/:eventId",
-  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
+  ["/guest-list/:eventId", "/guest-list/:eventId/stream"],
+  adminMiddleware([...EVENT_MANAGEMENT_ACCESS, COMMITTEE_MEMBER, "committee_member"]),
   getEventGuestList
 );
 

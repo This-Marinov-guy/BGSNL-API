@@ -163,6 +163,7 @@ const eventSchema = new Schema({
       // status 0 - not came
       // status 1 - came
       status: { type: Number, default: 0 },
+      checkedInAt: { type: Date },
       code: { type: Number },
       type: { type: String },
       userId: { type: String },

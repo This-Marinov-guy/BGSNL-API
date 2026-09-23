@@ -46,6 +46,7 @@ import { IS_PROD } from "../../util/functions/helpers.js";
 import { uniqueEventSlug } from "../../services/public-content/event-slug.js";
 import { publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
 import { dispatchSitemapRefresh } from "../../services/public-content/sitemap-dispatch.js";
+import { trustedWebsiteRequest } from "../../util/auth/request-client.js";
 import {
   ALL_EVENT_REGIONS_ACCESS,
   ACCESS_4,
@@ -344,9 +345,13 @@ export const fetchFullDataEvent = async (req, res, next) => {
 export const fetchFullDataEventsList = async (req, res, next) => {
   const region = req.query.region;
   const isAdmin = hasAdminRegionAccess(req);
+  const pastView = req.query.view === "past";
+  const includeArchived = pastView || req.query.includeArchived === "true";
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const pageSize = Math.min(25, Math.max(3, Number.parseInt(req.query.pageSize, 10) || 25));
 
-  let events;
-  let drafts;
+  let eventQuery;
+  let draftsQuery;
 
   try {
     if (region) {
@@ -358,25 +363,17 @@ export const fetchFullDataEventsList = async (req, res, next) => {
         return next(new HttpError("No access for this region", 403));
       }
 
-      events = await Event.find({
-        region,
-        status: { $nin: ["archived", EVENT_DRAFT] },
-      });
-      drafts = await EventDraft.find({ region });
+      eventQuery = { region };
+      draftsQuery = { region };
     } else if (isAdmin) {
-      events = await Event.find({
-        status: { $nin: ["archived", EVENT_DRAFT] },
-      });
-      drafts = await EventDraft.find({});
+      eventQuery = {};
+      draftsQuery = {};
     } else {
       const userRegion =
         req.user?.region === DEFAULT_REGION ? "" : req.user?.region ?? "";
 
-      events = await Event.find({
-        status: { $nin: ["archived", EVENT_DRAFT] },
-        region: userRegion,
-      });
-      drafts = await EventDraft.find({
+      eventQuery = { region: userRegion };
+      draftsQuery = {
         $or: [
           { region: userRegion },
           {
@@ -384,9 +381,46 @@ export const fetchFullDataEventsList = async (req, res, next) => {
             "draftOwner.userId": req.user?.userId,
           },
         ],
-      });
+      };
     }
   } catch (err) {
+    return next(new HttpError("Fetching events failed", 500));
+  }
+
+  const now = new Date();
+  eventQuery.status = includeArchived
+    ? { $ne: EVENT_DRAFT }
+    : { $nin: ["archived", EVENT_DRAFT] };
+  if (pastView) {
+    eventQuery.$or = [
+      { status: { $in: ["archived", "cancelled"] } },
+      { date: { $lt: now } },
+      { correctedDate: { $lt: now } },
+    ];
+    try {
+      const [events, total] = await Promise.all([
+        Event.find(eventQuery).sort({ correctedDate: -1, date: -1 }).skip((page - 1) * pageSize).limit(pageSize),
+        Event.countDocuments(eventQuery),
+      ]);
+      return res.status(200).json({
+        events: events.map((event) => removeModelProperties(event, ["guestList"])),
+        page,
+        total,
+        hasMore: page * pageSize < total,
+      });
+    } catch {
+      return next(new HttpError("Fetching past events failed", 500));
+    }
+  }
+
+  let events;
+  let drafts;
+  try {
+    [events, drafts] = await Promise.all([
+      Event.find(eventQuery),
+      EventDraft.find(draftsQuery),
+    ]);
+  } catch {
     return next(new HttpError("Fetching events failed", 500));
   }
 
@@ -400,6 +434,25 @@ export const fetchFullDataEventsList = async (req, res, next) => {
   ];
 
   res.status(200).json({ events });
+};
+
+export const archiveExpiredEvents = async (req, res, next) => {
+  if (!trustedWebsiteRequest(req)) {
+    return next(new HttpError("Website authentication required", 403));
+  }
+
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  try {
+    const result = await Event.updateMany({
+      status: { $nin: ["archived", "cancelled", EVENT_DRAFT] },
+      $or: [{ date: { $lte: cutoff } }, { correctedDate: { $lte: cutoff } }],
+    }, {
+      $set: { status: "archived", isSaleClosed: true },
+    });
+    return res.status(200).json({ status: true, archived: result.modifiedCount || 0 });
+  } catch {
+    return next(new HttpError("Archiving expired events failed", 500));
+  }
 };
 
 export const getEventDraftCount = async (req, res, next) => {

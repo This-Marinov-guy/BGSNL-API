@@ -1,6 +1,7 @@
 import { findPublicEvent } from "../../services/public-content/find-public-event.js";
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
+import TicketQr from "../../models/TicketQr.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
 import MemberUser from "../../models/MemberUser.js";
 import { validationResult } from "express-validator";
@@ -33,6 +34,7 @@ import { findUserById } from "../../services/main-services/user-service.js";
 import {
   ACCESS_4,
   ALL_EVENT_REGIONS_ACCESS,
+  EVENT_MANAGEMENT_ACCESS,
   DEFAULT_REGION,
   NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID,
   NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE,
@@ -42,6 +44,7 @@ import {
   NON_SOCIETY_EVENT_RESEND_TEMPLATE,
 } from "../../util/config/defines.js";
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
+import { planCheckIn, checkInMutation } from "../../services/tickets/check-in.js";
 import { futureEventDateFilter, publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
 
 
@@ -51,6 +54,9 @@ const serializeGuestListEntry = (guest) => ({
   id: String(guest._id),
   name: guest.name,
   email: guest.email,
+  phone: guest.phone,
+  ticket: guest.ticket,
+  transactionId: guest.transactionId,
   type: guest.type,
   status: guest.status,
   timestamp: guest.timestamp,
@@ -939,9 +945,19 @@ export const postSendNonSocietyEventFinalReminderEmail = async (req, res, next) 
 
 export const getEventGuestList = async (req, res, next) => {
   try {
-    const event = await Event.findById(req.params.eventId).select("region title guestList extraInputsForm addOns");
+    const event = await Event.findById(req.params.eventId).select("region title status guestList extraInputsForm addOns");
     if (!event) return next(new HttpError("No event was found", 404));
     if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
+    // Read-only committee access matches the existing analytics scope; it does
+    // not grant access to drafts/archives or permission to change attendance.
+    const { roles = [] } = extractUserFromRequest(req);
+    if (!roles.some(role => EVENT_MANAGEMENT_ACCESS.includes(role)) && ["draft", "archived"].includes(event.status)) return next(new HttpError("No access to this event guest list", 403));
+    if (req.path?.endsWith("/stream")) {
+      const { streamGuestList } = await import("../../services/tickets/guest-list-live.js");
+      await streamGuestList(req, res, event.id);
+      return;
+    }
+    res.set("Cache-Control", "private, no-store");
     return res.status(200).json({
       eventId: event.id,
       title: event.title,
@@ -962,9 +978,12 @@ export const updateGuestPresence = async (req, res, next) => {
     const guest = event.guestList.id(guestId);
     if (!guest) return next(new HttpError("This guest is no longer in the list", 404));
     if (guest.refunded) return next(new HttpError("A refunded ticket cannot be checked in", 422));
+    const result = await Event.updateOne({ _id: event._id, region: event.region,
+      guestList: { $elemMatch: { _id: guest._id, refunded: { $ne: true } } } },
+    { $set: { "guestList.$.status": present ? 1 : 0, "guestList.$.checkedInAt": present ? new Date() : null } });
+    if (result.matchedCount !== 1) return next(new HttpError("This ticket changed. Reload the guest list.", 409));
     guest.status = present ? 1 : 0;
-    await event.save();
-    eventToSpreadsheet(event.id);
+    Promise.resolve().then(() => eventToSpreadsheet(event.id)).catch(() => {});
     return res.status(200).json({
       status: true,
       guest: serializeGuestListEntry(guest),
@@ -975,108 +994,46 @@ export const updateGuestPresence = async (req, res, next) => {
   }
 };
 
-// status 0 = noting to update
-// status 1 = success
-// status 2 = count is required as more than 1 guest was found
+// Legacy numeric statuses remain compatible: 0 duplicate, 1 admitted, 2 choose count.
 export const updatePresence = async (req, res, next) => {
-  const { eventId, code } = req.body;
-  let { count } = req.body;
-  let societyEvent;
-
+  let { eventId, code } = req.body;
+  const { count, token } = req.body;
   try {
-    societyEvent = await Event.findById(eventId);
-  } catch (err) {
-    return next(
-      new HttpError("Could not find such event, please try again!", 500)
-    );
-  }
-
-  if (!societyEvent) {
-    return next(
-      new HttpError(
-        "Could not find such event - for further help best contact support",
-        404
-      )
-    );
-  }
-
-  if (societyEvent.guestList.length < 1) {
-    return next(new HttpError("This events has no guests!", 404));
-  }
-
-  const targetGuests = societyEvent.guestList.filter(
-    (guest) => guest.code && guest.code == code
-  );
-
-  let guestName, guestEmail;
-
-  if (targetGuests.length > 0) {
-    guestName = targetGuests[0].name;
-    guestEmail = targetGuests[0].email;
-  }
-
-  if (targetGuests.length === 0) {
-    return next(new HttpError("Guest/s were not found in the list", 404));
-  }
-
-  if (targetGuests.length > 1 && !count) {
-    return res.status(200).json({
-      status: 2,
-      event: societyEvent.title,
-      name: guestName,
-      email: guestEmail,
-    });
-  }
-
-  // If count is not provided but there is only one guest, set count to 1
-  if (!count) {
-    count = 1;
-  }
-
-  let updatedCount = 0;
-
-  for (let i = 0; i < societyEvent.guestList.length; i++) {
-    const guest = societyEvent.guestList[i];
-
-    if (
-      guest.name === guestName &&
-      guest.email === guestEmail &&
-      guest.status === 0 &&
-      count > 0
-    ) {
-      societyEvent.guestList[i].status = 1;
-      count--;
-      updatedCount++;
+    if (token) {
+      const ticket = await TicketQr.findOne({ token }).lean();
+      if (!ticket) return next(new HttpError("Ticket not found", 404));
+      eventId = ticket.eventId;
+      code = ticket.code;
     }
-
-    if (count === 0) break;
+    if (req.body.expectedEventId && String(eventId) !== req.body.expectedEventId) return next(new HttpError("This ticket is for a different event", 422));
+    const event = await Event.findById(eventId).select("region title guestList");
+    if (!event) return next(new HttpError("Event not found", 404));
+    if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
+    const includeDetails = req.body.includeDetails === true;
+    const plan = planCheckIn(event.guestList, code, count, { preview: req.body.preview === true || includeDetails });
+    const messages = { not_found: "Ticket not found for this event", refunded: "This ticket has been refunded", invalid_quantity: "Choose a count within the remaining tickets" };
+    if (plan.statusCode) return next(new HttpError(messages[plan.outcome], plan.statusCode));
+    if (plan.ids) {
+      const { filter, update, options } = checkInMutation(event, plan);
+      const result = await Event.updateOne(filter, update, options);
+      if (result.modifiedCount !== 1) return next(new HttpError("This ticket changed or was just checked in by another scanner. Check it again before admitting anyone.", 409));
+      // Spreadsheet failure must not turn a committed check-in into an error.
+      Promise.resolve().then(() => eventToSpreadsheet(event.id)).catch(() => {});
+    }
+    const details = { ...plan };
+    delete details.ids;
+    delete details.statusCode;
+    res.set("Cache-Control", "private, no-store");
+    return res.status(200).json({ ...details, event: event.title, eventId: event.id,
+      ...(includeDetails ? { ticketDetails: event.guestList.filter(guest => guest.code != null && String(guest.code) === String(code)).map(serializeGuestListEntry) } : {}),
+      guests: event.guestList.filter(guest => guest.code != null && String(guest.code) === String(code) && !guest.refunded).map(guest => ({
+        id: String(guest._id), name: guest.name,
+        present: Number(guest.status) === 1 || Boolean(plan.ids?.some(id => String(id) === String(guest._id))),
+      })),
+      remaining: plan.remaining - (plan.admitted || 0) });
+  } catch {
+    return next(new HttpError("Check-in could not be confirmed. Please try again.", 500));
   }
-
-  if (updatedCount === 0) {
-    return res.status(200).json({
-      status: 0,
-      event: societyEvent.title,
-      name: guestName,
-      email: guestEmail,
-    });
-  }
-
-  try {
-    await societyEvent.save();
-  } catch (err) {
-    return next(
-      new HttpError("Updating guest list failed, please try again", 500)
-    );
-  }
-
-  eventToSpreadsheet(societyEvent.id);
-
-  res.status(201).json({
-    status: 1,
-    event: societyEvent.title,
-    name: guestName,
-    email: guestEmail,
-  });
 };
 
 export const postSyncEventsCalendar = async (req, res, next) => {

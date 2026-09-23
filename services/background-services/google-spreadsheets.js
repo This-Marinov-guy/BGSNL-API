@@ -26,6 +26,7 @@ import InternshipApplication from "../../models/InternshipApplication.js";
 import { ALUMNI_MIGRATED } from "../../util/config/enums.js";
 import { INTERNSHIP_SHEET } from "../../util/config/SPREEDSHEATS.js";
 import { enqueueSpreadsheetSync } from "../jobs/spreadsheet-sync-queue.js";
+import { publishGuestListChanged } from "../tickets/guest-list-live.js";
 
 // Lightweight background job queue with concurrency limit and de-duplication
 const MAX_CONCURRENCY = 1;
@@ -1331,7 +1332,10 @@ export const syncInternshipApplicationsToSpreadsheet = async () => {
     }
 };
 
-const eventToSpreadsheet = (id) => enqueueSpreadsheetSync("event", { id });
+const eventToSpreadsheet = (id) => {
+  void publishGuestListChanged(id);
+  return enqueueSpreadsheetSync("event", { id });
+};
 const specialEventsToSpreadsheet = (id) => enqueueSpreadsheetSync("special-event", { id });
 const usersToSpreadsheet = (region = null) => enqueueSpreadsheetSync("members", { region });
 export const alumniToSpreadsheet = () => enqueueSpreadsheetSync("alumni");

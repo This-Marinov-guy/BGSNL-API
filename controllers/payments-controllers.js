@@ -1,4 +1,5 @@
 import { checkoutPromoAudience, prepareEventPromoCheckout } from "../services/tickets/event-promo-codes.js";
+import { randomInt } from "node:crypto";
 import dotenv from "dotenv";
 import { createHash } from "node:crypto";
 dotenv.config();
@@ -568,6 +569,8 @@ export const postCheckoutFile = async (req, res, next, {
   }
 
   let fileLocation = "";
+  // Never trust a browser timestamp as a unique purchase identity.
+  const ticketCode = randomInt(1, 281474976710655);
   try {
     const bucketName =
       checkoutType === "member"
@@ -579,7 +582,7 @@ export const postCheckoutFile = async (req, res, next, {
       checkoutType,
       bucketName,
       originUrl: origin_url,
-      code: req.body.code,
+      code: ticketCode,
       quantity,
       guestName: restrictedGuestMetadata?.guestName || req.body.guestName,
       userId: effectiveUserId,
@@ -600,6 +603,7 @@ export const postCheckoutFile = async (req, res, next, {
       ...req.body,
       ...restrictedGuestMetadata,
       method: checkoutType === "member" ? "buy_member_ticket" : "buy_guest_ticket",
+      code: ticketCode,
       type: checkoutType === "member" ? "member" : "guest",
       file: fileLocation ? fileLocation : "",
       userId: effectiveUserId,
@@ -662,6 +666,7 @@ export const postCheckoutFile = async (req, res, next, {
       ...req.body,
       ...restrictedGuestMetadata,
       method: checkoutType === "member" ? "buy_member_ticket" : "buy_guest_ticket",
+      code: ticketCode,
       type: checkoutType === "member" ? "member" : "guest",
       file: fileLocation ? fileLocation : null,
       userId: effectiveUserId,

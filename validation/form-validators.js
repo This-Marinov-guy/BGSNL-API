@@ -1083,8 +1083,11 @@ export const nonSocietyRegistrationValidators = [
 ];
 
 export const guestCheckInValidators = [
-  requiredMongoId("eventId", "Event ID"),
-  requiredText("code", "Ticket code", 100),
+  body("expectedEventId").optional().isMongoId().withMessage("Invalid scanner event"),
+  body().custom(value => {
+    if (value?.token != null) return typeof value.token === "string" && /^[A-Za-z0-9_-]{22}$/.test(value.token);
+    return /^[a-f\d]{24}$/i.test(String(value?.eventId || "")) && /^\d{1,16}$/.test(String(value?.code || ""));
+  }).withMessage("A valid ticket token or legacy event and ticket code is required"),
   body("count")
     .optional({ checkFalsy: true })
     .isInt({ min: 1, max: 1000 })
@@ -1094,7 +1097,7 @@ export const guestCheckInValidators = [
 export const guestPresenceValidators = [
   requiredMongoId("eventId", "Event ID"),
   requiredMongoId("guestId", "Guest ID"),
-  body("present").isBoolean().withMessage("Presence must be true or false"),
+  body("present").isBoolean().withMessage("Presence must be true or false").toBoolean(),
 ];
 
 export const nonSocietyEmailValidators = [

@@ -185,10 +185,15 @@ test("password token validation matches the current email/token form", async () 
 
 test("guest check-in validates eventId/code instead of stale name/email fields", async () => {
   const { nextCalled } = await validate(guestCheckInValidators, {
-    body: { eventId: OBJECT_ID, code: "ticket-123", count: null },
+    body: { eventId: OBJECT_ID, code: "1770000000000", count: null },
   });
 
   assert.equal(nextCalled, true);
+});
+
+test("short QR check-in accepts only an opaque 22-character token", async () => {
+  assert.equal((await validate(guestCheckInValidators, { body: { token: "abcdefghijklmnopqrstuv" } })).nextCalled, true);
+  assert.equal((await validate(guestCheckInValidators, { body: { token: { $ne: null } } })).response.statusCode, 422);
 });
 
 test("manual guest-list attendance updates require an event, guest and boolean presence", async () => {

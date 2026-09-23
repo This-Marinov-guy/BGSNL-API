@@ -214,7 +214,9 @@ test("real ticket controller prefills member email, preserves fulfillment metada
     assert.equal(data.metadata.eventId, event._id);
     assert.equal(data.metadata.method, "buy_member_ticket");
     assert.equal(data.metadata.memberPriceApplied, "true");
-    assert.equal(data.metadata.code, 123456789);
+    assert.ok(Number.isSafeInteger(data.metadata.code));
+    assert.equal(data.metadata.code, calls.ticket.code);
+    assert.notEqual(data.metadata.code, 123456789);
     assert.equal(data.metadata.file, "https://tickets.example.test/test.png");
     if (free) assert.equal(data.line_items[0].price_data.unit_amount, 0);
     else assert.equal(data.line_items[0].price, "price_member");
