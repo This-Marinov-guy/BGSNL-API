@@ -40,7 +40,7 @@
     "deploy": "git add . && git commit -m done && git push heroku main",
     "pretest:redis": "node scripts/local-redis.mjs start",
     "test:redis": "BGSNL_STORAGE_TEST_REDIS=true BGSNL_REDIS_URL=redis://127.0.0.1:6380/15 node --test tests/redis-storage.integration.test.js",
-    "test:migrations": "node --test tests/migration-runner.test.js tests/deploy-with-migrations.test.js tests/event-production-upgrade.test.js"
+    "test:migrations": "node --test tests/migration-runner.test.js tests/deploy-with-migrations.test.js tests/event-production-upgrade.test.js tests/event-production-audit.test.js tests/retired-account-campaign-migration.test.js"
   },
   "keywords": [],
   "author": "",

@@ -19,6 +19,7 @@ for (const Model of [MemberUser, AlumniUser]) {
       assert.equal(query._id, "account-owner");
       assert.ok(query.status.$nin.includes("membership-migrated"));
       assert.equal(query.campaignsSeen.$ne, campaign);
+      assert.equal(update.$set, undefined);
       if (account.campaignsSeen.includes(campaign)) return { modifiedCount: 0 };
       account.campaignsSeen.push(update.$addToSet.campaignsSeen);
       return { modifiedCount: 1 };
@@ -33,6 +34,18 @@ for (const Model of [MemberUser, AlumniUser]) {
     assert.equal(payload.seen, true);
   });
 }
+
+test("Version 4 uses campaignsSeen; retired fields are not in either model", () => {
+  assert.ok(ACCOUNT_CAMPAIGN_KEYS.includes("whats-new-version4"));
+  for (const Model of [MemberUser, AlumniUser]) {
+    assert.equal(Model.schema.path("campaigns"), undefined);
+    assert.equal(Model.schema.path("mmmCampaign2025.calendarImage"), undefined);
+    const account = new Model({ campaignsSeen: ["whats-new-version4"] });
+    getAccountCampaign({ account, params: { campaign: "whats-new-version4" } }, {
+      json: (value) => assert.equal(value.seen, true),
+    });
+  }
+});
 
 test("campaign routes authenticate and reject unregistered campaign flags", async () => {
   for (const path of ["/campaigns/:campaign", "/campaigns/:campaign/seen"]) {

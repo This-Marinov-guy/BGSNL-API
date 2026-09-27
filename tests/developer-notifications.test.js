@@ -62,6 +62,22 @@ test("different events hit the global cap and disabled groups send nothing", asy
   assert.equal(calls, 20);
 });
 
+test("webhook deliveries are recorded in operations without payloads or event IDs", () => {
+  const records = [];
+  const observer = createWebhookErrorObserver(() => {}, (event) => records.push(event));
+  const success = new EventEmitter(); success.statusCode = 200;
+  success.locals = { verifiedWebhookEvent: { eventId: "evt_private", eventType: "invoice.paid" } };
+  observer({}, success, () => {}); success.emit("finish");
+  const rejected = new EventEmitter(); rejected.statusCode = 400; rejected.locals = {};
+  observer({ body: { secret: "private" } }, rejected, () => {}); rejected.emit("finish");
+  assert.equal(records.length, 2);
+  assert.equal(records[0].meta.source, "webhook.stripe");
+  assert.equal(records[0].meta.eventType, "invoice.paid");
+  assert.equal(records[1].level, "error");
+  assert.equal(records[1].meta.verified, false);
+  assert.doesNotMatch(JSON.stringify(records), /evt_private|private/);
+});
+
 test("alert delivery failures are contained and can be retried", async (t) => {
   t.mock.method(console, "error", () => {});
   let failed = true;

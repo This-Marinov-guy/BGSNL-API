@@ -108,6 +108,19 @@ test("unpaid alumni upgrade does not apply alumni identity or tier", async () =>
   assert.equal(h.account.tier, undefined);
   assert.equal(h.account.status, "locked");
 });
+
+test("a Member paid-through interval bridge applies the new period immediately without extending access", async () => {
+  const h = makeHarness();
+  const renewal = h.live.current_period_end;
+  h.live.status = "trialing";
+  h.live.trial_end = renewal;
+  h.live.items.data[0].price.id = MEMBERSHIP_PLANS[1].priceId;
+  await h.sync();
+  assert.equal(h.account.status, "active");
+  assert.equal(h.account.subscription.period, MEMBERSHIP_PLANS[1].period);
+  assert.equal(h.account.subscription.hasBenefits, true);
+  assert.equal(h.account.expireDate.getTime(), renewal * 1000);
+});
 test("billing recovery never clears a frozen or suspended account", async () => {
   for (const status of ["frozen", "suspended"]) {
     const h = makeHarness(); h.account.status = status;

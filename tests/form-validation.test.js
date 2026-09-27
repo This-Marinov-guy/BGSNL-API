@@ -348,6 +348,28 @@ test("published event validation ignores price fields hidden by closed sales", a
   assert.equal(response.payload.errors.ticketLink, undefined);
 });
 
+test("promotion validation permits optional dates but rejects invalid dates and discounts", async () => {
+  for (const [promotion, valid] of [
+    [{ isEnabled: true, discount: 20 }, true],
+    [{ isEnabled: true, discount: 20, startTimer: "", endTimer: "" }, true],
+    [{ isEnabled: true, discount: 20, startTimer: null, endTimer: null }, true],
+    [{ isEnabled: true, discount: 20, startTimer: "2026-10-01T12:00:00Z" }, true],
+    [{ isEnabled: true, discount: 20, endTimer: "2026-10-01T12:00:00Z" }, true],
+    [{ isEnabled: true, discount: 20, startTimer: "invalid" }, false],
+    [{ isEnabled: true, discount: 20, endTimer: "invalid" }, false],
+    [{ isEnabled: true }, false],
+    [{ isEnabled: true, discount: 100 }, false],
+  ]) {
+    const { response } = await validate(addEventValidators, {
+      body: { status: "opened", guestPromotion: JSON.stringify(promotion), memberPromotion: JSON.stringify(promotion) },
+      files: {},
+    });
+    for (const field of ["guestPromotion", "memberPromotion"]) {
+      assert.equal(!response.payload.errors[field], valid, `${field}: ${JSON.stringify(promotion)}`);
+    }
+  }
+});
+
 test("published EventForm multipart payload passes backend validation", async () => {
   const { nextCalled } = await validate(addEventValidators, {
     body: {

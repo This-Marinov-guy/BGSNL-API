@@ -32,6 +32,7 @@ export function memorySupportStore() {
   return { data, conflicts: 0,
     findById(id) { return new Query(() => data.get(id) || null); },
     find(filter) { return new Query(() => [...data.values()].filter((record) => matches(record, filter))); },
+    async countDocuments(filter) { return [...data.values()].filter(record => matches(record, filter)).length; },
     async create(input) {
       if (data.has(input._id)) throw Object.assign(new Error("Duplicate"), { code: 11000 });
       data.set(input._id, clone(input));

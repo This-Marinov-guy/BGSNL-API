@@ -6,7 +6,7 @@ import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 import TemporaryCode from "../models/TemporaryCode.js";
 import { createAuthMiddleware, requireBenefits } from "../middleware/authorization.js";
-import { persistSubscriptionAccount } from "../services/subscriptions/accounts.js";
+import { createSubscriptionAccount, persistSubscriptionAccount } from "../services/subscriptions/accounts.js";
 import { withBillingLease } from "../services/subscriptions/lease.js";
 import { findUserById } from "../services/main-services/user-service.js";
 
@@ -94,7 +94,16 @@ test("round-trip migration preserves profile, tickets, documents, aliases and St
   const alumni = await persistSubscriptionAccount(source, { status: "active", subscription: source.subscription.toObject() }, { type: "alumni", tier: 4 }, owned);
   assert.equal(alumni.subscription.connected, false);
   assert.equal(alumni.constructor.modelName, "AlumniUser"); assert.equal(alumni.tier, 4);
-  assert.equal(alumni.id, "alumni_archived"); assert.equal(documents.MemberUser.has(source.id), false);
+  assert.equal(alumni.id, "alumni_archived"); assert.equal(documents.MemberUser.has(source.id), true);
+  assert.equal(source.status, "alumni-migrated");
+  assert.equal(source.subscription.hasBenefits, false);
+  assert.equal(source.subscription.connected, false);
+  assert.equal(source.identities.length, 0);
+  assert.equal(source.passkeys.length, 0);
+  const sameAlumni = await persistSubscriptionAccount(alumni, { status: "active" }, { type: "alumni", tier: 3 }, owned);
+  assert.equal(sameAlumni, alumni);
+  assert.equal(alumni.tier, 3);
+  assert.equal(documents.AlumniUser.size, 1);
   assert.equal(alumni.birth.toISOString(), "2000-01-01T00:00:00.000Z");
   assert.ok(alumni.roles.includes("admin")); assert.ok(alumni.accountAliases.includes(source.id));
   alumni.email = "updated@example.test";
@@ -113,7 +122,32 @@ test("round-trip migration preserves profile, tickets, documents, aliases and St
   assert.equal(member.subscription.id, "sub_same"); assert.equal(member.subscription.customerId, "cus_same");
   assert.equal(member.profession, "Engineer"); assert.equal(member.tickets.length, 1);
   assert.equal(member.documents.length, 1); assert.equal(member.internshipApplications.length, 1);
-  assert.equal(verifiedSessions.length, 2); assert.ok(verifiedSessions.every((value) => value === session));
+  const sameMember = await persistSubscriptionAccount(member, { status: "active", subscription: { ...member.subscription.toObject(), period: 6 } }, { type: "member", period: 6 }, owned);
+  assert.equal(sameMember, member);
+  assert.equal(member.subscription.period, 6);
+  assert.equal(documents.MemberUser.size, 1);
+  assert.equal(verifiedSessions.length, 4); assert.ok(verifiedSessions.every((value) => value === session));
+});
+
+test("new subscription account creation checks both collections under the credential transaction lock", async (t) => {
+  const operations = [];
+  const session = { withTransaction: async (run) => run(), inTransaction: () => true, endSession: async () => {} };
+  t.mock.method(mongoose, "startSession", async () => session);
+  t.mock.method(TemporaryCode.collection, "updateOne", async () => { operations.push("lock"); });
+  let duplicate = false;
+  for (const Model of [MemberUser, AlumniUser]) t.mock.method(Model, "findOne", (query) => ({ session: async (value) => {
+    assert.equal(value, session);
+    assert.equal(query.email, "new@example.test");
+    operations.push(Model.modelName);
+    return duplicate && Model === AlumniUser ? {} : null;
+  } }));
+  const user = { email: "new@example.test", save: async (options) => { assert.equal(options.session, session); operations.push("save"); } };
+  const owned = async (value) => { assert.equal(value, session); operations.push("fence"); };
+  assert.equal(await createSubscriptionAccount(user, owned), user);
+  assert.deepEqual(operations, ["fence", "lock", "MemberUser", "AlumniUser", "save"]);
+  duplicate = true; operations.length = 0;
+  await assert.rejects(createSubscriptionAccount(user, owned), /created during checkout/);
+  assert.equal(operations.includes("save"), false);
 });
 test("a lost lease prevents any account transaction writes", async (t) => {
   const session = { withTransaction: async (run) => run(), endSession: async () => {} };
@@ -122,6 +156,18 @@ test("a lost lease prevents any account transaction writes", async (t) => {
   t.mock.method(MemberUser, "findById", () => { reads++; throw new Error("Unexpected account read"); });
   await assert.rejects(persistSubscriptionAccount(new MemberUser(), {}, null, async () => { throw new Error("Lease lost"); }), /Lease lost/);
   assert.equal(reads, 0);
+});
+test("a concurrent subscription replacement or suspension cannot be overwritten", async (t) => {
+  const session = { withTransaction: async (run) => run(), inTransaction: () => true, endSession: async () => {} };
+  t.mock.method(mongoose, "startSession", async () => session);
+  t.mock.method(TemporaryCode.collection, "updateOne", async () => {});
+  const user = new MemberUser({ _id: "member_race", status: "active", subscription: { id: "sub_original" } });
+  let current;
+  t.mock.method(MemberUser, "findById", () => ({ select: () => ({ session: async () => current }) }));
+  for (const patch of [{ subscription: { id: "sub_replaced" } }, { status: "suspended" }]) {
+    current = new MemberUser({ ...user.toObject(), ...patch });
+    await assert.rejects(persistSubscriptionAccount(user, { status: "active" }, null, async () => {}), /Account changed/);
+  }
 });
 test("distributed billing lease blocks a concurrent worker and releases only its own lock", async () => {
   let owner;

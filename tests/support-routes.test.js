@@ -53,6 +53,21 @@ async function request(router, { method = "GET", url = "/conversations", body = 
   });
 }
 
+test("live route authorizes scopes before opening a stream", async () => {
+  const service = createSupportService({ records: memorySupportStore() });
+  const id = randomUUID(); const secret = "a".repeat(64); let opened = 0;
+  await service.create({ id, subject: "Test", text: "Details", contact: { name: "Guest", email: "guest@example.test" }, pagePath: "/" }, { secret });
+  const router = createSupportRouter({ service, throttle: async () => {}, stream: async (_req, res, scopes) => {
+    opened++; return res.json({ scopes });
+  } });
+  assert.equal((await request(router, { method: "POST", url: "/live", body: { staff: true } })).status, 403);
+  assert.equal((await request(router, { method: "POST", url: "/live", body: { conversationId: id } })).status, 404);
+  assert.equal(opened, 0);
+  const result = await request(router, { method: "POST", url: "/live", secret, body: { conversationId: id } });
+  assert.deepEqual(result.body.scopes, [`support:thread:${id}`]);
+  assert.equal(opened, 1);
+});
+
 test("real routes save/read/reply as guest, deny staff routes, and hide database failures", async () => {
   const records = memorySupportStore(); const service = createSupportService({ records });
   const router = createSupportRouter({ service, throttle: async () => {} });
@@ -80,6 +95,35 @@ test("message routes ignore forged attachment URLs and retain only server-upload
     id: randomUUID(), text: "Screenshot", attachments: [{ type: "image", url: "https://attacker.test/forged.webp" }],
   } });
   assert.deepEqual(reply.body.conversation.messages.at(-1).attachments, [uploaded]);
+});
+
+test("locked client messages are rejected before upload; resolved replies reopen and notify through the route", async () => {
+  const records = memorySupportStore();
+  const notices = [];
+  const service = createSupportService({ records, notifyReply: (ticket, reply) => notices.push({ ticket, reply }) });
+  let uploads = 0;
+  const router = createSupportRouter({ service, throttle: async () => {}, uploadImages: async () => { uploads++; return []; } });
+  const secret = "a".repeat(64);
+  const report = await service.create({ id: randomUUID(), subject: "Test", text: "Details", contact: { name: "Guest", email: "guest@example.test" } }, { secret });
+  for (const status of ["rejected", "paused", "frozen"]) {
+    records.data.get(report.id).status = status;
+    const response = await request(router, { method: "POST", url: `/conversations/${report.id}/messages`, secret,
+      body: { id: randomUUID(), text: "Blocked" } });
+    assert.equal(response.status, 409);
+  }
+  assert.equal(uploads, 0);
+  assert.equal(notices.length, 0);
+  records.data.get(report.id).status = "resolved";
+  const body = { id: randomUUID(), text: "Still needs help" };
+  const response = await request(router, { method: "POST", url: `/conversations/${report.id}/messages`, secret, body });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.conversation.status, "open");
+  assert.equal(notices[0].reply.reopened, true);
+  records.data.get(report.id).status = "paused";
+  const replay = await request(router, { method: "POST", url: `/conversations/${report.id}/messages`, secret, body });
+  assert.equal(replay.status, 200);
+  assert.equal(replay.body.conversation.status, "paused");
+  assert.equal(notices.length, 1);
 });
 
 test("an active support-role account can use the staff inbox without broader admin roles", async () => {

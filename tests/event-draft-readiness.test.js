@@ -65,6 +65,13 @@ test('enabled upsell, promo and custom-question requirements affect readiness', 
   draft.draftData.promoCodes = { isEnabled: true, codes: [{ code: 'SAVE', discountType: 2, discount: 10, audiences: ['member'] }] };
   assert.equal(await isEventDraftReady(draft), true);
 });
+test('open-ended promotions do not block draft publication', async () => {
+  const draft = completeDraft();
+  draft.draftData.guestPromotion = { isEnabled: true, discount: 20, startTimer: '', endTimer: '' };
+  draft.draftData.memberPromotion = { isEnabled: true, discount: 10 };
+  assert.equal(await isEventDraftReady(draft), true);
+});
+
 test('checking readiness does not mutate the stored draft values', async () => {
   const draft = completeDraft();
   const before = JSON.stringify(draft.draftData);

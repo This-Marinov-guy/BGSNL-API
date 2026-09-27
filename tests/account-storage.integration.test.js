@@ -66,7 +66,13 @@ test("embedded credentials and shared temporary codes in an isolated Mongo repli
     await (owner.constructor === MemberUser ? AlumniUser : MemberUser).deleteMany({ _id: { $ne: owner.id } });
     const destination = owner.constructor === MemberUser ? "alumni" : "member";
     const migrated = await persistSubscriptionAccount(owner, {}, { type: destination, tier: 0 }, async () => {});
-    assert.equal(await owner.constructor.countDocuments({ _id: owner.id }), 0);
+    assert.equal(await owner.constructor.countDocuments({ _id: owner.id }), destination === "alumni" ? 1 : 0);
+    if (destination === "alumni") {
+      const archived = await MemberUser.findById(owner.id).select("+identities +passkeys");
+      assert.equal(archived.status, "alumni-migrated");
+      assert.equal(archived.passkeys.length, 0);
+      assert.equal(archived.identities.length, 0);
+    }
     assert.equal(migrated.passkeys[0].userHandle, "stable-handle");
     assert.equal(migrated.passkeys[0].revision, 1);
     assert.ok(migrated.accountAliases.includes(owner.id));

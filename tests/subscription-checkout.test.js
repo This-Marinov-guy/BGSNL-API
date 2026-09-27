@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MEMBERSHIP_PLANS } from "../util/subscriptions/policy.js";
-import { reserveCheckout, startMembershipChange, membershipPrices } from "../services/subscriptions/checkout.js";
+import { reserveCheckout, startMembershipChange, membershipPrices, membershipCheckoutRegion } from "../services/subscriptions/checkout.js";
+import { STRIPE_KEYS } from "../util/config/stripe.js";
 
 const checkoutHarness = () => {
   const record = { data: {} };
   const calls = [];
+  const customerCreations = [];
   let failOnce = false;
   let existingSubscriptions = [];
   const user = { id: "member_owner", email: "owner@example.test", subscription: {}, save: async () => {} };
   const stripe = {
-    customers: { create: async () => ({ id: "cus_verified" }) },
+    customers: { create: async data => { customerCreations.push(data); return { id: "cus_verified" }; } },
     subscriptions: { list: () => (async function* () { for (const sub of existingSubscriptions) yield sub; })() },
     checkout: { sessions: {
       retrieve: async (id) => ({ id, status: "open", url: "https://checkout.stripe.com/test-session" }),
@@ -32,7 +34,7 @@ const checkoutHarness = () => {
     prepareReturn: async ({ token, origin }) => ({ id: "verified_receipt", success_url: `${origin}/payment/return?token=${token}`,
       cancel_url: `${origin}/payment/return?token=${token}`, bind: async () => {} }) };
   const options = { key: "account-checkout:member_owner", user, plan: MEMBERSHIP_PLANS[0], region: "netherlands", returnUrl: "https://bulgariansociety.nl", dependencies };
-  return { record, calls, user, options, reserve: () => reserveCheckout(options), failNext: () => { failOnce = true; },
+  return { record, calls, customerCreations, user, options, reserve: () => reserveCheckout(options), failNext: () => { failOnce = true; },
     setSubscriptions: (subs) => { existingSubscriptions = subs; } };
 };
 
@@ -93,6 +95,65 @@ test("a missing subscription cannot bypass frozen or suspended account restricti
     }), (error) => error.statusCode === 403);
   }
 });
+
+test("new subscriptions reuse the existing customer after cancellation and without a previous subscription", async () => {
+  for (const subscription of [{ customerId: "cus_existing" }, { id: "sub_ended", status: "canceled", customerId: "cus_existing", stripeRegion: "netherlands" }]) {
+    const h = checkoutHarness();
+    h.user.subscription = subscription;
+    h.setSubscriptions([{ id: "sub_ended", status: "canceled" }]);
+    await h.reserve();
+    assert.equal(h.customerCreations.length, 0);
+    assert.equal(h.calls[0].data.customer, "cus_existing");
+    assert.equal(h.record.data.customerId, "cus_existing");
+  }
+});
+
+test("Stripe reconciliation, not stale local state, decides whether a new subscription can start", async () => {
+  const stale = { id: "member_owner", status: "active", subscription: { id: "sub_old", status: "active", customerId: "cus_existing" } };
+  const ended = { ...stale, status: "locked", subscription: { ...stale.subscription, status: "canceled" } };
+  const calls = [];
+  await startMembershipChange(stale, { priceId: MEMBERSHIP_PLANS[0].priceId, dependencies: {
+    reconcile: async () => ({ user: ended, region: "netherlands" }),
+    checkout: async options => { calls.push(options); return {}; },
+    openPortal: async () => { throw new Error("Ended subscription should restart"); },
+  } });
+  assert.equal(calls[0].user.subscription.customerId, "cus_existing");
+  assert.equal(calls[0].region, "netherlands");
+  await startMembershipChange(ended, { priceId: MEMBERSHIP_PLANS[1].priceId, dependencies: {
+    reconcile: async () => ({ user: stale, sub: { items: { data: [{ price: MEMBERSHIP_PLANS[2].priceId }] } } }),
+    checkout: async () => { throw new Error("Stripe says the subscription is still running"); },
+    openPortal: async () => ({}),
+  } });
+  await assert.rejects(startMembershipChange(ended, { priceId: MEMBERSHIP_PLANS[0].priceId, dependencies: {
+    reconcile: async () => { throw new Error("Stripe unavailable"); },
+    checkout: async () => { throw new Error("Must not reach checkout"); },
+  } }), /Stripe unavailable/);
+});
+
+test("customer reuse stays in its Stripe account, including regional aliases, without silently creating another customer", async () => {
+  const original = { netherlands: STRIPE_KEYS.netherlands, amsterdam: STRIPE_KEYS.amsterdam, eindhoven: STRIPE_KEYS.eindhoven };
+  STRIPE_KEYS.netherlands = { secretKey: "test-central" };
+  STRIPE_KEYS.eindhoven = { secretKey: "test-central" };
+  STRIPE_KEYS.amsterdam = { secretKey: "test-regional" };
+  try {
+    const h = checkoutHarness();
+    h.user.subscription = { customerId: "cus_existing", stripeRegion: "eindhoven" };
+    assert.equal(membershipCheckoutRegion(h.user), "netherlands");
+    await h.reserve();
+    assert.equal(h.customerCreations.length, 0);
+    assert.equal(h.calls[0].data.customer, "cus_existing");
+    const other = checkoutHarness();
+    other.user.subscription = { customerId: "cus_regional", stripeRegion: "amsterdam" };
+    assert.equal(membershipCheckoutRegion(other.user), "amsterdam");
+    await assert.rejects(other.reserve(), error => error.statusCode === 409);
+    assert.equal(other.customerCreations.length, 0);
+    assert.equal(other.calls.length, 0);
+    other.options.region = "amsterdam";
+    await other.reserve();
+    assert.equal(other.calls[0].data.customer, "cus_regional");
+    assert.equal(other.customerCreations.length, 0);
+  } finally { Object.assign(STRIPE_KEYS, original); }
+});
 test("ambiguous network failures replay the identical Stripe idempotency key and request", async () => {
   const h = checkoutHarness(); h.failNext();
   await assert.rejects(h.reserve(), /Network interrupted/);
@@ -114,15 +175,18 @@ test("past-due, active, paused and incomplete subscriptions all prevent a second
     assert.equal(h.calls.length, 0);
   }
 });
-test("all running-plan changes go to portal review and never create a new checkout", async () => {
+test("running-plan changes route same-programme updates to renewal and conversions to Stripe, never a new checkout", async () => {
   const user = { id: "member_owner", status: "active", subscription: { id: "sub_existing", status: "active", customerId: "cus_owner" } };
   const reviewed = [];
-  const dependencies = { reconcile: async () => ({ user }),
+  const deferred = [];
+  const dependencies = { reconcile: async () => ({ user, sub: { items: { data: [{ price: MEMBERSHIP_PLANS[0].priceId }] } } }),
+    changeAtRenewal: async (owner, plan) => { assert.equal(owner.subscription.id, "sub_existing"); deferred.push(plan); return { updated: true }; },
     openPortal: async (owner, options) => { assert.equal(owner.subscription.id, "sub_existing"); reviewed.push(options); return { url: "https://billing.stripe.com/test" }; },
     checkout: async () => { throw new Error("A running subscription must not create another checkout"); },
   };
   for (const plan of MEMBERSHIP_PLANS) await startMembershipChange(user, { priceId: plan.priceId, returnUrl: "https://bulgariansociety.nl", dependencies });
-  assert.equal(reviewed.length, MEMBERSHIP_PLANS.length);
+  assert.equal(reviewed.length, MEMBERSHIP_PLANS.filter(plan => plan.type === "alumni").length);
+  assert.equal(deferred.length, MEMBERSHIP_PLANS.filter(plan => plan.type === "member").length);
   await startMembershipChange(user, { priceId: "alumni_free", dependencies });
   assert.equal(reviewed.at(-1).action, "cancel"); assert.equal(reviewed.at(-1).freeAlumni, true);
 });

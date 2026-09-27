@@ -15,6 +15,53 @@ const photo = (name = "one") => ({ type: "image", url: `https://res.cloudinary.c
 const createInput = () => ({ id: randomUUID(), subject: "Ticket page problem", text: "The booking button does not respond.", contact: { name: "Test Guest", email: "guest@example.test" }, pagePath: "/events?private=secret#fragment" });
 const setup = (options = {}) => { const records = memorySupportStore(); return { records, service: createSupportService({ records, ...options }) }; };
 
+test("automatic screenshots are staff-only, retries stay idempotent, manual attachments remain visible", async () => {
+  const { service } = setup();
+  const report = await service.create(createInput(), guest);
+  const input = { id: randomUUID(), text: "Automatic page screenshot", diagnostic: "true", attachments: [photo()] };
+  const result = await service.reply(report.id, input, guest);
+  assert.equal(result.messages.length, 1);
+  assert.equal(JSON.stringify(result).includes(photo().url), false);
+  assert.equal((await service.reply(report.id, input, guest)).messages.length, 1);
+  const staffResult = await service.get(report.id, { account: admin, staff: true });
+  assert.equal(staffResult.messages.length, 2);
+  assert.equal(staffResult.messages[1].attachments[0].url, photo().url);
+  const manual = await service.reply(report.id, { id: randomUUID(), text: "", attachments: [photo("manual")] }, guest);
+  assert.equal(manual.messages.length, 2);
+  assert.equal(manual.messages[1].attachments[0].url, photo("manual").url);
+  await assert.rejects(service.reply(report.id, { id: randomUUID(), text: "Hide a reply", diagnostic: true }, guest));
+});
+
+test("new requester and staff replies notify once; retries, failures and status changes do not", async () => {
+  const notices = [];
+  const { records, service } = setup({ notifyReply: (ticket, reply) => notices.push({ ticket, reply }) });
+  const report = await service.create(createInput(), guest);
+  assert.equal(notices.length, 0);
+  records.conflicts = 1;
+  const input = { id: randomUUID(), text: "More information" };
+  await service.reply(report.id, input, guest);
+  await service.reply(report.id, input, guest);
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].reply.id, input.id);
+  assert.equal(notices[0].ticket.guestSecretHash, undefined);
+  const actor = { account: admin, staff: true };
+  const updated = await service.reply(report.id, { id: randomUUID(), text: "We are checking" }, actor);
+  assert.equal(notices.length, 2);
+  assert.equal(notices[1].reply.author, "staff");
+  await service.changeStatus(report.id, { status: "rejected", revision: updated.revision }, actor);
+  await assert.rejects(service.reply(report.id, { id: randomUUID(), text: "Rejected" }, guest));
+  assert.equal(notices.length, 2);
+});
+
+test("notification failure does not reject or undo a saved support reply", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const { service } = setup({ notifyReply: async () => { throw new Error("Mail unavailable"); } });
+  const report = await service.create(createInput(), guest);
+  const input = { id: randomUUID(), text: "Saved reply" };
+  const result = await service.reply(report.id, input, guest);
+  assert.ok(result.messages.some(message => message.id === input.id));
+});
+
 test("guest reports require a name and either valid email or phone", () => {
   assert.deepEqual(normalizeContact({ name: " Guest ", email: " TEST@EXAMPLE.TEST " }), { name: "Guest", email: "test@example.test", phone: "", source: "guest" });
   assert.equal(normalizeContact({ name: "Guest", phone: "+31 6 12345678" }).phone, "+31 6 12345678");
@@ -165,23 +212,105 @@ test("support uploads use content-addressed names in the conversation support fo
   assert.deepEqual(calls[0].transformation, [{ width: 2000, height: 8192, crop: "limit", quality: "auto" }]);
 });
 
-test("staff replies request a response; requester replies reopen a resolved report", async () => {
+test("staff replies stay open; requester replies reopen a resolved report", async () => {
   const { service } = setup(); const report = await service.create(createInput(), guest);
   const staff = { account: admin, staff: true };
   let current = await service.reply(report.id, { id: randomUUID(), text: "Could you tell us which browser?" }, staff);
-  assert.equal(current.status, "waiting_for_you");
+  assert.equal(current.status, "open");
   current = await service.changeStatus(report.id, { status: "resolved", revision: current.revision }, guest);
   assert.equal(current.messages.at(-1).kind, "status");
   current = await service.reply(report.id, { id: randomUUID(), text: "It still occurs." }, guest);
   assert.equal(current.status, "open");
 });
 
-test("status edits cannot overwrite concurrent replies and closed reports reject new messages", async () => {
+test("paused tickets reject client replies but staff replies stay paused; legacy statuses normalize", async () => {
+  const { service, records } = setup(); const report = await service.create(createInput(), guest);
+  const staff = { account: admin, staff: true };
+  await service.changeStatus(report.id, { status: "paused", revision: 0 }, staff);
+  await assert.rejects(service.reply(report.id, { id: randomUUID(), text: "More detail" }, guest), { statusCode: 409 });
+  assert.equal((await service.reply(report.id, { id: randomUUID(), text: "Staff update" }, staff)).status, "paused");
+  for (const [legacy, expected] of [["closed", "resolved"], ["in_progress", "open"], ["waiting_for_you", "open"]]) {
+    records.data.get(report.id).status = legacy;
+    assert.equal((await service.get(report.id, guest)).status, expected);
+    await assert.rejects(service.changeStatus(report.id, { status: legacy, revision: 2 }, staff), { statusCode: 422 });
+  }
+});
+
+test("guest and account clients cannot reply, attach screenshots, or unfreeze locked tickets", async () => {
+  for (const actor of [guest, { account: member }]) for (const status of ["paused", "rejected", "frozen"]) {
+    const notices = [];
+    const { service, records } = setup({ notifyReply: (...args) => notices.push(args) });
+    const report = await service.create(createInput(), actor);
+    const current = await service.changeStatus(report.id, { status, revision: 0 }, { account: admin, staff: true });
+    const snapshot = structuredClone(records.data.get(report.id));
+    for (const input of [{ text: "Client reply" }, { text: "", attachments: [photo()] },
+      { text: "Automatic page screenshot", attachments: [photo()], diagnostic: true }]) {
+      await assert.rejects(service.reply(report.id, { id: randomUUID(), ...input }, actor), { statusCode: 409 });
+    }
+    for (const target of ["open", "resolved"]) {
+      await assert.rejects(service.changeStatus(report.id, { status: target, revision: current.revision }, actor), { statusCode: 403 });
+    }
+    assert.deepEqual(records.data.get(report.id), snapshot);
+    assert.equal(notices.length, 0);
+    const open = await service.changeStatus(report.id, { status: "open", revision: current.revision }, { account: admin, staff: true });
+    assert.equal((await service.reply(report.id, { id: randomUUID(), text: "Allowed again" }, actor)).revision, open.revision + 1);
+  }
+});
+
+test("resolved client replies reopen atomically and send one reopened notification, including attachments", async () => {
+  for (const actor of [guest, { account: member }]) for (const attachmentOnly of [false, true]) {
+    const notices = [];
+    const { service, records } = setup({ notifyReply: (ticket, reply) => notices.push({ ticket, reply }) });
+    const report = await service.create(createInput(), actor);
+    const resolved = await service.changeStatus(report.id, { status: "resolved", revision: 0 }, { account: admin, staff: true });
+    records.conflicts = 1;
+    const input = { id: randomUUID(), text: attachmentOnly ? "" : "Still broken", attachments: attachmentOnly ? [photo()] : [] };
+    const reopened = await service.reply(report.id, input, actor);
+    assert.equal(reopened.status, "open");
+    assert.equal(reopened.revision, resolved.revision + 1);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].reply.reopened, true);
+    assert.equal(notices[0].ticket.status, "open");
+    const frozen = await service.changeStatus(report.id, { status: "paused", revision: reopened.revision }, { account: admin, staff: true });
+    await service.prepareReply(report.id, input, actor);
+    const replay = await service.reply(report.id, input, actor);
+    assert.equal(replay.revision, frozen.revision);
+    assert.equal(replay.status, "paused");
+    assert.equal(notices.length, 1);
+  }
+});
+
+test("a concurrent freeze wins over a client reply without saving or notifying", async () => {
+  const notices = [];
+  const { service, records } = setup({ notifyReply: (...args) => notices.push(args) });
+  const report = await service.create(createInput(), guest);
+  const update = records.findOneAndUpdate.bind(records);
+  let freeze = true;
+  records.findOneAndUpdate = (filter, patch) => {
+    if (freeze) { freeze = false; const record = records.data.get(report.id); record.status = "paused"; record.revision++; }
+    return update(filter, patch);
+  };
+  await assert.rejects(service.reply(report.id, { id: randomUUID(), text: "Racing reply" }, guest), { statusCode: 409 });
+  assert.equal(records.data.get(report.id).messageCount, 1);
+  assert.equal(notices.length, 0);
+});
+
+test("late automatic diagnostics do not reopen resolved tickets or send reply notifications", async () => {
+  const notices = [];
+  const { service } = setup({ notifyReply: (...args) => notices.push(args) });
+  const report = await service.create(createInput(), guest);
+  await service.changeStatus(report.id, { status: "resolved", revision: 0 }, { account: admin, staff: true });
+  const result = await service.reply(report.id, { id: randomUUID(), text: "Automatic page screenshot", diagnostic: true, attachments: [photo()] }, guest);
+  assert.equal(result.status, "resolved");
+  assert.equal(notices.length, 0);
+});
+
+test("status edits cannot overwrite concurrent replies and rejected reports reject new messages", async () => {
   const { service } = setup(); const report = await service.create(createInput(), guest);
   const current = await service.reply(report.id, { id: randomUUID(), text: "Another detail" }, guest);
-  await assert.rejects(service.changeStatus(report.id, { status: "closed", revision: report.revision }, { account: admin, staff: true }), { statusCode: 409 });
-  await assert.rejects(service.changeStatus(report.id, { status: "in_progress", revision: current.revision }, guest), { statusCode: 403 });
-  await service.changeStatus(report.id, { status: "closed", revision: current.revision }, { account: admin, staff: true });
+  await assert.rejects(service.changeStatus(report.id, { status: "rejected", revision: report.revision }, { account: admin, staff: true }), { statusCode: 409 });
+  await assert.rejects(service.changeStatus(report.id, { status: "paused", revision: current.revision }, guest), { statusCode: 403 });
+  await service.changeStatus(report.id, { status: "rejected", revision: current.revision }, { account: admin, staff: true });
   await assert.rejects(service.reply(report.id, { id: randomUUID(), text: "Later" }, guest), { statusCode: 409 });
   await assert.rejects(service.changeStatus(report.id, { status: "open", revision: current.revision + 1 }, guest), { statusCode: 403 });
 });
@@ -192,6 +321,12 @@ test("thread growth and reads are bounded; older messages are paginated", async 
   raw.messages = Array.from({ length: MAX_MESSAGES }, (_, index) => ({ id: randomUUID(), text: String(index), author: "requester", kind: "message", createdAt: new Date() }));
   raw.messageCount = MAX_MESSAGES;
   const latest = await service.get(report.id, guest);
+  const viewportPage = await service.get(report.id, guest, { limit: "20" });
+  assert.equal(viewportPage.messages.length, 20); assert.equal(viewportPage.before, 180);
+  const viewportOlder = await service.get(report.id, guest, { before: viewportPage.before, limit: "20" });
+  assert.equal(viewportOlder.messages.length, 20); assert.equal(viewportOlder.before, 160);
+  assert.equal(viewportOlder.messages.at(-1).order, 179);
+  await assert.rejects(service.get(report.id, guest, { limit: "1000" }), { statusCode: 422 });
   assert.equal(latest.messages.length, 50); assert.equal(latest.before, 150); assert.equal(latest.messages[0].order, 150);
   const earlier = await service.get(report.id, guest, { before: latest.before });
   assert.equal(earlier.messages[0].order, 100);
@@ -219,13 +354,19 @@ test("inbox pagination and status filters keep result sizes bounded", async () =
   const { service } = setup(); const staff = { account: admin, staff: true };
   for (let index = 0; index < 27; index++) await service.create(createInput(), { account: member });
   const first = await service.list(staff);
+  assert.equal(first.total, 27); assert.equal(first.totalPages, 2);
+  const compact = await service.list(staff, { pageSize: "10", page: "3" });
+  assert.equal(compact.conversations.length, 7); assert.equal(compact.totalPages, 3); assert.equal(compact.hasMore, false);
+  assert.equal((await service.list(staff, { pageSize: "50" })).conversations.length, 27);
+  await assert.rejects(service.list(staff, { pageSize: "1000" }), { statusCode: 422 });
   assert.equal(first.conversations.length, 25); assert.equal(first.hasMore, true);
   const second = await service.list(staff, { page: "2" });
   assert.equal(second.conversations.length, 2); assert.equal(second.hasMore, false);
   assert.equal(first.conversations.some(({ id }) => second.conversations.some((item) => item.id === id)), false);
   const record = first.conversations[0];
-  await service.changeStatus(record.id, { revision: record.revision, status: "in_progress" }, staff);
-  assert.equal((await service.list(staff, { status: "in_progress" })).conversations.length, 1);
+  await service.changeStatus(record.id, { revision: record.revision, status: "paused" }, staff);
+  assert.equal((await service.list(staff, { status: "paused" })).conversations.length, 1);
+  assert.equal((await service.list(staff, { status: "paused", pageSize: "10" })).total, 1);
 });
 
 test("malformed content and honeypot submissions are rejected", async () => {

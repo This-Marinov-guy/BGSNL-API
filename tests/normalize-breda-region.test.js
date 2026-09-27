@@ -26,12 +26,19 @@ test("normalizes legacy Breda values in every application collection and known n
   assert.equal(calls.length, 9);
   assert.deepEqual([...new Set(calls.map(({ name }) => name))], ["memberUsers", "events", "eventDrafts"]);
   assert.deepEqual(
-    calls.map(({ filter }) => Object.keys(filter)[0]),
+    calls.map(({ update }) => Object.keys(update.$set)[0]),
     ["region", "draftData.region", "draftOwner.region", "region", "draftData.region", "draftOwner.region", "region", "draftData.region", "draftOwner.region"],
   );
-  for (const { filter, update } of calls) {
-    const path = Object.keys(filter)[0];
+  for (const { name, filter, update } of calls) {
+    const path = Object.keys(update.$set)[0];
     assert.deepEqual(filter[path], { $in: ["breda", "bread"] });
     assert.deepEqual(update, { $set: { [path]: "breda_tilburg" } });
+    if (name === "events") {
+      assert.deepEqual(filter.status, { $in: ["opened", "closed", "temporary closed"] });
+      assert.deepEqual(filter.$expr.$gte[0], { $ifNull: ["$correctedDate", "$date"] });
+      assert.ok(filter.$expr.$gte[1] instanceof Date);
+    } else {
+      assert.equal(filter.status, undefined);
+    }
   }
 });

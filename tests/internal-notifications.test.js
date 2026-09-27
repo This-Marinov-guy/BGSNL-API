@@ -4,6 +4,7 @@ import {
   buildEventCreatedNotification,
   buildInternshipApplicationNotification,
   buildSupportTicketNotification,
+  buildSupportReplyNotification,
   createInternalNotificationService,
   createSupportTicketNotifier,
 } from "../services/background-services/internal-notifications.js";
@@ -12,6 +13,34 @@ import {
   getInternalNotificationConfig,
   parseInternalNotificationSubscribers,
 } from "../util/config/internal-notifications.js";
+
+test("support replies go only to Vladislav, use reply-level keys and escape message HTML", () => {
+  const messages = [];
+  const config = { enabled: true, subscribers: ["someone-else@example.test"] };
+  const service = createInternalNotificationService({ config, sendEmail: message => messages.push(message) });
+  const ticket = { id: "ticket-1", reference: "ABC123", subject: "Help", contact: { name: "Guest" } };
+  const reply = { id: "reply-1", author: "requester", text: "<script>unsafe</script>", createdAt: new Date(), attachments: [] };
+  assert.equal(service.notifySupportTicketReplied(ticket, reply), 1);
+  service.notifySupportTicketReplied(ticket, { ...reply, id: "reply-2", author: "staff" });
+  assert.deepEqual(messages.map(message => message.receiver), ["vladislavmarinov3142@gmail.com", "vladislavmarinov3142@gmail.com"]);
+  assert.notEqual(messages[0].entityId, messages[1].entityId);
+  assert.match(messages[0].html, /&lt;script&gt;/);
+  assert.doesNotMatch(messages[0].html, /<script>/);
+  config.enabled = false;
+  assert.equal(service.notifySupportTicketReplied(ticket, reply), 0);
+  assert.equal(messages.length, 2);
+});
+
+test("reopened tickets get a clearly labeled notification and retain reply-level deduplication", () => {
+  const ticket = { id: "ticket-1", reference: "ABC123", status: "open", subject: "Help" };
+  const reply = { id: "reply-1", author: "requester", text: "Still broken", createdAt: new Date(), reopened: true };
+  const notice = buildSupportReplyNotification(ticket, reply);
+  assert.match(notice.subject, /^Support ticket reopened #ABC123/);
+  assert.match(notice.html, /Support ticket reopened/);
+  assert.match(notice.html, /open/);
+  assert.equal(notice.entityId, "ticket-1:reply-1");
+  assert.equal(notice.type, "support-ticket-replied");
+});
 
 test("uses the requested internal subscribers and normalizes overrides", () => {
   assert.deepEqual(

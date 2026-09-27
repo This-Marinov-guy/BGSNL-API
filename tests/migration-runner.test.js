@@ -157,6 +157,18 @@ test("all real migrations finish before success and reruns skip completed IDs", 
   assert.equal(await state(db), before);
 });
 
+test("the full migration batch preserves past, archived and cancelled event documents", { skip: !uri }, async t => {
+  const db = await setup(t); await seed(db);
+  const historical = [
+    { _id: "past", status: "opened", date: new Date("2000-01-01") },
+    { _id: "archived", status: "archived", date: new Date("2099-01-01") },
+    { _id: "cancelled", status: "cancelled", date: new Date("2099-01-01") },
+  ].map(event => ({ ...event, title: "Historical", region: "breda", bgImage: 1, earlyBird: { ticketTimer: "bad" } }));
+  await db.collection("events").insertMany(historical);
+  await runMigrations(db, migrations, options);
+  for (const original of historical) assert.deepEqual(await db.collection("events").findOne({ _id: original._id }), original);
+});
+
 test("failure after all real migrations restores data, collection names, options, indexes and tracking", { skip: !uri }, async t => {
   const db = await setup(t); await seed(db);
   const before = await state(db);

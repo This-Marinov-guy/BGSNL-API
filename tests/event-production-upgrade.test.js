@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { BSON, ObjectId } from "mongodb";
-import { BACKUP_COLLECTION, normalizeLegacyEvent, planEventProductionUpgrade, upgradeProductionEvents } from "../services/events/event-production-upgrade.js";
+import { BACKUP_COLLECTION, eventSlugIndexReadiness, normalizeLegacyEvent, planEventProductionUpgrade, upgradeProductionEvents } from "../services/events/event-production-upgrade.js";
 import migration from "../migrations/007-upgrade-production-events.js";
+import backgroundMigration from "../migrations/005-remove-event-backgrounds.js";
+import { isActiveUpgradeEvent } from "../services/events/event-upgrade-scope.js";
 
 const clone = value => BSON.deserialize(BSON.serialize(value));
 const date = new Date("2026-09-22T17:00:00Z");
@@ -179,4 +181,99 @@ test("backup failure prevents the event update", async () => {
   const db = database([fixture()], { backupFailure: true });
   await assert.rejects(upgradeProductionEvents(db, { apply: true }), /Backup unavailable/);
   assert.deepEqual(db.calls, ["backup"]);
+});
+
+test("promotion and promo expiry dates normalize without imposing start or expiration dates", async () => {
+  const event = fixture({ promotion: {
+    guest: { isEnabled: true, discount: 20, startTimer: "", endTimer: null },
+    member: { isEnabled: true, discount: 10, startTimer: "2026-09-22T19:00:00+02:00" },
+  } });
+  event.product.promoCodes[0].timeLimit = date.toISOString();
+  const normalized = normalizeLegacyEvent(event);
+  assert.equal(Object.hasOwn(normalized.promotion.guest, "startTimer"), false);
+  assert.equal(normalized.promotion.guest.endTimer, null);
+  assert.equal(Object.hasOwn(normalized.promotion.member, "endTimer"), false);
+  assert.deepEqual(normalized.promotion.member.startTimer, date);
+  assert.deepEqual(normalized.product.promoCodes[0].timeLimit, date);
+  assert.equal(normalized.promotion.guest.isEnabled, true);
+  assert.equal(normalized.promotion.guest.discount, 20);
+  const { plans } = await planEventProductionUpgrade([event]);
+  applyUpdate(event, plans[0].update);
+  assert.equal((await planEventProductionUpgrade([event])).summary.pending, 0);
+});
+
+test("ambiguous or impossible promotion/promo deadlines block the entire plan before writing", async () => {
+  for (const invalid of ["2026-02-30T12:00:00Z", "2026-09-22T24:00:00Z", "2026-09-22T12:00:00", "tomorrow", false]) {
+    for (const target of ["promotion", "promoCode"]) {
+      const event = fixture();
+      if (target === "promotion") event.promotion.guest.endTimer = invalid;
+      else event.product.promoCodes[0].timeLimit = invalid;
+      const db = database([fixture(), event]);
+      await assert.rejects(upgradeProductionEvents(db, { apply: true }), /unexpected (promotion.guest.endTimer|product.promoCodes.0.timeLimit)/);
+      assert.deepEqual(db.calls, []);
+    }
+  }
+});
+
+test("apply requires the regional slug constraint and removal of the legacy global constraint", async () => {
+  const globalIndex = { key: { slug: 1 }, unique: true, sparse: true };
+  for (const indexes of [[], [globalIndex], [regionalIndex, globalIndex], [{ ...regionalIndex, unique: false }], [{ ...regionalIndex, collation: { locale: "en" } }]]) {
+    const db = database([fixture()], { indexes });
+    assert.equal((await upgradeProductionEvents(db)).modified, 0);
+    await assert.rejects(upgradeProductionEvents(db, { apply: true }), /requires migration 006/);
+    assert.deepEqual(db.calls, []);
+  }
+  assert.deepEqual(eventSlugIndexReadiness([regionalIndex]), { regionalUnique: true, legacyGlobalUnique: false });
+});
+
+test("only active events change; malformed historical records are not normalized or backed up", async () => {
+  const now = new Date("2026-09-27T12:00:00Z");
+  const active = fixture();
+  const excluded = [
+    fixture({ status: "archived" }), fixture({ status: "draft" }), fixture({ status: "cancelled" }), fixture({ status: "canceled" }),
+    fixture({ date: new Date("2026-09-01"), correctedDate: undefined }),
+    fixture({ date: new Date("2099-01-01"), correctedDate: new Date("2026-09-01") }),
+    fixture({ status: "archived", title: null, product: "invalid", earlyBird: { ticketTimer: "bad" } }),
+  ];
+  const before = clone({ excluded });
+  const db = database([active, ...excluded]);
+  const result = await upgradeProductionEvents(db, { apply: true, now });
+  assert.equal(result.active, 1);
+  assert.equal(result.skipped, excluded.length);
+  assert.equal(result.modified, 1);
+  assert.deepEqual(clone({ excluded }), before);
+  assert.equal(db.backups.size, 1);
+  assert.ok([...db.backups.values()][0].eventId.equals(active._id));
+});
+
+test("scope uses the corrected event date and includes upcoming events with closed sales", () => {
+  const now = new Date("2026-09-27T12:00:00Z");
+  for (const status of ["opened", "closed", "temporary closed"]) {
+    assert.equal(isActiveUpgradeEvent({ status, date: now }, now), true);
+    assert.equal(isActiveUpgradeEvent({ status, date: new Date(now - 1) }, now), false);
+    assert.equal(isActiveUpgradeEvent({ status, date: new Date(now - 1), correctedDate: now }, now), true);
+  }
+  assert.equal(isActiveUpgradeEvent({ status: "opened", date: "invalid" }, now), false);
+});
+
+test("concurrent archiving or rescheduling stops the update", async () => {
+  for (const concurrentEdit of [record => { record.status = "archived"; }, record => { record.correctedDate = new Date("2000-01-01"); }]) {
+    const record = fixture();
+    const db = database([record], { concurrentEdit });
+    await assert.rejects(upgradeProductionEvents(db, { apply: true }), /changed during migration/);
+    assert.equal(record.slug, undefined);
+    assert.equal(record.bgImage, 1);
+  }
+});
+
+test("the earlier background cleanup also limits event documents to active dates and statuses", async () => {
+  const calls = [];
+  await backgroundMigration.up({ collection: name => ({ updateMany: async (filter, update) => {
+    calls.push({ name, filter, update });
+    return { modifiedCount: 0 };
+  } }) });
+  const event = calls.find(call => call.name === "events");
+  assert.deepEqual(event.filter.status, { $in: ["opened", "closed", "temporary closed"] });
+  assert.deepEqual(event.filter.$expr.$gte[0], { $ifNull: ["$correctedDate", "$date"] });
+  assert.ok(event.filter.$expr.$gte[1] instanceof Date);
 });

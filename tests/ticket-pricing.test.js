@@ -37,6 +37,21 @@ const makeEvent = (patch = {}) => ({
   ...patch,
 });
 
+test("early bird and promotions stack for guests and members", () => {
+  const event = makeEvent({ promotion: {
+    guest: { isEnabled: true, discount: 50, priceId: "regular_promo", startTimer: new Date("2026-09-10"), endTimer: new Date("2026-09-20") },
+    member: { isEnabled: true, discount: 25, priceId: "member_regular_promo", startTimer: new Date("2026-09-10"), endTimer: new Date("2026-09-20") },
+  } });
+  const pricing = resolveEventTicketPricing(event, { now: NOW });
+  assert.equal(pricing.stage, "earlyBird");
+  assert.equal(pricing.tiers.guest.originalPrice, 14);
+  assert.equal(pricing.tiers.guest.price, 7);
+  assert.equal(pricing.tiers.guest.priceId, undefined);
+  assert.equal(pricing.tiers.member.originalPrice, 7);
+  assert.equal(pricing.tiers.member.price, 5.25);
+  assert.equal(pricing.tiers.member.priceId, undefined);
+});
+
 test("late bird price wins once its start condition is met", () => {
   const event = makeEvent({
     lateBird: {
