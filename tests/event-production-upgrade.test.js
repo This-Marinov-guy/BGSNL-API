@@ -8,7 +8,7 @@ import migration from "../migrations/007-upgrade-production-events.js";
 const clone = value => BSON.deserialize(BSON.serialize(value));
 const date = new Date("2026-09-22T17:00:00Z");
 const fixture = (overrides = {}) => ({
-  _id: new ObjectId(), title: "Welcome Night", region: "breda", date, createdAt: new Date("2026-01-01"),
+  _id: new ObjectId(), title: "Welcome Night", region: "breda", date, correctedDate: new Date("2099-09-22"), createdAt: new Date("2026-01-01"),
   status: "opened", ticketTimer: date, isSaleClosed: false,
   lastUpdate: { id: "legacy-editor", timestamp: date },
   product: { id: "prod_unchanged", guest: { price: 12, priceId: "price_guest" }, member: { price: 0, priceId: "price_free" },
@@ -80,7 +80,7 @@ test("slug allocation reserves historical/current URLs, normalizes regions and i
   const third = fixture({ _id: new ObjectId("000000000000000000000003"), region: "groningen" });
   const historic = fixture({ _id: new ObjectId("000000000000000000000004"), status: "archived", slug: "welcome-night", region: "breda_tilburg" });
   const { plans } = await planEventProductionUpgrade([second, third, first, historic]);
-  const slug = event => plans.find(plan => plan.eventId.equals(event._id)).update.$set.slug;
+  const slug = event => plans.find(plan => plan.eventId.equals(event._id))?.update.$set.slug;
   assert.equal(slug(first), "welcome-night-2209");
   assert.equal(slug(second), "welcome-night-2209-2");
   assert.equal(slug(third), "welcome-night");
@@ -106,10 +106,13 @@ test("invalid timer shapes and duplicate regional slugs block preflight", async 
   await assert.rejects(planEventProductionUpgrade([fixture({ product: { promoCodes: "malformed" } })]), /product.promoCodes/);
 });
 
-function database(rows, { concurrentEdit, backupFailure = false } = {}) {
+const regionalIndex = { name: "event_region_slug_unique", key: { region: 1, slug: 1 }, unique: true, partialFilterExpression: { slug: { $type: "string" } } };
+
+function database(rows, { concurrentEdit, backupFailure = false, indexes = [regionalIndex] } = {}) {
   const calls = [];
   const backups = new Map();
   const events = {
+    indexes: async () => indexes,
     find: (_filter, { projection }) => ({ toArray: async () => rows.map(row => clone(Object.fromEntries(Object.keys(projection).filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]])))) }),
     updateOne: async (filter, update) => {
       calls.push("update");

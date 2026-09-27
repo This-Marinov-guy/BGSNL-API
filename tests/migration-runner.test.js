@@ -36,7 +36,7 @@ async function seed(db) {
   await db.createCollection("memberUsers"); // Legacy empty placeholder must also return on rollback.
   await db.collection("memberUsers").createIndex({ region: 1 }, { name: "empty_region_index" });
   await db.collection("alumniusers").insertOne({ _id: "alumni_1", region: "breda", roles: ["committee_member"] });
-  await db.collection("events").insertOne({ _id: "event_1", title: "Welcome", region: "breda", date: new Date("2026-09-22T17:00:00Z"), createdAt: new Date("2026-01-01T00:00:00Z"),
+  await db.collection("events").insertOne({ _id: "event_1", title: "Welcome", status: "opened", region: "breda", date: new Date("2099-09-22T17:00:00Z"), createdAt: new Date("2026-01-01T00:00:00Z"),
     bgImage: 1, lastUpdate: { id: "editor", timestamp: new Date("2026-09-01T00:00:00Z") }, product: null, guestList: [{ ticket: "preserve" }],
     earlyBird: { isEnabled: false, ticketTimer: "" }, lateBird: { isEnabled: false, startTimer: "" } });
   await db.collection("events").createIndex({ slug: 1 }, { name: "old_global_slug", unique: true, partialFilterExpression: { slug: { $type: "string" } } });
@@ -116,7 +116,7 @@ test("CLI exits nonzero on failure with a rollback marker; a successful retry cl
   // Migration 006 fails after preceding migrations have already changed data.
   await db.collection("events").dropIndex("old_global_slug");
   await db.collection("events").updateOne({ _id: "event_1" }, { $set: { slug: "duplicate" } });
-  await db.collection("events").insertOne({ _id: "event_2", title: "Other", region: "breda", slug: "duplicate" });
+  await db.collection("events").insertOne({ _id: "event_2", title: "Other", region: "breda", slug: "duplicate", status: "opened", date: new Date("2099-09-22") });
   const before = await state(db);
   const output = await mkdtemp(path.join(tmpdir(), "bgsnl-migration-cli-db-"));
   t.after(() => rm(output, { recursive: true, force: true }));
