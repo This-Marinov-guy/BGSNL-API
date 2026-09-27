@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "app.js",
   "engines": {
-    "node": ">=22 <25"
+    "node": "24.x"
   },
   "type": "module",
   "scripts": {

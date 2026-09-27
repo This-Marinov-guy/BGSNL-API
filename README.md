@@ -34,22 +34,22 @@ Run the upload isolation checks without uploading or deleting real assets:
 
 ### Prerequisites
 
-- **Node.js**: Version 22 LTS (recommended via NVM; supported range: 22–24)
-- **NPM**: Version 10.2.3
+- **Node.js**: Version 24 LTS (required; pinned in `.nvmrc` and `engines.node`)
+- **NPM**: Use the version bundled with Node.js 24; `engine-strict` rejects unsupported Node.js versions
 - **MongoDB**: Database connection string
 - **Stripe Account**: For payment processing
 
 ### Step 1: Install Node.js
 
-Install NVM (Node Version Manager) and use it to install Node.js 22:
+Install NVM (Node Version Manager) and use it to install Node.js 24:
 
 ```bash
 # Install NVM (if not already installed)
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
 
-# Install Node.js 22
-nvm install 22
-nvm use 22
+# Install and use the Node.js version pinned in this checkout
+nvm install
+nvm use
 ```
 
 Or download directly from [nodejs.org](https://nodejs.org/en/download/)

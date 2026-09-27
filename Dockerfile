@@ -1,5 +1,5 @@
 # Use LTS version
-FROM node:22-alpine
+FROM node:24-alpine
 
 # Install fontconfig so Sharp/Pango can resolve custom fonts
 RUN apk add --no-cache fontconfig
