@@ -8,6 +8,8 @@ import { stripeId, subscriptionState, CURRENT_ACCOUNT_FILTER, accountType } from
 import { withBillingLease } from "./lease.js";
 import { findBillingAccount, persistSubscriptionAccount } from "./accounts.js";
 import { membershipReportingSnapshot, refreshMembershipReporting } from "./reporting.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
+import { syncScheduledChange } from "./scheduled-change.js";
 
 export function canonicalStripeRegion(region = DEFAULT_REGION) {
   const key = STRIPE_KEYS[region]?.secretKey;
@@ -61,7 +63,7 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
     readSubscription = readStripeSubscription, persistAccount = persistSubscriptionAccount,
     readRevenueAllocation = registerMemberRevenueSubscription, attention = BillingAttention, stripe = createStripeClient(region), onChanged = refreshMembershipReporting,
   } = dependencies;
-  return withLease(`subscription:${region}:${subscriptionId}`, async ({ assertOwned }) => {
+  return withLease(`subscription:${region}:${subscriptionId}`, async ({ record, assertOwned }) => {
     const user = await findAccount({ "subscription.id": subscriptionId });
     if (!user) return null; // Checkout can arrive after invoice.paid; checkout reconciles again.
     const previousReporting = membershipReportingSnapshot(user);
@@ -70,6 +72,7 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
     if (stripeId(sub.customer) !== user.subscription.customerId ||
         (expectedCustomerId && stripeId(sub.customer) !== expectedCustomerId)) throw new Error("Subscription ownership mismatch");
     const now = new Date();
+    const scheduledChange = await syncScheduledChange(stripe, sub, state, assertOwned, { record, key: `subscription:${region}:${subscriptionId}` });
     let episode = user.subscription.failureEpisode;
     if (!episode && state.reminderNeeded) {
       const reminder = await attention.findOneAndUpdate({ subscriptionId, stripeRegion: region, resolvedAt: null }, { $setOnInsert: {
@@ -93,7 +96,8 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
       cancelAt: sub.cancel_at ? new Date(sub.cancel_at * 1000) : null,
       currentPeriodStart: state.periodStart ? new Date(state.periodStart * 1000) : null,
       currentPeriodEnd: state.periodEnd ? new Date(state.periodEnd * 1000) : null,
-      pendingUpdate: !!sub.pending_update, syncedAt: now, lastAttemptAt: now, failureEpisode: episode,
+      pendingUpdate: !!sub.pending_update || !!sub.schedule, scheduledChange,
+      syncedAt: now, lastAttemptAt: now, failureEpisode: episode,
       // A successful paid plan change supersedes an abandoned free-tier request.
       freeAlumniRequested: user.subscription.freeAlumniRequested &&
         !(state.hasBenefits && (user.subscription.freeAlumniPriceId || user.subscription.priceId) &&
@@ -115,7 +119,7 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
     if (previousReporting !== membershipReportingSnapshot(saved)) {
       // Exports are ancillary: they must never roll back a committed billing change.
       try { await onChanged(saved); }
-      catch { console.error("Membership reporting refresh could not be queued", { accountId: saved.id }); }
+      catch (error) { logOperationalError("service.membership-reporting-refresh", error); console.error("Membership reporting refresh could not be queued"); }
     }
     return { user: saved, sub, state, stripe, region };
   });

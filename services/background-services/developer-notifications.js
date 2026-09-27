@@ -1,5 +1,6 @@
 import { getDeveloperNotificationConfig } from "../../util/config/internal-notifications.js";
 import { sendInternalNotificationEmail } from "./email-transporter.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const WINDOW_MS = 15 * 60 * 1000;
 const safeLabel = (value, pattern, fallback) => typeof value === "string" && pattern.test(value) ? value : fallback;
@@ -40,7 +41,7 @@ export function createDeveloperNotifier({ config = getDeveloperNotificationConfi
     let queued = 0;
     for (const receiver of config.subscribers) {
       try { await sendEmail({ ...notification, receiver }); queued++; }
-      catch { console.error("Developer webhook alert could not be queued."); }
+      catch (error) { logOperationalError("service.webhook-alert", error); console.error("Developer webhook alert could not be queued."); }
     }
     if (!queued) { recent.delete(notification.entityId); count--; }
     return queued;

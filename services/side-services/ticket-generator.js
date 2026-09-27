@@ -7,6 +7,7 @@ import { ticketQrLink } from "../tickets/qr-link.js";
 import sharp from "sharp";
 import { fileURLToPath } from "url";
 import MemberUser from "../../models/MemberUser.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 
 const DEFAULT_TICKET_COLOR = "#faf9f6";
 const DEFAULT_TICKET_WIDTH = 1500;
@@ -42,7 +43,7 @@ const escapeXml = (value = "") =>
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
 
 const sanitizeKeyPart = (value = "") =>
@@ -121,6 +122,7 @@ const getArchiveFontBase64 = async () => {
     cachedArchiveFontBase64 = fontBuffer.toString("base64");
     return cachedArchiveFontBase64;
   } catch (err) {
+    logOperationalError("service.ticket-font-read", err);
     console.error("[ticket] Failed to read font file:", err.message);
     cachedArchiveFontBase64 = "";
     return cachedArchiveFontBase64;
@@ -215,6 +217,7 @@ const createTextOverlayBuffer = async ({
       .png()
       .toBuffer();
   } catch (err) {
+    logOperationalError("service.ticket-text-render", err);
     console.error("[ticket] Sharp text render failed:", {
       text: safeText,
       error: err.message,
@@ -235,6 +238,7 @@ const createTextOverlayBuffer = async ({
 
       return await sharp(svgBuffer).png().toBuffer();
     } catch (svgErr) {
+      logOperationalError("service.ticket-svg-render", svgErr);
       console.error("[ticket] SVG text render failed:", {
         text: safeText,
         error: svgErr.message,
@@ -270,6 +274,7 @@ const createVerticalLabelBuffer = async ({
       .png()
       .toBuffer();
   } catch (err) {
+    logOperationalError("service.ticket-text-rotate", err);
     console.error("[ticket] Vertical text rotate failed:", {
       text: String(text ?? "").trim(),
       error: err.message,
@@ -297,6 +302,7 @@ const pushCenteredOverlay = async ({
   try {
     metadata = await sharp(buffer).metadata();
   } catch (err) {
+    logOperationalError("service.ticket-overlay-metadata", err);
     console.error("[ticket] Overlay metadata read failed:", err.message);
     return;
   }
@@ -349,14 +355,10 @@ const uploadBufferToS3 = async ({ buffer, bucketName, key }) => {
     secretAccessKey: process.env.S3_SECRET_KEY,
   });
 
-  const uploadedFile = await s3
-    .upload({
-      Bucket: bucketName,
-      Key: key,
-      Body: buffer,
-      ContentType: "image/webp",
-    })
-    .promise();
+  let uploadedFile;
+  try {
+    uploadedFile = await s3.upload({ Bucket: bucketName, Key: key, Body: buffer, ContentType: "image/webp" }).promise();
+  } catch (error) { logIntegrationError("aws-s3", error, "ticket-upload"); throw error; }
 
   return uploadedFile.Location;
 };

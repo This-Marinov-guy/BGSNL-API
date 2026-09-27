@@ -27,6 +27,8 @@ import { ALUMNI_MIGRATED } from "../../util/config/enums.js";
 import { INTERNSHIP_SHEET } from "../../util/config/SPREEDSHEATS.js";
 import { enqueueSpreadsheetSync } from "../jobs/spreadsheet-sync-queue.js";
 import { publishGuestListChanged } from "../tickets/guest-list-live.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
+import { jobNameFromKey, observeJob } from "../monitoring/job-history.js";
 
 // Lightweight background job queue with concurrency limit and de-duplication
 const MAX_CONCURRENCY = 1;
@@ -42,6 +44,7 @@ function processQueue() {
   if (!next) return;
   activeCount++;
   (async () => {
+    next.record.start();
     try {
       // enforce timeout so stuck jobs don't block the queue indefinitely
       await Promise.race([
@@ -53,8 +56,11 @@ function processQueue() {
           )
         ),
       ]);
+      next.record.complete();
     } catch (e) {
-      console.error("Background job error:", e);
+      next.record.fail(e);
+      logIntegrationError("google-sheets", e, "background-job");
+      console.error("Background job error", { code: e?.code });
     } finally {
       activeKeys.delete(next.key);
       activeCount--;
@@ -68,10 +74,13 @@ function enqueueJob(key, jobFn) {
   if (jobQueue.length >= MAX_QUEUE_LENGTH) {
     // Drop oldest to keep memory bounded; alternatively drop newest
     const dropped = jobQueue.shift();
-    console.warn(`Job queue full, dropping oldest job: ${dropped?.key}`);
+    dropped.record.fail(new Error("Spreadsheet queue full"));
+    activeKeys.delete(dropped.key);
+    logOperationalError("worker.spreadsheet-queue", new Error("Queue full"));
+    console.warn("Spreadsheet queue full, dropping oldest job");
   }
   activeKeys.add(key);
-  jobQueue.push({ key, jobFn });
+  jobQueue.push({ key, jobFn, record: observeJob("sheets-inline", jobNameFromKey(key)) });
   processQueue();
 }
 
@@ -105,6 +114,7 @@ const searchInDatabase = (eventName, region) => {
 
     client.connect((err) => {
       if (err) {
+        logOperationalError("service.spreadsheet-database-connect", err);
         console.error("Error connecting to MongoDB:", err);
         return;
       }
@@ -159,6 +169,7 @@ const searchInDatabase = (eventName, region) => {
         ])
         .toArray((err, result) => {
           if (err) {
+            logOperationalError("service.spreadsheet-database-query", err);
             console.error("Error:", err);
             return;
           }
@@ -449,6 +460,7 @@ export const syncEventToSpreadsheet = async ({ id }) => {
                     `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
                   );
                 } else {
+                  logIntegrationError("google-sheets", new Error("Sheet not found after create conflict"), "sheet-metadata");
                   console.error(
                     `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
                     updatedSheetsList.map((s) => s.properties.title)
@@ -456,6 +468,7 @@ export const syncEventToSpreadsheet = async ({ id }) => {
                   continue; // Skip this spreadsheet and continue with the next one
                 }
               } catch (fetchError) {
+                logIntegrationError("google-sheets", fetchError, "sheet-metadata");
                 console.error(
                   `Error fetching spreadsheet metadata after creation error:`,
                   fetchError
@@ -463,6 +476,7 @@ export const syncEventToSpreadsheet = async ({ id }) => {
                 continue; // Skip this spreadsheet and continue with the next one
               }
             } else {
+              logIntegrationError("google-sheets", createError, "sheet-create");
               console.error(
                 `Error creating sheet '${sheetName}':`,
                 createError
@@ -761,6 +775,7 @@ export const syncSpecialEventToSpreadsheet = async ({ id }) => {
                     `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
                   );
                 } else {
+                  logIntegrationError("google-sheets", new Error("Sheet not found after create conflict"), "sheet-metadata");
                   console.error(
                     `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
                     updatedSheetsList.map((s) => s.properties.title)
@@ -768,6 +783,7 @@ export const syncSpecialEventToSpreadsheet = async ({ id }) => {
                   continue; // Skip this spreadsheet and continue with the next one
                 }
               } catch (fetchError) {
+                logIntegrationError("google-sheets", fetchError, "sheet-metadata");
                 console.error(
                   `Error fetching spreadsheet metadata after creation error:`,
                   fetchError
@@ -775,6 +791,7 @@ export const syncSpecialEventToSpreadsheet = async ({ id }) => {
                 continue; // Skip this spreadsheet and continue with the next one
               }
             } else {
+              logIntegrationError("google-sheets", createError, "sheet-create");
               console.error(
                 `Error creating sheet '${sheetName}':`,
                 createError

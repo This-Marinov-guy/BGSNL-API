@@ -12,7 +12,7 @@ import fileResizedUpload from "../middleware/file-resize-upload.js";
 import multer from "multer";
 import dotenv from "dotenv";
 import { authMiddleware, optionalAuthMiddleware } from "../middleware/authorization.js";
-import { getMembershipPlans, getBillingDetails, changeMembership, signupMembership, manageMembership } from "../controllers/subscriptions-controller.js";
+import { getMembershipPlans, getBillingDetails, changeMembership, signupMembership, manageMembership, previewMembership } from "../controllers/subscriptions-controller.js";
 import { validateRequest } from "../middleware/validate-request.js";
 import { asyncHandler } from "../middleware/async-handler.js";
 import {
@@ -107,5 +107,6 @@ paymentRouter.post(
 paymentRouter.get("/subscription/plans", authMiddleware, getMembershipPlans);
 paymentRouter.get("/subscription/billing-details", authMiddleware, getBillingDetails);
 paymentRouter.post("/subscription/change", authMiddleware, changeMembershipValidators, validateRequest, changeMembership);
+paymentRouter.post("/subscription/preview", authMiddleware, changeMembershipValidators, validateRequest, previewMembership);
 
 export default paymentRouter;

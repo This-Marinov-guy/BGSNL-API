@@ -6,6 +6,7 @@ export const subscriptionSchema = new mongoose.Schema({
   priceId: String, status: String, hasBenefits: Boolean, lockReason: String,
   cancelAtPeriodEnd: Boolean, cancelAt: Date, currentPeriodStart: Date, currentPeriodEnd: Date,
   pendingUpdate: Boolean, syncedAt: Date, lastAttemptAt: Date, failureEpisode: String,
+  scheduledChange: { type: new mongoose.Schema({ priceId: String, tier: Number, effectiveAt: Date }, { _id: false }), default: null },
   freeAlumniRequested: Boolean, freeAlumniPriceId: String,
 }, { _id: false });
 
@@ -24,5 +25,4 @@ export const sharedMembershipFields = {
   birth: Date, phone: String, university: String, region: String,
   otherUniversityName: String, graduationDate: String, course: String,
   studentNumber: String, profession: String,
-  mmmCampaign2025: { calendarSubscription: Boolean, calendarImage: String },
 };

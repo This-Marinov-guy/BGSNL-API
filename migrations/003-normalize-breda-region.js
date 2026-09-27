@@ -1,4 +1,5 @@
 import { internalCollection } from "../services/migrations/runner.js";
+import { activeEventUpgradeQuery } from "../services/events/event-upgrade-scope.js";
 
 // Consolidate the former Breda region slug under the current Breda–Tilburg
 // region. "bread" is included as an old typo found in legacy data.
@@ -17,11 +18,12 @@ export default {
   id: "003-normalize-breda-region",
   async up(db) {
     let modified = 0;
+    const activeEvents = activeEventUpgradeQuery();
     for (const name of await applicationCollections(db)) {
       const collection = db.collection(name);
       for (const path of REGION_PATHS) {
         const result = await collection.updateMany(
-          { [path]: { $in: LEGACY_REGIONS } },
+          { ...(name === "events" ? activeEvents : {}), [path]: { $in: LEGACY_REGIONS } },
           { $set: { [path]: TARGET_REGION } },
         );
         modified += result.modifiedCount;

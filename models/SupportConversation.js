@@ -2,12 +2,13 @@ import mongoose from "mongoose";
 import { MAX_MESSAGES, SUPPORT_STATUSES, SUPPORT_TYPES } from "../services/support/policy.js";
 
 const attachmentSchema = new mongoose.Schema({
-  type: { type: String, enum: ["image"], required: true },
+  type: { type: String, enum: ["image", "file"], required: true },
+  name: { type: String, maxlength: 200 },
   url: {
     type: String,
     required: true,
     maxlength: 2000,
-    validate: (value) => /^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\//.test(value),
+    validate: (value) => /^https:\/\/res\.cloudinary\.com\/[^/]+\/(image|raw)\/upload\//.test(value),
   },
 }, { _id: false });
 
@@ -23,6 +24,7 @@ const messageSchema = new mongoose.Schema({
   author: { type: String, enum: ["requester", "staff"], required: true },
   authorAccountId: { type: String, default: null },
   kind: { type: String, enum: ["message", "status"], default: "message" },
+  diagnostic: { type: Boolean, default: false },
   createdAt: { type: Date, required: true },
 }, { _id: false });
 

@@ -1,6 +1,6 @@
 import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
-import MemberUser from '../../../models/MemberUser.js';
+import { logOperationalError } from '../../../middleware/axiom-logger.js';
 
 dotenv.config();
 
@@ -17,17 +17,10 @@ export async function fetchEventsFromDB() {
     const collection = db.collection(collectionName);
     return await collection.find({ hidden: false }).toArray();
   } catch (err) {
+    logOperationalError("service.calendar-database", err);
     console.error('Error fetching events from MongoDB:', err);
     return [];
   } finally {
     await client.close();
   }
-}
-
-export async function fetchMMCampaignUsers() {
-  const users = await MemberUser.find({
-    "mmmCampaign2025.calendarImage": { $ne: "" },
-  });
-
-  console.log('Users:', users.length, users.map((u) => u.name + ' ' + u.surname + ' | ' + u.email  +' | ' + u.region));
 }

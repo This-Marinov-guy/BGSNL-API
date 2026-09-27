@@ -4,8 +4,11 @@ MongoDB holds accounts and application content. Google identities and registered
 passkeys are embedded in `users.identities` / `users.passkeys` and the same fields
 on `alumniusers`. Credential fields are excluded from normal queries and JSON
 responses. Member/Alumni switches move those fields, preserve old account IDs as
-aliases, and delete the source profile in the same transaction. Archived copies
-are no longer created.
+aliases, and reconcile both profiles in one transaction. Member → Alumni keeps
+the Member with status `alumni-migrated`, with benefits disabled and embedded
+credentials cleared. Alumni → Member restores the archived Member (or creates
+one) and deletes the Alumni source after the Member is saved. Only the current
+profile owns Google identities and passkeys.
 
 | Data | Location | Lifetime |
 | --- | --- | --- |

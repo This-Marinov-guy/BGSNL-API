@@ -1,5 +1,6 @@
 import HttpError from "../../models/Http-error.js";
 import axios from "axios";
+import { logIntegrationError } from "../../middleware/axiom-logger.js";
 import dotenv from "dotenv";
 import { PROTOCOL } from "../../util/config/access.js";
 import { DEFAULT_WP_TITLES } from "../../util/config/defines.js";
@@ -25,6 +26,7 @@ export const getWordpressPosts = async (req, res, next) => {
       `${PROTOCOL}${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts?page=${page}&per_page=${perPage}`
     );
   } catch (err) {
+    logIntegrationError("wordpress", err, "posts-list");
     return next(new HttpError(err, 500));
   }
 
@@ -86,6 +88,7 @@ export const getWordpressPostDetails = async (req, res, next) => {
       `${PROTOCOL}${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts/${postId}?_embed`
     );
   } catch (err) {
+    logIntegrationError("wordpress", err, "post-details");
     console.log(err.message);
 
     return res.status(200).json({
@@ -98,6 +101,7 @@ export const getWordpressPostDetails = async (req, res, next) => {
       `${PROTOCOL}${process.env.WORDPRESS_BLOG_ID}/wp-includes/css/dist/block-library/style.min.css`
     );
   } catch (err) {
+    logIntegrationError("wordpress", err, "post-styles");
     console.log(err.message);
   }
 

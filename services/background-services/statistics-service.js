@@ -3,6 +3,8 @@ import AlumniUser from "../../models/AlumniUser.js";
 import Statistics from "../../models/Statistics.js";
 import HttpError from "../../models/Http-error.js";
 import moment from "moment";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
+import { runObservedJob } from "../monitoring/job-history.js";
 
 const SUPPORTED_DATE_INPUT_FORMATS = [
   moment.ISO_8601,
@@ -75,6 +77,7 @@ const _recountMemberStatistics = async () => {
     console.log(`Member statistics updated: ${memberCount} active members`);
     return { success: true, count: memberCount };
   } catch (err) {
+    logOperationalError("service.member-statistics", err);
     console.error("Error recounting member statistics:", err);
     return { success: false, error: err.message };
   }
@@ -107,6 +110,7 @@ const _recountAlumniStatistics = async () => {
     console.log(`Alumni statistics updated: ${alumniCount} alumni`);
     return { success: true, count: alumniCount };
   } catch (err) {
+    logOperationalError("service.alumni-statistics", err);
     console.error("Error recounting alumni statistics:", err);
     return { success: false, error: err.message };
   }
@@ -118,8 +122,9 @@ const _recountAlumniStatistics = async () => {
 export const recountMemberStatistics = () => {
   setImmediate(async () => {
     try {
-      await _recountMemberStatistics();
+      await runObservedJob("scheduler", "member-statistics", _recountMemberStatistics);
     } catch (err) {
+      logOperationalError("worker.member-statistics", err);
       console.error("Background job error in recountMemberStatistics:", err);
     }
   });
@@ -131,8 +136,9 @@ export const recountMemberStatistics = () => {
 export const recountAlumniStatistics = () => {
   setImmediate(async () => {
     try {
-      await _recountAlumniStatistics();
+      await runObservedJob("scheduler", "alumni-statistics", _recountAlumniStatistics);
     } catch (err) {
+      logOperationalError("worker.alumni-statistics", err);
       console.error("Background job error in recountAlumniStatistics:", err);
     }
   });
@@ -188,6 +194,7 @@ export const getUsersByDateRange = async (startDate, endDate = null) => {
         .lean(),
     ]);
   } catch (err) {
+    logOperationalError("service.user-date-range", err);
     console.error("[getUsersByDateRange] DB error:", err.message);
     throw new HttpError("Failed to query users by date range", 500);
   }
@@ -221,4 +228,3 @@ export const getUsersByDateRange = async (startDate, endDate = null) => {
     },
   };
 };
-

@@ -3,10 +3,14 @@
 ## Behaviour
 
 - Member six-month/yearly plans and alumni tiers 1–4 use a server-owned Stripe price allowlist. The website fetches prices from the API; submitted tier, period, customer ID, account ID, roles or status never determine benefits.
-- Running subscriptions change through a Stripe portal confirmation flow on the **same subscription item**. Stripe previews charges/credits, and the dedicated portal configuration invoices prorations immediately. No second subscription is created for a plan change. See [Stripe's portal confirmation flow](https://docs.stripe.com/customer-management/portal-deep-links).
+- Member ↔ Alumni conversions and Alumni tier **increases** use Stripe confirmation on the **same subscription item**, with immediate invoicing of prorations and a charge warning above the website's action button. No second subscription is created. See [Stripe's portal confirmation flow](https://docs.stripe.com/customer-management/portal-deep-links).
+- Member payment-period changes update the profile immediately with no charge or proration today. The existing next billing date is retained. When the interval changes, Stripe uses a paid-through `trial_end` bridge to that date with `proration_behavior: none`; Stripe reports `trialing` and can issue a zero-value invoice. Benefits remain available only through the already-paid date, and the new full period is billed at renewal. Repeated switches never extend this date. See [Stripe's billing-cycle guidance](https://docs.stripe.com/billing/subscriptions/billing-cycle#change-the-billing-period-using-a-trial-period).
+- Paid Alumni tier **decreases** schedule both the lower price and lower benefits for the next billing date. The current tier stays unchanged until then. A two-phase Stripe schedule retains the existing phase's tax, coupon and payment settings, disables prorations and keeps the subscription running afterward. Webhook/status reconciliation applies the lower tier from Stripe, recovers interrupted schedule setup, and releases only our completed downgrade schedules so later changes remain possible. External schedules are never modified. While a downgrade is pending, further switches require support. Free Alumni tier 0 retains its existing cancellation-at-period-end path. See [Stripe's scheduled-downgrade guidance](https://docs.stripe.com/billing/subscriptions/subscription-schedules#changing-subscriptions).
+- Payment-now warnings show a server-side Stripe invoice preview in EUR, including prorations and available credits, not the catalog price. Previewing creates no invoice/payment/session/customer. A loading skeleton and recoverable error prevent continuation until the selected plan has a valid amount; stale responses are discarded. The warning identifies the amount as an estimate because the confirmation portal recalculates prorations at confirmation time. Zero due never claims a debit. See [Stripe invoice previews](https://docs.stripe.com/api/invoices/upcoming?api-version=2024-06-20).
 - Healthy cancellations take effect at period end. A delinquent account can cancel immediately through the recovery portal. Cancellation does not restore paid benefits or imply an outstanding debt has been settled.
 - Tier 0 is free alumni with no paid benefits. When selected from a running subscription, the customer must confirm cancellation in Stripe; conversion happens only when that subscription actually ends.
-- Member/alumni conversions use a MongoDB transaction. Profile fields, tickets, documents, applications and administrative assignments are retained. The previous collection record is deleted in the transaction; aliases on the current account resolve old IDs and sessions. Existing active duplicates fail closed for manual reconciliation.
+- Member/alumni conversions use a MongoDB transaction. Profile fields, tickets, documents, applications and administrative assignments are retained. Member → Alumni retains the Member as `alumni-migrated`, without benefits or embedded sign-in credentials. Alumni → Member reuses the archived Member when available (otherwise creates one), then deletes the Alumni in the same transaction. Aliases on the current account resolve old IDs and sessions. Same-programme changes update the current record; existing active duplicates fail closed for manual reconciliation.
+- Checkout completion checks both account collections before creation. It resolves an existing subscription owner first, then the saved authenticated account or Stripe customer. An email match alone cannot attach another customer's payment. New accounts are created in the Stripe plan's collection; replayed checkouts keep the existing password and profile. Pending or failed payments do not apply a paid programme switch.
 - Failed/overdue payments immediately lock benefits when the signed webhook is processed, regardless of a future local expiry date or staff role. The backend independently refreshes Stripe state on benefit requests. Pending asynchronous payments do not trigger failure emails while processing.
 - Login, profile editing and billing remain accessible. A billing verification outage removes access to benefits in responses without falsely marking a payment failed or lifting an administrative suspension.
 - Discounts, promotion-code retrieval, internship applications, alumni quotes and member-only actions have server-side entitlement checks. JWT roles/status are replaced by current database values on authenticated requests and token refresh.
@@ -22,7 +26,30 @@
 4. Configure the signed endpoint `POST /api/v1/webhooks/stripe-payments?region=netherlands`. Existing unversioned `/api/webhooks/stripe-payments` requests still resolve to v1. Each distinct regional Stripe account needs its matching region and signing secret.
 5. Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `invoice.paid`, `invoice.payment_failed`, `invoice.payment_action_required`, `invoice.voided`, `invoice.marked_uncollectible`, and subscription `created`, `updated`, `deleted`, `paused`, `resumed`, `pending_update_applied`, `pending_update_expired`. The handler also safely reconciles other subscription/invoice events.
 6. Set `BILLING_WORKER_ENABLED=true` on the API process and retain `MAIL_ENDPOINT`/`MAIL_TOKEN` with a verified sender for `no-reply@bulgariansociety.nl`. There is no new mail template to create. The worker also defaults on when `NODE_ENV=production`, but is off in development unless explicitly enabled. Do not enable it against production data from a local development process.
-7. On first billing use, the application creates **dedicated** Stripe portal configurations: a unified plan-change portal and a recovery portal. Existing portal configurations are not modified. The Stripe key must permit prices, customers, subscriptions, invoices, Checkout and Billing Portal reads/required writes. Portal sessions use API version `2024-06-20` for deep links; other Stripe operations retain the existing `2022-08-01` pin.
+7. On first billing use, the application creates **dedicated v2** Stripe portal configurations: Payments, recovery, and switch-confirmation. Payments/recovery/cancellation sessions disable `subscription_update`; only the authenticated plan-change endpoint creates a `subscription_update_confirm` deep link with the selected price and existing subscription item. Stripe hides general navigation during this focused flow and returns to Settings afterward. Existing v1/legacy configurations are not modified or reused by new sessions. Previously issued portal links retain their old configuration until expiry. The Stripe key must permit prices, customers, subscriptions, invoices, Checkout and Billing Portal reads/required writes. Portal sessions use API version `2024-06-20` for deep links; other Stripe operations retain the existing `2022-08-01` pin.
+
+Settings → Membership → Billing shows **Cancel**, **Switch**, and **Payments**
+for a running subscription. Cancel first opens the site's confirmation modal,
+then Stripe's final cancellation confirmation. Switch opens the existing Member/
+Alumni plan chooser and prevents reselecting the current plan. Payments opens
+the customer portal for payment methods, invoices and existing cancellation/
+recovery controls, without a plan-switching option. Pending payment or plan
+changes and scheduled cancellations block switching until resolved; server-side
+reconciliation remains authoritative.
+
+Once Stripe reports the subscription `canceled` (or `incomplete_expired`), Billing
+instead shows **Start subscription** and **Payments** when a customer ID exists.
+Customer-only accounts use the same actions; accounts without a customer only
+show Start. Scheduled cancellation remains a running subscription until Stripe
+actually ends it. Account loading/refresh reconciles Stripe, and a verification
+failure cannot expose Start from a stale canceled snapshot. Checkout reconciles
+again and checks for other running subscriptions before creating a new one.
+
+Restart checkout passes the existing customer ID to Stripe and stays in that
+customer's verified Stripe account, including region aliases using the same key.
+The plan catalog uses the same account. The requested price must be available
+there; failures do not silently create a replacement customer or move billing
+to another account. Only genuinely new customers default to central billing.
 
 The worker runs once per minute, sweeps a bounded batch of stale subscriptions and recovers completed Checkout sessions if their initial webhook was missed. Benefit requests also reconcile independently; webhooks are the immediate path. Multiple API processes can run the worker: leases and atomic delivery claims prevent duplicate processing.
 
@@ -45,7 +72,8 @@ All endpoints below are relative to `/api/v1` and require a verified bearer toke
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /payment/subscription/plans` | Current server-approved plans/prices, including free alumni |
-| `POST /payment/subscription/change` | `{ itemId, origin_url }`; returns a Stripe review/checkout URL, or the account URL for a free conversion |
+| `POST /payment/subscription/change` | `{ itemId, origin_url }`; returns a Stripe review/checkout URL, `{ updated: true }` for an applied Member period change or scheduled Alumni downgrade, or the account URL for a free conversion |
+| `POST /payment/subscription/preview` | Authenticated `{ itemId, origin_url }`; returns `{ quote: { priceId, amountDue, currency, chargeNow } }` with amount in cents; no payment/session creation |
 | `POST /payment/subscription/customer-portal` | `{ url, action?: "cancel" | "payment_method" }`; customer and configuration are chosen on the server |
 | `GET /user/get-subscription-status` | Fresh status, benefits, tier, billing state and cancellation flags |
 | `GET /user/current` | Safe profile plus entitlements; locked responses omit ticket collection/campaign benefits |
@@ -83,6 +111,7 @@ Before rollout, verify in Stripe test mode: member → alumni → member, both m
 ## Regional Member revenue
 
 New Member subscriptions can allocate 80% less attributable Stripe fees to their
-configured regional Connect account. Both Member and Alumni billing stay on the
-central account. See [member-revenue-sharing.md](member-revenue-sharing.md) for
+configured regional Connect account. New Member and Alumni customers use the
+central account; subscription restarts retain the existing customer's verified
+Stripe account. See [member-revenue-sharing.md](member-revenue-sharing.md) for
 eligibility, renewals, fee recovery, configuration and review limits.

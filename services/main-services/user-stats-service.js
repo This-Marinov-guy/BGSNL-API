@@ -63,7 +63,6 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
     otherUniversityName: 1,
     course: 1,
     profession: 1,
-    "mmmCampaign2025.calendarSubscription": 1,
   })
     .sort({ _id: -1 })
     .lean();
@@ -109,7 +108,6 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
     "Alumni (Free Tier)": totalFreeAlumni
   };
 
-  let calendarSubscribed = 0;
 
   // Process regular users (only active ones)
   for (const u of activeUsers) {
@@ -150,7 +148,6 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
     if (u.purchaseDate) increment(byPurchaseYear, moment(u.purchaseDate).format("YYYY"));
 
     // campaign flag
-    if (u?.mmmCampaign2025?.calendarSubscription) calendarSubscribed += 1;
   }
 
   // Process paid tier alumni
@@ -231,7 +228,6 @@ export const generateAnonymizedUserStatsXls = async (filter = {}) => {
   wsData.push(["Members (Active)", totalUsers]);
   wsData.push(["Alumni (Paid Tier)", totalPaidAlumni]);
   wsData.push(["Alumni (Free Tier)", totalFreeAlumni]);
-  wsData.push(["Calendar Subscribed (MMM 2025)", calendarSubscribed]);
   wsData.push(["Note: Expired member accounts excluded"]);
   wsData.push([]);
 

@@ -4,6 +4,7 @@ import { reconcileAccount } from "../subscriptions/reconcile.js";
 import { isBirthdayToday } from "../../util/functions/helpers.js";
 import { sessions } from "./sessions.js";
 import HttpError from "../../models/Http-error.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 export async function buildLoginResponse(user, { reconcile = reconcileAccount, sign = sessions.start } = {}) {
   const authenticatedVersion = Number(user.sessionVersion ?? 0);
@@ -15,7 +16,7 @@ export async function buildLoginResponse(user, { reconcile = reconcileAccount, s
   }
   let billingVerificationUnavailable = false;
   try { user = (await reconcile(user))?.user || user; }
-  catch { billingVerificationUnavailable = true; }
+  catch (error) { logOperationalError("service.login-billing-verification", error); billingVerificationUnavailable = true; }
   if (Number(user.sessionVersion ?? 0) !== authenticatedVersion || user.password !== authenticatedPassword) {
     throw new HttpError("Account security changed during sign-in. Please sign in again.", 401);
   }

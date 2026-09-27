@@ -3,6 +3,8 @@ import MemberUser from "../../models/MemberUser.js";
 import { createEmailRunGuard, isEmailSchedulerProcess } from "../background-services/email-run-guard.js";
 const announcementRuns = createEmailRunGuard();
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
+import { runObservedJob } from "../monitoring/job-history.js";
 import { NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE } from "../../util/config/defines.js";
 import { createMemberEventLink, eventPageUrl, isCurrentEventMember, isPublicUpcomingEvent, memberEventPrice } from "./member-event-links.js";
 
@@ -90,9 +92,12 @@ export function startMemberEventAnnouncementWorker({ enabled = announcementWorke
     requested = true;
     if (running) return true;
     requested = false;
-    running = Promise.resolve().then(() => process({ enabled })).then((result) => {
-      if (result.failed) console.error("Event announcement emails failed", { failed: result.failed });
-    }).catch((error) => console.error("Event announcement worker failed", { code: error?.code, message: error?.message }))
+    running = runObservedJob("scheduler", "member-event-announcements", async () => {
+      const result = await process({ enabled });
+      return result && !result.sent && !result.failed && !result.skipped ? { ...result, noWork: true } : result;
+    }).then((result) => {
+      if (result.failed) { logOperationalError("worker.event-announcement", new Error("Delivery failed"), { failed: result.failed }); console.error("Event announcement emails failed", { failed: result.failed }); }
+    }).catch((error) => { logOperationalError("worker.event-announcement", error); console.error("Event announcement worker failed", { code: error?.code }); })
       .finally(() => {
         running = null;
         if (requested && !stopped) tick();

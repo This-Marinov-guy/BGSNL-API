@@ -3,6 +3,7 @@ import AlumniUser from "../../models/AlumniUser.js";
 import { embeddedIdentities as AccountIdentity } from "../../services/authentication/embedded-credentials.js";
 import { embeddedPasskeys as PasskeyCredential } from "../../services/authentication/embedded-credentials.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 // ─── Alumni tree layout ───────────────────────────────────────────────────────
 // Exact port of frontend Tree.jsx + layout.js so the output is identical.
@@ -461,6 +462,7 @@ export const findUserByEmail = async (email) => {
 
     return alumni || user;
   } catch (err) {
+    logOperationalError("service.user-lookup-email", err);
     console.error("Error in findUserByEmail:", err);
     return null;
   }
@@ -502,6 +504,7 @@ export const findUserByName = async (name, surname) => {
 
     return alumni || user;
   } catch (err) {
+    logOperationalError("service.user-lookup-id", err);
     console.error("Error in findUserById:", err);
     return null;
   }
@@ -528,13 +531,14 @@ export const findUserByQuery = async (query) => {
 
     return alumni || user;
   } catch (err) {
+    logOperationalError("service.user-lookup-query", err);
     console.error("Error in findUserByQuery:", err);
     return null;
   }
 };
 
 // Legacy non-subscription conversions use the same atomic profile move as
-// billing. All available profile fields and aliases survive; no archive remains.
+// billing. All profile fields and aliases survive; Member history is archived.
 async function convertLegacyAccount(Model, id, type) {
   const account = await Model.findById(id);
   if (!account) throw new Error("Account not found");

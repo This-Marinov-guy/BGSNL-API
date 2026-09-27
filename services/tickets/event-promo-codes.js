@@ -1,6 +1,7 @@
 import HttpError from "../../models/Http-error.js";
 import { ACCESS_4 } from "../../util/config/defines.js";
 import { accountEntitlements } from "../../util/subscriptions/policy.js";
+import { logIntegrationError } from "../../middleware/axiom-logger.js";
 
 export const PROMO_AUDIENCES = ["guest", "member", "activeMember"];
 export const DEFAULT_PROMO_AUDIENCES = ["guest", "member"];
@@ -89,7 +90,9 @@ export async function syncEventPromoCodes(stripe, productId, incoming, existing 
     for (const old of retire) await retirePromotionCodes(stripe, old);
     return prepared;
   } catch (error) {
-    await Promise.allSettled(created.map(id => stripe.coupons.del(id)));
+    logIntegrationError("stripe", error, "promo-create");
+    const cleanup = await Promise.allSettled(created.map(id => stripe.coupons.del(id)));
+    for (const result of cleanup) if (result.status === "rejected") logIntegrationError("stripe", result.reason, "promo-cleanup");
     throw error;
   }
 }
@@ -123,8 +126,10 @@ export async function prepareEventPromoCheckout({ stripe, event, audience, check
     delete data.customer_email;
     return data;
   } catch (error) {
-    await Promise.allSettled(created.map(id => stripe.promotionCodes.update(id, { active: false })));
-    await stripe.customers.del(customer.id).catch(() => {});
+    logIntegrationError("stripe", error, "checkout-promo-create");
+    const cleanup = await Promise.allSettled(created.map(id => stripe.promotionCodes.update(id, { active: false })));
+    for (const result of cleanup) if (result.status === "rejected") logIntegrationError("stripe", result.reason, "checkout-promo-cleanup");
+    await stripe.customers.del(customer.id).catch((failure) => logIntegrationError("stripe", failure, "checkout-customer-cleanup"));
     throw error;
   }
 }

@@ -11,6 +11,7 @@ import { ENDED_SUBSCRIPTION_STATUSES, stripeId } from "../../util/subscriptions/
 import { resolveSubscriptionRegion, reconcileSubscription } from "../subscriptions/reconcile.js";
 import { createStripeClient } from "../../util/config/stripe.js";
 import { withBillingLease } from "../subscriptions/lease.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 
 export function assertAccountManagementAccess(actor, target) {
   const roles = normalizeRoleNames(actor?.roles);
@@ -89,6 +90,7 @@ export const createAccountActionsService = ({ memberModel = MemberUser, alumniMo
     try { ({ sub } = await readBilling(target)); }
     catch (error) {
       if (error instanceof HttpError) throw error;
+      logIntegrationError("stripe", error, "account-billing-inspect");
       // A stale reference or unavailable Stripe account must never look like
       // a cancellable subscription. Transfer requests do not modify billing.
       return { canTransfer, canCancel: false, billingUnavailable: true, confirmation: null,
@@ -125,7 +127,7 @@ export const createAccountActionsService = ({ memberModel = MemberUser, alumniMo
     // Stripe is authoritative. A delayed local refresh must not misreport a successful cancellation.
     let syncPending = false;
     try { await reconcile(subscriptionId, region, { expectedCustomerId: result.customerId }); }
-    catch { syncPending = true; }
+    catch (error) { logOperationalError("service.subscription-cancellation-sync", error); syncPending = true; }
     return { cancelled: true, cancelAt: result.cancelAt, syncPending,
       message: "Renewal cancelled. Existing paid access continues until the end of the billing period." };
   };

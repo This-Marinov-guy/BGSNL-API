@@ -29,6 +29,8 @@ export const planForPrice = (id, { selectable = false } = {}) => {
   return tier ? { priceId: id, type: ALUMNI, period: 1, tier, label: `Alumni · Tier ${tier}` } : null;
 };
 export const accountType = (user) => user?.roles?.includes(ALUMNI) ? ALUMNI : MEMBER;
+export const planChangeChargesImmediately = (current, next) => current.type !== next.type ||
+  (current.type === ALUMNI && next.tier > current.tier);
 
 export function subscriptionState(subscription, unpaidInvoices = [], now = Date.now(), paidInvoices = []) {
   const items = subscription.items?.data || [];

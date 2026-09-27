@@ -1,4 +1,5 @@
-import MarketingEmail from "../models/MarketingEmail.js";
+import { enqueueMarketingCapture } from "../services/jobs/marketing-capture-queue.js";
+import { logOperationalError } from "./axiom-logger.js";
 
 const SUCCESS_MIN = 200;
 const SUCCESS_MAX = 300;
@@ -45,19 +46,12 @@ export const extractMarketingEmail = (body) => {
   } : null;
 };
 
-export const queueMarketingEmail = (entry, requestLabel = "unknown") => {
-  if (!entry) return;
-
-  setImmediate(async () => {
-    try {
-      await MarketingEmail.add({ ...entry, consent: { ...entry.consent, source: requestLabel } });
-    } catch (error) {
-      // Marketing capture must never fail or delay the submitted form.
-      console.error(
-        `[marketing-email] Background capture failed for ${requestLabel}:`,
-        error
-      );
-    }
+export const queueMarketingEmail = (entry, requestLabel = "unknown", enqueue = enqueueMarketingCapture) => {
+  if (!entry) return undefined;
+  // The form response is already finished. Once Redis accepts the job, retries
+  // survive API restarts. An enqueue outage must not invalidate the form itself.
+  return Promise.resolve().then(() => enqueue(entry, requestLabel)).catch((error) => {
+    logOperationalError("service.marketing-capture-enqueue", error);
   });
 };
 

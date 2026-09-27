@@ -5,6 +5,7 @@ import MemberUser from "../../models/MemberUser.js";
 import {
   ALL_MEMBER_REGIONS_ACCESS,
   ADMIN,
+  DEVELOPER,
   ALUMNI,
   DEFAULT_REGION,
   MEMBER,
@@ -15,7 +16,7 @@ import {
 import { USER_STATUSES } from "../../util/config/enums.js";
 
 export const ACCOUNT_TYPES = Object.freeze({ MEMBER, ALUMNI });
-export const PROTECTED_ROLES = Object.freeze([ADMIN, SUPER_ADMIN, VIP]);
+export const PROTECTED_ROLES = Object.freeze([ADMIN, SUPER_ADMIN, DEVELOPER, VIP]);
 export const EDITABLE_ROLES = MEMBER_ACCOUNT_ROLES;
 export const EDITABLE_STATUSES = Object.freeze(Object.values(USER_STATUSES));
 export const EDITABLE_CITIES = Object.freeze([DEFAULT_REGION, ...REGIONS]);

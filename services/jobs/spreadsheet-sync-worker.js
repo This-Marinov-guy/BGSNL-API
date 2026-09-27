@@ -1,6 +1,7 @@
 import { Worker } from "bullmq";
 import { redisPrefix } from "../storage/redis.js";
 import { SPREADSHEET_SYNC_QUEUE, createWorkerRedisConnection } from "./spreadsheet-sync-queue.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import {
   syncAlumniToSpreadsheet,
   syncEventToSpreadsheet,
@@ -35,14 +36,16 @@ export const startSpreadsheetSyncWorker = ({
     concurrency,
   });
   worker.on("failed", (job, error) => {
+    logIntegrationError("google-sheets", error, job?.name || "sync");
     console.error("Spreadsheet synchronization failed", {
       jobId: job?.id,
       type: job?.name,
       attempts: job?.attemptsMade,
-      message: error?.message,
+      code: error?.code,
     });
   });
   worker.on("error", (error) => {
+    logOperationalError("worker.spreadsheet-connection", error);
     console.error("Spreadsheet synchronization worker connection failed", { message: error?.message });
   });
   return {

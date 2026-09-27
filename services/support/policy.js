@@ -3,7 +3,8 @@ import HttpError from "../../models/Http-error.js";
 import { BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT } from "../../util/config/defines.js";
 
 export const SUPPORT_TYPES = ["problem", "recommendation"];
-export const SUPPORT_STATUSES = ["open", "in_progress", "waiting_for_you", "resolved", "closed"];
+export const SUPPORT_STATUSES = ["open", "resolved", "rejected", "paused"];
+export const normalizeSupportStatus = status => ({ in_progress: "open", waiting_for_you: "open", closed: "resolved", frozen: "paused" })[status] || status;
 export const SUPPORT_ROLES = ["super_admin", "admin", "support"];
 export const MAX_MESSAGES = 200;
 export const GUEST_ACCESS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -31,18 +32,18 @@ export function textValue(value, label, max, required = true) {
 
 export function supportAttachments(value) {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > 3) throw new HttpError("Attach up to 3 photos.", 422);
+  if (!Array.isArray(value) || value.length > 3) throw new HttpError("Attach up to 3 files.", 422);
   return value.map((attachment) => {
-    if (!attachment || attachment.type !== "image" || typeof attachment.url !== "string" || attachment.url.length > 2000) {
+    if (!attachment || !["image", "file"].includes(attachment.type) || typeof attachment.url !== "string" || attachment.url.length > 2000) {
       throw new HttpError("The attached photo is invalid.", 422);
     }
     let url;
     try { url = new URL(attachment.url); }
     catch { throw new HttpError("The attached photo is invalid.", 422); }
-    if (url.protocol !== "https:" || url.username || url.password || url.hostname !== "res.cloudinary.com" || !url.pathname.includes("/image/upload/")) {
+    if (url.protocol !== "https:" || url.username || url.password || url.hostname !== "res.cloudinary.com" || !url.pathname.includes(attachment.type === "image" ? "/image/upload/" : "/raw/upload/") || (attachment.type === "file" && !/\.(pdf|txt)$/i.test(url.pathname))) {
       throw new HttpError("The attached photo is invalid.", 422);
     }
-    return { type: "image", url: url.toString() };
+    return { type: attachment.type, url: url.toString(), ...(attachment.type === "file" ? { name: textValue(attachment.name, "File name", 200) } : {}) };
   });
 }
 
@@ -117,9 +118,17 @@ export function authorizeConversation(conversation, { account, secret, staff = f
 }
 
 export function validateStatus(status, current, staff) {
+  if (status === "frozen") status = "paused";
   if (!SUPPORT_STATUSES.includes(status)) throw new HttpError("Unknown report status.", 422);
-  if (!staff && (!["open", "resolved"].includes(status) || current === "closed")) throw new HttpError("Only support staff can make that status change.", 403);
+  if (!staff && (!["open", "resolved"].includes(status) || ["rejected", "paused"].includes(normalizeSupportStatus(current)))) throw new HttpError("Only support staff can make that status change.", 403);
   return status;
+}
+
+export function assertSupportReplyAllowed(record, { staff = false } = {}) {
+  const status = normalizeSupportStatus(record.status);
+  if (status === "rejected") throw new HttpError("This ticket is rejected. Start a new ticket if you still need help.", 409);
+  if (!staff && status === "paused") throw new HttpError("This ticket is paused. Support must reopen it before you can reply.", 409);
+  if (record.messageCount >= MAX_MESSAGES) throw new HttpError("This conversation has reached its message limit. Please start a new report.", 409);
 }
 
 export function pageNumber(value = "1") {
@@ -127,22 +136,28 @@ export function pageNumber(value = "1") {
   return Number(value);
 }
 
-export function publicConversation(record, { staff = false, before } = {}) {
+export function publicConversation(record, { staff = false, before, limit = 50 } = {}) {
   const output = {
     id: record._id, reference: String(record._id).slice(0, 8).toUpperCase(), subject: record.subject,
-    type: record.type || "problem", status: record.status, createdAt: record.createdAt, updatedAt: record.updatedAt,
+    type: record.type || "problem", status: normalizeSupportStatus(record.status), createdAt: record.createdAt, updatedAt: record.updatedAt,
     lastMessageAt: record.lastMessageAt, lastAuthor: record.lastAuthor,
     messageCount: record.messageCount, revision: record.revision, pagePath: record.pagePath,
     ...(staff ? { contact: record.contact, ownerAccountId: record.ownerAccountId || null, environment: record.environment } : {}),
   };
   if (record.messages) {
+    const pageSize = Number(limit);
+    if (!Number.isInteger(pageSize) || pageSize < 10 || pageSize > 50) throw new HttpError("Invalid message page size.", 422);
     const end = before === undefined ? record.messages.length : Math.min(Number(before), record.messages.length);
     if (!Number.isSafeInteger(end) || end < 1) throw new HttpError("Invalid message page.", 422);
-    const start = Math.max(0, end - 50);
-    output.messages = record.messages.slice(start, end).map(({ id, text, attachments, author, kind, createdAt }, index) => ({
-      id, text, attachments: attachments || [], author, kind, createdAt, order: start + index,
+    // Filter on the server, including automatic screenshots stored before the
+    // diagnostic flag existed. Manual uploads and captures remain client-visible.
+    const visible = record.messages.map((message, order) => ({ ...message, order })).filter(message =>
+      staff || !(message.diagnostic || (message.author === "requester" && message.text === "Automatic page screenshot" && message.attachments?.length > 0)));
+    const page = visible.filter(message => message.order < end).slice(-pageSize);
+    output.messages = page.map(({ id, text, attachments, author, kind, createdAt, order }) => ({
+      id, text, attachments: attachments || [], author, kind, createdAt, order,
     }));
-    output.before = start || null;
+    output.before = visible.some(message => message.order < page[0]?.order) ? page[0].order : null;
     output.guestAccessExpiresAt = record.ownerAccountId ? null : record.guestAccessExpiresAt;
   }
   return output;

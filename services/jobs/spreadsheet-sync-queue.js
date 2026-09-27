@@ -1,6 +1,7 @@
 import IORedis from "ioredis";
 import { Queue } from "bullmq";
 import { redisPrefix } from "../storage/redis.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 export const SPREADSHEET_SYNC_QUEUE = "spreadsheet-sync";
 const JOB_TYPES = new Set(["event", "special-event", "members", "alumni", "internships"]);
@@ -22,8 +23,12 @@ const queueOptions = (connection) => ({
 });
 
 let queue;
+let queueConnection;
 export const getSpreadsheetSyncQueue = () => {
-  if (!queue) queue = new Queue(SPREADSHEET_SYNC_QUEUE, queueOptions(createWorkerRedisConnection()));
+  if (!queue) {
+    queueConnection = createWorkerRedisConnection();
+    queue = new Queue(SPREADSHEET_SYNC_QUEUE, queueOptions(queueConnection));
+  }
   return queue;
 };
 
@@ -66,16 +71,19 @@ export const enqueueSpreadsheetSync = (type, payload) => {
   // Sync requests are post-commit work. Preserve the successful API action if
   // Redis is temporarily unavailable; the returned promise still lets callers
   // explicitly observe the enqueue failure when they need to.
-  pending.catch((error) => console.error("Could not enqueue spreadsheet synchronization", {
-    type,
-    message: error?.message,
-  }));
+  pending.catch((error) => {
+    logOperationalError("service.spreadsheet-enqueue", error, { job: type });
+    console.error("Could not enqueue spreadsheet synchronization", { type, code: error?.code });
+  });
   return pending;
 };
 
 export async function closeSpreadsheetSyncQueue() {
   if (!queue) return;
   const current = queue;
+  const connection = queueConnection;
   queue = undefined;
+  queueConnection = undefined;
   await current.close();
+  if (connection?.status !== "end") await connection.quit();
 }

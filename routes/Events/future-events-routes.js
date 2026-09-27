@@ -1,4 +1,5 @@
 import express from "express";
+import { getScannerEvents } from "../../controllers/Events/scanner-events-controller.js";
 import { updateEventSales } from "../../controllers/Events/event-sales-controller.js";
 import dotenv from "dotenv";
 import multer from "multer";
@@ -35,6 +36,8 @@ const upload = multer({
     },
 });
 const futureEventRouter = express.Router();
+
+futureEventRouter.get("/scanner-events", adminMiddleware(ACCESS_4), getScannerEvents);
 
 futureEventRouter.get(
     '/full-event-details/:eventId',

@@ -34,6 +34,8 @@
     "test:birthday-emails": "node --test tests/birthday-emails.test.js",
     "seed:account-flows": "node scripts/seed-account-flow-fixtures.js --apply",
     "backfill:event-slugs": "node scripts/backfill-event-slugs.js",
+    "audit:production-events": "node scripts/audit-production-events.js",
+    "upgrade:production-events": "node scripts/upgrade-production-events.js",
     "send-final-reminder": "node scripts/send-non-society-final-reminder.js",
     "deploy": "git add . && git commit -m done && git push heroku main",
     "pretest:redis": "node scripts/local-redis.mjs start",

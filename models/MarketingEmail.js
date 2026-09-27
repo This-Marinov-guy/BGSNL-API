@@ -67,23 +67,28 @@ marketingEmailSchema.index(
   { name: "city_consent_subscription_email" }
 );
 
-marketingEmailSchema.static("add", async function add({ email, city, consent }) {
+marketingEmailSchema.static("add", async function add({ email, city, consent }, { maxTimeMS } = {}) {
   const normalizedEmail = normalizeMarketingEmail(email);
   const normalizedCity = normalizeMarketingCity(city);
   if (consent?.granted !== true) {
     throw new Error("Recorded marketing consent is required");
   }
+  const recordedAt = consent.recordedAt ? new Date(consent.recordedAt) : new Date();
+  const queryOptions = maxTimeMS ? { maxTimeMS } : {};
 
   try {
     return await this.findOneAndUpdate(
-      { email: normalizedEmail, city: normalizedCity },
+      { email: normalizedEmail, city: normalizedCity, $or: [
+        { "consent.recordedAt": { $lt: recordedAt } },
+        { "consent.recordedAt": null },
+      ] },
       {
         $set: {
           unsubscribed: false,
           consent: {
             granted: true,
             source: consent.source || "unknown",
-            recordedAt: consent.recordedAt || new Date(),
+            recordedAt,
             textVersion: consent.textVersion || "unknown",
           },
         },
@@ -97,12 +102,14 @@ marketingEmailSchema.static("add", async function add({ email, city, consent }) 
         new: true,
         runValidators: true,
         setDefaultsOnInsert: true,
+        ...queryOptions,
       }
     );
   } catch (error) {
-    // A concurrent upsert can lose the race after both calls find no document.
+    // Concurrent upserts and replays of the same/older consent hit the unique
+    // pair index. Never replay an opt-in over newer consent or an unsubscribe.
     if (error?.code === 11000) {
-      return this.findOne({ email: normalizedEmail, city: normalizedCity });
+      return this.findOne({ email: normalizedEmail, city: normalizedCity }, null, queryOptions);
     }
 
     throw error;

@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 import HttpError from "../../models/Http-error.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 // Keep the existing algorithm/work factor: no forced password reset or bulk
 // rehash of existing accounts. Salt generation belongs to bcrypt, not callers.
@@ -58,7 +59,8 @@ export function createPasswordVerifier({
       if (typeof computed !== "string" || Buffer.byteLength(computed) !== 60) return false;
       const matches = equal(Buffer.from(computed), Buffer.from(target));
       return validInput && validHash && matches;
-    } catch {
+    } catch (error) {
+      logOperationalError("service.password-verification", error);
       return false;
     } finally {
       // Cover old cheaper hashes, input processing and (for login) account lookup.

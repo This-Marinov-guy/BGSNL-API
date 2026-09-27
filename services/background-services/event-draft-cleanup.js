@@ -1,6 +1,8 @@
 import moment from "moment-timezone";
 import EventDraft from "../../models/EventDraft.js";
 import { EVENT_DRAFT } from "../../util/config/defines.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
+import { runObservedJob } from "../monitoring/job-history.js";
 
 export const EVENT_DRAFT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const EVENT_DRAFT_CLEANUP_TIME_ZONE = "Europe/Amsterdam";
@@ -53,14 +55,14 @@ export function startEventDraftCleanupWorker({
   intervalMs = 60 * 1000,
   schedule = setInterval,
   unschedule = clearInterval,
-  onError = () => console.error("Event draft cleanup failed; retrying on the next tick"),
+  onError = (error) => { logOperationalError("worker.event-draft-cleanup", error); console.error("Event draft cleanup failed; retrying on the next tick"); },
 } = {}) {
   if (!config.enabled) return async () => {};
   let stopped = false;
   let running;
   const tick = () => {
     if (stopped || running) return;
-    running = Promise.resolve().then(run).catch(onError).finally(() => { running = null; });
+    running = runObservedJob("scheduler", "event-draft-cleanup", run).catch(onError).finally(() => { running = null; });
   };
   const timer = schedule(tick, intervalMs);
   timer.unref?.();

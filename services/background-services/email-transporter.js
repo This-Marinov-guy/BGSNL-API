@@ -1,5 +1,7 @@
 import { sendEmail, useDomakinMailer, resolveDomakinResendTemplate } from "./email-provider.js";
 import { queueDomakinTemplateEmail } from "./domakin-mailer.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
+import { jobNameFromKey, observeJob } from "../monitoring/job-history.js";
 import { Resend } from "resend";
 import dotenv from "dotenv";
 import { WHATS_APP } from "../../util/config/LINKS.js";
@@ -24,6 +26,7 @@ function processMailQueue() {
   activeMailCount++;
   (async () => {
     let timeout;
+    next.record.start();
     try {
       await Promise.race([
         next.jobFn(),
@@ -31,7 +34,10 @@ function processMailQueue() {
           timeout = setTimeout(() => reject(new Error("Mail delivery timed out")), MAIL_TIMEOUT_MS);
         }),
       ]);
+      next.record.complete();
     } catch (e) {
+      next.record.fail(e);
+      logIntegrationError(useDomakinMailer() ? "mailer" : "email-provider", e, "delivery");
       // Axios errors contain authorization headers, reset tokens and email
       // bodies. Never log the request/config object or recipient queue key.
       console.error("Background mail failed", { code: e.code, status: e.response?.status,
@@ -50,10 +56,14 @@ function processMailQueue() {
 function enqueueMail(key, jobFn) {
   if (mailQueue.length >= MAIL_MAX_QUEUE) {
     const dropped = mailQueue.shift();
-    console.warn(`Mail queue full, dropping oldest job: ${dropped?.key}`);
+    dropped.record.fail(new Error("Mail queue full"));
+    const index = activeMailKeys.indexOf(dropped.key);
+    if (index !== -1) activeMailKeys.splice(index, 1);
+    console.warn("Mail queue full, dropping oldest job");
+    logOperationalError("mailer.queue", new Error("Queue full"));
   }
   activeMailKeys.push(key);
-  mailQueue.push({ key, jobFn });
+  mailQueue.push({ key, jobFn, record: observeJob("mailer", jobNameFromKey(key)) });
   processMailQueue();
 }
 

@@ -9,6 +9,7 @@ import AuthChallenge from "../../models/AuthChallenge.js";
 import { redisRateLimits as AuthRateLimit } from "../../services/storage/rate-limits.js";
 import { findUserById } from "../main-services/user-service.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
+import { logIntegrationError } from "../../middleware/axiom-logger.js";
 
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const random = () => randomBytes(32).toString("base64url");
@@ -101,6 +102,7 @@ export async function verifyGoogleCredential(credential, nonce) {
     payload = ticket.getPayload();
   } catch (error) {
     if (["ETIMEDOUT", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN"].includes(error.code) || error.response?.status >= 500) {
+      logIntegrationError("google", error, "id-token-verification");
       throw new HttpError("Google verification is temporarily unavailable. Please try again.", 503);
     }
     throw new HttpError("Google sign-in could not be verified. Please try again.", 401);

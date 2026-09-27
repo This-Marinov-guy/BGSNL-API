@@ -24,7 +24,7 @@ export async function limitSupportRequest(req) {
     // spoofed. This service inherits the API's proxy configuration.
     await consumeSupportLimit("all-creations", 200, 60 * 60000);
     await consumeSupportLimit(`create:${identity}`, 8, 15 * 60000);
-  } else if (req.method !== "GET") {
+  } else if (req.method !== "GET" && req.path !== "/live") {
     await consumeSupportLimit(`write:${identity}`, 60, 15 * 60000);
   } else {
     await consumeSupportLimit(`read:${identity}`, 180, 60000);

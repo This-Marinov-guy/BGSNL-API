@@ -5,12 +5,28 @@ import { lockAccountCredentials } from "../authentication/embedded-credentials.j
 import { CURRENT_ACCOUNT_FILTER, accountType } from "../../util/subscriptions/policy.js";
 
 export async function findBillingAccount(query, session = null) {
-  const [member, alumni] = await Promise.all([MemberUser, AlumniUser].map((Model) =>
-    Model.findOne({ ...query, ...CURRENT_ACCOUNT_FILTER }).session(session)));
-  if (member && alumni && member.subscription?.id === alumni.subscription?.id && member.subscription?.id) {
-    throw new Error("Multiple accounts own the same subscription; reconciliation is required");
+  // Mongo transactions must not run parallel operations on their session.
+  const member = await MemberUser.findOne({ ...query, ...CURRENT_ACCOUNT_FILTER }).session(session);
+  const alumni = await AlumniUser.findOne({ ...query, ...CURRENT_ACCOUNT_FILTER }).session(session);
+  if (member && alumni) {
+    throw new Error("Multiple current accounts match this billing identity; reconciliation is required");
   }
   return alumni || member;
+}
+
+export async function createSubscriptionAccount(user, assertOwned) {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      await assertOwned(session);
+      await lockAccountCredentials(session);
+      if (await findBillingAccount({ email: user.email }, session)) {
+        throw new Error("Account was created during checkout; retry reconciliation");
+      }
+      await user.save({ session });
+    });
+    return user;
+  } finally { await session.endSession(); }
 }
 
 const mergeArray = (previous = [], current = []) => {
@@ -21,7 +37,8 @@ const mergeArray = (previous = [], current = []) => {
 
 // Reuse the archived counterpart when changing back. Old account IDs remain
 // aliases, so sessions, ticket references and applications continue to resolve.
-// Both writes are atomic; only the current profile is retained.
+// Both writes are atomic. Member history is retained as alumni-migrated;
+// an Alumni source is removed only after its Member counterpart is saved.
 export async function persistSubscriptionAccount(user, fields, plan, assertOwned) {
   const session = await mongoose.startSession();
   let saved;
@@ -31,6 +48,9 @@ export async function persistSubscriptionAccount(user, fields, plan, assertOwned
       await lockAccountCredentials(session);
       const source = await user.constructor.findById(user._id).select("+identities +passkeys").session(session);
       if (!source || CURRENT_ACCOUNT_FILTER.status.$nin.includes(source.status)) throw new Error("Account changed during billing update");
+      if (source.status !== user.status || (source.subscription?.id || null) !== (user.subscription?.id || null)) {
+        throw new Error("Account changed during billing update");
+      }
       const targetType = plan?.type || accountType(source);
       const nextSubscription = fields.subscription || source.subscription?.toObject() || {};
       fields = { ...fields, subscription: { ...nextSubscription,
@@ -70,7 +90,19 @@ export async function persistSubscriptionAccount(user, fields, plan, assertOwned
       const target = existing || new Target();
       target.set(data);
       saved = await target.save({ session });
-      await source.constructor.deleteOne({ _id: source._id }, { session });
+      if (targetType === "alumni") {
+        source.status = "alumni-migrated";
+        source.accountAliases = data.accountAliases;
+        source.subscription.hasBenefits = false;
+        source.subscription.connected = false;
+        // Credentials have moved to the current profile, never keep a second
+        // copy on the archived Member (including unique indexed passkey IDs).
+        source.identities = [];
+        source.passkeys = [];
+        await source.save({ session });
+      } else {
+        await source.constructor.deleteOne({ _id: source._id }, { session });
+      }
     });
     return saved;
   } finally { await session.endSession(); }

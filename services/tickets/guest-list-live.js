@@ -1,4 +1,5 @@
 import { redisClient, redisPrefix } from "../storage/redis.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 // One Redis subscriber per API process; browsers only receive invalidations.
 const listeners = new Map();
@@ -10,7 +11,7 @@ async function ensureSubscriber() {
     const disconnect = () => {
       for (const callbacks of listeners.values()) for (const callback of [...callbacks]) callback(false);
     };
-    subscriber.on("error", disconnect);
+    subscriber.on("error", (error) => { logOperationalError("service.guest-list-subscription", error); disconnect(); });
     subscriber.on("reconnecting", disconnect);
     subscriber.on("end", () => { connecting = undefined; disconnect(); });
     try {
@@ -42,7 +43,7 @@ export async function subscribeGuestList(eventId, callback) {
 
 export async function publishGuestListChanged(eventId) {
   try { await (await redisClient()).publish(channel(), String(eventId)); }
-  catch { console.warn("Guest list live notification unavailable; clients will reconcile on refresh"); }
+  catch (error) { logOperationalError("service.guest-list-publish", error); console.warn("Guest list live notification unavailable; clients will reconcile on refresh"); }
 }
 
 export async function streamGuestList(req, res, eventId, subscribe = subscribeGuestList) {

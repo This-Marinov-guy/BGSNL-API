@@ -6,6 +6,8 @@ const birthdayRuns = createEmailRunGuard();
 import { queueDomakinTemplateEmail } from "./domakin-mailer.js";
 import { BIRTHDAY_TEMPLATE } from "../../util/config/defines.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
+import { runObservedJob } from "../monitoring/job-history.js";
 
 export const BIRTHDAY_EMAIL_TIME_ZONE = "Europe/Amsterdam";
 export const BIRTHDAY_EMAIL_HOUR = 10;
@@ -118,6 +120,7 @@ export const processBirthdayEmails = async ({
       sent += 1;
     } catch (error) {
       failed += 1;
+      logIntegrationError("mailer", error, "birthday-email");
       console.error("Birthday email delivery was not confirmed", { dateKey: schedule.dateKey, code: error?.code });
     }
   }
@@ -141,8 +144,8 @@ export const startBirthdayEmailWorker = ({
   let running;
   const tick = () => {
     if (stopped || running) return;
-    running = process({ config })
-      .catch((error) => console.error("Birthday email worker failed; retrying on the next tick", { code: error?.code }))
+    running = runObservedJob("scheduler", "birthday-emails", () => process({ config }))
+      .catch((error) => { logOperationalError("worker.birthday-email", error); console.error("Birthday email worker failed; retrying on the next tick", { code: error?.code }); })
       .finally(() => { running = null; });
   };
   const timer = setInterval(tick, intervalMs);

@@ -6,17 +6,18 @@ as unseen; their first acknowledgement creates the array with `$addToSet`.
 No bulk database migration is required. Membership conversions preserve and
 merge this history.
 
-The current release flag is `whats-new-2026-09`. Its website modal has three
-steps: wallet card, new account design, and community campaigns. Wallet and
-campaign copy describes upcoming features until their launch details are set.
+The enabled release flag is `whats-new-version4`. Its Profile-tab modal has
+four steps: website update, security, wallet cards, and help. Each step uses
+its matching image from `/assets/images/campaigns/version4/`. The final action
+is the gold “Let’s roll” button. The standalone dev preview remains available
+at `/dev/whats-new` without changing account history.
 
-The What's new campaign is currently paused: its entry in the website's
-`ACTIVE_ACCOUNT_CAMPAIGNS` list (`src/elements/campaigns/account-campaign.mjs`)
-is commented out. Uncomment `WHATS_NEW_CAMPAIGN` there to enable it again.
-The background scheduler stays wired into the account page, but an inactive
-campaign performs no requests, writes no seen flag and opens no modal—even
-with the local ignore-seen override enabled. The standalone dev preview remains
-available at `/dev/whats-new` without changing account history.
+Both account types store dismissal only in `campaignsSeen`. The `campaigns`
+timestamp map and `mmmCampaign2025` fields are no longer part of the models.
+Migration `009-remove-retired-account-campaign-fields` removes both fields
+from `memberUsers` and `alumniUsers` on the next migration-enabled deployment.
+It only matches documents with either retired field and preserves `campaignsSeen`.
+The standard deployment runner handles tracking and rollback snapshots.
 
 Authenticated routes (also available under `/api/v1`):
 
@@ -35,12 +36,13 @@ dialog/sidebar, and no active form input or recent interaction. Requests do
 not trigger the global loader, toasts, or redirects. The modal is closable at
 any step, uses the shared accessible shell and respects reduced motion.
 
-The flag is claimed immediately before opening, not at the end of the tour.
-Closing or skipping therefore does not show it again on later visits or other
-devices. A navigation or crash between the claim and presentation can consume
-the announcement; this favors avoiding repeated popups. Request failures are
-silent and may retry on a future visit. Viewing a campaign never changes email
-subscription preferences.
+Presentation only reads history. Closing at any step or choosing “Let’s roll”
+persists dismissal, preventing repeat display on later visits or other devices.
+An interrupted tour without dismissal remains eligible. Multiple tabs can show
+an unread tour, but acknowledgement is idempotent and keeps a single flag.
+Closing is immediate and acknowledgement runs in the background with fetch
+keepalive. Read failures are silent; dismissal failures show an error toast
+without reopening the modal. Viewing a campaign never changes email preferences.
 
 For the next release, add a new immutable allowlisted flag in the API, update
 `WHATS_NEW_CAMPAIGN` in the website's `account-campaign.mjs`, and update the
@@ -54,18 +56,9 @@ node --test tests/account-campaigns.test.js tests/subscription-auth-and-migratio
 
 In the website checkout: `node --test scripts/account-campaign.test.mjs`.
 
-## Local preview override
+## Local previews
 
-In the website's gitignored `.env.development.local`, set:
-
-```dotenv
-NEXT_PUBLIC_WHATS_NEW_IGNORE_SEEN=true
-```
-
-For an active campaign, this shows the announcement on each account entry/reload, even if already
-seen. It bypasses both announcement API requests, leaving `campaignsSeen`
-unchanged. The normal background delay and interaction/modal guards remain.
-Closing it does not reopen it until the next account visit.
-Set the flag to `false` to restore normal show-once behavior. Restart the local
-dev server after changing the flag if it has not reloaded the environment.
-The override only works in development; production builds always check the API.
+Localhost and production both use persisted account history. The obsolete
+`NEXT_PUBLIC_WHATS_NEW_IGNORE_SEEN` flag is ignored. Use `/dev/whats-new` for
+a standalone preview without history writes, or the “Explore version 4”
+banner to reopen the walkthrough regardless of its saved dismissal.

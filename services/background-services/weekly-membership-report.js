@@ -10,6 +10,8 @@ import {
 } from "../../util/config/internal-notifications.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 import { deliverInternalNotificationEmail } from "./email-transporter.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
+import { runObservedJob } from "../monitoring/job-history.js";
 
 export const WEEKLY_MEMBERSHIP_REPORT_TIME_ZONE = "Europe/Amsterdam";
 export const WEEKLY_MEMBERSHIP_REPORT_INTERVAL_MS = 5 * 60 * 1000;
@@ -254,6 +256,7 @@ export const processWeeklyMembershipReport = async ({
       sent += 1;
     } catch (error) {
       failed += 1;
+      logIntegrationError("mailer", error, "weekly-membership-report");
       console.error("Weekly membership report delivery was not confirmed", {
         reportKey: period.key,
         code: error?.code,
@@ -281,10 +284,10 @@ export const startWeeklyMembershipReportWorker = ({
   let running;
   const tick = () => {
     if (stopped || running) return;
-    running = processReport({ config })
-      .catch((error) => console.error("Weekly membership report failed; retrying on the next tick", {
+    running = runObservedJob("scheduler", "weekly-membership-report", () => processReport({ config }))
+      .catch((error) => { logOperationalError("worker.weekly-membership-report", error); console.error("Weekly membership report failed; retrying on the next tick", {
         code: error?.code,
-      }))
+      }); })
       .finally(() => { running = null; });
   };
   const timer = setInterval(tick, intervalMs);

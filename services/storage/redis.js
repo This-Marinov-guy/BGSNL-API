@@ -1,4 +1,5 @@
 import { createClient } from "redis";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 let client;
 let connection;
 export async function redisClient() {
@@ -7,7 +8,7 @@ export async function redisClient() {
     if (!url) throw new Error("BGSNL_REDIS_URL is required");
     client = createClient({ url, disableOfflineQueue: true,
       socket: { connectTimeout: 5000, reconnectStrategy: (attempt) => attempt >= 3 ? new Error("Redis unavailable") : Math.min(100 * (attempt + 1), 3000) } });
-    client.on("error", () => console.error("BGSNL Redis connection unavailable"));
+    client.on("error", (error) => { logOperationalError("service.redis-connection", error); console.error("BGSNL Redis connection unavailable"); });
   }
   if (!client.isOpen) connection ||= client.connect().finally(() => { connection = null; });
   if (connection) await connection;

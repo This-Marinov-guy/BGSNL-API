@@ -14,7 +14,7 @@ import securityRouter from "./routes/security-routes.js";
 import specialEventsRouter from "./routes/special-routes.js";
 import { allowedOrigins } from "./util/config/access.js";
 import { firewall, rateLimiter } from "./middleware/firewall.js";
-import axiomLogger, { flushAxiom, ingestLog, redactSensitive } from "./middleware/axiom-logger.js";
+import axiomLogger, { describeError, flushAxiom, ingestLog, logOperationalError, redactSensitive } from "./middleware/axiom-logger.js";
 import { createErrorEvent } from "./util/logging/axiom-log-models.js";
 import { REGIONS, STRIPE_WEBHOOK_ROUTE } from "./util/config/defines.js";
 import futureEventRouter from "./routes/Events/future-events-routes.js";
@@ -47,14 +47,20 @@ import AuthChallenge from "./models/AuthChallenge.js";
 import PasswordResetChallenge from "./models/PasswordResetChallenge.js";
 import ProfileChange from "./models/ProfileChange.js";
 import { redisClient, closeRedis } from "./services/storage/redis.js";
+import { closeSpreadsheetSyncQueue } from "./services/jobs/spreadsheet-sync-queue.js";
+import { closeMarketingCaptureQueue } from "./services/jobs/marketing-capture-queue.js";
+import { startMarketingCaptureWorker } from "./services/jobs/marketing-capture-worker.js";
+import MarketingEmail from "./models/MarketingEmail.js";
 import SupportConversation from "./models/SupportConversation.js";
 import WalletCard from "./models/WalletCard.js";
+import MonitoringJob from "./models/MonitoringJob.js";
 import { startWeeklyMembershipReportWorker } from "./services/background-services/weekly-membership-report.js";
 import { startMemberEventAnnouncementWorker } from "./services/events/member-event-announcements.js";
 import { startBirthdayEmailWorker } from "./services/background-services/birthday-emails.js";
 import { startEventDraftCleanupWorker } from "./services/background-services/event-draft-cleanup.js";
 import supportRouter, { supportError, supportPrivacy } from "./routes/support-routes.js";
 import backofficeRouter from "./routes/backoffice-routes.js";
+import monitoringRouter from "./routes/monitoring-routes.js";
 
 const app = express();
 
@@ -70,6 +76,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(supportPrivacy);
+app.use((req, _res, next) => { req.monitoringPrivate = /^\/api\/(?:v\d+\/)?monitoring(?:\/|$)/.test(req.path); next(); });
 
 const mountApiRouter = (version, routePath, router) => {
   app.use(getApiRoutePath(routePath, version), router);
@@ -178,6 +185,7 @@ mountApiRouter(API_VERSIONS.V1, "/internship", internshipRouter);
 mountApiRouter(API_VERSIONS.V1, "/dashboard", dashboardRouter);
 mountApiRouter(API_VERSIONS.V1, "/support", supportRouter);
 mountApiRouter(API_VERSIONS.V1, "/backoffice", backofficeRouter);
+mountApiRouter(API_VERSIONS.V1, "/monitoring", monitoringRouter);
 
 //no page found
 app.use((req, res, next) => {
@@ -193,11 +201,15 @@ app.use(supportError);
 
 // error handling (not sure if needed)
 app.use((error, req, res, _next) => {
-  if (req.walletPrivate) return res.status(error.statusCode || 500).json({ message: error instanceof HttpError ? error.message : "Membership card service is temporarily unavailable." });
+  if (req.walletPrivate) {
+    if ((error.statusCode || 500) >= 500) logOperationalError("endpoint.wallet", error);
+    return res.status(error.statusCode || 500).json({ message: error instanceof HttpError ? error.message : "Membership card service is temporarily unavailable." });
+  }
   if (req.paymentPrivate) {
+    if ((error.statusCode || 500) >= 500) logOperationalError("endpoint.payment", error);
     return res.status(error.statusCode || 500).json({ message: error instanceof HttpError ? error.message : "Payment service is temporarily unavailable. Please try again." });
   }
-  console.log(error);
+  console.error("API request failed", { status: error.statusCode || 500, path: req.path });
 
   const uploadValidationError = formatUploadValidationError(error);
   if (uploadValidationError) {
@@ -208,15 +220,14 @@ app.use((error, req, res, _next) => {
   const message = error.message;
   const data = error.data;
 
-  const logEvent = createErrorEvent({
+  const logEvent = status >= 500 ? createErrorEvent({
     req,
-    res: { statusCode: status, statusMessage: message, durationMs: 0 },
-    meta: {},
-    error: error,
-    payload: data !== undefined ? { data } : undefined,
+    res: { statusCode: status, statusMessage: "", durationMs: 0 },
+    meta: { source: "endpoint" },
+    error: describeError(error),
     redact: redactSensitive,
-  });
-  ingestLog(logEvent);
+  }) : null;
+  if (logEvent && !req.monitoringPrivate) ingestLog(logEvent);
 
   return res.status(status).json({ message: message, data: data });
 });
@@ -229,6 +240,7 @@ let stopWeeklyMembershipReportWorker;
 let stopBirthdayEmailWorker;
 let stopMemberEventAnnouncementWorker;
 let stopEventDraftCleanupWorker;
+let marketingCaptureWorker;
 
 mongoose
   .connect(
@@ -236,7 +248,8 @@ mongoose
   )
   .then(async () => {
     console.log("Connected to DB");
-    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), WalletCard.init(), redisClient()]);
+    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), WalletCard.init(), MonitoringJob.init(), MarketingEmail.init(), redisClient()]);
+    marketingCaptureWorker = startMarketingCaptureWorker();
     stopBillingWorker = startBillingWorker();
     stopWeeklyMembershipReportWorker = startWeeklyMembershipReportWorker();
     stopBirthdayEmailWorker = startBirthdayEmailWorker();
@@ -245,7 +258,7 @@ mongoose
     server = app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
-  .catch((err) => console.log("Failed to Connect ", err));
+  .catch((err) => { console.error("Failed to connect to database"); logOperationalError("startup.database", err); });
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal) => {
@@ -264,6 +277,12 @@ const gracefulShutdown = async (signal) => {
   await stopBirthdayEmailWorker?.();
   await stopMemberEventAnnouncementWorker?.();
   await stopEventDraftCleanupWorker?.();
+  try { await marketingCaptureWorker?.stop(); await closeMarketingCaptureQueue(); }
+  catch (error) { logOperationalError("shutdown.marketing-queue", error); }
+  try { await closeSpreadsheetSyncQueue(); }
+  catch (error) { logOperationalError("shutdown.spreadsheet-queue", error); }
+  try { await closeRedis(); }
+  catch (error) { logOperationalError("shutdown.redis", error); }
   await flushAxiom();
 
   // Close MongoDB connection
@@ -271,6 +290,7 @@ const gracefulShutdown = async (signal) => {
     await mongoose.connection.close();
     console.log("MongoDB connection closed");
   } catch (err) {
+    logOperationalError("shutdown.database", err);
     console.error("Error closing MongoDB connection:", err);
   }
 
@@ -281,6 +301,10 @@ const gracefulShutdown = async (signal) => {
 // Override existing signal handlers for proper shutdown
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+// Observe fatal exceptions without replacing Node's normal crash behavior.
+process.on("uncaughtExceptionMonitor", (error, origin) => {
+  logOperationalError(origin === "unhandledRejection" ? "process.unhandled-rejection" : "process.uncaught-exception", error);
+});
 
 // instantly update all user spreadsheets (do not leave uncommented)
 

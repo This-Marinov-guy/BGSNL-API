@@ -20,6 +20,18 @@ The BGSNL API is a comprehensive backend system that handles:
 
 ## Installation
 
+### Development image uploads
+
+The shared Cloudinary upload helper places non-production uploads under
+`development/`, preserving subfolders (for example,
+`development/support/<conversation-id>`). Existing `development/` paths are
+not prefixed again. Development folder cleanup uses the same namespace.
+`APP_ENV=prod` keeps production upload paths unchanged; when `APP_ENV` is unset,
+`NODE_ENV=production` selects production behavior. Existing assets are not moved.
+
+Run the upload isolation checks without uploading or deleting real assets:
+`node --test tests/cloudinary-folders.test.js tests/cloudinary-uploads.test.js`.
+
 ### Prerequisites
 
 - **Node.js**: Version 22 LTS (recommended via NVM; supported range: 22–24)
@@ -73,7 +85,7 @@ APP_ENV=dev
 # Axiom Logging (Optional)
 AXIOM_TOKEN=your-axiom-api-token
 AXIOM_ORG_ID=your-axiom-organization-id
-AXIOM_DATASET=api-logs
+AXIOM_QUERY_TOKEN=your-read-only-query-token
 
 # Server-to-server access for the Next.js site's SSR data fetching.
 # Must match BGSNL_SERVER_KEY on the website. Generate with:
@@ -399,25 +411,28 @@ npm run lint
 
 ### Axiom Integration (Optional)
 
-The API integrates with Axiom for centralized logging. Axiom logging is automatically disabled in development environments.
+The API integrates with Axiom for centralized logging. Ingestion is disabled in the standard local development stack.
 
 **Features:**
-- Automatic request/response logging
-- Sensitive data redaction for security endpoints
-- Performance metrics (response time, size)
+- API request status and duration logging without bodies or credentials
+- Endpoint, worker, and Stripe webhook records in `operations`
+- External provider failures and health checks in `integrations`
+- Website activity and errors in `web`
 - Environment-aware logging
 - Graceful shutdown with log flushing
 
 **Configuration:**
 1. Create an account at [Axiom](https://axiom.co/)
-2. Create a dataset named `api-logs`
-3. Generate an API token with ingest permissions
+2. Create datasets named `web`, `operations`, and `integrations`
+3. Generate an API token with ingest permissions and a separate read-only query token
 4. Add credentials to `.env` file:
    ```env
    AXIOM_TOKEN=your-axiom-api-token
    AXIOM_ORG_ID=your-axiom-organization-id
-   AXIOM_DATASET=api-logs
+   AXIOM_QUERY_TOKEN=your-read-only-query-token
    ```
+
+See [system monitoring](docs/system-monitoring.md) for stream contents, access, and health checks.
 
 **Note**: Axiom logging is optional and the application will run without it. The server includes graceful shutdown handlers that flush pending logs before exit.
 

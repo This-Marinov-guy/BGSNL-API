@@ -469,8 +469,8 @@ const eventPromotion = (value) => {
     Number.isFinite(Number(value.discount)) &&
     Number(value.discount) >= 5 &&
     Number(value.discount) <= 95 &&
-    isParsableDate(value.startTimer) &&
-    isParsableDate(value.endTimer)
+    (value.startTimer == null || value.startTimer === "" || isParsableDate(value.startTimer)) &&
+    (value.endTimer == null || value.endTimer === "" || isParsableDate(value.endTimer))
   );
 };
 

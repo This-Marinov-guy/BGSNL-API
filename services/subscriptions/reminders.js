@@ -9,6 +9,8 @@ import { USER_URL, SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE } from "../../util/co
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 import { reconcileAccount, reconcileSubscription } from "./reconcile.js";
 import { processMemberRevenueMaintenance } from "./revenue-fees.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
+import { runObservedJob } from "../monitoring/job-history.js";
 
 export const REMINDER_DELAY_MS = 48 * 60 * 60 * 1000;
 export const nextReminderSlot = (job, now = Date.now()) => {
@@ -23,6 +25,7 @@ export async function deliverBillingReminder({ email, second, send = queueDomaki
 }
 
 export async function processBillingReminders({ send = deliverBillingReminder, attention = BillingAttention, reconcile = reconcileSubscription } = {}) {
+  let failed = 0;
   const postpone = (job) => attention.updateOne({ _id: job._id, resolvedAt: null, nextAttemptAt: { $lte: new Date() } }, {
     $set: { nextAttemptAt: new Date(Date.now() + 5 * 60000) },
   });
@@ -54,14 +57,19 @@ export async function processBillingReminders({ send = deliverBillingReminder, a
       // at-most-two sends across restarts, duplicate events and multiple workers.
       try { await send({ email: result.user.email, second: slot === "secondAttemptAt" }); }
       catch (error) {
+        failed += 1;
+        logIntegrationError("mailer", error, "billing-email");
         await attention.updateOne({ _id: job._id }, { $set: { lastDeliveryError: "Provider delivery failed or was not confirmed" } });
         console.error("Billing email delivery was not confirmed", { episode: job._id, code: error.code });
       }
     } catch (error) {
+      failed += 1;
+      logOperationalError("worker.billing-reminder", error);
       await postpone(job);
       console.error("Billing reminder postponed", { episode: job._id, code: error.code });
     }
   }
+  return { failed };
 }
 
 export function startBillingWorker() {
@@ -71,16 +79,16 @@ export function startBillingWorker() {
   let running;
   const tick = () => {
     if (stopped || running) return;
-    running = (async () => {
-      await processBillingReminders();
+    running = runObservedJob("scheduler", "billing-maintenance", async () => {
+      let failures = (await processBillingReminders()).failed;
       // A reporting or Connect failure must not block membership recovery.
       try { await processMemberRevenueMaintenance(); }
-      catch (error) { console.error("Member revenue sharing postponed", { code: error.code }); }
+      catch (error) { failures += 1; logOperationalError("worker.revenue-sharing", error); console.error("Member revenue sharing postponed", { code: error.code }); }
       // Recover paid checkouts even if their initial webhook was never delivered.
       const checkouts = await BillingRecord.find({ "data.sessionId": { $exists: true }, completedAt: null })
         .sort({ updatedAt: 1 }).limit(25);
       for (const checkout of checkouts) {
-        if (stopped) return;
+        if (stopped) return { failed: failures };
         try {
           const stripe = createStripeClient(checkout.data.stripeRegion);
           const payment = await stripe.checkout.sessions.retrieve(checkout.data.sessionId);
@@ -89,6 +97,8 @@ export function startBillingWorker() {
             await BillingRecord.updateOne({ _id: checkout._id }, { $unset: { "data.registration": 1 }, $set: { completedAt: new Date() } });
           } else await BillingRecord.updateOne({ _id: checkout._id }, { $set: { updatedAt: new Date() } });
         } catch (error) {
+          failures += 1;
+          logOperationalError("worker.checkout-reconciliation", error);
           await BillingRecord.updateOne({ _id: checkout._id }, { $set: { updatedAt: new Date() } });
           console.error("Checkout reconciliation postponed", { checkoutId: checkout._id, code: error.code });
         }
@@ -102,9 +112,11 @@ export function startBillingWorker() {
             { "subscription.syncedAt": { $lt: new Date(Date.now() - 5 * 60000) } }],
         }).sort({ "subscription.lastAttemptAt": 1, "subscription.syncedAt": 1 }).limit(25);
         for (const user of users) {
-          if (stopped) return;
+          if (stopped) return { failed: failures };
           try { await reconcileAccount(user); }
           catch (error) {
+            failures += 1;
+            logOperationalError("worker.subscription-reconciliation", error);
             // Rotate failed records behind other accounts without making an
             // unverified entitlement snapshot appear fresh.
             await Model.updateOne({ _id: user.id, "subscription.id": user.subscription.id }, { $set: { "subscription.lastAttemptAt": new Date() } });
@@ -112,7 +124,8 @@ export function startBillingWorker() {
           }
         }
       }
-    })().catch(() => console.error("Billing maintenance failed; retrying on the next tick"))
+      return { failed: failures };
+    }).catch((error) => { logOperationalError("worker.billing-maintenance", error); console.error("Billing maintenance failed; retrying on the next tick"); })
       .finally(() => { running = null; });
   };
   const timer = setInterval(tick, 60000);

@@ -15,7 +15,7 @@ export const accountRoleOptions = (type) => type === "alumni" ? NATIONAL_ACCOUNT
 // Administration of protected accounts is reserved for Super Admins.
 export const canEditProtectedAccount = (actorRoles, targetRoles) =>
   normalizeRoleNames(actorRoles).includes("super_admin") ||
-  !normalizeRoleNames(targetRoles).some(role => ["admin", "super_admin", "vip"].includes(role));
+  !normalizeRoleNames(targetRoles).some(role => ["admin", "super_admin", "developer", "vip"].includes(role));
 
 // Alumni management is reserved for national board and administrators.
 export const canManageAccountType = (actorRoles, type) => type !== "alumni" ||

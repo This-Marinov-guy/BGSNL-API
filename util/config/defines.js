@@ -20,6 +20,7 @@ export const STRIPE_WEBHOOK_ROUTE = "/stripe-payments";
 // member roles
 export const SUPER_ADMIN = "super_admin";
 export const ADMIN = "admin";
+export const DEVELOPER = "developer";
 export const NATIONAL_BOARD_MEMBER = "national_board_member";
 export const SOCIETY_ADMIN = NATIONAL_BOARD_MEMBER;
 export const SUPPORT = "support";
@@ -43,6 +44,7 @@ export const ALL_EVENT_REGIONS_ACCESS = [...ACCESS_2, NATIONAL_COMMITTEE_MEMBER]
 export const EVENT_MANAGEMENT_ACCESS = [...ACCESS_3, NATIONAL_COMMITTEE_MEMBER];
 export const ALL_MEMBER_REGIONS_ACCESS = [...ACCESS_2, NATIONAL_COMMITTEE_MEMBER];
 export const MEMBER_ADMIN_ACCESS = [...ACCESS_3, NATIONAL_COMMITTEE_MEMBER];
+export const MONITORING_ACCESS = [SUPER_ADMIN, ADMIN, DEVELOPER];
 
 
 export const LIMITLESS_ACCOUNT = [SUPER_ADMIN, ADMIN, VIP];
@@ -51,7 +53,7 @@ export const LIMITLESS_ACCOUNT = [SUPER_ADMIN, ADMIN, VIP];
 // admin from running admin panels — staff running the org should not need a
 // paid membership. A genuine administrative hold (frozen/suspended) is not in
 // this list and must keep blocking everyone, admins included.
-export const BILLING_LOCK_EXEMPT = [SUPER_ADMIN, ADMIN];
+export const BILLING_LOCK_EXEMPT = [SUPER_ADMIN, ADMIN, DEVELOPER];
 export const BILLING_LOCKED_STATUSES = ["locked", "payment_awaiting"];
 
 // event status

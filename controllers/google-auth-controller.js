@@ -7,12 +7,14 @@ import {
   googleClientId, limitGoogleRequests, verifyCurrentPassword, createGoogleChallenge,
   consumeGoogleChallenge, findGoogleAccount, changeGoogleIdentity, googleConnectionStatus,
 } from "../services/authentication/google.js";
+import { logOperationalError } from "../middleware/axiom-logger.js";
 
 const authAction = (handler) => async (req, res, next) => {
   res.set("Cache-Control", "private, no-store");
   try { return await handler(req, res); }
   catch (error) {
     if (error instanceof HttpError) return next(error);
+    logOperationalError("service.google-auth", error);
     // Never log Google credentials, passwords or provider error request objects.
     console.error("Google authentication request failed", { code: error.code });
     return next(new HttpError("Account sign-in is temporarily unavailable. Please try again.", 503));

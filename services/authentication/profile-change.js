@@ -10,6 +10,7 @@ import { findUserById, normalizeEmail } from "../main-services/user-service.js";
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
 import { NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, PROFILE_CHANGE_CONFIRM_TEMPLATE, SIGN_IN_DETAILS_CHANGED_TEMPLATE } from "../../util/config/defines.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
+import { logIntegrationError } from "../../middleware/axiom-logger.js";
 
 export const PROFILE_CHANGE_TTL = 60 * 60 * 1000;
 const invalid = () => new HttpError("This confirmation link expired, was already used, or your account changed. Please request the change again from your profile.", 409);
@@ -73,7 +74,8 @@ export async function requestProfileChange(user, { email, password, origin, clai
     });
   } finally { await session.endSession(); }
   try { await deliver(profileChangeEmail(record, token, "owner")); }
-  catch {
+  catch (error) {
+    logIntegrationError("mailer", error, "profile-change-confirmation");
     await records.deleteOne({ _id: user.id, generation });
     throw new HttpError("We could not send the confirmation email. Your email and password have not changed. Please try again.", 503);
   }
@@ -118,7 +120,8 @@ export async function confirmProfileChange(token, {
   } finally { await session.endSession(); }
   if (awaitingNewEmail) {
     try { await deliver(profileChangeEmail(record, nextToken, "new_email")); }
-    catch {
+    catch (error) {
+      logIntegrationError("mailer", error, "profile-change-new-email");
       await records.deleteOne({ _id: record._id, generation: record.generation });
       throw new HttpError("The new-address verification email could not be sent. Your sign-in details have not changed. Please request the change again.", 503);
     }
@@ -128,7 +131,10 @@ export async function confirmProfileChange(token, {
   const notification = { from: { email: NO_REPLY_EMAIL, name: NO_REPLY_EMAIL_NAME },
     templateId: SIGN_IN_DETAILS_CHANGED_TEMPLATE, templateVariables: {} };
   await Promise.all([...new Set([record.oldEmail, record.newEmail].filter(Boolean))].map((email) =>
-    deliver({ ...notification, to: [{ email }] }).catch(() => { console.error("Profile change notification delivery failed"); })));
+    deliver({ ...notification, to: [{ email }] }).catch((error) => {
+      logIntegrationError("mailer", error, "profile-change-notification");
+      console.error("Profile change notification delivery failed");
+    })));
   return { state: "complete", user: updated, authTime: record.authTime, previousVersion: record.sessionVersion,
     message: `Your profile change is confirmed. Other sessions have been signed out.${record.newEmail ? " Reconnect Google in Settings if you want to use your new Google address." : ""}` };
 }

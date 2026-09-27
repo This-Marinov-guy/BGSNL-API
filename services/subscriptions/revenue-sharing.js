@@ -5,6 +5,7 @@ import { createStripeClient } from "../../util/config/stripe.js";
 import { MEMBER_REVENUE_PLATFORM, MEMBER_REVENUE_ACCOUNTS, memberRevenueEnabled, memberRevenueLiveMode } from "../../util/config/member-revenue.js";
 import { invoiceSubscriptionId, planForPrice, stripeId } from "../../util/subscriptions/policy.js";
 import { withBillingLease } from "./lease.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const cents = (value) => Number.isSafeInteger(value) && value >= 0;
 const creditTotal = (record) => Object.values(record.creditedByInvoice || {}).reduce((sum, value) => sum + value, 0);
@@ -264,7 +265,7 @@ export async function processMemberRevenueSharing({ stripe = createStripeClient(
       const invoices = [];
       for await (const invoice of stripe.invoices.list({ subscription: sub.id, status: "paid", limit: 100 })) invoices.push(invoice);
       for (const invoice of invoices.sort((a, b) => a.created - b.created)) await capture(invoice.id, { stripe, shares, assertOwned });
-    } catch (error) { blocked.add(allocation.accountId); console.error("Member revenue capture postponed", { subscriptionId: sub.id, code: error.code }); }
+    } catch (error) { blocked.add(allocation.accountId); logOperationalError("service.revenue-capture", error); console.error("Member revenue capture postponed", { subscriptionId: sub.id, code: error.code }); }
   }
   await assertOwned();
   await beforeSettle({ shares, blocked });
@@ -273,7 +274,10 @@ export async function processMemberRevenueSharing({ stripe = createStripeClient(
     if (blocked.has(accountId)) continue;
     try {
       const result = await settle(accountId, { stripe, shares, coordinatorAssert: assertOwned });
-      if (result.unrecoveredDebt) console.error("Regional fees await recovery", { accountId, amount: result.unrecoveredDebt });
-    } catch (error) { console.error("Member revenue settlement postponed", { accountId, code: error.code }); }
+      if (result.unrecoveredDebt) {
+        logOperationalError("service.unrecovered-regional-fees", new Error("Unrecovered fees"));
+        console.error("Regional fees await recovery", { accountId, amount: result.unrecoveredDebt });
+      }
+    } catch (error) { logOperationalError("service.revenue-settlement", error); console.error("Member revenue settlement postponed", { accountId, code: error.code }); }
   }
 }

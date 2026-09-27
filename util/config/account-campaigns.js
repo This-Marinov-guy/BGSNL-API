@@ -2,4 +2,5 @@
 // while older website deployments can still acknowledge them.
 export const ACCOUNT_CAMPAIGN_KEYS = Object.freeze([
   "whats-new-2026-09",
+  "whats-new-version4",
 ]);

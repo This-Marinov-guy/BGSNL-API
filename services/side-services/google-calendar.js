@@ -2,20 +2,26 @@ import { google } from "googleapis";
 import dotenv from "dotenv";
 import moment from "moment";
 import { IS_PROD } from "../../util/functions/helpers.js";
+import { logIntegrationError } from "../../middleware/axiom-logger.js";
 
 dotenv.config();
 
 const calendarId = process.env.CALENDAR_ID;
 
 const getCalendarClient = async () => {
-  const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS);
-  const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: ["https://www.googleapis.com/auth/calendar"],
-  });
+  try {
+    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ["https://www.googleapis.com/auth/calendar"],
+    });
 
-  const googleClient = await auth.getClient();
-  return google.calendar({ version: "v3", auth: googleClient });
+    const googleClient = await auth.getClient();
+    return google.calendar({ version: "v3", auth: googleClient });
+  } catch (error) {
+    logIntegrationError("google-calendar", error, "client-setup");
+    throw error;
+  }
 };
 
 // function to format the Google Event object
@@ -47,6 +53,7 @@ const handleCalendarOperation = async (operation, params) => {
     console.log("Operation successful:", response.data);
     return response.data;
   } catch (error) {
+    logIntegrationError("google-calendar", error, "event-operation");
     console.error("Error in calendar operation:", error.response?.data || error);
     throw new Error("Google Calendar API operation failed");
   }
@@ -54,12 +61,12 @@ const handleCalendarOperation = async (operation, params) => {
 
 export const addOrUpdateEvent = async (eventData) => {
   if (!IS_PROD) {
-    return;
+    return undefined;
   }
   
   if (eventData.hidden) {
     console.log("Event is hidden, not adding or updating in Google Calendar");
-    return;
+    return undefined;
   }
 
   const calendarEvent = formatCalendarEvent(eventData);
@@ -106,4 +113,3 @@ export const deleteCalendarEvent = async (eventData) => {
   );
   console.log("Event deleted:", googleEventId);
 };
-

@@ -8,6 +8,7 @@ import AlumniUser from "../../models/AlumniUser.js";
 import { addPrice, addProduct, refundStripePayment } from "../side-services/stripe.js";
 import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
 import { DEFAULT_REGION } from "../../util/config/defines.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 export const createEventProductWithPrice = async (
   data,
@@ -184,10 +185,8 @@ const discountedPrice = (price, discount) => {
 
 const isPromotionActive = (promotion, now) =>
   promotion?.isEnabled === true &&
-  promotion.startTimer &&
-  promotion.endTimer &&
-  new Date(promotion.startTimer) < now &&
-  new Date(promotion.endTimer) > now;
+  (promotion.startTimer == null || promotion.startTimer === "" || new Date(promotion.startTimer) <= now) &&
+  (promotion.endTimer == null || promotion.endTimer === "" || new Date(promotion.endTimer) > now);
 
 const applyPromotionToTier = ({ tier, baseTier, promotion }) => {
   const price = discountedPrice(tier?.price, promotion?.discount);
@@ -540,6 +539,7 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
   try {
     event = await Event.findById(eventId);
   } catch (err) {
+    logOperationalError("service.refund-event-lookup", err);
     console.error(`[refundEventTickets] DB error fetching event ${eventId}:`, err.message);
     throw new HttpError("Could not fetch event", 500);
   }
@@ -599,6 +599,7 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
     await event.save();
     console.log(`[refundEventTickets] Event ${eventId} saved with updated refund statuses`);
   } catch (err) {
+    logOperationalError("service.refund-event-save", err);
     console.error(`[refundEventTickets] Failed to save event ${eventId}:`, err.message);
     throw new HttpError("Failed to persist refund status", 500);
   }
@@ -642,6 +643,7 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
 
         sess.endSession();
       } catch (err) {
+        logOperationalError("service.refund-profile-update", err);
         console.error(`[refundEventTickets] Failed to remove ticket from user profile | email=${r.email}:`, err.message);
         // Non-fatal — Stripe refund already succeeded
       }

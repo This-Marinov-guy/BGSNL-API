@@ -57,10 +57,6 @@ const memberUserSchema = new Schema({
       gif: { type: String },
     },
   ],
-  mmmCampaign2025: {
-    calendarSubscription: { type: Boolean, default: false },
-    calendarImage: { type: String, default: "" },
-  },
   joinDate: { type: Date, default: createCurrentDate, required: true },
   internshipApplications: [
     { type: Schema.Types.ObjectId, ref: "InternshipApplication" },

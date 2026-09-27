@@ -2,6 +2,7 @@ import { sendInternalNotificationEmail } from "./email-transporter.js";
 import { getInternalNotificationConfig } from "../../util/config/internal-notifications.js";
 import { HOME_URL } from "../../util/config/defines.js";
 import { formatRegionBadgeLabel, getRegionBadgeTheme } from "../../util/config/region-badges.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const DISPLAY_TIME_ZONE = "Europe/Amsterdam";
 
@@ -204,6 +205,26 @@ export const buildAccessRequestNotification = (request) => ({
   entityId: request.id,
 });
 
+export const buildSupportReplyNotification = (ticket, reply) => ({
+  ...renderNotification({
+    title: reply.reopened ? "Support ticket reopened" : "New support ticket reply",
+    rows: [
+      ["Reference", ticket.reference || ticket.id],
+      ["Subject", ticket.subject],
+      ["Status", ticket.status],
+      ["Reply from", reply.author === "staff" ? "Support team" : "Requester"],
+      ["Reporter", ticket.contact?.name],
+      ["Message", reply.text || "Photo attachment"],
+      ["Attachments", String(reply.attachments?.length || 0)],
+      ["Replied", formatDateTime(reply.createdAt)],
+      ["Open inbox", `${HOME_URL}/user/dashboard/support`],
+    ],
+  }),
+  subject: `${reply.reopened ? "Support ticket reopened" : "New support reply"} #${ticket.reference || ticket.id} — ${present(ticket.subject)}`,
+  type: "support-ticket-replied",
+  entityId: `${ticket.id}:${reply.id}`,
+});
+
 export const createInternalNotificationService = ({
   config = getInternalNotificationConfig(),
   sendEmail = sendInternalNotificationEmail,
@@ -219,6 +240,11 @@ export const createInternalNotificationService = ({
   };
 
   return {
+    notifySupportTicketReplied(ticket, reply) {
+      if (!config.enabled) return 0;
+      sendEmail({ receiver: "vladislavmarinov3142@gmail.com", ...buildSupportReplyNotification(ticket, reply) });
+      return 1;
+    },
     notifyAccessRequested(request) {
       return queue(buildAccessRequestNotification(request));
     },
@@ -245,6 +271,7 @@ export const notifyInternshipApplicationCreated = (application) => {
   try {
     return internalNotificationService.notifyInternshipApplicationCreated(application);
   } catch (error) {
+    logOperationalError("service.internship-notification", error);
     console.error("Failed to enqueue internship application notification:", error);
     return 0;
   }
@@ -254,6 +281,7 @@ export const notifyEventCreated = (event) => {
   try {
     return internalNotificationService.notifyEventCreated(event);
   } catch (error) {
+    logOperationalError("service.event-notification", error);
     console.error("Failed to enqueue event notification:", error);
     return 0;
   }
@@ -262,9 +290,11 @@ export const notifyEventCreated = (event) => {
 export const notifySupportTicketCreated = (ticket) => {
   try { return internalNotificationService.notifySupportTicketCreated(ticket); }
   catch (error) {
+    logOperationalError("service.support-notification", error);
     console.error("Failed to enqueue support ticket notification:", error);
     return 0;
   }
 };
 
 export const notifyAccessRequested = (request) => internalNotificationService.notifyAccessRequested(request);
+export const notifySupportTicketReplied = (ticket, reply) => internalNotificationService.notifySupportTicketReplied(ticket, reply);

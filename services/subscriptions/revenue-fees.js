@@ -6,6 +6,7 @@ import { DEFAULT_REGION } from "../../util/config/defines.js";
 import { MEMBER_REVENUE_ACCOUNTS, memberRevenueEnabled, memberRevenueLiveMode } from "../../util/config/member-revenue.js";
 import { processMemberRevenueSharing, verifyRevenuePlatform } from "./revenue-sharing.js";
 import { withBillingLease } from "./lease.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const REPORT_TYPE = "all_fees.balance_transaction_created.itemized.2";
 const COLUMNS = ["amount", "tax", "currency", "balance_transaction_id", "fee_transaction_id", "incurred_by", "incurred_by_type", "settled_via"];
@@ -122,7 +123,10 @@ export async function processMemberRevenueFees({ stripe = createStripeClient(DEF
         await assertOwned();
         await shares.updateOne({ _id: id }, { $set: { livemode: memberRevenueLiveMode(), accountId: entry.accountId, region: entry.region, [`extraFees.${period}`]: entry.amount } }, { upsert: true });
       }
-      if (result.unattributed) console.error("Unattributed Stripe fees require review", { period, rows: result.unattributed });
+      if (result.unattributed) {
+        logOperationalError("service.unattributed-stripe-fees", new Error("Unattributed fees"), { rows: result.unattributed });
+        console.error("Unattributed Stripe fees require review", { period, rows: result.unattributed });
+      }
     });
     month = end;
   }

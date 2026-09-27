@@ -6,38 +6,68 @@ import { stripeId, invoiceSubscriptionId } from "../../util/subscriptions/policy
 import { withBillingLease } from "../../services/subscriptions/lease.js";
 import { canonicalStripeRegion, reconcileSubscription, reconcileAccount, readStripeSubscription } from "../../services/subscriptions/reconcile.js";
 import { completeMembershipCheckout } from "../../services/subscriptions/checkout.js";
-import { findBillingAccount } from "../../services/subscriptions/accounts.js";
-import { findUserByEmail, findUserById } from "../../services/main-services/user-service.js";
+import { resolveCheckoutAccount } from "../../services/subscriptions/checkout-account.js";
+import { persistSubscriptionAccount } from "../../services/subscriptions/accounts.js";
 import { handleAlumniSignup, handleUserSignup, handleGuestTicketPurchase, handleMemberTicketPurchase } from "../../services/main-services/stripe-webhook-service.js";
+import { logIntegrationError } from "../../middleware/axiom-logger.js";
+
+async function markCheckoutFulfilled(stripe, sessionId, region) {
+  const metadata = { bgsnlFulfilled: "1" };
+  if (typeof stripe.checkout.sessions.update === "function") {
+    await stripe.checkout.sessions.update(sessionId, { metadata });
+    return;
+  }
+  // The pinned Stripe SDK predates Checkout Session updates. Use the same
+  // Stripe API directly until the SDK can be upgraded across the API.
+  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${getStripeKey("secretKey", region)}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Stripe-Version": "2022-08-01",
+      "Idempotency-Key": `bgsnl-fulfilled:${sessionId}`,
+    },
+    body: new URLSearchParams({ "metadata[bgsnlFulfilled]": "1" }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) throw new Error(`Stripe checkout metadata update failed (${response.status})`);
+}
 
 // Support checkouts opened before deployment, but derive plan/tier/period from
 // Stripe prices and never replace another running subscription by customer ID.
-async function completeLegacyMembership(session, region) {
+export async function completeLegacyMembership(session, region, {
+  readSubscription = readStripeSubscription, stripeClient = createStripeClient,
+  resolveAccount = resolveCheckoutAccount, reconcileExisting = reconcileAccount,
+  persistAccount = persistSubscriptionAccount, reconcile = reconcileSubscription,
+  signupMember = handleUserSignup, signupAlumni = handleAlumniSignup,
+  assertOwned = async () => {},
+} = {}) {
   const subscriptionId = stripeId(session.subscription);
   const customerId = stripeId(session.customer);
-  const { state, sub } = await readStripeSubscription(createStripeClient(region), subscriptionId);
+  const { state, sub } = await readSubscription(stripeClient(region), subscriptionId);
   if (stripeId(sub.customer) !== customerId || !state.plan) throw new Error("Unrecognized membership checkout");
   const metadata = { ...session.metadata, tier: state.plan.tier, period: state.plan.period };
   const paymentData = { subscriptionId, customerId, paymentStatus: session.payment_status, stripeRegion: region };
-  let user = await findBillingAccount({ "subscription.id": subscriptionId });
-  if (!user) {
-    if (["signup", "alumni-signup"].includes(metadata.method)) {
-      if (await findUserByEmail(metadata.email)) throw new Error("Signup email already has an account; manual reconciliation required");
-      await (state.plan.type === "alumni" ? handleAlumniSignup : handleUserSignup)(metadata, paymentData);
-    } else {
-      user = await findUserById(metadata.userId);
-      if (!user) throw new Error("Membership account not found");
-      if (user.subscription?.id && user.subscription.id !== subscriptionId) {
-        const previous = await reconcileAccount(user);
+  let user = await resolveAccount({ subscriptionId, customerId, userId: metadata.userId, email: metadata.email });
+  if (user) {
+    if (user.subscription?.id !== subscriptionId) {
+      if (user.subscription?.id) {
+        const previous = await reconcileExisting(user);
         if (!previous?.state.ended) throw new Error("Refusing to replace a running subscription; manual reconciliation required");
         user = previous.user;
       }
-      user.subscription = { id: subscriptionId, customerId, stripeRegion: region, period: state.plan.period };
-      if (["active", "locked", "payment_awaiting"].includes(user.status)) user.status = "payment_awaiting";
-      await user.save();
+      await persistAccount(user, {
+        subscription: { id: subscriptionId, customerId, stripeRegion: region, period: state.plan.period },
+        status: ["active", "locked", "payment_awaiting"].includes(user.status) ? "payment_awaiting" : user.status,
+      }, null, assertOwned);
     }
+  } else if (["signup", "alumni-signup"].includes(metadata.method)) {
+    await assertOwned();
+    await (state.plan.type === "alumni" ? signupAlumni : signupMember)(metadata, paymentData);
+  } else {
+    throw new Error("Membership account not found");
   }
-  await reconcileSubscription(subscriptionId, region, { expectedCustomerId: customerId });
+  await reconcile(subscriptionId, region, { expectedCustomerId: customerId });
 }
 
 export const postWebhookCheckout = async (req, res, next) => {
@@ -58,19 +88,19 @@ export const postWebhookCheckout = async (req, res, next) => {
       if (["paid", "no_payment_required"].includes(session.payment_status) ||
           (session.mode === "subscription" && session.status === "complete" && session.subscription)) {
         const key = `checkout-event:${region}:${session.id}`;
-        await withBillingLease(key, async ({ record }) => {
+        await withBillingLease(key, async ({ record, assertOwned }) => {
           if (record.completedAt || session.metadata?.bgsnlFulfilled === "1") return;
           if (session.mode === "subscription") {
             if (session.metadata?.method === "membership_checkout") await completeMembershipCheckout(session, region);
             else if (["signup", "alumni-signup", "alumni_migration", "unlock_account"].includes(session.metadata?.method)) {
-              await completeLegacyMembership(session, region);
+              await completeLegacyMembership(session, region, { assertOwned });
             }
           } else if (session.mode === "payment") {
             const data = { transactionId: stripeId(session.payment_intent) || session.id, stripeRegion: region };
             if (session.metadata?.method === "buy_guest_ticket") await handleGuestTicketPurchase(session.metadata, data);
             if (session.metadata?.method === "buy_member_ticket") await handleMemberTicketPurchase(session.metadata, data);
           }
-          await stripe.checkout.sessions.update(session.id, { metadata: { bgsnlFulfilled: "1" } });
+          await markCheckoutFulfilled(stripe, session.id, region);
           await BillingRecord.updateOne({ _id: key }, { $set: { completedAt: new Date() } }, { upsert: true });
         });
       }
@@ -81,6 +111,7 @@ export const postWebhookCheckout = async (req, res, next) => {
     // Never log or reflect checkout metadata (legacy sessions may contain PII).
     return res.status(200).json({ received: true });
   } catch (error) {
+    logIntegrationError("stripe", error, "webhook");
     console.error("Stripe webhook will be retried", { eventId: event.id, type: event.type, code: error.code });
     return next(new HttpError("Webhook processing is temporarily unavailable. Please retry.", 503));
   }

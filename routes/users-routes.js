@@ -37,7 +37,6 @@ import {
   activeMemberValidators,
   addDocumentValidators,
   alumniQuoteValidators,
-  calendarVerificationValidators,
   convertAlumniToUserValidators,
   convertUserToAlumniValidators,
   deleteDocumentValidators,
@@ -100,10 +99,6 @@ userRouter.get("/promotions", authMiddleware, requireBenefits(), (req, res) => r
 userRouter.post(
   "/verify-calendar-subscription",
   authMiddleware,
-  requireBenefits(),
-  fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
-  calendarVerificationValidators,
-  validateRequest,
   submitCalendarVerification
 );
 // Anonymized vital stats export (XLS)

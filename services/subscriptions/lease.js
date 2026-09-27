@@ -3,6 +3,7 @@ import BillingRecord from "../../models/BillingRecord.js";
 import TemporaryCode from "../../models/TemporaryCode.js";
 import HttpError from "../../models/Http-error.js";
 import { redisClient, redisPrefix } from "../storage/redis.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const renew = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) else return 0 end`;
 const release = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`;
@@ -22,12 +23,15 @@ export async function withBillingLease(key, work, { clientFor = redisClient, rec
   };
   try {
     await fences.updateOne({ _id: lockKey }, { $set: { owner, expiresAt: new Date(Date.now() + 86400000) } }, { upsert: true });
-    heartbeat = setInterval(() => { assertOwned().catch(() => { lost = true; }); }, 20000);
+    heartbeat = setInterval(() => { assertOwned().catch((error) => { lost = true; logOperationalError("service.billing-lease-heartbeat", error); }); }, 20000);
     heartbeat.unref();
     const record = await records.findById(key) || { _id: key };
     return await work({ record: { ...record, owner }, assertOwned });
   } finally {
     clearInterval(heartbeat);
-    await client.eval(release, { keys: [lockKey], arguments: [owner] }).catch(() => console.error("Redis lease release deferred to expiry"));
+    await client.eval(release, { keys: [lockKey], arguments: [owner] }).catch((error) => {
+      logOperationalError("service.billing-lease-release", error);
+      console.error("Redis lease release deferred to expiry");
+    });
   }
 }

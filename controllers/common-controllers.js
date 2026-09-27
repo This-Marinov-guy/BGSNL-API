@@ -8,6 +8,7 @@ import Statistics from "../models/Statistics.js";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import MarketingEmail from "../models/MarketingEmail.js";
+import { logOperationalError } from "../middleware/axiom-logger.js";
 
 export const getTotalMemberCount = async (req, res, next) => {
   let userCount = await usersCountCache.get("total");
@@ -22,6 +23,7 @@ export const getTotalMemberCount = async (req, res, next) => {
     userCount = await MemberUser.countDocuments();
     await usersCountCache.set("total", userCount);
   } catch (err) {
+    logOperationalError("service.total-member-count", err);
     console.error("Error counting users:", err.message);
     userCount = "-";
   }
@@ -44,6 +46,7 @@ export const getMemberCount = async (req, res, next) => {
     userCount = await MemberUser.countDocuments({ expireDate: { $gt: new Date() } });
     await usersCountCache.set("members", userCount);
   } catch (err) {
+    logOperationalError("service.member-count", err);
     console.error("Error counting users:", err.message);
     userCount = "-";
   }
@@ -69,6 +72,7 @@ export const getActiveMemberCount = async (req, res, next) => {
     });
     await usersCountCache.set("activeMembers", userCount);
   } catch (err) {
+    logOperationalError("service.active-member-count", err);
     console.error("Error counting users:", err.message);
     userCount = "-";
   }
@@ -95,7 +99,7 @@ export const getAboutUsData = async (req, res, next) => {
       alumnis: alumniStatistics?.data?.total ?? 0,
     });
   } catch (err) {
-    console.log(err);
+    logOperationalError("service.about-statistics", err);
     return res.status(200).json({});
   }
 };
@@ -117,7 +121,7 @@ export const acceptMarketingEmail = (req, res, next) => {
     },
   })
     .then(() => res.status(202).json({ message: "Marketing consent recorded" }))
-    .catch(() => next(new HttpError("Could not record marketing consent", 503)));
+    .catch((error) => { logOperationalError("service.marketing-consent", error); next(new HttpError("Could not record marketing consent", 503)); });
 };
 
 // EmailJS remains the established delivery provider for the public contact

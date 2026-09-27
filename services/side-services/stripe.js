@@ -6,6 +6,7 @@ import { capitalizeFirstLetter } from '../../util/functions/helpers.js';
 import moment from "moment";
 import { DEFAULT_REGION } from "../../util/config/defines.js";
 import { STRIPE_KEYS, createStripeClient } from "../../util/config/stripe.js";
+import { logIntegrationError } from "../../middleware/axiom-logger.js";
 
 const stripeClientCache = new Map();
 
@@ -64,6 +65,8 @@ export const getStripeSubscriptionCreatedDate = async (subscriptionId, preferred
                 continue;
             }
 
+            logIntegrationError("stripe", err, "subscription-created-date");
+
             console.error(
                 `[getStripeSubscriptionCreatedDate] Failed to retrieve subscription ${subscriptionId} from ${region}: ${err.message}`
             );
@@ -103,7 +106,7 @@ export const addProduct = async (data, priceData = []) => {
         //     }
         // });
     } catch (err) {
-        console.log(err);
+        logIntegrationError("stripe", err, "product-create");
         return false;
     }
 
@@ -121,7 +124,7 @@ export const editProduct = async (region, productId, data) => {
             }
         );
     } catch (err) {
-        console.log(err);
+        logIntegrationError("stripe", err, "product-update");
         return false;
     }
 
@@ -145,7 +148,7 @@ export const deleteProduct = async (region, productId) => {
 
         await stripeClient.products.del(productId);
     } catch (err) {
-        console.log(err);
+        logIntegrationError("stripe", err, "product-delete");
         return false;
     }
 
@@ -169,7 +172,7 @@ export const addPrice = async (region, productId, amount = 0, nickname = 'price'
             nickname
         });
     } catch (err) {
-        console.log(err);
+        logIntegrationError("stripe", err, "price-create");
         return false;
     }
 
@@ -198,6 +201,7 @@ export const refundStripePayment = async (region, paymentIntentId, reason = null
     const refund = await stripeClient.refunds.create(refundData);
     return { success: true, refundId: refund.id, status: refund.status };
   } catch (err) {
+    logIntegrationError("stripe", err, "refund");
     console.error(`[refundStripePayment] Failed to refund payment intent ${paymentIntentId}:`, err.message);
     return { success: false, error: err.message };
   }
@@ -214,7 +218,7 @@ export const editPrice = async (region, priceId, data) => {
             }
         );
     } catch (err) {
-        console.log(err);
+        logIntegrationError("stripe", err, "price-update");
         return false;
     }
 

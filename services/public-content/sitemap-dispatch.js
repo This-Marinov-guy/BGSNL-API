@@ -1,3 +1,5 @@
+import { logIntegrationError } from "../../middleware/axiom-logger.js";
+
 const githubRepository = () => process.env.GITHUB_SITEMAP_REPOSITORY?.trim();
 const githubToken = () => process.env.GITHUB_SITEMAP_DISPATCH_TOKEN?.trim();
 
@@ -27,8 +29,13 @@ export async function dispatchSitemapRefresh(change, event) {
       }),
       signal: AbortSignal.timeout(5000),
     });
-    return response.status === 204;
-  } catch {
+    if (response.status !== 204) {
+      logIntegrationError("github", { name: "SitemapDispatchError", status: response.status }, "sitemap-dispatch");
+      return false;
+    }
+    return true;
+  } catch (error) {
+    logIntegrationError("github", error, "sitemap-dispatch");
     return false;
   }
 }

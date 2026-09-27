@@ -7,7 +7,9 @@ import { limitSupportRequest } from "../services/support/rate-limit.js";
 import supportImageUpload from "../middleware/support-image-upload.js";
 import { formatUploadValidationError } from "../middleware/upload-validation-error.js";
 import { uploadSupportImages } from "../services/support/attachments.js";
-import { notifySupportTicketCreated } from "../services/background-services/internal-notifications.js";
+import { notifySupportTicketCreated, notifySupportTicketReplied } from "../services/background-services/internal-notifications.js";
+import { logOperationalError } from "../middleware/axiom-logger.js";
+import { publishSupportChanged, supportLiveScopes, streamSupport } from "../services/support/live.js";
 
 export function supportPrivacy(req, res, next) {
   if (/^\/api\/(?:v\d+\/)?support(?:\/|$)/i.test(req.path)) {
@@ -23,6 +25,7 @@ export function supportPrivacy(req, res, next) {
 // Express JSON parse errors can contain the original private request body.
 export function supportError(error, req, res, next) {
   if (!req.supportPrivate) return next(error);
+  if ((error.statusCode || 503) >= 500) logOperationalError("endpoint.support", error);
   if (error instanceof HttpError) return res.status(error.statusCode || 500).json({ message: error.message });
   const uploadValidation = formatUploadValidationError(error);
   if (uploadValidation) return res.status(422).json(uploadValidation);
@@ -41,7 +44,7 @@ export function requireSupportOrigin(req, _res, next) {
   return next();
 }
 
-export function createSupportRouter({ service = createSupportService({ notifyNewTicket: notifySupportTicketCreated }), authenticate = authMiddleware, throttle = limitSupportRequest, uploadImages = uploadSupportImages } = {}) {
+export function createSupportRouter({ service = createSupportService({ notifyNewTicket: notifySupportTicketCreated, notifyReply: notifySupportTicketReplied, notifyChanged: publishSupportChanged }), authenticate = authMiddleware, throttle = limitSupportRequest, uploadImages = uploadSupportImages, stream = streamSupport } = {}) {
   const router = express.Router();
   const actor = (req, staff = false) => ({ account: req.account, secret: req.get("X-Support-Token"), staff });
   const action = (handler) => async (req, res, next) => {
@@ -58,6 +61,9 @@ export function createSupportRouter({ service = createSupportService({ notifyNew
     catch (error) { return next(error instanceof HttpError ? error : new HttpError("Support is temporarily unavailable. Please try again.", 503)); }
   };
   const reply = (staff = false) => action(async (req, res) => {
+    // Refuse new messages on locked tickets before sending files to Cloudinary.
+    // The write rechecks the status/revision in case staff change it mid-upload.
+    await service.prepareReply(req.params.id, req.body || {}, actor(req, staff));
     const attachments = await uploadImages(req.files || [], { conversationId: req.params.id, messageId: req.body?.id });
     return res.json({ conversation: await service.reply(req.params.id, { ...(req.body || {}), attachments }, actor(req, staff)) });
   });
@@ -66,19 +72,24 @@ export function createSupportRouter({ service = createSupportService({ notifyNew
   router.use((req, res, next) => Promise.resolve().then(() => throttle(req)).then(() => next()).catch((error) =>
     next(error instanceof HttpError ? error : new HttpError("Support is temporarily unavailable. Please try again.", 503))));
 
+  router.post("/live", action(async (req, res) => {
+    const scopes = await supportLiveScopes(req.body || {}, actor(req), service);
+    return stream(req, res, scopes);
+  }));
   router.get("/profile", action(async (req, res) => {
     if (!req.account) throw new HttpError("Please sign in to access your account support profile.", 401);
     return res.json({ accountId: String(req.account._id || req.account.id), contact: normalizeContact({}, req.account), staff: isSupportStaff(req.account) });
   }));
   router.get("/conversations", action(async (req, res) => res.json(await service.list(actor(req), req.query))));
+  router.get("/conversations/activity", action(async (req, res) => res.json(await service.activity(actor(req)))));
   router.post("/conversations", action(async (req, res) => res.status(201).json({ conversation: await service.create(req.body || {}, actor(req), { userAgent: req.get("User-Agent") }) })));
-  router.get("/conversations/:id", action(async (req, res) => res.json({ conversation: await service.get(req.params.id, actor(req), { before: req.query.before }) })));
+  router.get("/conversations/:id", action(async (req, res) => res.json({ conversation: await service.get(req.params.id, actor(req), { before: req.query.before, limit: req.query.limit }) })));
   router.post("/conversations/:id/messages", authorizeMessageUpload(), supportImageUpload.array("images", 3), reply());
   router.post("/conversations/:id/status", action(async (req, res) => res.json({ conversation: await service.changeStatus(req.params.id, req.body || {}, actor(req)) })));
 
   router.use("/inbox", (req, _res, next) => isSupportStaff(req.account) ? next() : next(new HttpError("Support staff access is required.", 403)));
   router.get("/inbox", action(async (req, res) => res.json(await service.list(actor(req, true), req.query))));
-  router.get("/inbox/:id", action(async (req, res) => res.json({ conversation: await service.get(req.params.id, actor(req, true), { before: req.query.before }) })));
+  router.get("/inbox/:id", action(async (req, res) => res.json({ conversation: await service.get(req.params.id, actor(req, true), { before: req.query.before, limit: req.query.limit }) })));
   router.post("/inbox/:id/messages", authorizeMessageUpload(true), supportImageUpload.array("images", 3), reply(true));
   router.post("/inbox/:id/status", action(async (req, res) => res.json({ conversation: await service.changeStatus(req.params.id, req.body || {}, actor(req, true)) })));
   return router;

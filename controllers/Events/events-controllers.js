@@ -1,4 +1,5 @@
 import { findPublicEvent } from "../../services/public-content/find-public-event.js";
+import { logIntegrationError } from "../../middleware/axiom-logger.js";
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
 import TicketQr from "../../models/TicketQr.js";
@@ -983,7 +984,9 @@ export const updateGuestPresence = async (req, res, next) => {
     { $set: { "guestList.$.status": present ? 1 : 0, "guestList.$.checkedInAt": present ? new Date() : null } });
     if (result.matchedCount !== 1) return next(new HttpError("This ticket changed. Reload the guest list.", 409));
     guest.status = present ? 1 : 0;
-    Promise.resolve().then(() => eventToSpreadsheet(event.id)).catch(() => {});
+    Promise.resolve().then(() => eventToSpreadsheet(event.id)).catch((error) => {
+      logIntegrationError("google-sheets", error, "guest-presence-sync");
+    });
     return res.status(200).json({
       status: true,
       guest: serializeGuestListEntry(guest),
@@ -1018,7 +1021,9 @@ export const updatePresence = async (req, res, next) => {
       const result = await Event.updateOne(filter, update, options);
       if (result.modifiedCount !== 1) return next(new HttpError("This ticket changed or was just checked in by another scanner. Check it again before admitting anyone.", 409));
       // Spreadsheet failure must not turn a committed check-in into an error.
-      Promise.resolve().then(() => eventToSpreadsheet(event.id)).catch(() => {});
+      Promise.resolve().then(() => eventToSpreadsheet(event.id)).catch((error) => {
+        logIntegrationError("google-sheets", error, "guest-presence-sync");
+      });
     }
     const details = { ...plan };
     delete details.ids;
