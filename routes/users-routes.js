@@ -1,5 +1,9 @@
 import express from "express";
-import { check, body } from "express-validator";
+import { param } from "express-validator";
+import { ACCOUNT_CAMPAIGN_KEYS } from "../util/config/account-campaigns.js";
+import { getAccountCampaign, markAccountCampaignSeen } from "../controllers/account-campaigns-controller.js";
+import { wallet } from "../controllers/wallet-controller.js";
+import { walletPublicRateLimit } from "../middleware/wallet-rate-limit.js";
 import {
   getCurrentUser,
   patchUserInfo,
@@ -18,19 +22,43 @@ import {
   deleteDocument,
   getTreeLayout,
 } from "../controllers/users-controllers.js";
-import { cancelSubscription } from "../controllers/payments-controllers.js";
+import { cancelMembershipInPortal } from "../controllers/subscriptions-controller.js";
+import { MEMBER_PROMOTIONS } from "../util/config/promotions.js";
 import fileResizedUpload from "../middleware/file-resize-upload.js";
 import dotenv from "dotenv";
 import multiFileUpload from "../middleware/multiple-file-upload.js";
-import { authMiddleware } from "../middleware/authorization.js";
+import { authMiddleware, requireBenefits } from "../middleware/authorization.js";
 import { adminMiddleware } from "../middleware/authorization.js";
 import { ACCESS_2 } from "../util/config/defines.js";
 import fileUpload from "../middleware/file-upload.js";
+import { validateRequest } from "../middleware/validate-request.js";
+import { createPasswordRateLimit } from "../middleware/password-rate-limit.js";
+import {
+  activeMemberValidators,
+  addDocumentValidators,
+  alumniQuoteValidators,
+  convertAlumniToUserValidators,
+  convertUserToAlumniValidators,
+  deleteDocumentValidators,
+  editDocumentValidators,
+  editUserValidators,
+} from "../validation/form-validators.js";
 dotenv.config();
 
 const userRouter = express.Router();
 
 userRouter.get("/current", authMiddleware, getCurrentUser);
+userRouter.get("/wallet/availability", authMiddleware, wallet.availability);
+userRouter.get("/wallet/card", authMiddleware, wallet.own);
+userRouter.get("/wallet/apple", authMiddleware, createPasswordRateLimit("wallet-issue"), wallet.own);
+userRouter.post("/wallet/google", authMiddleware, createPasswordRateLimit("wallet-issue"), wallet.own);
+userRouter.post("/wallet/card", authMiddleware, createPasswordRateLimit("wallet-create"), wallet.create);
+userRouter.delete("/wallet/card", authMiddleware, createPasswordRateLimit("wallet-revoke"), wallet.revoke);
+userRouter.get("/wallet/public/:token", walletPublicRateLimit, wallet.public);
+
+const campaignValidators = [param("campaign").isIn(ACCOUNT_CAMPAIGN_KEYS).withMessage("Unknown account campaign")];
+userRouter.get("/campaigns/:campaign", authMiddleware, campaignValidators, validateRequest, getAccountCampaign);
+userRouter.post("/campaigns/:campaign/seen", authMiddleware, campaignValidators, validateRequest, markAccountCampaignSeen);
 
 userRouter.get(
   "/get-subscription-status",
@@ -45,44 +73,38 @@ userRouter.get("/roles", authMiddleware, getCurrentUserRoles);
 userRouter.post(
   "/active-member",
   authMiddleware,
+  requireBenefits("memberDiscount"),
   multiFileUpload(process.env.BUCKET_AM).fields([
     { name: "cv", maxCount: 2 },
     // { name: 'letter', maxCount: 2 },
   ]),
-  [
-    check("email").notEmpty(),
-    check("phone").notEmpty(),
-    check("questions").notEmpty(),
-  ],
+  activeMemberValidators,
+  validateRequest,
   postActiveMember
 );
 
 userRouter.patch(
   "/edit-info",
   authMiddleware,
+  createPasswordRateLimit("profile-change"),
   fileResizedUpload(process.env.BUCKET_USERS).single("image"),
-  [
-    check("name").notEmpty(),
-    check("surname").notEmpty(),
-    check("phone").notEmpty(),
-    check("university").notEmpty(),
-    check("email").notEmpty(),
-  ],
+  editUserValidators,
+  validateRequest,
   patchUserInfo
 );
 
-userRouter.delete("/cancel-membership", authMiddleware, cancelSubscription);
+userRouter.delete("/cancel-membership", authMiddleware, cancelMembershipInPortal);
+userRouter.get("/promotions", authMiddleware, requireBenefits(), (req, res) => res.json({ promotions: MEMBER_PROMOTIONS }));
 
 userRouter.post(
   "/verify-calendar-subscription",
   authMiddleware,
-  fileUpload(process.env.BUCKET_GUEST_TICKETS).single("image"),
   submitCalendarVerification
 );
 // Anonymized vital stats export (XLS)
 userRouter.get(
   "/export-vital-stats",
-  // adminMiddleware(ACCESS_2),
+  adminMiddleware(ACCESS_2),
   exportVitalStatsXls
 );
 
@@ -90,7 +112,8 @@ userRouter.get(
 userRouter.post(
   "/convert-to-alumni",
   adminMiddleware(ACCESS_2), // Restrict to admin access
-  [check("email").isEmail().withMessage("Please provide a valid email")],
+  convertUserToAlumniValidators,
+  validateRequest,
   convertUserToAlumni
 );
 
@@ -98,11 +121,19 @@ userRouter.post(
 userRouter.post(
   "/convert-alumni-to-user",
   adminMiddleware(ACCESS_2),
-  [check("alumniId").notEmpty().withMessage("alumniId is required")],
+  convertAlumniToUserValidators,
+  validateRequest,
   convertAlumniToUser
 );
 
-userRouter.patch("/alumni-quote", authMiddleware, updateAlumniQuote);
+userRouter.patch(
+  "/alumni-quote",
+  authMiddleware,
+  requireBenefits(),
+  alumniQuoteValidators,
+  validateRequest,
+  updateAlumniQuote
+);
 
 // Get active alumni members with basic info
 userRouter.get("/active-alumni", getActiveAlumniMembers);
@@ -116,18 +147,8 @@ userRouter.post(
   fileUpload(process.env.BUCKET_DOCUMENTS).single(
     "content"
   ),
-  [
-    body("type")
-      .custom((value) => {
-        const numValue = parseInt(value);
-        return numValue === 1 || numValue === 2;
-      })
-      .withMessage("Wrong type of document"),
-    check("content")
-      .optional()
-      .isString()
-      .withMessage("Content must be a string (link) if not uploading a file"),
-  ],
+  addDocumentValidators,
+  validateRequest,
   postAddDocument
 );
 
@@ -135,27 +156,17 @@ userRouter.patch(
   "/edit-document/:documentId",
   authMiddleware,
   fileUpload(process.env.BUCKET_DOCUMENTS).single("content"),
-  [
-    body("type")
-      .optional()
-      .custom((value) => {
-        if (value === undefined) return true;
-        const numValue = parseInt(value);
-        return numValue === 1 || numValue === 2;
-      })
-      .withMessage("Type must be 1 (CV) or 2 (Cover Letter)"),
-    check("name")
-      .optional()
-      .notEmpty()
-      .withMessage("Name cannot be empty if provided"),
-    check("content")
-      .optional()
-      .isString()
-      .withMessage("Content must be a string (link) if not uploading a file"),
-  ],
+  editDocumentValidators,
+  validateRequest,
   patchEditDocument
 );
 
-userRouter.delete("/delete-document/:documentId", authMiddleware, deleteDocument);
+userRouter.delete(
+  "/delete-document/:documentId",
+  authMiddleware,
+  deleteDocumentValidators,
+  validateRequest,
+  deleteDocument
+);
 
 export default userRouter;

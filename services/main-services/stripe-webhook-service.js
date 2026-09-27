@@ -1,68 +1,26 @@
-import bcrypt from "bcryptjs";
+import { hashPassword } from "../authentication/passwords.js";
 import HttpError from "../../models/Http-error.js";
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
-import {
-  paymentFailedEmail,
-  sendTicketEmail,
-  welcomeEmail,
-  alumniWelcomeEmail,
-} from "../background-services/email-transporter.js";
-import {
-  alumniToSpreadsheet,
-  eventToSpreadsheet,
-  usersToSpreadsheet,
-} from "../background-services/google-spreadsheets.js";
-import {
-  findUserByQuery,
-  findUserById,
-  normalizeEmail,
-} from "./user-service.js";
-import {
-  chooseRandomAvatar,
-  decryptData,
-  hasOverlap,
-} from "../../util/functions/helpers.js";
-import {
-  MOMENT_DATE_YEAR,
-  calculatePurchaseAndExpireDates,
-} from "../../util/functions/dateConvert.js";
-import {
-  ALUMNI,
-  DEFAULT_REGION,
-  LIMITLESS_ACCOUNT,
-  SUBSCRIPTION_PERIOD_BY_ID,
-  USER_URL,
-  ALUMNI_TIER_BY_PRICE_ID,
-  ALUMNI_PRICE_TIER_1,
-  ALUMNI_PRICE_TIER_1_OLD,
-  ALUMNI_PRICE_TIER_2,
-  ALUMNI_PRICE_TIER_2_OLD,
-  ALUMNI_PRICE_TIER_3,
-  ALUMNI_PRICE_TIER_3_OLD,
-  ALUMNI_PRICE_TIER_4,
-  ALUMNI_PRICE_TIER_4_OLD,
-  SUBSCRIPTION_PRICE_YEAR_1,
-  SUBSCRIPTION_PRICE_MONTHS_6,
-  SUBSCRIPTIONS,
-} from "../../util/config/defines.js";
+import { sendTicketEmail, welcomeEmail, alumniWelcomeEmail } from "../background-services/email-transporter.js";
+import { alumniToSpreadsheet, eventToSpreadsheet, usersToSpreadsheet } from "../background-services/google-spreadsheets.js";
+import { findUserById, normalizeEmail } from "./user-service.js";
+import { chooseRandomAvatar, decryptData } from "../../util/functions/helpers.js";
+import { MOMENT_DATE_YEAR, calculatePurchaseAndExpireDates } from "../../util/functions/dateConvert.js";
+import { ALUMNI, DEFAULT_REGION } from "../../util/config/defines.js";
 import moment from "moment";
-import {
-  ACTIVE,
-  ALUMNI_MIGRATED,
-  LOCKED,
-  PAYMENT_AWAITING,
-  USER_STATUSES,
-  MEMBERSHIP_ACTIVE,
-} from "../../util/config/enums.js";
-import { createStripeClient } from "../../util/config/stripe.js";
-import {
-  recountMemberStatistics,
-  recountAlumniStatistics,
-} from "../background-services/statistics-service.js";
+import { ACTIVE, PAYMENT_AWAITING, USER_STATUSES } from "../../util/config/enums.js";
+import { recountMemberStatistics, recountAlumniStatistics } from "../background-services/statistics-service.js";
 import { getStripeSubscriptionCreatedDate } from "../side-services/stripe.js";
+import {
+  isMemberPriceCheckout,
+  isRestrictedTicketAccount,
+  memberTicketClaimKey,
+  memberTicketDuplicateMatcher,
+} from "../tickets/member-ticket-policy.js";
+import { refundDuplicateMemberTicket } from "../tickets/member-ticket-refund.js";
 
 const resolveJoinDateFromSubscription = async (
   subscriptionId,
@@ -79,9 +37,22 @@ const resolveJoinDateFromSubscription = async (
 /**
  * Handle alumni signup checkout session
  */
-export const handleAlumniSignup = async (metadata, paymentData) => {
+export const handleAlumniSignup = async (metadata, paymentData, {
+  resolveJoinDate = resolveJoinDateFromSubscription, notify = alumniWelcomeEmail,
+  sync = alumniToSpreadsheet, recount = recountAlumniStatistics,
+} = {}) => {
   const { subscriptionId, customerId, paymentStatus, stripeRegion } = paymentData;
-  const { tier, period, name, surname, email: rawEmail } = metadata;
+  const {
+    tier,
+    period,
+    name,
+    surname,
+    phone,
+    email: rawEmail,
+    notificationTypeTerms,
+  } = metadata;
+  const notificationTerms =
+    metadata.notificationTerms === true || metadata.notificationTerms === "true";
   const email = normalizeEmail(rawEmail);
   if (!email) {
     throw new HttpError("Please send a valid email", 422);
@@ -91,7 +62,7 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
 
   let hashedPassword;
   try {
-    hashedPassword = await bcrypt.hash(password, 12);
+    hashedPassword = await hashPassword(password, { legacyCheckout: true });
   } catch (err) {
     throw new HttpError("Could not create a new user", 500);
   }
@@ -104,7 +75,7 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
   }
 
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(1);
-  const joinDate = await resolveJoinDateFromSubscription(subscriptionId, [
+  const joinDate = await resolveJoinDate(subscriptionId, [
     stripeRegion,
     DEFAULT_REGION,
   ]);
@@ -118,6 +89,7 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
       period,
       id: subscriptionId,
       customerId,
+      stripeRegion,
     },
     tier,
     joinDate,
@@ -126,8 +98,13 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
     image,
     name,
     surname,
+    phone,
     email,
     password: hashedPassword,
+    notificationTerms,
+    notificationTypeTerms: notificationTerms
+      ? notificationTypeTerms || "whatsapp & email"
+      : undefined,
     tickets: [],
     roles: [ALUMNI],
   });
@@ -138,11 +115,11 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
     throw new HttpError("Signing up failed", 500);
   }
 
-  alumniToSpreadsheet();
-  alumniWelcomeEmail(email, name);
+  sync();
+  notify(email, name);
 
   // Update alumni statistics (background job, non-blocking)
-  recountAlumniStatistics();
+  recount();
 
   return { success: true };
 };
@@ -150,10 +127,12 @@ export const handleAlumniSignup = async (metadata, paymentData) => {
 /**
  * Handle regular user signup checkout session
  */
-export const handleUserSignup = async (metadata, paymentData) => {
+export const handleUserSignup = async (metadata, paymentData, {
+  resolveJoinDate = resolveJoinDateFromSubscription, notify = welcomeEmail,
+  sync = usersToSpreadsheet, recount = recountMemberStatistics,
+} = {}) => {
   const { subscriptionId, customerId, paymentStatus, stripeRegion } = paymentData;
   const {
-    longTerm,
     name,
     region,
     period,
@@ -166,6 +145,7 @@ export const handleUserSignup = async (metadata, paymentData) => {
     graduationDate,
     course,
     studentNumber,
+    profession,
     notificationTypeTerms,
   } = metadata;
   const email = normalizeEmail(rawEmail);
@@ -177,7 +157,7 @@ export const handleUserSignup = async (metadata, paymentData) => {
 
   let hashedPassword;
   try {
-    hashedPassword = await bcrypt.hash(password, 12);
+    hashedPassword = await hashPassword(password, { legacyCheckout: true });
   } catch (err) {
     throw new HttpError(err.message, 500);
   }
@@ -190,13 +170,13 @@ export const handleUserSignup = async (metadata, paymentData) => {
   }
 
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
-  const joinDate = await resolveJoinDateFromSubscription(subscriptionId, [
+  const joinDate = await resolveJoinDate(subscriptionId, [
     stripeRegion,
     region,
     DEFAULT_REGION,
   ]);
 
-  const createdUser = new User({
+  const createdUser = new MemberUser({
     status:
       paymentStatus === "unpaid"
         ? USER_STATUSES[PAYMENT_AWAITING]
@@ -205,6 +185,7 @@ export const handleUserSignup = async (metadata, paymentData) => {
       period,
       id: subscriptionId,
       customerId,
+      stripeRegion,
     },
     region,
     joinDate,
@@ -217,10 +198,11 @@ export const handleUserSignup = async (metadata, paymentData) => {
     phone,
     email,
     university,
-    otherUniversityName,
-    graduationDate,
-    course,
-    studentNumber,
+    otherUniversityName: university === "other" ? otherUniversityName : undefined,
+    graduationDate: university === "working" ? undefined : graduationDate,
+    course: university === "working" ? undefined : course,
+    studentNumber: university === "working" ? undefined : studentNumber,
+    profession: university === "working" ? profession : undefined,
     password: hashedPassword,
     notificationTypeTerms,
     tickets: [],
@@ -232,12 +214,12 @@ export const handleUserSignup = async (metadata, paymentData) => {
     throw new HttpError(err.message, 500);
   }
 
-  welcomeEmail(email, name, region);
-  usersToSpreadsheet(region);
-  usersToSpreadsheet();
+  notify(email, name, region);
+  sync(region);
+  sync();
 
   // Update member statistics (background job, non-blocking)
-  recountMemberStatistics();
+  recount();
 
   return { success: true };
 };
@@ -245,47 +227,6 @@ export const handleUserSignup = async (metadata, paymentData) => {
 /**
  * Handle account unlock checkout session
  */
-export const handleAccountUnlock = async (metadata, paymentData) => {
-  const { subscriptionId, customerId, paymentStatus } = paymentData;
-  const userId = metadata.userId;
-  const period = metadata.period;
-
-  let user;
-  try {
-    user = await findUserById(userId);
-  } catch (err) {
-    throw new HttpError(err.message, 500);
-  }
-
-  user.status =
-    paymentStatus === "unpaid"
-      ? USER_STATUSES[PAYMENT_AWAITING]
-      : USER_STATUSES[ACTIVE];
-
-  user.subscription = {
-    period,
-    id: subscriptionId,
-    customerId,
-  };
-
-  const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
-
-  user.purchaseDate = purchaseDate;
-  user.expireDate = expireDate;
-
-  try {
-    await user.save();
-  } catch (err) {
-    throw new HttpError(err.message, 500);
-  }
-
-  usersToSpreadsheet(user.region);
-  usersToSpreadsheet();
-  alumniToSpreadsheet();
-
-  return { success: true };
-};
-
 /**
  * Handle guest ticket purchase checkout session
  */
@@ -357,8 +298,8 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
  * Handle member ticket purchase checkout session
  */
 export const handleMemberTicketPurchase = async (metadata, paymentData) => {
-  const { transactionId } = paymentData;
-  const { eventId, userId, code, preferences, type } = metadata;
+  const { transactionId, stripeRegion } = paymentData;
+  const { eventId, userId, code, preferences } = metadata;
   let societyEvent;
   try {
     societyEvent = await Event.findById(eventId);
@@ -372,42 +313,107 @@ export const handleMemberTicketPurchase = async (metadata, paymentData) => {
 
   let targetUser;
   try {
-    targetUser = await findUserByQuery({ _id: userId });
+    targetUser = await findUserById(userId);
   } catch (err) {
     throw new HttpError(err.message, 500);
+  }
+
+  if (!targetUser) {
+    throw new HttpError("Could not find ticket account", 404);
+  }
+
+  // A checkout may complete after an administrator or billing reconciliation
+  // restricts the account. Fulfil it as a guest so no member benefit or member
+  // ticket record is retained for a non-active account.
+  if (isRestrictedTicketAccount(targetUser)) {
+    return handleGuestTicketPurchase({
+      ...metadata,
+      method: "buy_guest_ticket",
+      type: "guest",
+      userId: "",
+      memberPriceApplied: "false",
+      guestName: [targetUser?.name, targetUser?.surname].filter(Boolean).join(" ") || "Guest",
+      guestEmail: targetUser?.email || "",
+      guestPhone: targetUser?.phone || "Not provided",
+    }, paymentData);
   }
 
   const addOns = metadata?.addOns ? JSON.parse(metadata?.addOns) : [];
+  const memberPriceApplied = isMemberPriceCheckout(metadata);
+  const guest = {
+    type: memberPriceApplied ? "member" : "guest",
+    userId: String(userId),
+    memberPriceApplied,
+    code,
+    transactionId,
+    name: targetUser.name + " " + targetUser.surname,
+    email: targetUser.email,
+    phone: targetUser.phone,
+    preferences,
+    addOns,
+    ticket: metadata.file,
+  };
+  const userTicket = {
+    event:
+      societyEvent.title +
+      " | " +
+      moment(societyEvent.date).format(MOMENT_DATE_YEAR),
+    image: metadata.file,
+  };
 
+  const eventQuery = { _id: eventId };
+  if (memberPriceApplied) {
+    eventQuery.guestList = {
+      $not: {
+        $elemMatch: memberTicketDuplicateMatcher({
+          userId,
+          userIds: targetUser.accountAliases,
+          email: targetUser.email,
+        }),
+      },
+    };
+  }
+
+  let updatedEvent = null;
+  const databaseSession = await mongoose.startSession();
   try {
-    const sess = await mongoose.startSession();
-    sess.startTransaction();
-    societyEvent.guestList.push({
-      type: type ?? "member",
-      code,
-      transactionId,
-      name: targetUser.name + " " + targetUser.surname,
-      email: targetUser.email,
-      phone: targetUser.phone,
-      preferences,
-      addOns,
-      ticket: metadata.file,
-    });
+    await databaseSession.withTransaction(async () => {
+      updatedEvent = await Event.findOneAndUpdate(
+        eventQuery,
+        { $push: { guestList: guest } },
+        { new: true, session: databaseSession }
+      );
 
-    targetUser.tickets.push({
-      event:
-        societyEvent.title +
-        " | " +
-        moment(societyEvent.date).format(MOMENT_DATE_YEAR),
-      image: metadata.file,
-    });
+      if (!updatedEvent) return;
 
-    await societyEvent.save();
-    await targetUser.save();
-    await sess.commitTransaction();
+      await targetUser.constructor.updateOne(
+        { _id: targetUser._id },
+        { $push: { tickets: userTicket } },
+        { session: databaseSession }
+      );
+
+
+    });
   } catch (err) {
     throw new HttpError(err.message, 500);
+  } finally {
+    await databaseSession.endSession();
   }
+
+  if (!updatedEvent) {
+    const refunded = memberPriceApplied
+      ? await refundDuplicateMemberTicket({
+        transactionId,
+        eventId,
+        userId,
+        region: stripeRegion || societyEvent.region,
+      })
+      : false;
+
+    return { success: true, duplicate: true, refunded };
+  }
+
+  societyEvent = updatedEvent;
 
   sendTicketEmail(
     "member",
@@ -426,524 +432,5 @@ export const handleMemberTicketPurchase = async (metadata, paymentData) => {
 /**
  * Handle alumni migration checkout session
  */
-export const handleAlumniMigration = async (metadata, paymentData) => {
-  const { subscriptionId, customerId, paymentStatus, stripeRegion } = paymentData;
-  const { userId, tier, period } = metadata;
-
-  // Find the regular user
-  let regularUser;
-  try {
-    regularUser = await findUserById(userId);
-
-    if (!regularUser) {
-      console.error(`No user found with ID: ${userId}`);
-      return {
-        success: false,
-        message: "User not found for migration",
-      };
-    }
-  } catch (err) {
-    console.error(`Error finding user: ${err.message}`);
-    return {
-      success: false,
-      message: "Error finding user for migration",
-    };
-  }
-
-  // Extract the ObjectId part if the user already has a prefixed ID
-  let objectIdPart;
-  if (
-    typeof regularUser._id === "string" &&
-    regularUser._id.includes("member_")
-  ) {
-    const idMatch = regularUser._id.match(/member_(.*)/);
-    if (idMatch && idMatch[1]) {
-      objectIdPart = idMatch[1];
-    } else {
-      console.error(`ID format invalid: ${regularUser._id}`);
-      return {
-        success: false,
-        message: "Invalid user ID format for migration",
-      };
-    }
-  } else {
-    // If the user has a regular ObjectId, convert it to string
-    objectIdPart = regularUser._id.toString();
-  }
-
-  // Create the alumni ID with the same ObjectId part
-  const alumniId = `alumni_${objectIdPart}`;
-
-  // Check if we need to cancel an existing subscription
-  let oldSubscriptionId = null;
-  if (regularUser.subscription && regularUser.subscription.id) {
-    oldSubscriptionId = regularUser.subscription.id;
-
-    // Cancel old subscription
-    try {
-      const stripeClient = createStripeClient(DEFAULT_REGION);
-      await stripeClient.subscriptions.cancel(oldSubscriptionId);
-      console.log(
-        `Cancelled subscription ${oldSubscriptionId} for user ${userId}`
-      );
-    } catch (err) {
-      console.error(`Error cancelling subscription: ${err.message}`);
-      // Continue with the migration even if cancellation fails
-    }
-  }
-
-  const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(
-    period || 12
-  );
-  const joinDate = await resolveJoinDateFromSubscription(subscriptionId, [
-    stripeRegion,
-    regularUser.region,
-    DEFAULT_REGION,
-  ]);
-
-  // Check if an alumni user already exists
-  let existingAlumni;
-  try {
-    existingAlumni = await AlumniUser.findOne({
-      $or: [{ _id: alumniId }, { email: regularUser.email }],
-    });
-  } catch (err) {
-    console.error(`Error checking existing alumni: ${err.message}`);
-  }
-
-  let alumniUser;
-
-  try {
-    if (existingAlumni) {
-      // Update existing alumni user
-      existingAlumni.status =
-        paymentStatus === "unpaid"
-          ? USER_STATUSES[PAYMENT_AWAITING]
-          : USER_STATUSES[ACTIVE];
-      existingAlumni.name = regularUser.name;
-      existingAlumni.surname = regularUser.surname;
-      existingAlumni.email = regularUser.email;
-      existingAlumni.image = regularUser.image || "";
-      existingAlumni.status = USER_STATUSES[ACTIVE];
-      existingAlumni.tier = tier || 0;
-      existingAlumni.subscription = {
-        period,
-        id: subscriptionId,
-        customerId,
-      };
-      existingAlumni.purchaseDate = purchaseDate;
-      existingAlumni.expireDate = expireDate;
-      existingAlumni.joinDate = joinDate;
-
-      // Make sure the alumni role is set
-      if (!existingAlumni.roles.includes(ALUMNI)) {
-        existingAlumni.roles.push(ALUMNI);
-      }
-
-      await existingAlumni.save();
-      alumniUser = existingAlumni;
-      console.log(`Updated alumni user ${alumniId} for migration`);
-    } else {
-      // Create new alumni user
-      const newAlumniUser = new AlumniUser({
-        _id: alumniId,
-        name: regularUser.name,
-        surname: regularUser.surname,
-        email: regularUser.email,
-        password: regularUser.password,
-        image: regularUser.image || "",
-        status:
-          paymentStatus === "unpaid"
-            ? USER_STATUSES[PAYMENT_AWAITING]
-            : USER_STATUSES[ACTIVE],
-        tier: tier || 0,
-        roles: [ALUMNI],
-        subscription: {
-          period,
-          id: subscriptionId,
-          customerId,
-        },
-        joinDate,
-        purchaseDate,
-        expireDate,
-        tickets: regularUser.tickets || [],
-        christmas: regularUser.christmas || [],
-      });
-
-      await newAlumniUser.save();
-      alumniUser = newAlumniUser;
-      console.log(`Created new alumni user ${alumniId} for migration`);
-    }
-
-    // Update regular user status to alumni
-    regularUser.status = USER_STATUSES[ALUMNI_MIGRATED];
-    await regularUser.save();
-
-    // Update spreadsheets
-    alumniToSpreadsheet();
-    usersToSpreadsheet(regularUser.region);
-    usersToSpreadsheet();
-
-    // Send welcome email
-    alumniWelcomeEmail(regularUser.email, regularUser.name);
-
-    // Update statistics (background jobs, non-blocking)
-    // Member count decreases, alumni count increases
-    recountMemberStatistics();
-    recountAlumniStatistics();
-
-    return {
-      success: true,
-      message: "User successfully migrated to alumni",
-      details: {
-        userId: regularUser._id,
-        alumniId: alumniUser._id,
-        oldSubscription: oldSubscriptionId,
-        newSubscription: subscriptionId,
-      },
-    };
-  } catch (err) {
-    console.error(`Error during migration: ${err.message}`);
-    return {
-      success: false,
-      error: `Migration failed: ${err.message}`,
-    };
-  }
-};
-
-/**
- * Handle invoice paid event
- */
-export const handleInvoicePaid = async (paymentData, event) => {
-  const { subscriptionId, customerId } = paymentData;
-  console.log(
-    `handleInvoicePaid - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
-  );
-
-  if (!subscriptionId || !customerId) {
-    console.log("Missing subscriptionId or customerId in invoice.paid event");
-    return {
-      success: false,
-      message: "No user to update",
-      debug: {
-        subscriptionId,
-        customerId,
-        eventType: "invoice.paid",
-        priceId:
-          event?.data?.object?.lines?.data?.[0]?.price?.id || "not found",
-      },
-    };
-  }
-
-  let user;
-  try {
-    user = await findUserByQuery({ "subscription.id": subscriptionId });
-    console.log(`Found user by subscription.id: ${user ? user.email : "none"}`);
-  } catch (err) {
-    console.error(`Error finding user by subscription.id: ${err.message}`);
-    return {
-      success: false,
-      message: "Error finding user by subscription ID",
-      debug: {
-        subscriptionId,
-        customerId,
-        error: err.message,
-        searchMethod: "subscription.id",
-      },
-    };
-  }
-
-  if (!user) {
-    try {
-      user = await findUserByQuery({ "subscription.customerId": customerId });
-      console.log(
-        `Found user by subscription.customerId: ${user ? user.email : "none"}`
-      );
-    } catch (err) {
-      console.error(
-        `Error finding user by subscription.customerId: ${err.message}`
-      );
-      return {
-        success: false,
-        message: "Error finding user by customer ID",
-        debug: {
-          subscriptionId,
-          customerId,
-          error: err.message,
-          searchMethod: "subscription.customerId",
-        },
-      };
-    }
-  }
-
-  if (!user) {
-    console.log("No user found with either subscription ID or customer ID");
-    return {
-      success: false,
-      message: "No user found with provided subscription or customer ID",
-      debug: {
-        subscriptionId,
-        customerId,
-        searchAttempts: ["subscription.id", "subscription.customerId"],
-      },
-    };
-  }
-
-  const priceId = event.data.object.lines.data[0].price.id || "";
-  const period = user.subscription.period ?? 12;
-
-  const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(period);
-
-  user.status = USER_STATUSES[ACTIVE];
-  user.purchaseDate = purchaseDate;
-  user.expireDate = expireDate;
-
-  try {
-    await user.save();
-  } catch (err) {
-    throw new HttpError(err.message, 500);
-  }
-
-  usersToSpreadsheet(user.region);
-  usersToSpreadsheet();
-  alumniToSpreadsheet();
-
-  console.log(`Successfully processed invoice.paid for user: ${user.email}`);
-  return {
-    success: true,
-    debug: {
-      userId: user._id,
-      userEmail: user.email,
-      userRegion: user.region,
-      priceId,
-      period,
-      purchaseDate,
-      expireDate,
-    },
-  };
-};
-
-/**
- * Handle invoice payment failed event
- */
-export const handleInvoicePaymentFailed = async (paymentData) => {
-  const { subscriptionId, customerId } = paymentData;
-  console.log(
-    `handleInvoicePaymentFailed - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
-  );
-
-  if (!subscriptionId || !customerId) {
-    console.log(
-      "Missing subscriptionId or customerId in invoice.payment_failed event"
-    );
-    return { success: false, message: "No user to update" };
-  }
-
-  let user;
-  try {
-    user = await findUserByQuery({ "subscription.id": subscriptionId });
-  } catch (err) {
-    return { success: false, message: "No user to update" };
-  }
-
-  if (!user) {
-    try {
-      user = await findUserByQuery({ "subscription.customerId": customerId });
-    } catch (err) {
-      return { success: false, message: "No user to update" };
-    }
-  }
-
-  if (!user) {
-    return { success: false, message: "No user to update" };
-  }
-
-  const today = new Date();
-  const isUserLocked = user.status === USER_STATUSES[LOCKED];
-
-  if (
-    !isUserLocked &&
-    !hasOverlap(LIMITLESS_ACCOUNT, user?.roles) &&
-    today > user.expireDate
-  ) {
-    user.status = USER_STATUSES[LOCKED];
-
-    try {
-      await user.save();
-    } catch (err) {
-      throw new HttpError(err.message, 500);
-    }
-
-    try {
-      usersToSpreadsheet(user.region);
-      usersToSpreadsheet();
-      alumniToSpreadsheet();
-      paymentFailedEmail(user.email, USER_URL);
-    } catch (err) {
-      console.log(err);
-    }
-  }
-
-  return { success: true };
-};
-
-/**
- * Handle customer subscription updated event
- */
-export const handleSubscriptionUpdated = async (paymentData, event) => {
-  const { subscriptionId, customerId } = paymentData;
-  console.log(
-    `handleSubscriptionUpdated - SubscriptionId: ${subscriptionId}, CustomerId: ${customerId}`
-  );
-
-  if (!subscriptionId || !customerId) {
-    console.log(
-      "Missing subscriptionId or customerId in customer.subscription.updated event"
-    );
-    return { success: false, message: "No subscription to update" };
-  }
-
-  // Get the new price ID from the subscription
-  const newPriceId = event.data.object.items.data[0]?.price?.id;
-
-  if (!newPriceId) {
-    return { success: false, message: "No price ID found in subscription" };
-  }
-
-  switch (newPriceId) {
-    // alumni update
-    case ALUMNI_PRICE_TIER_1:
-    case ALUMNI_PRICE_TIER_1_OLD:
-    case ALUMNI_PRICE_TIER_2:
-    case ALUMNI_PRICE_TIER_2_OLD:
-    case ALUMNI_PRICE_TIER_3:
-    case ALUMNI_PRICE_TIER_3_OLD:
-    case ALUMNI_PRICE_TIER_4:
-    case ALUMNI_PRICE_TIER_4_OLD:
-      const newTier = ALUMNI_TIER_BY_PRICE_ID[newPriceId];
-
-      if (!newTier) {
-        return {
-          success: false,
-          message: "Price ID not found in alumni mapping",
-        };
-      }
-
-      // Find the alumni user by subscription ID or customer ID
-      let alumniUser;
-      try {
-        alumniUser = await AlumniUser.findOne({
-          $or: [
-            { "subscription.id": subscriptionId },
-            { "subscription.customerId": customerId },
-          ],
-        });
-      } catch (err) {
-        console.error(`Error finding alumni user: ${err.message}`);
-        return { success: false, message: "Error finding alumni user" };
-      }
-
-      if (!alumniUser) {
-        return {
-          success: false,
-          message: "No alumni user found for this subscription",
-        };
-      }
-
-      // Update the tier
-      const oldTier = alumniUser.tier;
-      alumniUser.tier = newTier;
-
-      try {
-        await alumniUser.save();
-        console.log(
-          `Updated alumni user ${alumniUser._id} tier from ${oldTier} to ${newTier}`
-        );
-
-        // Update spreadsheets
-        alumniToSpreadsheet();
-
-        return {
-          success: true,
-          message: `Alumni tier updated from ${oldTier} to ${newTier}`,
-          details: {
-            alumniId: alumniUser._id,
-            oldTier,
-            newTier,
-            priceId: newPriceId,
-          },
-        };
-      } catch (err) {
-        console.error(`Error updating alumni user tier: ${err.message}`);
-        return { success: false, message: "Error updating alumni user tier" };
-      }
-
-    case SUBSCRIPTION_PRICE_MONTHS_6:
-    case SUBSCRIPTION_PRICE_YEAR_1:
-      const newSubscription = SUBSCRIPTIONS.find(
-        (subscription) => subscription.id === newPriceId
-      );
-
-      if (!newSubscription) {
-        return {
-          success: false,
-          message: "Price ID not found in subscription mapping",
-        };
-      }
-
-      // Find the member user by subscription ID or customer ID
-      let user;
-      try {
-        user = await User.findOne({
-          $or: [
-            { "subscription.id": subscriptionId },
-            { "subscription.customerId": customerId },
-          ],
-        });
-      } catch (err) {
-        console.error(`Error finding member user: ${err.message}`);
-        return { success: false, message: "Error finding member user" };
-      }
-
-      if (!user) {
-        return {
-          success: false,
-          message: "No member user found for this subscription",
-        };
-      }
-
-      // Update the period
-      const oldPeriod = user.subscription.period;
-      user.subscription.period = newSubscription.period;
-
-      try {
-        await user.save();
-        console.log(
-          `Updated member user ${user._id} tier from ${oldPeriod} to ${newSubscription.period}`
-        );
-
-        // Update spreadsheets
-        usersToSpreadsheet();
-
-        return {
-          success: true,
-          message: `Member tier updated from ${oldPeriod} to ${newSubscription.period}`,
-          details: {
-            userId: user._id,
-            oldPeriod,
-            newPeriod: newSubscription.period,
-            priceId: newPriceId,
-          },
-        };
-      } catch (err) {
-        console.error(`Error updating member user tier: ${err.message}`);
-        return { success: false, message: "Error updating member user tier" };
-      }
-
-    default:
-      return {
-        success: false,
-        message: "Price ID not found in mapping for subscription update",
-      };
-  }
-};
+// Subscription lifecycle and account changes are reconciled centrally in
+// services/subscriptions. No customer-only fallback or date arithmetic here.

@@ -1,11 +1,15 @@
+import { findPublicEvent } from "../../services/public-content/find-public-event.js";
+import { logIntegrationError } from "../../middleware/axiom-logger.js";
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
+import TicketQr from "../../models/TicketQr.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import { validationResult } from "express-validator";
 import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
 import HttpError from "../../models/Http-error.js";
 import {
+  sendMailtrapTemplateEmail,
   sendResendTemplateEmail,
   sendTicketEmail,
 } from "../../services/background-services/email-transporter.js";
@@ -15,24 +19,133 @@ import {
 } from "../../services/background-services/google-spreadsheets.js";
 import {
   decodeFromURL,
-  isEventTimerFinished,
+  isTicketSaleClosed,
   removeModelProperties,
 } from "../../util/functions/helpers.js";
-import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
-import moment from "moment";
+import {
+  MOMENT_DATE_TIME_YEAR,
+  MOMENT_DATE_YEAR,
+} from "../../util/functions/dateConvert.js";
+import moment from "moment-timezone";
 import { checkDiscountsOnEvents } from "../../services/main-services/event-action-service.js";
+import { accountEntitlements } from "../../util/subscriptions/policy.js";
+import { reconcileAccount } from "../../services/subscriptions/reconcile.js";
 import { extractUserFromRequest } from "../../util/functions/security.js";
 import { findUserById } from "../../services/main-services/user-service.js";
 import {
   ACCESS_4,
+  ALL_EVENT_REGIONS_ACCESS,
+  EVENT_MANAGEMENT_ACCESS,
   DEFAULT_REGION,
+  NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID,
+  NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE,
+  NON_SOCIETY_EVENT_FINAL_REMINDER_TEST_EMAILS,
   NON_SOCIETY_EVENT_RESEND_EVENT_ID,
   NON_SOCIETY_EVENT_RESEND_TEST_EMAILS,
   NON_SOCIETY_EVENT_RESEND_TEMPLATE,
 } from "../../util/config/defines.js";
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
+import { planCheckIn, checkInMutation } from "../../services/tickets/check-in.js";
+import { futureEventDateFilter, publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
+
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const serializeGuestListEntry = (guest) => ({
+  id: String(guest._id),
+  name: guest.name,
+  email: guest.email,
+  phone: guest.phone,
+  ticket: guest.ticket,
+  transactionId: guest.transactionId,
+  type: guest.type,
+  status: guest.status,
+  timestamp: guest.timestamp,
+  refunded: Boolean(guest.refunded),
+  preferences: guest.preferences || {},
+  addOns: (guest.addOns || []).map((addOn) => ({
+    title: addOn.title,
+    price: addOn.price,
+  })),
+});
+
+const guestListColumns = (event) => ({
+  addOns: Boolean(event.addOns?.isEnabled && event.addOns.items?.length),
+  preferences: Array.isArray(event.extraInputsForm) && event.extraInputsForm.length > 0,
+});
+
+const canManageEventGuestList = (req, event) => {
+  const { roles, region } = extractUserFromRequest(req);
+  return roles.some((role) => ALL_EVENT_REGIONS_ACCESS.includes(role)) || region === event.region;
+};
+
+const addEmailRecipient = (recipientsByEmail, invalidEmails, email, name = "") => {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+
+  if (!normalizedEmail) return;
+
+  if (!EMAIL_REGEX.test(normalizedEmail)) {
+    invalidEmails.push(email);
+    return;
+  }
+
+  if (!recipientsByEmail.has(normalizedEmail)) {
+    recipientsByEmail.set(normalizedEmail, {
+      email: normalizedEmail,
+      name: String(name || "").trim(),
+    });
+  }
+};
+
+const getNonSocietyEventEmailRecipients = ({
+  nonSocietyEvent,
+  testOnly,
+  testEmails,
+  customEmails,
+}) => {
+  const invalidEmails = [];
+  const recipientsByEmail = new Map();
+
+  if (testOnly) {
+    for (const email of testEmails) {
+      addEmailRecipient(
+        recipientsByEmail,
+        invalidEmails,
+        email,
+        "Bulgarian Society Netherlands"
+      );
+    }
+  } else {
+    for (const guest of nonSocietyEvent.guestList || []) {
+      addEmailRecipient(
+        recipientsByEmail,
+        invalidEmails,
+        guest.email,
+        guest.name
+      );
+    }
+  }
+
+  for (const email of customEmails) {
+    addEmailRecipient(recipientsByEmail, invalidEmails, email);
+  }
+
+  return {
+    recipients: [...recipientsByEmail.values()],
+    invalidEmails,
+  };
+};
+
+const formatNonSocietyEventDate = (
+  date,
+  timezone = "Europe/Amsterdam"
+) => {
+  if (!date) return "";
+
+  return `${moment(date)
+    .tz(timezone)
+    .format(MOMENT_DATE_TIME_YEAR)} (${timezone} time)`;
+};
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
   try {
@@ -42,19 +155,13 @@ export const getEventPurchaseAvailability = async (req, res, next) => {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    const event = await Event.findById(eventId);
+    const event = await findPublicEvent(Event, eventId, req.query?.region);
 
     if (!event) {
       return next(new HttpError("No event was found", 404));
     }
 
-    let status = true;
-    const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const expired = isEventTimerFinished(event.ticketTimer);
-
-    if (ticketsRemaining <= 0 || expired) {
-      status = false;
-    }
+    const status = !isTicketSaleClosed(event);
 
     res.status(200).json({ status });
   } catch (error) {
@@ -68,48 +175,23 @@ export const getEventById = async (req, res, next) => {
   const eventId = req.params.eventId;
 
   if (eventId === undefined || !eventId) {
-    return res.status(200).json({
-      status: false,
-    });
+    return next(new HttpError("No event was found", 404));
   }
 
   try {
-    let event = await Event.findOne({
-      _id: eventId,
-      status: { $ne: "archived" },
-    });
+    const event = await findPublicEvent(Event, eventId, req.query?.region);
 
     if (!event) {
-      return res.status(200).json({
-        status: false,
-      });
+      return next(new HttpError("No event was found", 404));
     }
 
     if (event.region === DEFAULT_REGION) {
-      return res.status(200).json({
-        status: false,
-      });
+      return next(new HttpError("No event was found", 404));
     }
 
-    let status = true;
+    const status = !isTicketSaleClosed(event);
 
-    const ticketsRemaining = event.ticketLimit - event.guestList.length;
-    const expired = isEventTimerFinished(event.ticketTimer);
-
-    if (ticketsRemaining <= 0 || expired) {
-      status = false;
-    }    
-
-    event = checkDiscountsOnEvents(event);
-    event = removeModelProperties(event, [
-      "guestList",
-      "earlyBird",
-      "lateBird",
-      "promotion",
-      "addOns",
-    ]);
-
-    res.status(200).json({ event, status });
+    return res.status(200).json({ event: serializePublicEvent(event), status });
   } catch (err) {
     console.log(err);
     return next(new HttpError("Fetching event failed", 500));
@@ -129,29 +211,21 @@ export const getEvents = async (req, res, next) => {
 
       events = await Event.find({
         region,
-        hidden: false,
-        status: { $ne: "archived" },
+        ...publicEventQuery,
+        ...futureEventDateFilter(),
       });
     } else {
       events = await Event.find({
         region: { $ne: DEFAULT_REGION },
-        hidden: false,
-        status: { $ne: "archived" },
+        ...publicEventQuery,
+        ...futureEventDateFilter(),
       });
     }
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
 
-  const formattedEvents = events.map((event) =>
-    removeModelProperties(event, [
-      "guestList",
-      "earlyBird",
-      "lateBird",
-      "promotion",
-      "addOns",
-    ])
-  );
+  const formattedEvents = events.map((event) => serializePublicEvent(event));
 
   res.status(200).json({ events: formattedEvents });
 };
@@ -164,16 +238,12 @@ export const getSoldTicketQuantity = async (req, res, next) => {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    const event = await Event.findById(eventId);
-
-    let ticketsSold;
-
-    if (event) {
-      ticketsSold = event.guestList.length;
-    } else {
-      ticketsSold = 0;
+    const event = await findPublicEvent(Event, eventId, req.query?.region);
+    if (!event) {
+      return next(new HttpError("No event was found", 404));
     }
-    res.status(200).json({ ticketsSold: ticketsSold });
+
+    return res.status(200).json({ ticketsSold: event.guestList.length });
   } catch (error) {
     return next(
       new HttpError("Something got wrong, please contact support", 500)
@@ -182,7 +252,8 @@ export const getSoldTicketQuantity = async (req, res, next) => {
 };
 
 export const checkEligibleMemberForPurchase = async (req, res, next) => {
-  const { userId, eventId } = req.params;
+  const { eventId } = req.params;
+  const userId = req.user.userId;
   let status = true;
 
   if (!eventId) {
@@ -191,14 +262,14 @@ export const checkEligibleMemberForPurchase = async (req, res, next) => {
 
   let event = await Event.findById(eventId);
 
-  if (!event) {
+  if (!event || event.status === "draft") {
     return next(new HttpError("No event was found", 404));
   }
 
-  let member = await User.findOne({ _id: userId });
+  let member = await findUserById(userId);
 
   if (!member) {
-    res.status(200).json({ status: false });
+    return res.status(200).json({ status: false });
   }
 
   const memberName = `${member.name} ${member.surname}`;
@@ -216,7 +287,9 @@ export const checkEligibleMemberForPurchase = async (req, res, next) => {
 // Determines whether a ticket is free or paid, and returns the correct priceId.
 // Called by both guest and member purchase flows before checkout.
 export const checkTicketEligibility = async (req, res, next) => {
-  const { eventId, userId, normalTicket } = req.body;
+  const { eventId, normalTicket } = req.body;
+  const userId = req.user?.userId;
+  if (req.body.userId && !userId) return next(new HttpError("Please sign in to check member eligibility", 401));
 
   if (!eventId) {
     return next(new HttpError("Invalid inputs passed", 422));
@@ -229,13 +302,11 @@ export const checkTicketEligibility = async (req, res, next) => {
     return next(new HttpError("Could not find event", 500));
   }
 
-  if (!event) {
+  if (!event || event.status === "draft") {
     return next(new HttpError("No event was found", 404));
   }
 
-  const ticketsRemaining = event.ticketLimit - event.guestList.length;
-  const expired = isEventTimerFinished(event.ticketTimer);
-  if (ticketsRemaining <= 0 || expired) {
+  if (isTicketSaleClosed(event)) {
     return next(new HttpError("Ticket sale is closed", 400));
   }
 
@@ -243,7 +314,8 @@ export const checkTicketEligibility = async (req, res, next) => {
   if (userId) {
     let member;
     try {
-      member = await User.findById(userId);
+      member = (await reconcileAccount(req.account))?.user;
+      if (!member || !accountEntitlements(member).memberDiscount) return next(new HttpError("An active member subscription is required", 403));
     } catch (err) {
       return next(new HttpError("Could not find user", 500));
     }
@@ -262,12 +334,12 @@ export const checkTicketEligibility = async (req, res, next) => {
     }
 
     // Free for all members
-    if (event.isFree || event.isMemberFree) {
+    if (event.isFree || (!normalTicket && event.isMemberFree)) {
       return res.status(200).json({ type: "free" });
     }
 
     // Active members (ACCESS_4 roles) get the discounted/activeMember price
-    const isActiveMember = ACCESS_4.includes(member.role);
+    const isActiveMember = member.roles?.some((role) => ACCESS_4.includes(role));
 
     let priceId;
     if (normalTicket) {
@@ -313,20 +385,17 @@ export const postAddMemberToEvent = async (req, res, next) => {
     );
   }
 
-  if (!societyEvent) {
+  if (!societyEvent || societyEvent.status === "draft") {
     return next(new HttpError("Could not find such event", 404));
   }
 
-  const ticketsRemaining =
-    societyEvent.ticketLimit - societyEvent.guestList.length;
-
-  if (ticketsRemaining <= 0) {
-    return next(new HttpError("Tickets are sold out", 500));
+  if (isTicketSaleClosed(societyEvent)) {
+    return next(new HttpError("Ticket sale is closed", 400));
   }
 
   let targetUser;
   try {
-    targetUser = await User.findOne({ _id: userId });
+    targetUser = await MemberUser.findOne({ _id: userId });
   } catch (err) {
     new HttpError("Could not find a user with provided id", 404);
   }
@@ -396,15 +465,12 @@ export const postAddGuestToEvent = async (req, res, next) => {
     );
   }
 
-  if (!societyEvent) {
+  if (!societyEvent || societyEvent.status === "draft") {
     return next(new HttpError("Could not find such event", 404));
   }
 
-  const ticketsRemaining =
-    societyEvent.ticketLimit - societyEvent.guestList.length;
-
-  if (ticketsRemaining <= 0) {
-    return next(new HttpError("Tickets are sold out", 500));
+  if (isTicketSaleClosed(societyEvent)) {
+    return next(new HttpError("Ticket sale is closed", 400));
   }
 
   const safeQuantity = Number(quantity) > 0 ? Number(quantity) : 1;
@@ -562,9 +628,11 @@ export const postNonSocietyEvent = async (req, res, next) => {
   const memberEmail = email || targetUser?.email;
   const memberPhone = (targetUser?.phone ?? phone ?? "").trim();
   const memberUniversity =
-    targetUser?.university === "other"
-      ? targetUser?.otherUniversityName
-      : targetUser?.university;
+    targetUser?.university === "working"
+      ? targetUser?.profession
+      : targetUser?.university === "other"
+        ? targetUser?.otherUniversityName
+        : targetUser?.university;
 
   // Duplicate check
   let status = true;
@@ -706,42 +774,12 @@ export const sendNonSocietyEventResendEmail = async ({
     throw new HttpError("Could not find such non-society event", 404);
   }
 
-  const invalidEmails = [];
-  const recipientsByEmail = new Map();
-
-  const addRecipient = (email, name = "") => {
-    const normalizedEmail = String(email || "").trim().toLowerCase();
-
-    if (!normalizedEmail) return;
-
-    if (!EMAIL_REGEX.test(normalizedEmail)) {
-      invalidEmails.push(email);
-      return;
-    }
-
-    if (!recipientsByEmail.has(normalizedEmail)) {
-      recipientsByEmail.set(normalizedEmail, {
-        email: normalizedEmail,
-        name: String(name || "").trim(),
-      });
-    }
-  };
-
-  if (true) {
-    for (const email of NON_SOCIETY_EVENT_RESEND_TEST_EMAILS) {
-      addRecipient(email, "Bulgarian Society Netherlands");
-    }
-  } else {
-    for (const guest of nonSocietyEvent.guestList || []) {
-      addRecipient(guest.email, guest.name);
-    }
-  }
-
-  for (const email of customEmails) {
-    addRecipient(email);
-  }
-
-  const recipients = [...recipientsByEmail.values()];
+  const { recipients, invalidEmails } = getNonSocietyEventEmailRecipients({
+    nonSocietyEvent,
+    testOnly,
+    testEmails: NON_SOCIETY_EVENT_RESEND_TEST_EMAILS,
+    customEmails,
+  });
 
   console.log(
     `[nonSocietyEventResendEmail] Queuing emails for "${nonSocietyEvent.event}" | testOnly=${testOnly}`
@@ -780,6 +818,93 @@ export const sendNonSocietyEventResendEmail = async ({
   };
 };
 
+export const sendNonSocietyEventFinalReminderEmail = async ({
+  customEmails = [],
+  testOnly = false,
+  templateVariablesOverride = null,
+} = {}) => {
+  if (!NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE) {
+    throw new HttpError("Missing non-society event final reminder template UUID", 500);
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID)) {
+    throw new HttpError("Invalid non-society event final reminder event id", 500);
+  }
+
+  let nonSocietyEvent;
+  try {
+    nonSocietyEvent = await NonSocietyEvent.findById(
+      NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID
+    ).select("event date timezone guestList.email guestList.name");
+  } catch (err) {
+    throw new HttpError(
+      "Could not find the non-society event, please try again",
+      500
+    );
+  }
+
+  if (!nonSocietyEvent) {
+    throw new HttpError("Could not find such non-society event", 404);
+  }
+
+  const { recipients, invalidEmails } = getNonSocietyEventEmailRecipients({
+    nonSocietyEvent,
+    testOnly,
+    testEmails: NON_SOCIETY_EVENT_FINAL_REMINDER_TEST_EMAILS,
+    customEmails,
+  });
+
+  const eventDate = formatNonSocietyEventDate(
+    nonSocietyEvent.date,
+    nonSocietyEvent.timezone
+  );
+
+  console.log(
+    `[nonSocietyEventFinalReminderEmail] Queuing emails for "${nonSocietyEvent.event}" | testOnly=${testOnly}`
+  );
+
+  for (const recipient of recipients) {
+    const templateVariables =
+      templateVariablesOverride || {
+        template_variables: {
+          eventName: nonSocietyEvent.event,
+          guestName: recipient.name,
+          eventDate,
+        },
+      };
+
+    console.log(
+      `[nonSocietyEventFinalReminderEmail] ${recipient.email}${recipient.name ? ` | ${recipient.name}` : ""}`
+    );
+
+    sendMailtrapTemplateEmail(
+      NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE,
+      recipient.email,
+      templateVariables
+    );
+  }
+
+  if (invalidEmails.length > 0) {
+    console.log(
+      `[nonSocietyEventFinalReminderEmail] Skipped invalid emails: ${invalidEmails.join(", ")}`
+    );
+  }
+
+  console.log(
+    `[nonSocietyEventFinalReminderEmail] Total queued: ${recipients.length}`
+  );
+
+  return {
+    status: true,
+    message: "Non-society event final reminder emails queued",
+    eventId: NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID,
+    event: nonSocietyEvent.event,
+    testOnly,
+    queued: recipients.length,
+    invalidEmails,
+  };
+};
+
 export const postSendNonSocietyEventResendEmail = async (req, res, next) => {
   const testOnly = req.body?.testOnly === true || req.query?.testOnly === "true";
   const customEmails = Array.isArray(req.body?.customEmails)
@@ -798,112 +923,129 @@ export const postSendNonSocietyEventResendEmail = async (req, res, next) => {
   }
 };
 
-
-// status 0 = noting to update
-// status 1 = success
-// status 2 = count is required as more than 1 guest was found
-export const updatePresence = async (req, res, next) => {
-  const { eventId, code } = req.body;
-  let { count } = req.body;
-  let societyEvent;
+export const postSendNonSocietyEventFinalReminderEmail = async (req, res, next) => {
+  const testOnly = req.body?.testOnly === true || req.query?.testOnly === "true";
+  const customEmails = Array.isArray(req.body?.customEmails)
+    ? req.body.customEmails
+    : [];
+  const templateVariablesOverride = req.body?.templateVariables || null;
 
   try {
-    societyEvent = await Event.findById(eventId);
-  } catch (err) {
-    return next(
-      new HttpError("Could not find such event, please try again!", 500)
-    );
-  }
-
-  if (!societyEvent) {
-    return next(
-      new HttpError(
-        "Could not find such event - for further help best contact support",
-        404
-      )
-    );
-  }
-
-  if (societyEvent.guestList.length < 1) {
-    return next(new HttpError("This events has no guests!", 404));
-  }
-
-  const targetGuests = societyEvent.guestList.filter(
-    (guest) => guest.code && guest.code == code
-  );
-
-  let guestName, guestEmail;
-
-  if (targetGuests.length > 0) {
-    guestName = targetGuests[0].name;
-    guestEmail = targetGuests[0].email;
-  }
-
-  if (targetGuests.length === 0) {
-    return next(new HttpError("Guest/s were not found in the list", 404));
-  }
-
-  if (targetGuests.length > 1 && !count) {
-    return res.status(200).json({
-      status: 2,
-      event: societyEvent.title,
-      name: guestName,
-      email: guestEmail,
+    const result = await sendNonSocietyEventFinalReminderEmail({
+      customEmails,
+      testOnly,
+      templateVariablesOverride,
     });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    return next(err);
   }
+};
 
-  // If count is not provided but there is only one guest, set count to 1
-  if (!count) {
-    count = 1;
-  }
 
-  let updatedCount = 0;
-
-  for (let i = 0; i < societyEvent.guestList.length; i++) {
-    const guest = societyEvent.guestList[i];
-
-    if (
-      guest.name === guestName &&
-      guest.email === guestEmail &&
-      guest.status === 0 &&
-      count > 0
-    ) {
-      societyEvent.guestList[i].status = 1;
-      count--;
-      updatedCount++;
+export const getEventGuestList = async (req, res, next) => {
+  try {
+    const event = await Event.findById(req.params.eventId).select("region title status guestList extraInputsForm addOns");
+    if (!event) return next(new HttpError("No event was found", 404));
+    if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
+    // Read-only committee access matches the existing analytics scope; it does
+    // not grant access to drafts/archives or permission to change attendance.
+    const { roles = [] } = extractUserFromRequest(req);
+    if (!roles.some(role => EVENT_MANAGEMENT_ACCESS.includes(role)) && ["draft", "archived"].includes(event.status)) return next(new HttpError("No access to this event guest list", 403));
+    if (req.path?.endsWith("/stream")) {
+      const { streamGuestList } = await import("../../services/tickets/guest-list-live.js");
+      await streamGuestList(req, res, event.id);
+      return;
     }
-
-    if (count === 0) break;
-  }
-
-  if (updatedCount === 0) {
+    res.set("Cache-Control", "private, no-store");
     return res.status(200).json({
-      status: 0,
-      event: societyEvent.title,
-      name: guestName,
-      email: guestEmail,
+      eventId: event.id,
+      title: event.title,
+      columns: guestListColumns(event),
+      guestList: event.guestList.map(serializeGuestListEntry),
     });
+  } catch {
+    return next(new HttpError("The guest list could not be loaded", 500));
   }
+};
 
+export const updateGuestPresence = async (req, res, next) => {
+  const { eventId, guestId, present } = req.body;
   try {
-    await societyEvent.save();
-  } catch (err) {
-    return next(
-      new HttpError("Updating guest list failed, please try again", 500)
-    );
+    const event = await Event.findById(eventId);
+    if (!event) return next(new HttpError("No event was found", 404));
+    if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
+    const guest = event.guestList.id(guestId);
+    if (!guest) return next(new HttpError("This guest is no longer in the list", 404));
+    if (guest.refunded) return next(new HttpError("A refunded ticket cannot be checked in", 422));
+    const result = await Event.updateOne({ _id: event._id, region: event.region,
+      guestList: { $elemMatch: { _id: guest._id, refunded: { $ne: true } } } },
+    { $set: { "guestList.$.status": present ? 1 : 0, "guestList.$.checkedInAt": present ? new Date() : null } });
+    if (result.matchedCount !== 1) return next(new HttpError("This ticket changed. Reload the guest list.", 409));
+    guest.status = present ? 1 : 0;
+    Promise.resolve().then(() => eventToSpreadsheet(event.id)).catch((error) => {
+      logIntegrationError("google-sheets", error, "guest-presence-sync");
+    });
+    return res.status(200).json({
+      status: true,
+      guest: serializeGuestListEntry(guest),
+      sheetSync: "queued",
+    });
+  } catch {
+    return next(new HttpError("Updating guest presence failed", 500));
   }
+};
 
-  eventToSpreadsheet(societyEvent.id);
-
-  res.status(201).json({
-    status: 1,
-    event: societyEvent.title,
-    name: guestName,
-    email: guestEmail,
-  });
+// Legacy numeric statuses remain compatible: 0 duplicate, 1 admitted, 2 choose count.
+export const updatePresence = async (req, res, next) => {
+  let { eventId, code } = req.body;
+  const { count, token } = req.body;
+  try {
+    if (token) {
+      const ticket = await TicketQr.findOne({ token }).lean();
+      if (!ticket) return next(new HttpError("Ticket not found", 404));
+      eventId = ticket.eventId;
+      code = ticket.code;
+    }
+    if (req.body.expectedEventId && String(eventId) !== req.body.expectedEventId) return next(new HttpError("This ticket is for a different event", 422));
+    const event = await Event.findById(eventId).select("region title guestList");
+    if (!event) return next(new HttpError("Event not found", 404));
+    if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
+    const includeDetails = req.body.includeDetails === true;
+    const plan = planCheckIn(event.guestList, code, count, { preview: req.body.preview === true || includeDetails });
+    const messages = { not_found: "Ticket not found for this event", refunded: "This ticket has been refunded", invalid_quantity: "Choose a count within the remaining tickets" };
+    if (plan.statusCode) return next(new HttpError(messages[plan.outcome], plan.statusCode));
+    if (plan.ids) {
+      const { filter, update, options } = checkInMutation(event, plan);
+      const result = await Event.updateOne(filter, update, options);
+      if (result.modifiedCount !== 1) return next(new HttpError("This ticket changed or was just checked in by another scanner. Check it again before admitting anyone.", 409));
+      // Spreadsheet failure must not turn a committed check-in into an error.
+      Promise.resolve().then(() => eventToSpreadsheet(event.id)).catch((error) => {
+        logIntegrationError("google-sheets", error, "guest-presence-sync");
+      });
+    }
+    const details = { ...plan };
+    delete details.ids;
+    delete details.statusCode;
+    res.set("Cache-Control", "private, no-store");
+    return res.status(200).json({ ...details, event: event.title, eventId: event.id,
+      ...(includeDetails ? { ticketDetails: event.guestList.filter(guest => guest.code != null && String(guest.code) === String(code)).map(serializeGuestListEntry) } : {}),
+      guests: event.guestList.filter(guest => guest.code != null && String(guest.code) === String(code) && !guest.refunded).map(guest => ({
+        id: String(guest._id), name: guest.name,
+        present: Number(guest.status) === 1 || Boolean(plan.ids?.some(id => String(id) === String(guest._id))),
+      })),
+      remaining: plan.remaining - (plan.admitted || 0) });
+  } catch {
+    return next(new HttpError("Check-in could not be confirmed. Please try again.", 500));
+  }
 };
 
 export const postSyncEventsCalendar = async (req, res, next) => {
-  console.log("Syncing events...");
-  await syncEvents();
+  try {
+    await syncEvents();
+    return res.status(202).json({ status: true });
+  } catch {
+    return next(new HttpError("Calendar synchronization could not be started", 503));
+  }
 };

@@ -1,12 +1,18 @@
 import mongoose from "mongoose";
 import uniqueValidator from "mongoose-unique-validator";
+import { automaticWalletCard } from "../services/wallet/provision.js";
 import { MEMBER } from "../util/config/defines.js";
 import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 import { createCurrentDate } from "../util/functions/currentDate.js";
+import { subscriptionSchema, sharedMembershipFields } from "./SubscriptionFields.js";
+
+import { accountSecurityFields, accountSecurityIndexes } from "./AccountSecurityFields.js";
 
 const Schema = mongoose.Schema;
 
-const userSchema = new Schema({
+const memberUserSchema = new Schema({
+  ...sharedMembershipFields,
+  ...accountSecurityFields,
   _id: {
     type: String,
     default: () => "member_" + new mongoose.Types.ObjectId(),
@@ -14,25 +20,25 @@ const userSchema = new Schema({
   status: { type: String, required: true, default: USER_STATUSES[ACTIVE] },
   roles: { type: Array, required: true, default: [MEMBER] },
   documents: [{ type: Schema.Types.ObjectId, ref: "Document" }],
-  subscription: {
-    period: { type: Number },
-    id: { type: String },
-    customerId: { type: String },
-  },
+  subscription: { type: subscriptionSchema, default: () => ({}) },
   region: { type: String },
   purchaseDate: { type: Date, default: createCurrentDate, required: true },
   expireDate: { type: Date, required: true },
   image: { type: String, required: true },
   name: { type: String, required: true },
   surname: { type: String, required: true },
-  birth: { type: Date, required: true },
-  phone: { type: String, required: true },
+  // Signup validation requires a date of birth. Keep it optional at schema
+  // level so a migrated Alumni account without a real date is never assigned a
+  // fictitious birthday (and never receives a false birthday email).
+  birth: { type: Date },
+  phone: { type: String, required() { return !this.accountAliases?.length; } },
   email: { type: String, required: true, unique: true },
-  university: { type: String, required: true },
+  university: { type: String, required() { return !this.accountAliases?.length; } },
   otherUniversityName: { type: String },
   graduationDate: { type: String },
   course: { type: String },
   studentNumber: { type: String },
+  profession: { type: String },
   password: { type: String, required: true, minlength: 5 },
   notificationTypeTerms: { type: String },
   tickets: [
@@ -51,16 +57,21 @@ const userSchema = new Schema({
       gif: { type: String },
     },
   ],
-  mmmCampaign2025: {
-    calendarSubscription: { type: Boolean, default: false },
-    calendarImage: { type: String, default: "" },
-  },
   joinDate: { type: Date, default: createCurrentDate, required: true },
   internshipApplications: [
     { type: Schema.Types.ObjectId, ref: "InternshipApplication" },
   ],
 });
 
-userSchema.plugin(uniqueValidator);
+memberUserSchema.plugin(uniqueValidator);
+memberUserSchema.plugin(automaticWalletCard);
+accountSecurityIndexes(memberUserSchema);
+memberUserSchema.index({ "subscription.id": 1, status: 1 });
+memberUserSchema.index({ accountAliases: 1 });
+memberUserSchema.index({ "subscription.syncedAt": 1, status: 1 });
+memberUserSchema.index({ "subscription.lastAttemptAt": 1, "subscription.syncedAt": 1 });
+memberUserSchema.index({ joinDate: 1, region: 1 });
 
-export default mongoose.model("User", userSchema);
+// Explicit collection name prevents Mongoose from lowercasing it to
+// "memberusers".
+export default mongoose.model("MemberUser", memberUserSchema, "memberUsers");

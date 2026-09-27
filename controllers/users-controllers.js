@@ -1,13 +1,14 @@
 import dotenv from "dotenv";
+import { requestProfileChange } from "../services/authentication/profile-change.js";
+import { accountEntitlements } from "../util/subscriptions/policy.js";
+import { reconcileAccount } from "../services/subscriptions/reconcile.js";
 dotenv.config();
-import bcrypt from "bcryptjs";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
 import ActiveMembers from "../models/ActiveMembers.js";
 import { usersToSpreadsheet } from "../services/background-services/google-spreadsheets.js";
-import { isBirthdayToday, jwtRefresh } from "../util/functions/helpers.js";
+import { isBirthdayToday } from "../util/functions/helpers.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
-import { getTokenFromHeader } from "../util/functions/security.js";
 import {
   ACTIVE,
   ALUMNI_MIGRATED,
@@ -25,7 +26,7 @@ import {
   convertUserToAlumni as convertUserToAlumniService,
 } from "../services/main-services/user-service.js";
 import AlumniUser from "../models/AlumniUser.js";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import Document from "../models/Document.js";
 import mongoose from "mongoose";
 import { ALUMNI } from "../util/config/defines.js";
@@ -33,22 +34,15 @@ import { DOCUMENT_TYPES } from "../util/config/enums.js";
 import { createStripeClient } from "../util/config/stripe.js";
 import { DEFAULT_REGION } from "../util/config/defines.js";
 
-export const refreshToken = async (req, res, next) => {
-  let newToken = null;
-
-  try {
-    const token = getTokenFromHeader(req);
-
-    newToken = jwtRefresh(token);
-  } catch {
-    newToken = null;
-  }
-
-  return res.status(201).json({ token: newToken });
-};
+// An access token must never be exchangeable for a refresh credential or an
+// endless chain of fresh access tokens. The website handles its compatibility
+// URL using the separate HttpOnly refresh cookie and server-only lifecycle.
+export const refreshToken = (_req, res) => res.status(410).json({
+  message: "Access-token-only renewal is retired. Please use the website session flow.",
+});
 
 export const getCurrentUser = async (req, res, next) => {
-  const { userId } = extractUserFromRequest(req);  
+  const { userId } = extractUserFromRequest(req);
 
   const withTickets = (req.query.withTickets ?? 'true') === 'true';
   const withChristmas = (req.query.withChristmas ?? 'true') === 'true';
@@ -66,27 +60,43 @@ export const getCurrentUser = async (req, res, next) => {
     return next(error);
   }
 
+  // Alumni created through the legacy migration flow may not have a phone on
+  // their alumni document. The original member document is retained, so use
+  // its number for prefilled forms without making this read endpoint mutate data.
+  if (!user.phone && String(user._id).startsWith("alumni_")) {
+    const linkedMemberId = String(user._id).replace(/^alumni_/, "member_");
+    try {
+      const linkedMember = await MemberUser.findById(linkedMemberId).select("phone").lean();
+      if (linkedMember?.phone && linkedMember.phone !== "-") {
+        user.phone = linkedMember.phone;
+      }
+    } catch (err) {
+      console.error("Could not resolve legacy alumni phone:", err);
+    }
+  }
+
+  let billingVerificationUnavailable = false;
+  try { user = (await reconcileAccount(user))?.user || user; }
+  catch { billingVerificationUnavailable = true; }
+
   // Populate documents if user has documents
   if (user.documents && user.documents.length > 0) {
     await user.populate('documents');
   }
 
-  user = user.toObject({ getters: true });
+  user = { ...user.toObject({ getters: true }), ...accountEntitlements(user) };
+  user.billingVerificationUnavailable = billingVerificationUnavailable;
+  if (billingVerificationUnavailable) { user.hasBenefits = false; user.memberDiscount = false; }
 
   delete user.password;
   user.registrationKey && delete user.registrationKey;
   !withTickets && delete user.tickets;
   !withChristmas && delete user.christmas;
 
-  if (user.status !== USER_STATUSES[ACTIVE]) {
-    return res.status(200).json({
-      status: user.status,
-      user: {
-        id: user._id,
-        status: user.status,
-        subscription: user.subscription,
-      },
-    });
+  if (!user.hasBenefits) {
+    delete user.tickets;
+    delete user.christmas;
+    delete user.mmmCampaign2025;
   }
 
   if (isBirthdayToday(user.birth)) {
@@ -97,79 +107,25 @@ export const getCurrentUser = async (req, res, next) => {
 };
 
 export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
-  const { userId } = extractUserFromRequest(req);
-
-  let user;
   try {
-    user = await findUserById(userId);
-  } catch (err) {
-    const error = new HttpError("Could not fetch user", 500);
-    return next(error);
+    const result = await reconcileAccount(req.account);
+    const user = result?.user || req.account;
+    return res.status(200).json({
+      ...accountEntitlements(user), roles: user.roles, region: user.region, image: user.image,
+      userId: user.id, name: user.name, surname: user.surname, email: user.email,
+      subscription: user.subscription || null,
+      stripeSubscription: result?.sub ? {
+        id: result.sub.id, status: result.sub.status,
+        cancelAtPeriodEnd: !!result.sub.cancel_at_period_end,
+        currentPeriodEnd: result.state.periodEnd,
+      } : null,
+    });
+  } catch {
+    const user = req.account;
+    return res.status(200).json({ ...accountEntitlements(user), hasBenefits: false, memberDiscount: false,
+      billingVerificationUnavailable: true, roles: user.roles, region: user.region, image: user.image, subscription: user.subscription,
+      userId: user.id, name: user.name, surname: user.surname, email: user.email });
   }
-
-  if (!user) {
-    const error = new HttpError("Could not fetch user", 500);
-    return next(error);
-  }
-
-  user = user.toObject({ getters: true });
-
-  const isAlumni = user?.tier !== undefined;
-  const alumniData = isAlumni
-    ? {
-        tier: user.tier,
-      }
-    : {};
-
-  const hasSubscriptionData = !!(
-    user.subscription &&
-    user.subscription.id &&
-    user.subscription.customerId
-  );
-
-  let stripeSubscription = null;
-  let stripeSubscriptionError = null;
-
-  if (hasSubscriptionData) {
-    try {
-      const stripeClient = createStripeClient(DEFAULT_REGION);
-      const sub = await stripeClient.subscriptions.retrieve(
-        "sub_1Qdp74AShinXgMFZH20uFakc",
-      );
-
-      stripeSubscription = {
-        id: sub.id,
-        status: sub.status, // e.g. active, canceled, past_due, unpaid, trialing
-        cancelAtPeriodEnd: !!sub.cancel_at_period_end,
-        canceledAt: sub.canceled_at ?? null,
-        cancelAt: sub.cancel_at ?? null,
-        currentPeriodStart: sub.current_period_start ?? null,
-        currentPeriodEnd: sub.current_period_end ?? null,
-      };
-
-    } catch (err) {
-      stripeSubscriptionError =
-        err?.message || "Failed to fetch subscription from Stripe";
-    }
-  }
-
-  const isCancelledInStripe = !!(
-    stripeSubscription &&
-    (stripeSubscription.status === "canceled" || stripeSubscription.cancelAtPeriodEnd)
-  );
-
-  // TODO: optimize this and send subscription data to the frontend
-  const isSubscribed = hasSubscriptionData && !isCancelledInStripe;
-
-  return res.status(200).json({
-    isSubscribed,
-    isAlumni,
-    ...alumniData,
-    status: user.status,
-    subscription: user.subscription || null,
-    stripeSubscription,
-    stripeSubscriptionError,
-  });
 };
 
 export const getCurrentUserRoles = async (req, res, next) => {
@@ -202,6 +158,17 @@ export const postActiveMember = async (req, res, next) => {
   }
 
   const { positions, date, email, phone, questions } = req.body;
+  let questionAnswers = questions;
+
+  if (typeof questions === "string") {
+    try {
+      questionAnswers = JSON.parse(questions);
+    } catch {
+      // Compatibility with the former browser payload, which coerced the
+      // answers array to a comma-delimited string.
+      questionAnswers = questions.split(",");
+    }
+  }
 
   const timestamp = new Date();
 
@@ -214,16 +181,16 @@ export const postActiveMember = async (req, res, next) => {
     cv: req.files["cv"] ? req.files["cv"][0].location : null,
     // letter: req.files['letter'][0].location,
     questions: {
-      q1: questions[0],
-      q2: questions[1],
-      q3: questions[2],
-      q4: questions[3],
-      q5: questions[4],
-      q6: questions[5],
-      q7: questions[6],
-      q8: questions[7],
-      q9: questions[8],
-      q10: questions[9],
+      q1: questionAnswers[0],
+      q2: questionAnswers[1],
+      q3: questionAnswers[2],
+      q4: questionAnswers[3],
+      q5: questionAnswers[4],
+      q6: questionAnswers[5],
+      q7: questionAnswers[6],
+      q8: questionAnswers[7],
+      q9: questionAnswers[8],
+      q10: questionAnswers[9],
     },
   });
 
@@ -236,8 +203,6 @@ export const postActiveMember = async (req, res, next) => {
     );
     return next(error);
   }
-
-  activeMembersToSpreadsheet();
 
   res.status(201).json({ message: "Done" });
 };
@@ -253,6 +218,7 @@ export const patchUserInfo = async (req, res, next) => {
     graduationDate,
     course,
     studentNumber,
+    profession,
     notificationTypeTerms,
     password,
   } = req.body;
@@ -272,28 +238,30 @@ export const patchUserInfo = async (req, res, next) => {
     user.image = req.file.Location;
   }
 
-  if (password) {
-    let hashedPassword;
-    try {
-      hashedPassword = await bcrypt.hash(password, 12);
-    } catch (err) {
-      return next(
-        new HttpError("Updating user failed, please try again!", 500)
-      );
-    }
-
-    user.password = hashedPassword;
-  }
-
   name && (user.name = name);
   surname && (user.surname = surname);
   phone && (user.phone = phone);
-  email && (user.email = email);
-  university && (user.university = university);
-  otherUniversityName && (user.otherUniversityName = otherUniversityName);
-  graduationDate && (user.graduationDate = graduationDate);
-  course && (user.course = course);
-  studentNumber && (user.studentNumber = studentNumber);
+  if (university) {
+    user.university = university;
+    user.otherUniversityName =
+      university === "other" ? otherUniversityName || undefined : undefined;
+    user.graduationDate =
+      university === "working" ? undefined : graduationDate || undefined;
+    user.course = university === "working" ? undefined : course || undefined;
+    user.studentNumber =
+      university === "working" ? undefined : studentNumber || undefined;
+    user.profession =
+      university === "working" ? profession || undefined : undefined;
+  } else {
+    otherUniversityName !== undefined &&
+      (user.otherUniversityName = otherUniversityName || undefined);
+    graduationDate !== undefined &&
+      (user.graduationDate = graduationDate || undefined);
+    course !== undefined && (user.course = course || undefined);
+    studentNumber !== undefined &&
+      (user.studentNumber = studentNumber || undefined);
+    profession !== undefined && (user.profession = profession || undefined);
+  }
   notificationTypeTerms && (user.notificationTypeTerms = notificationTypeTerms);
 
   try {
@@ -305,38 +273,17 @@ export const patchUserInfo = async (req, res, next) => {
   usersToSpreadsheet(user.region);
   usersToSpreadsheet();
 
-  res.status(200).json({ status: true });
+  try {
+    const pending = await requestProfileChange(user, { email, password, origin: req.headers.origin,
+      claims: { ...req.authClaims, userId: user.id } });
+    return res.status(200).json({ status: true, ...(pending || {}) });
+  } catch (error) {
+    return next(error instanceof HttpError ? error : new HttpError("Could not request the profile change. Your email and password have not changed. Please try again.", 503));
+  }
 };
 
 export const submitCalendarVerification = async (req, res, next) => {
-  const { userId } = extractUserFromRequest(req);
-
-  let user;
-  let calendarImage;
-
-  try {
-    user = await findUserById(userId);
-  } catch (err) {
-    return next(
-      new HttpError("Could not find the current user, please try again", 500)
-    );
-  }
-
-  if (req.file) {
-    calendarImage = req.file.location;
-  } else {
-    return next(new HttpError("Please provide an image!", 500));
-  }
-
-  user.mmmCampaign2025.calendarImage = calendarImage;
-
-  try {
-    await user.save();
-  } catch (err) {
-    return next(new HttpError("Something went wrong, please try again", 500));
-  }
-
-  res.status(200).json({ status: true });
+  return next(new HttpError("The 2025 calendar campaign has ended.", 410));
 };
 
 export const exportVitalStatsXls = async (req, res, next) => {
@@ -386,7 +333,7 @@ export const convertUserToAlumni = async (req, res, next) => {
   try {
     const result = await convertUserToAlumniService(userId);
     return res.status(200).json({
-      message: `User successfully ${result.action} as alumni`,
+      message: `MemberUser successfully ${result.action} as alumni`,
       result,
     });
   } catch (err) {
@@ -406,7 +353,7 @@ export const convertUserToAlumni = async (req, res, next) => {
 export const getActiveAlumniMembers = async (req, res, next) => {
   try {
     // Find all alumni users with 'active' status
-    const alumniMembers = await AlumniUser.find()
+    const alumniMembers = await AlumniUser.find({ status: "active", $or: [{ tier: 0 }, { expireDate: { $gt: new Date() } }] })
       .select("name surname image tier quote joinDate")
       .sort({ name: 1, surname: 1 }); // Sort by name and surname alphabetically
 
@@ -455,9 +402,9 @@ export const updateAlumniQuote = async (req, res, next) => {
   // Find the alumni user
   let alumniUser;
   try {
-    alumniUser = await AlumniUser.findOne({ _id: userId });
+    alumniUser = await findUserById(userId);
 
-    if (!alumniUser) {
+    if (!alumniUser || !accountEntitlements(alumniUser).isAlumni) {
       return next(new HttpError("Alumni user not found", 404));
     }
   } catch (err) {
@@ -542,12 +489,12 @@ export const postAddDocument = async (req, res, next) => {
   if (!user) {
     const error = new HttpError("User not found", 404);
     return next(error);
-  }  
+  }
 
   // Get content from file upload if available, otherwise use the content from body
   let documentContent = content;
   let documentName = req.body?.name;
-  
+
   if (req.file) {
     documentContent = req.file.location || req.file.Location;
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
@@ -590,7 +537,7 @@ export const postAddDocument = async (req, res, next) => {
         user.documents = [];
       }
       user.documents.push(document);
-      
+
       await user.save({ session: sess });
 
       await sess.commitTransaction();

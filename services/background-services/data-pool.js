@@ -5,6 +5,7 @@ import { DATA_POOL } from "../../util/config/SPREEDSHEATS.js";
 import { refactorToKeyValuePairs } from "../../util/functions/helpers.js";
 import { MOMENT_DATE_TIME_YEAR } from "../../util/functions/dateConvert.js";
 import { enqueueJob, getSheetsClient } from "./google-spreadsheets.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 
 /**
  * Appends guest data for a specific event to the shared data pool spreadsheet.
@@ -99,6 +100,7 @@ export const addEventToDataPool = (
 
       console.log(`Tickets for event "${event.title}" added successfully!`);
     } catch (error) {
+      logIntegrationError("google-sheets", error, "data-pool-tickets");
       console.error("Error adding tickets:", error);
     }
   });
@@ -174,6 +176,7 @@ export const updateEventStatistics = async (event, increment = true) => {
       totalTickets: saved.data.totalTickets,
     });
   } catch (error) {
+    logOperationalError("service.event-statistics", error);
     console.error("Error updating event statistics:", error);
     throw error; // Re-throw to see the full error
   }

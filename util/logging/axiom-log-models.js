@@ -12,43 +12,29 @@
 const SERVICE_NAME = "bgsnl-api";
 const ENV = process.env.NODE_ENV || "development";
 
-/** Fixed request headers we log (no dynamic keys) */
-const REQ_HEADER_KEYS = [
-  "user-agent",
-  "content-type",
-  "accept",
-  "host",
-  "referer",
-  "origin",
-];
+const safePath = (value) => String(value || "/").split("?")[0]
+  .replace(/\/[a-f\d]{24}(?=\/|$)/gi, "/:id")
+  .replace(/\/[A-Za-z0-9_-]{32,}(?=\/|$)/g, "/:token")
+  .slice(0, 200);
 
 /**
  * Build the shared "req" object (grouped) for API request logs.
  * @param {object} req - Express req
  * @param {object} redact - Redact function for sensitive data
  */
-export function buildReq(req, redact) {
-  const headers = {};
-  for (const key of REQ_HEADER_KEYS) {
-    const v = req.headers[key];
-    if (v !== undefined) headers[key] = v;
+export function buildReq(req) {
+  if (req.walletPrivate) return { method: req.method, url: "/api/user/wallet", path: "/api/user/wallet" };
+  if (/\/payment\/event-ticket(?:[/?]|$)/.test(req.originalUrl || req.url || "")) {
+    return { method: req.method, url: "/api/payment/event-ticket", path: "/api/payment/event-ticket" };
   }
-  const body = req.body
-    ? redact(req.body)
-    : undefined;
+  if (req.supportPrivate) {
+    return { method: req.method, url: "/api/support", path: "/api/support" };
+  }
+  const path = safePath(req.route?.path ? `${req.baseUrl || ""}${req.route.path}` : req.path || req.originalUrl || req.url);
   return {
     method: req.method,
-    url: req.originalUrl || req.url,
-    path: req.path,
-    ip: req.ip,
-    params: req.params && Object.keys(req.params).length
-      ? JSON.stringify(req.params)
-      : undefined,
-    query: req.query && Object.keys(req.query).length
-      ? JSON.stringify(req.query)
-      : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    headers,
+    url: path,
+    path,
   };
 }
 
@@ -84,10 +70,9 @@ export function buildMeta(overrides = {}) {
 export function buildError(err) {
   if (!err) return undefined;
   return {
-    message: err.message || String(err),
     name: err.name,
     code: err.code,
-    stack: err.stack,
+    status: err.status,
   };
 }
 

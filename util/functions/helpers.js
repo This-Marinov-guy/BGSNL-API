@@ -1,14 +1,10 @@
 import dotenv from "dotenv";
 dotenv.config();
-import jwt from "jsonwebtoken";
 import dns from "dns";
 import CryptoJS from "crypto-js";
 import moment from "moment-timezone";
-import { DEV_JWT_TIMEOUT, PROD_JWT_TIMEOUT } from "../config/defines.js";
 import { allowedCrawlers } from "../config/access.js";
-
-const JWT_TIMEOUT =
-  process.env.APP_ENV === "prod" ? PROD_JWT_TIMEOUT : DEV_JWT_TIMEOUT;
+export { signSessionToken as jwtSign } from "../auth/session-token.js";
 
 export const IS_PROD = process.env.APP_ENV === "prod";
 
@@ -29,6 +25,14 @@ export const isEventTimerFinished = (timer) => {
   return timer.valueOf() < new Date().valueOf();
 };
 
+// Single source of truth for "can a ticket still be bought for this event":
+// an organizer's manual closure, the ticket window expiring, or selling out.
+// Every purchase-facing endpoint must call this before creating a checkout.
+export const isTicketSaleClosed = (event) => {
+  const ticketsRemaining = Number(event.ticketLimit) - (event.guestList?.length || 0);
+  return event.isSaleClosed === true || ticketsRemaining <= 0 || isEventTimerFinished(event.ticketTimer);
+};
+
 export const removeModelProperties = (obj, properties) => {
   const result = obj.toObject(); // Convert Mongoose document to plain JavaScript object
   properties.forEach((prop) => delete result[prop]);
@@ -40,50 +44,6 @@ export const removeModelProperties = (obj, properties) => {
   }
 
   return result;
-};
-
-export const jwtSign = (user) => {
-  return jwt.sign(
-    {
-      version: Number(process.env.AUTH_VERSION ?? 1),
-      image: user.image,
-      userId: user.id,
-      customerId: user.subscription.customerId ?? '',
-      status: user.status,
-      roles: user.roles,
-      email: user.email,
-      region: user.region,
-    },
-    process.env.JWT_STRING,
-    { expiresIn: JWT_TIMEOUT }
-  );
-};
-
-export const jwtRefresh = (token) => {
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_STRING, {
-      ignoreExpiration: true,
-    });
-
-    const newToken = jwt.sign(
-      {
-        version: Number(process.env.AUTH_VERSION ?? 1),
-        image: decoded.image,
-        userId: decoded.userId,
-        customerId: decoded.customerId ?? '',
-        roles: decoded.roles,
-        email: decoded.email,
-        region: decoded.region,
-      },
-      process.env.JWT_STRING,
-      { expiresIn: JWT_TIMEOUT }
-    );
-
-    return newToken;
-  } catch (error) {
-    console.error("Error refreshing token:", error);
-    return null;
-  }
 };
 
 export const encodeForURL = (string) => {

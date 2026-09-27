@@ -11,7 +11,7 @@ import mongoose from "mongoose";
 import moment from "moment-timezone";
 import Event from "../../models/Event.js";
 import { BGSNL_URL } from "../../util/config/defines.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import {
   IS_PROD,
   refactorToKeyValuePairs,
@@ -25,6 +25,10 @@ import AlumniUser from "../../models/AlumniUser.js";
 import InternshipApplication from "../../models/InternshipApplication.js";
 import { ALUMNI_MIGRATED } from "../../util/config/enums.js";
 import { INTERNSHIP_SHEET } from "../../util/config/SPREEDSHEATS.js";
+import { enqueueSpreadsheetSync } from "../jobs/spreadsheet-sync-queue.js";
+import { publishGuestListChanged } from "../tickets/guest-list-live.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
+import { jobNameFromKey, observeJob } from "../monitoring/job-history.js";
 
 // Lightweight background job queue with concurrency limit and de-duplication
 const MAX_CONCURRENCY = 1;
@@ -40,6 +44,7 @@ function processQueue() {
   if (!next) return;
   activeCount++;
   (async () => {
+    next.record.start();
     try {
       // enforce timeout so stuck jobs don't block the queue indefinitely
       await Promise.race([
@@ -51,8 +56,11 @@ function processQueue() {
           )
         ),
       ]);
+      next.record.complete();
     } catch (e) {
-      console.error("Background job error:", e);
+      next.record.fail(e);
+      logIntegrationError("google-sheets", e, "background-job");
+      console.error("Background job error", { code: e?.code });
     } finally {
       activeKeys.delete(next.key);
       activeCount--;
@@ -66,10 +74,13 @@ function enqueueJob(key, jobFn) {
   if (jobQueue.length >= MAX_QUEUE_LENGTH) {
     // Drop oldest to keep memory bounded; alternatively drop newest
     const dropped = jobQueue.shift();
-    console.warn(`Job queue full, dropping oldest job: ${dropped?.key}`);
+    dropped.record.fail(new Error("Spreadsheet queue full"));
+    activeKeys.delete(dropped.key);
+    logOperationalError("worker.spreadsheet-queue", new Error("Queue full"));
+    console.warn("Spreadsheet queue full, dropping oldest job");
   }
   activeKeys.add(key);
-  jobQueue.push({ key, jobFn });
+  jobQueue.push({ key, jobFn, record: observeJob("sheets-inline", jobNameFromKey(key)) });
   processQueue();
 }
 
@@ -103,6 +114,7 @@ const searchInDatabase = (eventName, region) => {
 
     client.connect((err) => {
       if (err) {
+        logOperationalError("service.spreadsheet-database-connect", err);
         console.error("Error connecting to MongoDB:", err);
         return;
       }
@@ -157,6 +169,7 @@ const searchInDatabase = (eventName, region) => {
         ])
         .toArray((err, result) => {
           if (err) {
+            logOperationalError("service.spreadsheet-database-query", err);
             console.error("Error:", err);
             return;
           }
@@ -169,8 +182,7 @@ const searchInDatabase = (eventName, region) => {
   }
 };
 
-const eventToSpreadsheet = (id) => {
-  enqueueJob(`eventToSpreadsheet:${id}`, async () => {
+export const syncEventToSpreadsheet = async ({ id }) => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       const event = await Event.findById(id);
@@ -448,6 +460,7 @@ const eventToSpreadsheet = (id) => {
                     `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
                   );
                 } else {
+                  logIntegrationError("google-sheets", new Error("Sheet not found after create conflict"), "sheet-metadata");
                   console.error(
                     `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
                     updatedSheetsList.map((s) => s.properties.title)
@@ -455,6 +468,7 @@ const eventToSpreadsheet = (id) => {
                   continue; // Skip this spreadsheet and continue with the next one
                 }
               } catch (fetchError) {
+                logIntegrationError("google-sheets", fetchError, "sheet-metadata");
                 console.error(
                   `Error fetching spreadsheet metadata after creation error:`,
                   fetchError
@@ -462,6 +476,7 @@ const eventToSpreadsheet = (id) => {
                 continue; // Skip this spreadsheet and continue with the next one
               }
             } else {
+              logIntegrationError("google-sheets", createError, "sheet-create");
               console.error(
                 `Error creating sheet '${sheetName}':`,
                 createError
@@ -533,12 +548,11 @@ const eventToSpreadsheet = (id) => {
       }
     } catch (error) {
       console.error("Error in eventToSpreadsheet:", error);
+      throw error;
     }
-  });
 };
 
-const specialEventsToSpreadsheet = (id) => {
-  enqueueJob(`specialEventsToSpreadsheet:${id}`, async () => {
+export const syncSpecialEventToSpreadsheet = async ({ id }) => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       const nonSocietyEvent = await NonSocietyEvent.findById(id);
@@ -761,6 +775,7 @@ const specialEventsToSpreadsheet = (id) => {
                     `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
                   );
                 } else {
+                  logIntegrationError("google-sheets", new Error("Sheet not found after create conflict"), "sheet-metadata");
                   console.error(
                     `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
                     updatedSheetsList.map((s) => s.properties.title)
@@ -768,6 +783,7 @@ const specialEventsToSpreadsheet = (id) => {
                   continue; // Skip this spreadsheet and continue with the next one
                 }
               } catch (fetchError) {
+                logIntegrationError("google-sheets", fetchError, "sheet-metadata");
                 console.error(
                   `Error fetching spreadsheet metadata after creation error:`,
                   fetchError
@@ -775,6 +791,7 @@ const specialEventsToSpreadsheet = (id) => {
                 continue; // Skip this spreadsheet and continue with the next one
               }
             } else {
+              logIntegrationError("google-sheets", createError, "sheet-create");
               console.error(
                 `Error creating sheet '${sheetName}':`,
                 createError
@@ -804,12 +821,11 @@ const specialEventsToSpreadsheet = (id) => {
       }
     } catch (err) {
       console.log(err);
+      throw err;
     }
-  });
 };
 
-const usersToSpreadsheet = (region = null) => {
-  enqueueJob(`usersToSpreadsheet:${region ?? "all"}`, async () => {
+export const syncUsersToSpreadsheet = async ({ region = null } = {}) => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.users;
@@ -827,10 +843,10 @@ const usersToSpreadsheet = (region = null) => {
       // Fetch users from MongoDB using Mongoose
       const query = {
         ...(filterByRegion && { region }),
-        status: { $ne: ALUMNI_MIGRATED },
+        status: { $nin: [ALUMNI_MIGRATED, "membership-migrated", "membership_active"] },
       };
 
-      const users = await User.find(query)
+      const users = await MemberUser.find(query)
         .sort({
           purchaseDate: 1,
           _id: -1,
@@ -846,6 +862,7 @@ const usersToSpreadsheet = (region = null) => {
           course,
           studentNumber,
           graduationDate,
+          profession,
           password,
           notificationTypeTerms,
           tickets,
@@ -889,7 +906,14 @@ const usersToSpreadsheet = (region = null) => {
           birth: formattedBirth,
           purchaseDate: formattedPurchaseDate,
           expireDate: formattedExpireDate,
-          university: university === "other" ? otherUniversityName : university,
+          university:
+            university === "other"
+              ? otherUniversityName
+              : university === "working"
+                ? "Working"
+                : university,
+          profession:
+            university === "working" ? profession || "not specified" : "",
           course,
           studentNumber,
           graduationDate: graduationDate || "not specified",
@@ -920,6 +944,7 @@ const usersToSpreadsheet = (region = null) => {
             "Email",
             "Birth",
             "University",
+            "Profession",
             "Course",
             "Student Number",
             "Graduation Date",
@@ -936,6 +961,7 @@ const usersToSpreadsheet = (region = null) => {
             "Email",
             "Birth",
             "University",
+            "Profession",
             "Course",
             "Student Number",
             "Graduation Date",
@@ -961,12 +987,11 @@ const usersToSpreadsheet = (region = null) => {
       console.log(`Member Sheet updated for: ${region ?? "Netherlands"}`);
     } catch (error) {
       console.error("Error in usersToSpreadsheet:", error);
+      throw error;
     }
-  });
 };
 
-export const alumniToSpreadsheet = () => {
-  enqueueJob("alumniToSpreadsheet", async () => {
+export const syncAlumniToSpreadsheet = async () => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       let spreadsheetId = SPREADSHEETS_ID["netherlands"]?.alumni;
@@ -975,7 +1000,7 @@ export const alumniToSpreadsheet = () => {
       // Sheets client comes from singleton
 
       // Fetch users from MongoDB using Mongoose
-      const query = {};
+      const query = { status: { $nin: ["alumni-migrated", "membership-migrated", "membership_active"] } };
       const users = await AlumniUser.find(query)
         .sort({
           purchaseDate: 1,
@@ -1109,8 +1134,8 @@ export const alumniToSpreadsheet = () => {
       console.log(`Member Sheet updated for Alumnis`);
     } catch (error) {
       console.error("Error in alumniToSpreadsheet:", error);
+      throw error;
     }
-  });
 };
 
 /**
@@ -1240,8 +1265,7 @@ export const getPresenceStatsOfCity = async (spreadsheetId) => {
   };
 };
 
-export const internshipApplicationsToSpreadsheet = () => {
-  enqueueJob("internshipApplicationsToSpreadsheet", async () => {
+export const syncInternshipApplicationsToSpreadsheet = async () => {
     const { auth, googleSheets } = await getSheetsClient();
     try {
       const spreadsheetId = INTERNSHIP_SHEET;
@@ -1321,9 +1345,18 @@ export const internshipApplicationsToSpreadsheet = () => {
       console.log(`Internship applications sheet updated`);
     } catch (error) {
       console.error("Error in internshipApplicationsToSpreadsheet:", error);
+      throw error;
     }
-  });
 };
+
+const eventToSpreadsheet = (id) => {
+  void publishGuestListChanged(id);
+  return enqueueSpreadsheetSync("event", { id });
+};
+const specialEventsToSpreadsheet = (id) => enqueueSpreadsheetSync("special-event", { id });
+const usersToSpreadsheet = (region = null) => enqueueSpreadsheetSync("members", { region });
+export const alumniToSpreadsheet = () => enqueueSpreadsheetSync("alumni");
+export const internshipApplicationsToSpreadsheet = () => enqueueSpreadsheetSync("internships");
 
 export {
   searchInDatabase,

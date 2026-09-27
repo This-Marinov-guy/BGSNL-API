@@ -1,8 +1,8 @@
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
-import { ACCESS_2, SUBSCRIPTIONS } from "../util/config/defines.js";
+import { ALL_MEMBER_REGIONS_ACCESS, ALL_EVENT_REGIONS_ACCESS, SUBSCRIPTIONS } from "../util/config/defines.js";
 import moment from "moment-timezone";
 
 /**
@@ -11,7 +11,7 @@ import moment from "moment-timezone";
  */
 export const getMembers = async (req, res, next) => {
   const { roles, region } = extractUserFromRequest(req);
-  const isAdmin = roles.some((r) => ACCESS_2.includes(r));
+  const isAdmin = roles.some((r) => ALL_MEMBER_REGIONS_ACCESS.includes(r));
 
   const filterRegion = req.query.region;
 
@@ -25,9 +25,9 @@ export const getMembers = async (req, res, next) => {
       query.region = filterRegion;
     }
 
-    const users = await User.find(query)
+    const users = await MemberUser.find(query)
       .select(
-        "name surname email roles region status purchaseDate expireDate subscription tickets image phone university"
+        "name surname email roles region status purchaseDate expireDate subscription tickets image phone birth university otherUniversityName graduationDate course profession"
       )
       .lean();
 
@@ -60,6 +60,10 @@ export const getMembers = async (req, res, next) => {
         }
       }
 
+      const monthlyRevenue = hasSubscription && isPaid && user.subscription?.period
+        ? subscriptionMonthlyRate[user.subscription.period] || 0
+        : 0;
+
       return {
         _id: user._id,
         name: user.name,
@@ -72,10 +76,16 @@ export const getMembers = async (req, res, next) => {
         expireDate: user.expireDate,
         ticketsCount: user.tickets?.length || 0,
         hasSubscription,
+        monthlyRevenue: Math.round(monthlyRevenue * 100) / 100,
         nextBilling,
         isPaid,
         phone: user.phone,
+        birth: user.birth,
         university: user.university,
+        otherUniversityName: user.otherUniversityName,
+        graduationDate: user.graduationDate,
+        course: user.course,
+        profession: user.profession,
         image: user.image,
       };
     });
@@ -83,11 +93,13 @@ export const getMembers = async (req, res, next) => {
     // Summary stats
     const totalCount = members.length;
     const totalUnpaid = members.filter((m) => !m.isPaid).length;
+    const totalActive = totalCount - totalUnpaid;
 
-    res.status(200).json({
+    return res.status(200).json({
       members,
       summary: {
         totalCount,
+        totalActive,
         totalUnpaid,
         mmr: Math.round(mmr * 100) / 100,
       },
@@ -104,14 +116,14 @@ export const getMembers = async (req, res, next) => {
  */
 export const getEventsAnalytics = async (req, res, next) => {
   const { roles, region } = extractUserFromRequest(req);
-  const isAdmin = roles.some((r) => ACCESS_2.includes(r));
+  const isAdmin = roles.some((r) => ALL_EVENT_REGIONS_ACCESS.includes(r));
 
   const filterRegion = req.query.region;
   const fromDate = req.query.from;
   const toDate = req.query.to;
 
   try {
-    const query = { status: { $ne: "archived" } };
+    const query = { status: { $nin: ["archived", "draft"] } };
 
     if (!isAdmin) {
       query.region = region;
@@ -133,7 +145,7 @@ export const getEventsAnalytics = async (req, res, next) => {
 
     const events = await Event.find(query)
       .select(
-        "title poster date region location product isFree isMemberFree guestList ticketLimit status"
+        "title poster date region location product isFree isMemberFree guestList ticketLimit status extraInputsForm addOns"
       )
       .sort({ date: -1 })
       .lean();
@@ -200,13 +212,23 @@ export const getEventsAnalytics = async (req, res, next) => {
             : 0,
         revenue: Math.round(revenue * 100) / 100,
         status: event.status,
+        columns: {
+          addOns: Boolean(event.addOns?.isEnabled && event.addOns.items?.length),
+          preferences: Array.isArray(event.extraInputsForm) && event.extraInputsForm.length > 0,
+        },
         guestList: guestList.map((g) => ({
+          id: String(g._id),
           name: g.name,
           email: g.email,
           type: g.type,
           status: g.status,
           timestamp: g.timestamp,
           refunded: g.refunded,
+          preferences: g.preferences || {},
+          addOns: (g.addOns || []).map((addOn) => ({
+            title: addOn.title,
+            price: addOn.price,
+          })),
         })),
       };
     });
@@ -219,7 +241,7 @@ export const getEventsAnalytics = async (req, res, next) => {
       0
     );
 
-    res.status(200).json({
+    return res.status(200).json({
       events: analytics,
       summary: {
         totalRevenue: Math.round(totalRevenue * 100) / 100,

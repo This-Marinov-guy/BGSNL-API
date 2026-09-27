@@ -1,0 +1,19 @@
+# Use after deploying the storage refactor and running its migration.
+services:
+  bgsnl-api:
+    env_file:
+      - /root/bgsnl-redis/bgsnl-api.env
+    networks:
+      - bgsnl-storage
+  bgsnl-worker:
+    build: .
+    command: ["node", "workers.js"]
+    restart: unless-stopped
+    env_file:
+      - /root/bgsnl-redis/bgsnl-api.env
+    networks:
+      - bgsnl-storage
+networks:
+  bgsnl-storage:
+    external: true
+    name: bgsnl-storage

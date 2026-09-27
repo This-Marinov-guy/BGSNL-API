@@ -1,13 +1,17 @@
 import dotenv from "dotenv";
 dotenv.config();
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import { usersCountCache } from "../util/config/caches.js";
 import { readSpreadsheetRows } from "../services/background-services/google-spreadsheets.js";
 import { STATISTICS_ABOUT_US_SHEET } from "../util/config/SPREEDSHEATS.js";
 import Statistics from "../models/Statistics.js";
+import { validationResult } from "express-validator";
+import HttpError from "../models/Http-error.js";
+import MarketingEmail from "../models/MarketingEmail.js";
+import { logOperationalError } from "../middleware/axiom-logger.js";
 
 export const getTotalMemberCount = async (req, res, next) => {
-  let userCount = usersCountCache.get("total");
+  let userCount = await usersCountCache.get("total");
 
   if (userCount) {
     return res.status(200).json({
@@ -16,9 +20,10 @@ export const getTotalMemberCount = async (req, res, next) => {
   }
 
   try {
-    userCount = await User.countDocuments();
-    usersCountCache.set("total", userCount);
+    userCount = await MemberUser.countDocuments();
+    await usersCountCache.set("total", userCount);
   } catch (err) {
+    logOperationalError("service.total-member-count", err);
     console.error("Error counting users:", err.message);
     userCount = "-";
   }
@@ -29,7 +34,7 @@ export const getTotalMemberCount = async (req, res, next) => {
 };
 
 export const getMemberCount = async (req, res, next) => {
-  let userCount = usersCountCache.get("members");
+  let userCount = await usersCountCache.get("members");
 
   if (userCount) {
     return res.status(200).json({
@@ -38,9 +43,10 @@ export const getMemberCount = async (req, res, next) => {
   }
 
   try {
-    userCount = await User.countDocuments({ expireDate: { $gt: new Date() } });
-    usersCountCache.set("members", userCount);
+    userCount = await MemberUser.countDocuments({ expireDate: { $gt: new Date() } });
+    await usersCountCache.set("members", userCount);
   } catch (err) {
+    logOperationalError("service.member-count", err);
     console.error("Error counting users:", err.message);
     userCount = "-";
   }
@@ -51,7 +57,7 @@ export const getMemberCount = async (req, res, next) => {
 };
 
 export const getActiveMemberCount = async (req, res, next) => {
-  let userCount = usersCountCache.get("activeMembers");
+  let userCount = await usersCountCache.get("activeMembers");
 
   if (userCount) {
     return res.status(200).json({
@@ -60,12 +66,13 @@ export const getActiveMemberCount = async (req, res, next) => {
   }
 
   try {
-    userCount = await User.countDocuments({
+    userCount = await MemberUser.countDocuments({
       expireDate: { $gt: new Date() },
       $expr: { $gt: [{ $size: "$roles" }, 1] },
     });
-    usersCountCache.set("activeMembers", userCount);
+    await usersCountCache.set("activeMembers", userCount);
   } catch (err) {
+    logOperationalError("service.active-member-count", err);
     console.error("Error counting users:", err.message);
     userCount = "-";
   }
@@ -92,7 +99,35 @@ export const getAboutUsData = async (req, res, next) => {
       alumnis: alumniStatistics?.data?.total ?? 0,
     });
   } catch (err) {
-    console.log(err);
+    logOperationalError("service.about-statistics", err);
     return res.status(200).json({});
   }
+};
+
+export const acceptMarketingEmail = (req, res, next) => {
+  if (!validationResult(req).isEmpty()) {
+    return next(new HttpError("Invalid email or city", 422));
+  }
+
+  res.locals.skipMarketingCapture = true;
+  return MarketingEmail.add({
+    email: req.body.email,
+    city: req.body.city,
+    consent: {
+      granted: true,
+      source: "common/marketing-email",
+      recordedAt: new Date(),
+      textVersion: req.body.marketingConsentVersion || "2026-09-10",
+    },
+  })
+    .then(() => res.status(202).json({ message: "Marketing consent recorded" }))
+    .catch((error) => { logOperationalError("service.marketing-consent", error); next(new HttpError("Could not record marketing consent", 503)); });
+};
+
+// EmailJS remains the established delivery provider for the public contact
+// form. This preflight endpoint gives that flow the same server-side contract
+// enforcement as API-backed forms before any delivery is attempted.
+export const validateContactForm = (_req, res) => {
+  res.locals.skipMarketingCapture = true;
+  return res.status(200).json({ valid: true });
 };

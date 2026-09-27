@@ -1,5 +1,4 @@
 import express from "express";
-import { check } from "express-validator";
 import multer from "multer";
 import {
   checkEligibleMemberForPurchase,
@@ -11,14 +10,27 @@ import {
   postAddGuestToEvent,
   postAddMemberToEvent,
   postNonSocietyEvent,
+  postSendNonSocietyEventFinalReminderEmail,
   postSendNonSocietyEventResendEmail,
   postSyncEventsCalendar,
-  updatePresence
+  updatePresence,
+  getEventGuestList,
+  updateGuestPresence,
 } from "../../controllers/Events/events-controllers.js";
 import fileUpload from "../../middleware/file-upload.js";
 import dotenv from "dotenv";
-import { adminMiddleware, authMiddleware } from "../../middleware/authorization.js";
-import { ACCESS_1, ACCESS_2, ACCESS_3 } from "../../util/config/defines.js";
+import { adminMiddleware, authMiddleware, optionalAuthMiddleware, requireBenefits } from "../../middleware/authorization.js";
+import { EVENT_MANAGEMENT_ACCESS, COMMITTEE_MEMBER } from "../../util/config/defines.js";
+import { validateRequest } from "../../middleware/validate-request.js";
+import {
+  checkTicketEligibilityValidators,
+  guestCheckInValidators,
+  guestPresenceValidators,
+  guestTicketValidators,
+  manualMemberTicketValidators,
+  nonSocietyEmailValidators,
+  nonSocietyRegistrationValidators,
+} from "../../validation/form-validators.js";
 dotenv.config();
 
 const eventRouter = express.Router();
@@ -46,74 +58,88 @@ eventRouter.get(
 
 eventRouter.get(
   "/check-member/:userId/:eventId",
+  authMiddleware,
+  requireBenefits("memberDiscount"),
   checkEligibleMemberForPurchase
 );
 
 eventRouter.post(
   "/check-ticket-eligibility",
-  [check("eventId").notEmpty()],
+  optionalAuthMiddleware,
+  checkTicketEligibilityValidators,
+  validateRequest,
   checkTicketEligibility
 );
 
 eventRouter.post(
   "/purchase-ticket/guest",
-  adminMiddleware(ACCESS_3),
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
   formDataUpload.none(),
-  [
-    check("eventId").notEmpty(),
-    check("guestName").notEmpty(),
-    check("guestEmail").notEmpty(),
-    check("guestPhone").notEmpty(),
-  ],
+  guestTicketValidators,
+  validateRequest,
   postAddGuestToEvent,
 );
 
 eventRouter.post(
   "/purchase-ticket/member",
-  adminMiddleware(ACCESS_3),
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
   fileUpload(process.env.BUCKET_MEMBER_TICKETS).single("image"),
-  [
-    check("userId").notEmpty(),
-    check("eventName").notEmpty(),
-    check("eventDate").notEmpty(),
-  ],
+  manualMemberTicketValidators,
+  validateRequest,
   postAddMemberToEvent,
 );
 
 eventRouter.post(
   "/register/non-society-event",
+  optionalAuthMiddleware,
   formDataUpload.none(),
-  [
-    check("event").notEmpty(),
-    check("name").notEmpty(),
-    check("email").notEmpty(),
-    check("university").notEmpty(),
-    check("course").notEmpty(),
-  ],
+  nonSocietyRegistrationValidators,
+  validateRequest,
   postNonSocietyEvent
 );
 
 eventRouter.post(
   "/non-society-event/resend-email",
-  adminMiddleware(ACCESS_3),
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
+  nonSocietyEmailValidators,
+  validateRequest,
   postSendNonSocietyEventResendEmail
 );
 
 eventRouter.post(
+  "/non-society-event/final-reminder-email",
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
+  nonSocietyEmailValidators,
+  validateRequest,
+  postSendNonSocietyEventFinalReminderEmail
+);
+
+eventRouter.post(
   "/sync-calendar-events",
-  [],
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
   postSyncEventsCalendar
 );
 
 eventRouter.patch(
   '/check-guest-list',
-  adminMiddleware(ACCESS_3),
-  [
-  check("eventId").notEmpty(),
-  check("name").notEmpty(),
-  check("email").notEmpty()
-  ],
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
+  guestCheckInValidators,
+  validateRequest,
   updatePresence
+);
+
+eventRouter.get(
+  ["/guest-list/:eventId", "/guest-list/:eventId/stream"],
+  adminMiddleware([...EVENT_MANAGEMENT_ACCESS, COMMITTEE_MEMBER, "committee_member"]),
+  getEventGuestList
+);
+
+eventRouter.patch(
+  "/guest-presence",
+  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
+  guestPresenceValidators,
+  validateRequest,
+  updateGuestPresence
 );
 
 export default eventRouter;

@@ -1,4 +1,9 @@
+import { persistSubscriptionAccount } from "../subscriptions/accounts.js";
 import AlumniUser from "../../models/AlumniUser.js";
+import { embeddedIdentities as AccountIdentity } from "../../services/authentication/embedded-credentials.js";
+import { embeddedPasskeys as PasskeyCredential } from "../../services/authentication/embedded-credentials.js";
+import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 // ─── Alumni tree layout ───────────────────────────────────────────────────────
 // Exact port of frontend Tree.jsx + layout.js so the output is identical.
@@ -351,7 +356,7 @@ function _flattenTree(root) {
 }
 
 export const computeAlumniTreeLayout = async () => {
-  const members = await AlumniUser.find()
+  const members = await AlumniUser.find({ status: "active", $or: [{ tier: 0 }, { expireDate: { $gt: new Date() } }] })
     .select("name surname image tier quote joinDate")
     .sort({ name: 1, surname: 1 });
 
@@ -389,7 +394,7 @@ export const computeAlumniTreeLayout = async () => {
   return _flattenTree(root);
 };
 // ─────────────────────────────────────────────────────────────────────────────
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import mongoose from "mongoose";
 import {
   USER_STATUSES,
@@ -441,10 +446,10 @@ export const findUserByEmail = async (email) => {
 
   try {
     const excludeMembershipActive = {
-      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
+      ...CURRENT_ACCOUNT_FILTER,
     };
     const emailRegex = buildEmailRegex(normalizedEmail);
-    const userQuery = User.findOne({
+    const userQuery = MemberUser.findOne({
       email: emailRegex,
       ...excludeMembershipActive,
     });
@@ -457,42 +462,34 @@ export const findUserByEmail = async (email) => {
 
     return alumni || user;
   } catch (err) {
+    logOperationalError("service.user-lookup-email", err);
     console.error("Error in findUserByEmail:", err);
     return null;
   }
 };
 
 export const findUserById = async (id) => {
-  // Check if id is valid before running queries
-  if (!id || (typeof id !== "string" && !id.toString)) {
-    return null;
-  }
-
-  try {
-    const excludeMembershipActive = {
-      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
-    };
-    const userQuery = User.findOne({ _id: id, ...excludeMembershipActive });
-    const alumniQuery = AlumniUser.findOne({
-      _id: id,
-      ...excludeMembershipActive,
-    });
-
-    const [user, alumni] = await Promise.all([userQuery, alumniQuery]);
-
-    return alumni || user;
-  } catch (err) {
-    console.error("Error in findUserById:", err);
-    return null;
-  }
+  if (typeof id !== "string" || !id) return null;
+  const query = { $or: [{ _id: id }, { accountAliases: id }], ...CURRENT_ACCOUNT_FILTER };
+  const [member, alumni] = await Promise.all([MemberUser.findOne(query), AlumniUser.findOne(query)]);
+  if (alumni || member) return alumni || member;
+  // Legacy conversions used paired IDs. Never resolve an old authenticated ID
+  // by email alone: that address may since have been changed or reassigned.
+  const archived = await MemberUser.findById(id) || await AlumniUser.findById(id);
+  if (!archived || !CURRENT_ACCOUNT_FILTER.status.$nin.includes(archived.status)) return null;
+  const match = id.match(/^(member|alumni)_(.+)$/);
+  if (!match) return null;
+  const Target = match[1] === "member" ? AlumniUser : MemberUser;
+  const counterpartId = `${match[1] === "member" ? "alumni" : "member"}_${match[2]}`;
+  return Target.findOne({ _id: counterpartId, ...CURRENT_ACCOUNT_FILTER });
 };
 
 export const findUserByName = async (name, surname) => {
   try {
     const excludeMembershipActive = {
-      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
+      ...CURRENT_ACCOUNT_FILTER,
     };
-    const userQuery = User.findOne({
+    const userQuery = MemberUser.findOne({
       name,
       surname,
       ...excludeMembershipActive,
@@ -507,6 +504,7 @@ export const findUserByName = async (name, surname) => {
 
     return alumni || user;
   } catch (err) {
+    logOperationalError("service.user-lookup-id", err);
     console.error("Error in findUserById:", err);
     return null;
   }
@@ -521,9 +519,9 @@ export const findUserByQuery = async (query) => {
 
   try {
     const excludeMembershipActive = {
-      status: { $ne: USER_STATUSES[MEMBERSHIP_ACTIVE] },
+      ...CURRENT_ACCOUNT_FILTER,
     };
-    const userQuery = User.findOne({ ...query, ...excludeMembershipActive });
+    const userQuery = MemberUser.findOne({ ...query, ...excludeMembershipActive });
     const alumniQuery = AlumniUser.findOne({
       ...query,
       ...excludeMembershipActive,
@@ -533,165 +531,28 @@ export const findUserByQuery = async (query) => {
 
     return alumni || user;
   } catch (err) {
+    logOperationalError("service.user-lookup-query", err);
     console.error("Error in findUserByQuery:", err);
     return null;
   }
 };
 
-/**
- * Converts an alumni user back into a regular User.
- * Deletes the alumni record and creates a User preserving all available data.
- * Required User fields not present on alumni (birth, phone, university) are
- * filled with placeholders — the user should update them after conversion.
- *
- * @param {string} alumniId - e.g. "alumni_<ObjectId>"
- * @returns {{ userId: string, email: string }}
- * @throws {Error} if the alumni is not found, ID is malformed, or a user already exists
- */
+// Legacy non-subscription conversions use the same atomic profile move as
+// billing. All profile fields and aliases survive; Member history is archived.
+async function convertLegacyAccount(Model, id, type) {
+  const account = await Model.findById(id);
+  if (!account) throw new Error("Account not found");
+  if (account.subscription?.id) throw new Error("Subscription-backed accounts must change plans through the billing portal");
+  if (account.sessionVersion > 0 || await AccountIdentity.exists({ accountId: id }) || await PasskeyCredential.exists({ accountId: id })) {
+    throw new Error("Accounts with connected sign-in history must change membership in account settings");
+  }
+  return persistSubscriptionAccount(account, {}, { type, tier: 0 }, async () => {});
+}
 export const convertAlumniToUser = async (alumniId) => {
-  const alumniUser = await AlumniUser.findOne({ _id: alumniId });
-  if (!alumniUser) {
-    throw new Error(`Alumni not found: ${alumniId}`);
-  }
-
-  const idMatch = alumniUser._id.match(/^alumni_(.*)/);
-  if (!idMatch?.[1]) {
-    throw new Error(`Alumni ID format is invalid: ${alumniUser._id}`);
-  }
-
-  const userId = `member_${idMatch[1]}`;
-
-  const existing = await User.findOne({
-    $or: [{ _id: userId }, { email: alumniUser.email }],
-  });
-  if (existing) {
-    throw new Error(
-      `A user with ID "${userId}" or email "${alumniUser.email}" already exists`,
-    );
-  }
-
-  const sess = await mongoose.startSession();
-  sess.startTransaction();
-
-try {
-    const newUser = new User({
-      _id: userId,
-      name: alumniUser.name,
-      region: "", //TODO: better fill out
-      surname: alumniUser.surname,
-      email: alumniUser.email,
-      password: alumniUser.password,
-      image: alumniUser.image || "-",
-      status: alumniUser.status || USER_STATUSES[ACTIVE],
-      roles: ["member"],
-      subscription: alumniUser.subscription || {},
-      documents: alumniUser.documents || [],
-      tickets: alumniUser.tickets || [],
-      christmas: alumniUser.christmas || [],
-      internshipApplications: alumniUser.internshipApplications || [],
-      purchaseDate: alumniUser.purchaseDate || new Date(),
-      expireDate:
-        alumniUser.expireDate ||
-        new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
-      joinDate: alumniUser.joinDate || new Date(),
-      // Alumni lacks these required User fields — placeholders to be updated by the user
-      birth: new Date("2000-01-01"),
-      phone: "-",
-      university: "-",
-    });
-
-    await newUser.save({ session: sess });
-    await AlumniUser.deleteOne({ _id: alumniUser._id }, { session: sess });
-
-    await sess.commitTransaction();
-
-    return { userId: newUser._id, email: newUser.email };
-  } catch (err) {
-    await sess.abortTransaction();
-    throw err;
-  } finally {
-    sess.endSession();
-  }
+  const user = await convertLegacyAccount(AlumniUser, alumniId, "member");
+  return { userId: user.id, email: user.email };
 };
-
-/**
- * Converts a regular User into an alumni user.
- * If an alumni record already exists for this user (same ID or email) it is updated
- * rather than re-created. The original User record is marked as alumni-migrated.
- *
- * @param {string} userId - e.g. "member_<ObjectId>"
- * @returns {{ alumniId: string, userId: string, email: string, action: "created" | "updated" }}
- * @throws {Error} if the user is not found or the ID format is invalid
- */
 export const convertUserToAlumni = async (userId) => {
-  const regularUser = await User.findOne({ _id: userId });
-  if (!regularUser) {
-    throw new Error(`User not found: ${userId}`);
-  }
-
-  const idMatch = regularUser._id.match(/^member_(.*)/);
-  const objectIdPart = idMatch?.[1] ?? regularUser._id.toString();
-  if (!objectIdPart) {
-    throw new Error(`User ID format is invalid: ${regularUser._id}`);
-  }
-
-  const alumniId = `alumni_${objectIdPart}`;
-
-  const existingAlumni = await AlumniUser.findOne({
-    $or: [{ _id: alumniId }, { email: regularUser.email }],
-  });
-
-  let result;
-
-  if (existingAlumni) {
-    existingAlumni.name = regularUser.name;
-    existingAlumni.surname = regularUser.surname;
-    existingAlumni.email = regularUser.email;
-    existingAlumni.image = regularUser.image;
-    existingAlumni.password = regularUser.password;
-    existingAlumni.status = regularUser.status || USER_STATUSES[ACTIVE];
-    existingAlumni.purchaseDate = regularUser.purchaseDate || new Date();
-    existingAlumni.expireDate =
-      regularUser.expireDate ||
-      new Date(new Date().setFullYear(new Date().getFullYear() + 1));
-
-    if (!existingAlumni.roles.includes(ALUMNI)) {
-      existingAlumni.roles.push(ALUMNI);
-    }
-
-    await existingAlumni.save();
-    result = { action: "updated", alumniId: existingAlumni._id };
-  } else {
-    const newAlumniUser = new AlumniUser({
-      _id: alumniId,
-      name: regularUser.name,
-      surname: regularUser.surname,
-      email: regularUser.email,
-      password: regularUser.password,
-      image: regularUser.image || "",
-      status: regularUser.status || USER_STATUSES[ACTIVE],
-      tier: 0, // TODO: change this
-      subscription: {
-        ...regularUser.subscription,
-        period: 1,
-      },
-      roles: [ALUMNI],
-      purchaseDate: regularUser.purchaseDate || new Date(),
-      expireDate:
-        regularUser.expireDate ||
-        new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
-      tickets: regularUser.tickets || [],
-      christmas: regularUser.christmas || [],
-      internshipApplications: regularUser.internshipApplications || [],
-      joinDate: regularUser.joinDate || new Date(),
-    });
-
-    await newAlumniUser.save();
-    result = { action: "created", alumniId: newAlumniUser._id };
-  }
-
-  regularUser.status = USER_STATUSES[ALUMNI_MIGRATED];
-  await regularUser.save();
-
-  return { ...result, userId: regularUser._id, email: regularUser.email };
+  const alumni = await convertLegacyAccount(MemberUser, userId, "alumni");
+  return { action: "created", alumniId: alumni.id, userId, email: alumni.email };
 };

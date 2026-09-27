@@ -1,9 +1,10 @@
 import dotenv from "dotenv";
+import { performance } from "node:perf_hooks";
 dotenv.config();
-import bcrypt from "bcryptjs";
+import { hashPassword, verifyPassword } from "../services/authentication/passwords.js";
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import {
   alumniWelcomeEmail,
   sendNewPasswordEmail,
@@ -15,29 +16,23 @@ import {
 } from "../services/background-services/google-spreadsheets.js";
 import {
   chooseRandomAvatar,
-  compareIntStrings,
   decryptData,
   encryptData,
-  hasOverlap,
   isBirthdayToday,
   jwtSign,
 } from "../util/functions/helpers.js";
 import {
   ADMIN,
-  ALUMNI,
-  LIMITLESS_ACCOUNT,
   MEMBER,
 } from "../util/config/defines.js";
-import { forgottenPassTokenCache } from "../util/config/caches.js";
-import moment from "moment";
 import { calculatePurchaseAndExpireDates } from "../util/functions/dateConvert.js";
-import { LOCKED, USER_STATUSES } from "../util/config/enums.js";
-import TemporaryCode from "../models/TemporaryCode.js";
+import { issuePasswordReset, verifyPasswordReset, completePasswordReset } from "../services/authentication/password-reset.js";
 import {
   findUserByEmail,
   normalizeEmail,
 } from "../services/main-services/user-service.js";
 import AlumniUser from "../models/AlumniUser.js";
+import { buildLoginResponse } from "../services/authentication/login.js";
 
 export const postCheckEmail = async (req, res, next) => {
   const errors = validationResult(req);
@@ -64,7 +59,7 @@ export const postCheckEmail = async (req, res, next) => {
     return next(error);
   }
 
-  res.status(200).send({ status: true });
+  return res.status(200).send({ status: true });
 };
 
 export const postDirectSignupDisabled = (req, res, next) => {
@@ -76,7 +71,7 @@ export const postDirectSignupDisabled = (req, res, next) => {
   );
 };
 
-export const signup = async (req, res, next) => {
+export const signup = async (req, res, next, { notify = welcomeEmail, sync = usersToSpreadsheet } = {}) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const error = new HttpError("Invalid inputs passed", 422);
@@ -96,6 +91,7 @@ export const signup = async (req, res, next) => {
     graduationDate,
     course,
     studentNumber,
+    profession,
     notificationTypeTerms,
   } = req.body;
   const email = normalizeEmail(rawEmail);
@@ -107,7 +103,7 @@ export const signup = async (req, res, next) => {
 
   let hashedPassword;
   try {
-    hashedPassword = await bcrypt.hash(password, 12);
+    hashedPassword = await hashPassword(password);
   } catch (err) {
     return next(new HttpError("Could not create a new user", 500));
   }
@@ -121,7 +117,7 @@ export const signup = async (req, res, next) => {
 
   const { purchaseDate, expireDate } = calculatePurchaseAndExpireDates(1200);
 
-  const createdUser = new User({
+  const createdUser = new MemberUser({
     status: "freezed",
     region,
     joinDate: new Date(),
@@ -134,10 +130,11 @@ export const signup = async (req, res, next) => {
     phone,
     email,
     university,
-    otherUniversityName,
-    graduationDate,
-    course,
-    studentNumber,
+    otherUniversityName: university === "other" ? otherUniversityName : undefined,
+    graduationDate: university === "working" ? undefined : graduationDate,
+    course: university === "working" ? undefined : course,
+    studentNumber: university === "working" ? undefined : studentNumber,
+    profession: university === "working" ? profession : undefined,
     password: hashedPassword,
     notificationTypeTerms,
     tickets: [],
@@ -159,8 +156,8 @@ export const signup = async (req, res, next) => {
     return next(error);
   }
 
-  usersToSpreadsheet(region);
-  usersToSpreadsheet();
+  sync(region);
+  sync();
 
   if (isBirthdayToday(birth)) {
     return res
@@ -168,12 +165,12 @@ export const signup = async (req, res, next) => {
       .json({ token, region, celebrate: true, roles: [MEMBER] });
   }
 
-  welcomeEmail(email, name, region);
+  notify(email, name, region);
 
-  res.status(201).json({ token, region, roles: [MEMBER] });
+  return res.status(201).json({ token, region, roles: [MEMBER] });
 };
 
-export const alumniSignup = async (req, res, next) => {
+export const alumniSignup = async (req, res, next, { notify = alumniWelcomeEmail, sync = alumniToSpreadsheet } = {}) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const error = new HttpError("Invalid inputs passed", 422);
@@ -183,7 +180,9 @@ export const alumniSignup = async (req, res, next) => {
   let existingUser;
   try {
     existingUser = await findUserByEmail(req.body.email);
-  } catch (err) {}
+  } catch {
+    return next(new HttpError("Could not check the existing account. Please try again.", 503));
+  }
 
   if (existingUser) {
     return next(
@@ -194,7 +193,9 @@ export const alumniSignup = async (req, res, next) => {
     );
   }
 
-  const { tier, period, name, surname } = req.body;
+  const { tier, period, name, surname, phone, notificationTypeTerms } = req.body;
+  const notificationTerms =
+    req.body.notificationTerms === true || req.body.notificationTerms === "true";
   const email = normalizeEmail(req.body.email);
   if (!email) {
     return next(new HttpError("Please send a valid email", 422));
@@ -204,7 +205,7 @@ export const alumniSignup = async (req, res, next) => {
 
   let hashedPassword;
   try {
-    hashedPassword = await bcrypt.hash(password, 12);
+    hashedPassword = await hashPassword(password);
   } catch (err) {
     return next(new HttpError("Could not create a new user", 500));
   }
@@ -227,8 +228,13 @@ export const alumniSignup = async (req, res, next) => {
     image,
     name,
     surname,
+    phone,
     email,
     password: hashedPassword,
+    notificationTerms,
+    notificationTypeTerms: notificationTerms
+      ? notificationTypeTerms || "whatsapp & email"
+      : undefined,
     tickets: [],
     roles: [ADMIN],
   });
@@ -248,293 +254,90 @@ export const alumniSignup = async (req, res, next) => {
     return next(error);
   }
 
-  alumniToSpreadsheet();
+  sync();
 
-  alumniWelcomeEmail(email, name);
+  notify(email, name);
 
-  res.status(201).json({ token, region: null, roles: [MEMBER] });
+  return res.status(201).json({ token, region: null, roles: [MEMBER] });
 };
 
-export const login = async (req, res, next) => {
+export const createPasswordLogin = ({
+  findAccount = findUserByEmail, buildResponse = buildLoginResponse,
+  verify = verifyPassword, now = () => performance.now(),
+} = {}) => async (req, res, next) => {
+  // Start before lookup so DB misses and faster legacy hashes share one deadline.
+  // This timestamp is server-owned; never accept a deadline from the request.
+  const startedAt = now();
   const { password } = req.body;
   const email = normalizeEmail(req.body.email);
 
   let existingUser;
+  let lookupFailed = false;
 
   try {
-    existingUser = await findUserByEmail(email);
-  } catch (err) {
-    console.log(err);
-    const error = new HttpError("Logging in failed", 500);
-    return next(error);
-  }
-
-  if (!existingUser) {
-    const error = new HttpError("Invalid credentials", 401);
-    return next(error);
+    existingUser = await findAccount(email);
+  } catch {
+    lookupFailed = true;
   }
 
   let isValidPassword = false;
   try {
-    isValidPassword = await bcrypt.compare(password, existingUser.password);
-  } catch (err) {
-    console.log(err);
-    return next(
-      new HttpError("Could not log you in, please check your credentials", 500)
-    );
+    isValidPassword = await verify(password, existingUser?.password, { startedAt });
+  } catch {
+    return next(new HttpError("Sign-in is temporarily unavailable. Please try again shortly.", 503));
   }
 
-  if (!isValidPassword) {
+  if (lookupFailed) return next(new HttpError("Sign-in is temporarily unavailable. Please try again shortly.", 503));
+
+  if (!existingUser || !isValidPassword) {
     const error = new HttpError("Invalid credentials", 401);
     return next(error);
   }
 
-  //check for expired account and lock it if necessary
-  const today = new Date();
-
-  if (
-    !hasOverlap(LIMITLESS_ACCOUNT, existingUser.roles) &&
-    today > existingUser.expireDate &&
-    existingUser?.tier !== 0
-  ) {
-    existingUser.status = USER_STATUSES[LOCKED];
-    try {
-      await existingUser.save();
-    } catch (err) {
-      console.log(err);
-      const error = new HttpError("Logging in failed, please try again", 500);
-      return next(error);
-    }
-  }
-
-  let token;
   try {
-    token = await jwtSign(existingUser);
-  } catch (err) {
-    console.log(err);
-    const error = new HttpError("Logging in failed", 500);
-    return next(error);
+    return res.status(201).json(await buildResponse(existingUser));
+  } catch {
+    return next(new HttpError("Logging in failed, please try again", 503));
   }
-
-  const isSubscribed = !!(
-    existingUser.subscription &&
-    existingUser.subscription.id &&
-    existingUser.subscription.customerId
-  );
-
-  const isAlumni = existingUser.id.includes(ALUMNI);
-  const alumniData = isAlumni
-    ? {
-        tier: existingUser.tier,
-      }
-    : {};
-
-  const existingUserData = {
-    token,
-    isSubscribed,
-    isAlumni,
-    ...alumniData,
-    region: existingUser.region,
-    roles: existingUser.roles,
-    status: existingUser.status,
-  };
-
-  if (isBirthdayToday(existingUser.birth)) {
-    return res.status(201).json({ ...existingUserData, celebrate: true });
-  }
-
-  return res.status(201).json(existingUserData);
 };
 
+export const login = createPasswordLogin();
+
 export const postSendPasswordResetEmail = async (req, res, next) => {
-  const email = normalizeEmail(req.body.email);
-  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-  if (!regex.test(email)) {
-    return next(new HttpError("Please send a valid email", 422));
-  }
-
-  let user;
   try {
-    user = await findUserByEmail(email);
-  } catch (err) {
-    console.log(err);
+    const email = normalizeEmail(req.body.email);
+    const user = await findUserByEmail(email);
+    if (user) {
+      const code = await issuePasswordReset(user);
+      await sendNewPasswordEmail(email, code);
+    }
+    // Identical status and body whether the address exists or not.
+    return res.status(200).json({ status: true });
+  } catch {
+    return next(new HttpError("Password reset is temporarily unavailable. Please try again shortly.", 503));
   }
-
-  if (!user) {
-    return res.status(201).json({ status: true });
-  }
-
-  try {
-    const resetToken = Math.floor(100000 + Math.random() * 900000);
-
-    const temporaryCode = new TemporaryCode({
-      userId: user._id,
-      code: resetToken,
-      life: 3,
-    });
-
-    await temporaryCode.save();
-
-    sendNewPasswordEmail(email, resetToken);
-  } catch (err) {
-    console.log(err);
-    return next(new HttpError("Something went wrong, please try again", 500));
-  }
-
-  return res.status(200).json({ status: true });
 };
 
 export const postVerifyToken = async (req, res, next) => {
-  const { token } = req.body;
-  const email = normalizeEmail(req.body.email);
-  let user;
-
   try {
-    user = await findUserByEmail(email);
-  } catch (err) {
-    console.log(err);
-    return next(new HttpError("Invalid code, please try again", 400));
+    const user = await findUserByEmail(normalizeEmail(req.body.email));
+    await verifyPasswordReset(user, req.body.token);
+    return res.status(201).json({ status: true });
+  } catch (error) {
+    return next(error instanceof HttpError ? error : new HttpError("Password reset is temporarily unavailable. Please try again shortly.", 503));
   }
-
-  if (!user) {
-    return next(new HttpError("Invalid code, please try again", 400));
-  }
-
-  try {
-    const temporaryCode = await TemporaryCode.findOne({
-      userId: user?.id,
-    }).sort({ _id: -1 });
-
-    if (temporaryCode.code != token) {
-      if (temporaryCode.life < 1) {
-        await TemporaryCode.deleteOne({ _id: temporaryCode._id });
-
-        return next(
-          new HttpError(
-            "You have reached your maximum attempts - please start again",
-            400
-          )
-        );
-      }
-
-      temporaryCode.life = temporaryCode.life - 1;
-      await temporaryCode.save();
-
-      return next(new HttpError("Invalid code, please try again", 400));
-    }
-  } catch (err) {
-    console.log(err);
-
-    return next(new HttpError("Something went wrong, please try again", 500));
-  }
-
-  if (
-    !user
-    // remove the need for phone and birth verification as it is too complicated
-    // ||
-    // !compareIntStrings(user.phone, phone) ||
-    // !moment(user.birth).format("DD MM YY") === birth
-  ) {
-    const error = new HttpError("No such user with the provided data", 500);
-    return next(error);
-  }
-
-  return res.status(201).json({ status: true });
 };
 
 export const patchUserPassword = async (req, res, next) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return next(new HttpError("Please send valid inputs", 422));
-  }
-
-  const { password, token } = req.body;
-  const email = normalizeEmail(req.body.email);
-  let existingUser;
-  let temporaryCode;
-
+  if (!errors.isEmpty()) return next(new HttpError("Please send valid inputs", 422));
   try {
-    existingUser = await findUserByEmail(email);
-    temporaryCode = await TemporaryCode.findOne({
-      userId: existingUser?._id,
-      code: token,
-    }).sort({ _id: -1 });
-  } catch (err) {
-    console.log(err);
-    return next(new HttpError("Invalid code, please try again", 400));
+    const user = await findUserByEmail(normalizeEmail(req.body.email));
+    await completePasswordReset(user, req.body.token, req.body.password);
+    return res.status(200).json({ status: true });
+  } catch (error) {
+    return next(error instanceof HttpError ? error : new HttpError("Password reset is temporarily unavailable. Please try again shortly.", 503));
   }
-
-  if (!existingUser) {
-    const error = new HttpError(
-      "Changing password failed, please try again!",
-      500
-    );
-    return next(error);
-  }
-
-  if (!existingUser || temporaryCode.life < 1 || temporaryCode.code != token) {
-    return next(new HttpError("Service expired, please start again!", 400));
-  }
-
-  let hashedPassword;
-  try {
-    hashedPassword = await bcrypt.hash(password, 12);
-  } catch (err) {
-    console.log(err);
-    return next(
-      new HttpError("Changing password failed, please try again!", 500)
-    );
-  }
-
-  try {
-    existingUser.password = hashedPassword;
-    await existingUser.save();
-    await TemporaryCode.deleteOne({ _id: temporaryCode._id });
-  } catch (err) {
-    console.log(err);
-    return next(new HttpError("Something went wrong, please try again", 500));
-  }
-
-  return res.status(200).json({ status: true });
-};
-
-export const adminPatchUserPassword = async (req, res, next) => {
-  const { password = 1111 } = req.body;
-  const email = normalizeEmail(req.body.email);
-
-  let existingUser;
-
-  try {
-    existingUser = await findUserByEmail(email);
-  } catch (err) {
-    console.log(err);
-    return next(new HttpError("Invalid user", 400));
-  }
-
-  if (!existingUser) {
-    return next(new HttpError("Invalid user", 400));
-  }
-
-  let hashedPassword;
-  try {
-    hashedPassword = await bcrypt.hash(password.toString(), 12);
-  } catch (err) {
-    console.log(err);
-    return next(new HttpError("Invalid user", 400));
-  }
-
-  try {
-    existingUser.password = hashedPassword;
-    await existingUser.save();
-  } catch (err) {
-    console.log(err);
-    return next(new HttpError("Invalid user", 400));
-  }
-
-  return res
-    .status(200)
-    .json({ status: true, message: "Password changed successfully" });
 };
 
 export const encryptDataController = async (req, res, next) => {

@@ -4,7 +4,7 @@ dotenv.config();
 import mongoose from "mongoose";
 import { fileURLToPath } from "url";
 import path from "path";
-import User from "../models/User.js";
+import MemberUser from "../models/MemberUser.js";
 import AlumniUser from "../models/AlumniUser.js";
 import { DEFAULT_REGION } from "../util/config/defines.js";
 import { getStripeSubscriptionCreatedDate } from "../services/side-services/stripe.js";
@@ -189,7 +189,7 @@ const main = async () => {
 
   try {
     if (options.model === "all" || options.model === "user") {
-      summaries.push(await processCollection("user", User, options));
+      summaries.push(await processCollection("user", MemberUser, options));
     }
 
     if (options.model === "all" || options.model === "alumni") {

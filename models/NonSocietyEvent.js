@@ -37,4 +37,4 @@ eventSchema.static(
   }
 );
 
-export default mongoose.model("NonSocietyEvent", eventSchema);
+export default mongoose.model("NonSocietyEvent", eventSchema, "nonSocietyEvents");

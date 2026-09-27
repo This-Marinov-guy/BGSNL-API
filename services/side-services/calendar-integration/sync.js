@@ -1,5 +1,6 @@
 import { fetchExistingEvents, insertOrUpdateEvent, deleteEvent } from './calendar.js';
 import { fetchEventsFromDB } from './mongodb.js';
+import { logOperationalError } from '../../../middleware/axiom-logger.js';
 
 export async function syncEvents() {
   try {
@@ -36,6 +37,7 @@ export async function syncEvents() {
     }
 
   } catch (error) {
+    logOperationalError("service.calendar-sync", error);
     console.error('Error syncing events:', error);
   }
 }

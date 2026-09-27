@@ -1,0 +1,25 @@
+services:
+  bgsnl-redis:
+    image: redis:8.2-alpine
+    restart: unless-stopped
+    command: ["sh", "-c", 'exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$${BGSNL_REDIS_PASSWORD}"']
+    environment:
+      BGSNL_REDIS_PASSWORD: ${BGSNL_REDIS_PASSWORD:?Set a dedicated Redis password}
+    ports:
+      - "127.0.0.1:${BGSNL_REDIS_PORT:-6380}:6379"
+    volumes:
+      - bgsnl-redis-data:/data
+      - ./docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$${BGSNL_REDIS_PASSWORD}" redis-cli ping | grep -q PONG']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    stop_grace_period: 30s
+    mem_limit: 384m
+volumes:
+  bgsnl-redis-data:
+
+networks:
+  default:
+    name: bgsnl-storage

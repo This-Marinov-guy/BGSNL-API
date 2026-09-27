@@ -66,6 +66,8 @@ export const createStripeClient = (region = '') => {
 
   return new Stripe(STRIPE_KEYS[region]['secretKey'], {
     apiVersion: '2022-08-01',
+    timeout: 20000,
+    maxNetworkRetries: 1,
   });
 };
 

@@ -2,6 +2,12 @@
 
 Express.js 4 REST API for Bulgarian Society Netherlands platform.
 
+Scheduled workers and their operational controls are listed in
+[`docs/scheduled-events.md`](docs/scheduled-events.md).
+
+Passkey sign-in, device setup and deployment requirements are documented in
+[`docs/passkeys.md`](docs/passkeys.md).
+
 ## Overview
 
 The BGSNL API is a comprehensive backend system that handles:
@@ -14,24 +20,36 @@ The BGSNL API is a comprehensive backend system that handles:
 
 ## Installation
 
+### Development image uploads
+
+The shared Cloudinary upload helper places non-production uploads under
+`development/`, preserving subfolders (for example,
+`development/support/<conversation-id>`). Existing `development/` paths are
+not prefixed again. Development folder cleanup uses the same namespace.
+`APP_ENV=prod` keeps production upload paths unchanged; when `APP_ENV` is unset,
+`NODE_ENV=production` selects production behavior. Existing assets are not moved.
+
+Run the upload isolation checks without uploading or deleting real assets:
+`node --test tests/cloudinary-folders.test.js tests/cloudinary-uploads.test.js`.
+
 ### Prerequisites
 
-- **Node.js**: Version 20.10.* (recommended via NVM)
+- **Node.js**: Version 22 LTS (recommended via NVM; supported range: 22–24)
 - **NPM**: Version 10.2.3
 - **MongoDB**: Database connection string
 - **Stripe Account**: For payment processing
 
 ### Step 1: Install Node.js
 
-Install NVM (Node Version Manager) and use it to install Node.js 20.10.*:
+Install NVM (Node Version Manager) and use it to install Node.js 22:
 
 ```bash
 # Install NVM (if not already installed)
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
 
-# Install Node.js 20.10.*
-nvm install 20.10.0
-nvm use 20.10.0
+# Install Node.js 22
+nvm install 22
+nvm use 22
 ```
 
 Or download directly from [nodejs.org](https://nodejs.org/en/download/)
@@ -53,23 +71,74 @@ DB_PASS=your-mongodb-password
 DB=your-mongodb-cluster-url
 
 # JWT
-JWT_SECRET=your-jwt-secret-key
+JWT_STRING=your-cryptographically-random-jwt-signing-secret
+AUTH_VERSION=1
 
 # Stripe
 STRIPE_SECRET_KEY_NETHERLANDS=your-stripe-secret-key
 STRIPE_SECRET_KEY_BELGIUM=your-stripe-secret-key
 
 # Server
-PORT=5000
-NODE_ENV=development
+PORT=8080
+APP_ENV=dev
 
 # Axiom Logging (Optional)
 AXIOM_TOKEN=your-axiom-api-token
 AXIOM_ORG_ID=your-axiom-organization-id
-AXIOM_DATASET=api-logs
+AXIOM_QUERY_TOKEN=your-read-only-query-token
+
+# Server-to-server access for the Next.js site's SSR data fetching.
+# Must match BGSNL_SERVER_KEY on the website. Generate with:
+#   openssl rand -hex 32
+SSR_SERVER_KEY=your-shared-ssr-secret
+
+# Optional additive Domakin Mailer connection. Existing Mailtrap/Resend sends
+# continue unchanged when these are not configured.
+MAILER_API_URL=https://your-domakin-mailer.example/api
+MAILER_BULGARIANSOCIETY_SECRET=your-bulgarian-society-scoped-secret
+
+# Internal email notifications are queued after successful writes. Subscribers
+# are comma-separated and receive separate messages (addresses are not exposed).
+INTERNAL_NOTIFICATIONS_ENABLED=true
+INTERNAL_NOTIFICATION_SUBSCRIBERS=vladislavmarinov3142@gmail.com,bulgariansocietynetherlands@gmail.com
+
+# Optional override. In production the report is enabled whenever internal
+# notifications are enabled; set false to disable it. It covers the completed
+# Monday–Sunday week and runs at 00:05 Monday in Europe/Amsterdam.
+WEEKLY_MEMBERSHIP_REPORT_ENABLED=true
+
+# Optional override. Birthday greetings are enabled by default in production,
+# run daily at 10:00 Europe/Amsterdam, and only use real stored birth dates.
+# Set false to disable the worker, or true to exercise it in development.
+BIRTHDAY_EMAIL_WORKER_ENABLED=true
 ```
 
+### Server-to-server access (SSR)
+
+The website renders its public pages on the server, so page data is fetched by
+the Next.js server rather than the visitor's browser. Those requests carry no
+browser `Origin`, which the firewall's allow-list relies on.
+
+Requests presenting `x-bgsnl-server-key` matching `SSR_SERVER_KEY` are treated
+as trusted (`middleware/firewall.js`). The comparison is timing-safe, and the
+header is deliberately **not** listed in `Access-Control-Allow-Headers`, so a
+browser can never send it cross-origin. If `SSR_SERVER_KEY` is unset the check
+is skipped entirely and only the origin allow-list applies.
+
 **Note**: Request the `.env` file from the team as the application requires these environment variables to run.
+
+### Domakin Mailer (optional)
+
+`queueDomakinTemplateEmail()` in
+`services/background-services/domakin-mailer.js` queues a local template through
+Domakin Mailer. The client always selects the `bulgariansociety` channel and
+never accepts a `from` address. That channel is locked by Domakin Mailer to
+`info@bulgariansociety.nl`.
+
+Configure the same `MAILER_BULGARIANSOCIETY_SECRET` in both services. This is a
+scoped credential: it can only call `POST /api/delivery/template` for the
+Bulgarian Society channel. `MAILER_API_URL` may be the Mailer service root or
+its `/api` base URL.
 
 ### Step 4: Start the Application
 
@@ -83,7 +152,9 @@ npm run dev
 npm start
 ```
 
-The API will be available at `http://localhost:5000` (or the port specified in your `.env` file).
+The development script sets `APP_ENV=dev` and `PORT=8080`, so the API is
+available at `http://localhost:8080`. `npm start` continues to use the
+deployment environment's configured values.
 
 ## Project Structure
 
@@ -242,12 +313,14 @@ BGSNL-API/
 - `POST /api/security/send-password-token` - Request password reset
 - `POST /api/security/verify-token` - Verify password reset token
 - `PATCH /api/security/change-password` - Change user password
-- `PATCH /api/security/force-change-password` - Admin force password change
+- `PATCH /api/security/force-change-password` - Retired (410); use verified password reset
 
 ### Users
 - `GET /api/user/current` - Get current user profile
 - `GET /api/user/get-subscription-status` - Get subscription status
-- `GET /api/user/refresh-token` - Refresh JWT token
+- `GET /api/user/refresh-token` - Retired on the direct API (410): access tokens cannot renew themselves. The website compatibility URL uses its separate HttpOnly refresh credential. See [refresh-session policy](docs/refresh-sessions.md).
+
+Password creation, verification and checkout/webhook compatibility use a shared bcrypt policy. See [password hashing and development-DB verification](docs/password-hashing.md).
 - `GET /api/user/roles` - Get current user roles
 - `PATCH /api/user/edit-info` - Update user profile
 - `POST /api/user/active-member` - Submit active member application
@@ -338,25 +411,28 @@ npm run lint
 
 ### Axiom Integration (Optional)
 
-The API integrates with Axiom for centralized logging. Axiom logging is automatically disabled in development environments.
+The API integrates with Axiom for centralized logging. Ingestion is disabled in the standard local development stack.
 
 **Features:**
-- Automatic request/response logging
-- Sensitive data redaction for security endpoints
-- Performance metrics (response time, size)
+- API request status and duration logging without bodies or credentials
+- Endpoint, worker, and Stripe webhook records in `operations`
+- External provider failures and health checks in `integrations`
+- Website activity and errors in `web`
 - Environment-aware logging
 - Graceful shutdown with log flushing
 
 **Configuration:**
 1. Create an account at [Axiom](https://axiom.co/)
-2. Create a dataset named `api-logs`
-3. Generate an API token with ingest permissions
+2. Create datasets named `web`, `operations`, and `integrations`
+3. Generate an API token with ingest permissions and a separate read-only query token
 4. Add credentials to `.env` file:
    ```env
    AXIOM_TOKEN=your-axiom-api-token
    AXIOM_ORG_ID=your-axiom-organization-id
-   AXIOM_DATASET=api-logs
+   AXIOM_QUERY_TOKEN=your-read-only-query-token
    ```
+
+See [system monitoring](docs/system-monitoring.md) for stream contents, access, and health checks.
 
 **Note**: Axiom logging is optional and the application will run without it. The server includes graceful shutdown handlers that flush pending logs before exit.
 

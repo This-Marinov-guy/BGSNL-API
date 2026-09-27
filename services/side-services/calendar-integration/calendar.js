@@ -1,28 +1,34 @@
 import { google } from "googleapis";
 import dotenv from "dotenv";
 import { IS_PROD } from "../../../util/functions/helpers.js";
+import { logIntegrationError } from "../../../middleware/axiom-logger.js";
 dotenv.config();
 
 const calendarId = process.env.CALENDAR_ID;
 
 // Connecting to Google Calendar
 const getCalendarClient = async () => {
-  const credentials = JSON.parse(
-    process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
-  );
-  const auth = new google.auth.GoogleAuth({
-    credentials: credentials,
-    scopes: "https://www.googleapis.com/auth/calendar",
-  });
+  try {
+    const credentials = JSON.parse(
+      process.env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS
+    );
+    const auth = new google.auth.GoogleAuth({
+      credentials: credentials,
+      scopes: "https://www.googleapis.com/auth/calendar",
+    });
 
-  const googleClient = await auth.getClient();
+    const googleClient = await auth.getClient();
 
-  return google.sheets({ version: "v3", auth: googleClient });
+    return google.sheets({ version: "v3", auth: googleClient });
+  } catch (error) {
+    logIntegrationError("google-calendar", error, "client-setup");
+    throw error;
+  }
 };
 
 export async function fetchExistingEvents() {
   if (!IS_PROD) {
-    return;
+    return undefined;
   }
 
   const now = new Date();
@@ -41,6 +47,7 @@ export async function fetchExistingEvents() {
     });
     return response.data.items;
   } catch (error) {
+    logIntegrationError("google-calendar", error, "events-list");
     console.error(
       "Error fetching existing events from Google Calendar:",
       error
@@ -98,6 +105,7 @@ export async function insertOrUpdateEvent(eventData) {
       console.log("Event created:", response.data.htmlLink);
     }
   } catch (error) {
+    logIntegrationError("google-calendar", error, "event-upsert");
     console.error(
       "Error inserting or updating event:",
       error.response ? error.response.data : error
@@ -116,6 +124,7 @@ export async function deleteEvent(eventId) {
     await calendar.events.delete({ calendarId: calendarId, eventId });
     console.log(`Event deleted from Google Calendar: ${eventId}`);
   } catch (error) {
+    logIntegrationError("google-calendar", error, "event-delete");
     console.error(
       `Error deleting event ${eventId}:`,
       error.response ? error.response.data : error

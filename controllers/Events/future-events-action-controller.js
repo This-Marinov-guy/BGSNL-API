@@ -1,4 +1,6 @@
+import { isEventDraftReady } from "../../validation/form-validators.js";
 import Event from "../../models/Event.js";
+import EventDraft from "../../models/EventDraft.js";
 import HttpError from "../../models/Http-error.js";
 import {
   uploadToCloudinary,
@@ -33,16 +35,46 @@ import {
   updateEventStatistics,
 } from "../../services/background-services/data-pool.js";
 import { eventToSpreadsheet } from "../../services/background-services/google-spreadsheets.js";
-import { getFingerprintLite } from "../../services/main-services/user-service.js";
+import { notifyEventCreated } from "../../services/background-services/internal-notifications.js";
+import { sendEventDraftReminderEmail } from "../../services/background-services/email-transporter.js";
+import { stampEventMetadata } from "../../services/events/event-metadata.js";
 import {
   addOrUpdateEvent,
   deleteCalendarEvent,
 } from "../../services/side-services/google-calendar.js";
 import { IS_PROD } from "../../util/functions/helpers.js";
-import { ACCESS_2, DEFAULT_REGION } from "../../util/config/defines.js";
+import { uniqueEventSlug } from "../../services/public-content/event-slug.js";
+import { publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
+import { dispatchSitemapRefresh } from "../../services/public-content/sitemap-dispatch.js";
+import { trustedWebsiteRequest } from "../../util/auth/request-client.js";
+import {
+  ALL_EVENT_REGIONS_ACCESS,
+  ACCESS_4,
+  DEFAULT_REGION,
+  REGIONS,
+  EVENT_DRAFT,
+  EVENT_OPENED,
+  HOME_URL,
+} from "../../util/config/defines.js";
+
+const PRODUCTION_WEBSITE_ORIGINS = new Set([
+  "https://bulgariansociety.nl",
+  "https://www.bulgariansociety.nl",
+]);
+
+const websiteOriginForRequest = (req) => {
+  const requestedOrigin = String(req.get("origin") ?? "").replace(/\/$/, "");
+  const isLocalOrigin =
+    !IS_PROD &&
+    /^http:\/\/(?:localhost|127\.0\.0\.1):300[0-2]$/.test(requestedOrigin);
+
+  return PRODUCTION_WEBSITE_ORIGINS.has(requestedOrigin) || isLocalOrigin
+    ? requestedOrigin
+    : HOME_URL;
+};
 
 const hasAdminRegionAccess = (req) =>
-  ACCESS_2.some((role) => req.user?.roles?.includes(role));
+  ALL_EVENT_REGIONS_ACCESS.some((role) => req.user?.roles?.includes(role));
 
 const hasEventRegionAccess = (req, region) =>
   region !== DEFAULT_REGION || hasAdminRegionAccess(req);
@@ -56,15 +88,219 @@ const rejectNetherlandsRegionAccess = (req, next) => {
   return true;
 };
 
+const isDraftRequest = (req) => req.body?.status === EVENT_DRAFT;
+
+const hasDraftAccess = (req, event) => {
+  const canManageEvents = ACCESS_4.some((role) =>
+    req.user?.roles?.includes(role)
+  );
+
+  if (!canManageEvents) return false;
+  if (hasAdminRegionAccess(req)) return true;
+
+  return (
+    event.draftOwner?.userId === req.user?.userId ||
+    (!!event.region && event.region === req.user?.region)
+  );
+};
+
+const parseJsonSafely = (value, fallback) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string") return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const optionalDate = (value) => {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+const optionalNumber = (value) => {
+  if (value === "" || value === undefined || value === null) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+};
+
+export const saveEventDraft = async (req, res, next, existingDraft = null) => {
+  const region = typeof req.body.region === "string" ? req.body.region.trim() : "";
+  if (![...REGIONS, DEFAULT_REGION].includes(region)) {
+    return next(new HttpError("Choose a region before saving a draft", 422));
+  }
+  const draftData = { ...parseJsonSafely(req.body.draftData, {}), region };
+  // Old clients or saved drafts may still contain the retired background fields.
+  for (const field of ["bgImage", "bgImageExtra", "bgImageSelection"]) delete draftData[field];
+  const event = existingDraft ?? new EventDraft();
+  const folder =
+    event.folder ||
+    `${IS_PROD ? "" : "development/"}drafts/${event._id.toString()}`;
+  const files = req.files ?? {};
+
+  try {
+    if (files.poster?.[0]) {
+      event.poster = await uploadToCloudinary(files.poster[0], {
+        folder,
+        public_id: "poster",
+        width: 800,
+        height: 800,
+        crop: "fit",
+        format: "jpg",
+      });
+    }
+
+    if (files.ticketImg?.[0]) {
+      event.ticketImg = await uploadToCloudinary(files.ticketImg[0], {
+        folder,
+        public_id: "ticket",
+        width: 1500,
+        height: 485,
+        crop: "fit",
+        format: "jpg",
+      });
+    }
+
+    const imagesOrder = parseJsonSafely(req.body.imagesOrder, []);
+    const existingImages = parseJsonSafely(req.body.existingImages, null);
+    const uploadedImages = {};
+
+    await Promise.all(
+      (files.images ?? []).map(async (file, index) => {
+        const link = await uploadToCloudinary(file, {
+          folder,
+          public_id: `draft_${Date.now()}_${index}`,
+          width: 800,
+          height: 800,
+          crop: "fit",
+          format: "jpg",
+        });
+        uploadedImages[file.originalname] = link;
+      })
+    );
+
+    if (imagesOrder.length > 0) {
+      event.images = imagesOrder
+        .map((item) =>
+          item.type === "existing"
+            ? item.url
+            : uploadedImages[item.fileName] ?? null
+        )
+        .filter(Boolean);
+    } else if (existingImages !== null || Object.keys(uploadedImages).length) {
+      event.images = [
+        ...(existingImages ?? []),
+        ...Object.values(uploadedImages),
+      ];
+    }
+  } catch (err) {
+    console.error("Saving draft images failed:", err);
+    return next(new HttpError("Saving draft images failed", 500));
+  }
+
+  event.status = EVENT_DRAFT;
+  stampEventMetadata(event, req);
+  event.folder = folder;
+  event.region = region;
+  event.title = draftData.title || "";
+  event.description = draftData.description || "";
+  event.date = optionalDate(draftData.date);
+  event.location = draftData.location || "";
+  event.ticketTimer = optionalDate(draftData.ticketTimer);
+  event.ticketLimit = optionalNumber(draftData.ticketLimit);
+  event.text = draftData.text || "";
+
+  [
+    "memberOnly",
+    "hidden",
+    "isSaleClosed",
+    "isFree",
+    "isMemberFree",
+  ].forEach((key) => {
+    if (typeof draftData[key] === "boolean") event[key] = draftData[key];
+  });
+
+  draftData.poster = event.poster || null;
+  draftData.ticketImg = event.ticketImg || null;
+  draftData.images = event.images ?? [];
+  event.draftData = draftData;
+  event.readyToPublish = await isEventDraftReady(event);
+
+  if (!existingDraft) {
+    event.draftOwner = {
+      userId: req.user?.userId,
+      region: req.user?.region,
+    };
+  }
+
+  try {
+    await event.save();
+  } catch (err) {
+    console.error("Saving event draft failed:", err);
+    return next(new HttpError("Saving event draft failed", 500));
+  }
+
+  const responseEvent = removeModelProperties(event, ["guestList", "draftOwner"]);
+  return res.status(existingDraft ? 200 : 201).json({
+    status: true,
+    event: responseEvent,
+  });
+};
+
+export const sendEventDraftReminder = async (req, res, next) => {
+  let draft;
+  try {
+    draft = await EventDraft.findById(req.params.eventId);
+  } catch {
+    return next(new HttpError("Fetching the event draft failed", 500));
+  }
+
+  if (!draft) {
+    return next(new HttpError("No such event draft", 404));
+  }
+
+  if (!hasDraftAccess(req, draft)) {
+    return next(new HttpError("No access to this event draft", 403));
+  }
+
+  const receiver = String(req.body.email).trim().toLowerCase();
+  const continueUrl = `${websiteOriginForRequest(req)}/user/edit-event/${draft.id}`;
+
+  try {
+    sendEventDraftReminderEmail({
+      receiver,
+      eventId: draft.id,
+      eventTitle: draft.title,
+      continueUrl,
+    });
+  } catch {
+    return next(new HttpError("Queuing the reminder email failed", 500));
+  }
+
+  return res.status(202).json({
+    status: true,
+    message: "Draft reminder email queued",
+  });
+};
+
 export const fetchFullDataEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
 
   let event;
+  let isDraft = false;
   try {
-    event = await Event.findOne({
-      _id: eventId,
-      status: { $ne: "archived" },
-    });
+    event = await Event.findOne({ _id: eventId, ...publicEventQuery });
+
+    if (!event) {
+      event = await EventDraft.findById(eventId);
+      isDraft = Boolean(event);
+    } else {
+      // Keep legacy draft documents private until they are migrated.
+      isDraft = event.status === EVENT_DRAFT;
+    }
   } catch (err) {
     return res.status(200).json({
       status: false,
@@ -75,6 +311,16 @@ export const fetchFullDataEvent = async (req, res, next) => {
     return res.status(200).json({
       status: false,
     });
+  }
+
+  if (isDraft && !hasDraftAccess(req, event)) {
+    return next(new HttpError("No access to this event draft", 403));
+  }
+
+  if (isDraft) {
+    const readyToPublish = await isEventDraftReady(event);
+    event = { ...removeModelProperties(event, ["guestList", "draftOwner"]), readyToPublish };
+    return res.status(200).json({ event, status: false });
   }
 
   if (!hasEventRegionAccess(req, event.region)) {
@@ -90,12 +336,8 @@ export const fetchFullDataEvent = async (req, res, next) => {
     status = false;
   }
 
-  event = checkDiscountsOnEvents(event);
-  // TODO: remove early, lateBird and add them to a new
-  event = removeModelProperties(event, ["guestList"]);
-
-  res.status(200).json({
-    event,
+  return res.status(200).json({
+    event: serializePublicEvent(event, { checkout: true }),
     status,
   });
 };
@@ -103,8 +345,13 @@ export const fetchFullDataEvent = async (req, res, next) => {
 export const fetchFullDataEventsList = async (req, res, next) => {
   const region = req.query.region;
   const isAdmin = hasAdminRegionAccess(req);
+  const pastView = req.query.view === "past";
+  const includeArchived = pastView || req.query.includeArchived === "true";
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const pageSize = Math.min(25, Math.max(3, Number.parseInt(req.query.pageSize, 10) || 25));
 
-  let events;
+  let eventQuery;
+  let draftsQuery;
 
   try {
     if (region) {
@@ -116,39 +363,134 @@ export const fetchFullDataEventsList = async (req, res, next) => {
         return next(new HttpError("No access for this region", 403));
       }
 
-      events = await Event.find({
-        region,
-        status: { $ne: "archived" }, // exclude archived
-      });
+      eventQuery = { region };
+      draftsQuery = { region };
     } else if (isAdmin) {
-      events = await Event.find({
-        status: { $ne: "archived" }, // exclude archived
-      });
+      eventQuery = {};
+      draftsQuery = {};
     } else {
       const userRegion =
         req.user?.region === DEFAULT_REGION ? "" : req.user?.region ?? "";
 
-      events = await Event.find({
-        region: userRegion,
-        status: { $ne: "archived" }, // exclude archived
-      });
+      eventQuery = { region: userRegion };
+      draftsQuery = {
+        $or: [
+          { region: userRegion },
+          {
+            region: { $in: [null, ""] },
+            "draftOwner.userId": req.user?.userId,
+          },
+        ],
+      };
     }
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
 
+  const now = new Date();
+  eventQuery.status = includeArchived
+    ? { $ne: EVENT_DRAFT }
+    : { $nin: ["archived", EVENT_DRAFT] };
+  if (pastView) {
+    eventQuery.$or = [
+      { status: { $in: ["archived", "cancelled"] } },
+      { date: { $lt: now } },
+      { correctedDate: { $lt: now } },
+    ];
+    try {
+      const [events, total] = await Promise.all([
+        Event.find(eventQuery).sort({ correctedDate: -1, date: -1 }).skip((page - 1) * pageSize).limit(pageSize),
+        Event.countDocuments(eventQuery),
+      ]);
+      return res.status(200).json({
+        events: events.map((event) => removeModelProperties(event, ["guestList"])),
+        page,
+        total,
+        hasMore: page * pageSize < total,
+      });
+    } catch {
+      return next(new HttpError("Fetching past events failed", 500));
+    }
+  }
+
+  let events;
+  let drafts;
+  try {
+    [events, drafts] = await Promise.all([
+      Event.find(eventQuery),
+      EventDraft.find(draftsQuery),
+    ]);
+  } catch {
+    return next(new HttpError("Fetching events failed", 500));
+  }
+
   // TODO: remove early, lateBird and add them to a new
-  events = events.map((event) => removeModelProperties(event, ["guestList"]));
+  events = [
+    ...events.map((event) => removeModelProperties(event, ["guestList"])),
+    ...await Promise.all(drafts.map(async draft => ({
+      ...removeModelProperties(draft, ["draftOwner"]),
+      readyToPublish: await isEventDraftReady(draft),
+    }))),
+  ];
 
   res.status(200).json({ events });
 };
 
+export const archiveExpiredEvents = async (req, res, next) => {
+  if (!trustedWebsiteRequest(req)) {
+    return next(new HttpError("Website authentication required", 403));
+  }
+
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  try {
+    const result = await Event.updateMany({
+      status: { $nin: ["archived", "cancelled", EVENT_DRAFT] },
+      $or: [{ date: { $lte: cutoff } }, { correctedDate: { $lte: cutoff } }],
+    }, {
+      $set: { status: "archived", isSaleClosed: true },
+    });
+    return res.status(200).json({ status: true, archived: result.modifiedCount || 0 });
+  } catch {
+    return next(new HttpError("Archiving expired events failed", 500));
+  }
+};
+
+export const getEventDraftCount = async (req, res, next) => {
+  const region = String(req.query.region || "").trim();
+  const isAdmin = hasAdminRegionAccess(req);
+
+  if (!REGIONS.includes(region) && region !== DEFAULT_REGION) {
+    return next(new HttpError("A valid region is required", 422));
+  }
+
+  if (region === DEFAULT_REGION && !isAdmin) {
+    return next(new HttpError("Only admins can access Netherlands events", 403));
+  }
+
+  if (!isAdmin && region !== req.user?.region) {
+    return next(new HttpError("No access for this region", 403));
+  }
+
+  try {
+    const draftCount = await EventDraft.countDocuments({ region });
+    return res.status(200).json({ draftCount });
+  } catch {
+    return next(new HttpError("Draft availability could not be loaded", 500));
+  }
+};
+
 export const addEvent = async (req, res, next) => {
+  if (isDraftRequest(req)) {
+    if (rejectNetherlandsRegionAccess(req, next)) return;
+    return saveEventDraft(req, res, next);
+  }
+
   const {
     memberOnly,
     hidden,
     region,
     title,
+    slug,
     date,
     description,
     location,
@@ -168,8 +510,6 @@ export const addEvent = async (req, res, next) => {
     ticketColor,
     ticketQR,
     ticketName,
-    bgImage,
-    bgImageSelection,
   } = req.body;
 
   if (rejectNetherlandsRegionAccess(req, next)) {
@@ -197,6 +537,7 @@ export const addEvent = async (req, res, next) => {
       title,
       region,
       date,
+      status: { $nin: ["archived", EVENT_DRAFT] },
     })
   ) {
     const error = new HttpError(
@@ -238,16 +579,6 @@ export const addEvent = async (req, res, next) => {
     crop: "fit",
     format: "jpg",
   });
-
-  const bgImageExtra = req.files["bgImageExtra"]
-    ? await uploadToCloudinary(req.files["bgImageExtra"][0], {
-        folder,
-        public_id: "background",
-        width: 1200,
-        crop: "fit",
-        format: "jpg",
-      })
-    : "";
 
   let images = [];
 
@@ -343,7 +674,7 @@ export const addEvent = async (req, res, next) => {
     if (!product.id) {
       return next(
         new HttpError(
-          "Stripe Product could not be created, please try again!",
+          "The payment product could not be created. Please try again.",
           500
         )
       );
@@ -469,15 +800,25 @@ export const addEvent = async (req, res, next) => {
     MOMENT_DATE_TIME_YEAR
   )}`;
 
+  let eventSlug;
+  try {
+    // A caller may choose a clean slug while the event is still being created;
+    // after this save the model and edit handler make it permanent.
+    eventSlug = await uniqueEventSlug(Event, slug || title, { region, date });
+  } catch {
+    return next(new HttpError("Could not reserve the event URL. Please try again.", 503));
+  }
+
   //create event
   event = new Event({
-    lastUpdate: getFingerprintLite(req),
+    memberAnnouncementQueuedAt: new Date(),
     memberOnly,
     hidden,
     extraInputsForm,
     subEvent,
     region,
     title,
+    slug: eventSlug,
     description,
     date,
     location,
@@ -497,9 +838,6 @@ export const addEvent = async (req, res, next) => {
     ticketQR: ticketQR === "true",
     ticketName: ticketName === "true",
     poster,
-    bgImage,
-    bgImageExtra,
-    bgImageSelection,
     folder,
     sheetName,
     product,
@@ -512,6 +850,7 @@ export const addEvent = async (req, res, next) => {
     googleEventId: "",
     addOns,
   });
+  stampEventMetadata(event, req);
 
   try {
     await event.save();
@@ -524,6 +863,9 @@ export const addEvent = async (req, res, next) => {
       )
     );
   }
+
+  notifyEventCreated(event);
+  void dispatchSitemapRefresh("published", event);
 
   try {
     eventToSpreadsheet(event.id);
@@ -542,19 +884,70 @@ export const editEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
 
   let event;
+  let draft;
   try {
-    event = await Event.findById(eventId);
-    console.log(event);
+    [event, draft] = await Promise.all([
+      Event.findById(eventId),
+      EventDraft.findById(eventId),
+    ]);
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
 
-  if (!event) {
+  if (!event && !draft) {
     return next(new HttpError("No such event", 404));
   }
 
-  if (!hasEventRegionAccess(req, event.region)) {
+  if (isDraftRequest(req)) {
+    if (!draft) {
+      return next(
+        new HttpError("Published events cannot be converted to drafts", 422)
+      );
+    }
+    if (!hasDraftAccess(req, draft)) {
+      return next(new HttpError("No access to this event draft", 403));
+    }
+    if (rejectNetherlandsRegionAccess(req, next)) return;
+    return saveEventDraft(req, res, next, draft);
+  }
+
+  const wasDraft = Boolean(draft);
+
+  if (wasDraft && event) {
+    return next(new HttpError("This draft has already been published", 409));
+  }
+
+  if (wasDraft && !hasDraftAccess(req, draft)) {
+    return next(new HttpError("No access to this event draft", 403));
+  }
+
+  if (!wasDraft && !hasEventRegionAccess(req, event.region)) {
     return next(new HttpError("Only admins can manage Netherlands events", 403));
+  }
+
+  if (wasDraft) {
+    event = new Event({
+      memberAnnouncementQueuedAt: new Date(),
+      _id: draft._id,
+      createdAt: draft.createdAt,
+      region: draft.region,
+      title: draft.title,
+      description: draft.description,
+      date: draft.date,
+      location: draft.location,
+      ticketTimer: draft.ticketTimer,
+      ticketLimit: draft.ticketLimit,
+      text: draft.text,
+      memberOnly: draft.memberOnly,
+      hidden: draft.hidden,
+      isSaleClosed: draft.isSaleClosed,
+      isFree: draft.isFree,
+      isMemberFree: draft.isMemberFree,
+      images: draft.images,
+      ticketImg: draft.ticketImg,
+      poster: draft.poster,
+      folder: draft.folder,
+    });
   }
 
   const folder = event.folder ?? (IS_PROD ? "spare" : "development/spare");
@@ -564,6 +957,7 @@ export const editEvent = async (req, res, next) => {
     hidden,
     region,
     title,
+    slug,
     date,
     description,
     location,
@@ -583,9 +977,19 @@ export const editEvent = async (req, res, next) => {
     ticketName,
     text,
     ticketColor,
-    bgImage,
-    bgImageSelection,
   } = req.body;
+
+  if (!wasDraft && slug && slug !== event.slug) {
+    return next(new HttpError("An event URL cannot be changed after publication", 422));
+  }
+
+  if (wasDraft) {
+    try {
+      event.slug = await uniqueEventSlug(Event, slug || title, { excludeId: event._id, region: region || event.region, date });
+    } catch {
+      return next(new HttpError("Could not reserve the event URL. Please try again.", 503));
+    }
+  }
 
   if (rejectNetherlandsRegionAccess(req, next)) {
     return;
@@ -604,6 +1008,24 @@ export const editEvent = async (req, res, next) => {
   const promoCodes = req.body.promoCodes
     ? JSON.parse(req.body.promoCodes)
     : null;
+
+  if (
+    wasDraft &&
+    (await Event.exists({
+      _id: { $ne: event._id },
+      title,
+      region,
+      date,
+      status: { $nin: ["archived", EVENT_DRAFT] },
+    }))
+  ) {
+    return next(
+      new HttpError(
+        "Event already exists - find it in the dashboard and edit it!",
+        422
+      )
+    );
+  }
 
   const poster = req.files["poster"]
     ? await uploadToCloudinary(req.files["poster"][0], {
@@ -626,16 +1048,6 @@ export const editEvent = async (req, res, next) => {
         format: "jpg",
       })
     : null;
-
-  const bgImageExtra = req.files["bgImageExtra"]
-    ? await uploadToCloudinary(req.files["bgImageExtra"][0], {
-        folder,
-        public_id: "background",
-        width: 1200,
-        crop: "fit",
-        format: "jpg",
-      })
-    : "";
 
   let images = [];
 
@@ -732,13 +1144,12 @@ export const editEvent = async (req, res, next) => {
   }
 
 
-  event.lastUpdate = getFingerprintLite(req);
+  stampEventMetadata(event, req, { source: wasDraft ? draft : undefined });
   event.extraInputsForm = extraInputsForm;
   event.subEvent = subEvent;
 
   poster && (event.poster = poster);
   ticketImg && (event.ticketImg = ticketImg);
-  bgImageExtra && (event.bgImageExtra = bgImageExtra);
 
   // TODO: move to service
   if (date) {
@@ -990,7 +1401,6 @@ export const editEvent = async (req, res, next) => {
   }
 
   event.images = images;
-  event.bgImageSelection = bgImageSelection;
   event.memberOnly = memberOnly;
   event.hidden = hidden;
   event.region = region;
@@ -1010,7 +1420,6 @@ export const editEvent = async (req, res, next) => {
   event.ticketColor = ticketColor;
   event.ticketQR = ticketQR === "true";
   event.ticketName = ticketName === "true";
-  event.bgImage = bgImage;
   event.earlyBird = earlyBird;
   event.lateBird = lateBird;
   event.promotion = {
@@ -1019,9 +1428,34 @@ export const editEvent = async (req, res, next) => {
   };
   event.date = date;
   event.addOns = addOns;
+  if (wasDraft) {
+    event.status = EVENT_OPENED;
+    event.sheetName = `${title}|${moment(new Date(date)).format(
+      MOMENT_DATE_TIME_YEAR
+    )}`;
+  }
 
   try {
-    await event.save();
+    if (wasDraft) {
+      const session = await Event.startSession();
+      try {
+        await session.withTransaction(async () => {
+          await event.save({ session });
+          const result = await EventDraft.deleteOne(
+            { _id: draft._id },
+            { session }
+          );
+
+          if (result.deletedCount !== 1) {
+            throw new Error("Event draft disappeared while publishing");
+          }
+        });
+      } finally {
+        await session.endSession();
+      }
+    } else {
+      await event.save();
+    }
   } catch (err) {
     console.log(err);
     return next(
@@ -1032,8 +1466,13 @@ export const editEvent = async (req, res, next) => {
     );
   }
 
+  if (wasDraft) {
+    notifyEventCreated(event);
+    eventToSpreadsheet(event.id);
+    void dispatchSitemapRefresh("published", event);
+  }
+
   try {
-    // eventToSpreadsheet(event.id);
     await addOrUpdateEvent(await Event.findById(event._id));
   } catch (err) {
     // TODO: email or notify error
@@ -1049,24 +1488,44 @@ export const deleteEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
 
   let event;
+  let draft;
   try {
-    event = await Event.findById(eventId);
+    [event, draft] = await Promise.all([
+      Event.findById(eventId),
+      EventDraft.findById(eventId),
+    ]);
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
 
   // todo: check the error with the no such event
-  if (!event) {
+  if (!event && !draft) {
     return next(new HttpError("No such event", 404));
   }
 
-  if (!hasEventRegionAccess(req, event.region)) {
+  if (draft && !hasDraftAccess(req, draft)) {
+    return next(new HttpError("No access to this event draft", 403));
+  }
+
+  if (!draft && !hasEventRegionAccess(req, event.region)) {
     return next(new HttpError("Only admins can manage Netherlands events", 403));
+  }
+
+  if (draft) {
+    try {
+      await draft.deleteOne();
+    } catch (err) {
+      console.log(err);
+      return next(new HttpError("Deleting event draft failed", 500));
+    }
+
+    if (draft.folder) await deleteFolder(draft.folder);
+    return res.status(200).json({ status: true, eventId });
   }
 
   const folder = event.folder ?? "";
   const region = event.region ?? "";
-  const productId = event.product.id ?? "";
+  const productId = event.product?.id ?? "";
 
   // Increment event statistics before archiving
   await updateEventStatistics(event);
@@ -1076,6 +1535,7 @@ export const deleteEvent = async (req, res, next) => {
 
   try {
     event.status = "archived";
+    stampEventMetadata(event, req);
     await event.save();
   } catch (err) {
     console.log(err);
@@ -1085,8 +1545,9 @@ export const deleteEvent = async (req, res, next) => {
     );
   }
 
-  await deleteProduct(region, productId);
-  await deleteFolder(folder);
+  if (productId) await deleteProduct(region, productId);
+  if (folder) await deleteFolder(folder);
+  void dispatchSitemapRefresh("archived", event);
   res.status(200).json({ status: true, eventId });
 };
 

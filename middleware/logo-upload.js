@@ -2,6 +2,7 @@ import multer from "multer";
 import multerS3 from "multer-s3";
 import AWS from "aws-sdk";
 import dotenv from "dotenv";
+import { unsupportedUploadError } from "./upload-validation-error.js";
 dotenv.config();
 
 const fileFilter = (req, file, cb) => {
@@ -15,7 +16,7 @@ const fileFilter = (req, file, cb) => {
   if (allowed.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(null, false);
+    cb(unsupportedUploadError(file, "a JPEG, PNG, WebP or SVG image"));
   }
 };
 

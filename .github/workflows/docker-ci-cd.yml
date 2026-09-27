@@ -12,34 +12,46 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
-
+          node-version: 22
       - name: Install dependencies
-        run: npm install
-
-      - name: Temporarily adjust ESLint config
+        run: npm ci
+      - name: Check migration and deployment code
         run: |
-          echo '{
-            "rules": {
-              "constructor-super": "off"
-            }
-          }' > .eslintrc.json
+          npx eslint migrations/run.js migrations/003-normalize-breda-region.js services/migrations/runner.js tests/migration-runner.test.js tests/deploy-with-migrations.test.js
+          bash -n scripts/deploy-with-migrations.sh
 
-      # comment out for the pipeline to pass
-      # - name: Run lint checks
-      #   run: npm run lint
+  migration-tests:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Verify migration rollback and deployment gate
+        run: npm run test:migrations
+        env:
+          BGSNL_MIGRATION_TEST_URL: mongodb://127.0.0.1:27017
 
   build:
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, migration-tests]
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
       - name: Build Docker image
         run: docker build -t bgsnl-api .
 
@@ -47,18 +59,24 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    concurrency:
+      group: bgsnl-api-production
+      cancel-in-progress: false
     steps:
       - name: Deploy to production server
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          envs: DEPLOY_SHA
+          command_timeout: 40m
           script: |
+            set -eu
             cd /root/bgsnl-api
-            git pull origin master
-            cd /root
-            docker compose build --no-cache bgsnl-api
-            docker compose up -d --build bgsnl-api
-            docker system prune -f
+            git fetch origin master
+            git checkout --detach "$DEPLOY_SHA"
+            bash scripts/deploy-with-migrations.sh

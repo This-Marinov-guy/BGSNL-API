@@ -1,12 +1,18 @@
 import mongoose from "mongoose";
 import uniqueValidator from "mongoose-unique-validator";
+import { automaticWalletCard } from "../services/wallet/provision.js";
 import { ALUMNI } from "../util/config/defines.js";
 import { ACTIVE, USER_STATUSES } from "../util/config/enums.js";
 import { createCurrentDate } from "../util/functions/currentDate.js";
+import { alumniSubscriptionSchema, sharedMembershipFields } from "./SubscriptionFields.js";
+
+import { accountSecurityFields, accountSecurityIndexes } from "./AccountSecurityFields.js";
 
 const Schema = mongoose.Schema;
 
 const alumniUserSchema = new Schema({
+  ...sharedMembershipFields,
+  ...accountSecurityFields,
   _id: {
     type: String,
     default: () => "alumni_" + new mongoose.Types.ObjectId(),
@@ -15,19 +21,18 @@ const alumniUserSchema = new Schema({
   tier: { type: Number, required: true, default: 0 },
   roles: { type: Array, required: true, default: [ALUMNI] },
   documents: [{ type: Schema.Types.ObjectId, ref: "Document" }],
-  subscription: {
-    period: { type: Number },
-    id: { type: String },
-    customerId: { type: String },
-  },
+  subscription: { type: alumniSubscriptionSchema, default: () => ({}) },
   joinDate: { type: Date, default: createCurrentDate, required: true },
   purchaseDate: { type: Date, default: createCurrentDate, required: true },
   expireDate: { type: Date, required: true },
   image: { type: String, required: true },
   name: { type: String, required: true },
   surname: { type: String, required: true },
+  phone: { type: String },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true, minlength: 5 },
+  notificationTerms: { type: Boolean, default: false },
+  notificationTypeTerms: { type: String },
   quote: { type: String },
   tickets: [
     {
@@ -49,5 +54,12 @@ const alumniUserSchema = new Schema({
 });
 
 alumniUserSchema.plugin(uniqueValidator);
+alumniUserSchema.plugin(automaticWalletCard);
+accountSecurityIndexes(alumniUserSchema);
+alumniUserSchema.index({ "subscription.id": 1, status: 1 });
+alumniUserSchema.index({ accountAliases: 1 });
+alumniUserSchema.index({ "subscription.syncedAt": 1, status: 1 });
+alumniUserSchema.index({ "subscription.lastAttemptAt": 1, "subscription.syncedAt": 1 });
+alumniUserSchema.index({ joinDate: 1, region: 1 });
 
-export default mongoose.model("AlumniUser", alumniUserSchema);
+export default mongoose.model("AlumniUser", alumniUserSchema, "alumniUsers");

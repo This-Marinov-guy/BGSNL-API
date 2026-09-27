@@ -59,6 +59,19 @@ const stripeIp = [
 export const allowedOrigins = [...webOrigins, ...stripeUrls];
 export const allowedIps = [...stripeIp];
 
+/**
+ * Shared secret for server-to-server calls from the Next.js site.
+ *
+ * Since the website moved to SSR, page data is fetched by the Next server
+ * rather than the visitor's browser, so those requests carry no browser Origin
+ * and the origin allow-list cannot identify them. Requests presenting this key
+ * in `x-bgsnl-server-key` are treated as trusted.
+ *
+ * Must match BGSNL_SERVER_KEY on the website. Deliberately not exposed through
+ * Access-Control-Allow-Headers, so a browser can never send it cross-origin.
+ */
+export const ssrServerKey = process.env.SSR_SERVER_KEY || "";
+
 export const PROTOCOL = process.env.APP_ENV === "dev" ? "http://" : "https://";
 
 export const allowedCrawlers = [

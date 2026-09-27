@@ -2,6 +2,7 @@ import multer from "multer";
 import s3Storage from "multer-sharp-s3";
 import AWS from "aws-sdk";
 import dotenv from "dotenv";
+import { unsupportedUploadError } from "./upload-validation-error.js";
 dotenv.config();
 
 // Resized upload with convertion to webp format
@@ -15,7 +16,7 @@ const fileFilter = (req, file, cb) => {
   ) {
     cb(null, true);
   } else {
-    cb(null, false);
+    cb(unsupportedUploadError(file, "a JPEG, PNG or WebP image"));
   }
 };
 
@@ -54,4 +55,4 @@ const fileResizedUpload = (bucketName) =>
 
 // accessed by req.file.Location with capital L
 
-export default fileResizedUpload
+export default fileResizedUpload;

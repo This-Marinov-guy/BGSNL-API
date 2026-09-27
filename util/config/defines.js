@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 export const REGIONS = [
   "amsterdam",
   "breda_tilburg",
@@ -15,30 +17,48 @@ export const DEFAULT_REGION = "netherlands";
 export const BGSNL_URL = "bulgariansociety.nl/";
 export const STRIPE_WEBHOOK_ROUTE = "/stripe-payments";
 
-// authorization
-export const PROD_JWT_TIMEOUT = "15m";
-export const DEV_JWT_TIMEOUT = "1h";
-
 // member roles
 export const SUPER_ADMIN = "super_admin";
 export const ADMIN = "admin";
-export const SOCIETY_ADMIN = "society_board_member";
+export const DEVELOPER = "developer";
+export const NATIONAL_BOARD_MEMBER = "national_board_member";
+export const SOCIETY_ADMIN = NATIONAL_BOARD_MEMBER;
+export const SUPPORT = "support";
 export const ACTIVE_MEMBER = "active_member";
-export const BOARD_MEMBER = "board_member";
-export const COMMITTEE_MEMBER = "committee_member";
+export const REGIONAL_BOARD_MEMBER = "regional_board_member";
+export const BOARD_MEMBER = REGIONAL_BOARD_MEMBER;
+export const REGIONAL_COMMITTEE_MEMBER = "regional_committee_member";
+export const COMMITTEE_MEMBER = REGIONAL_COMMITTEE_MEMBER;
 export const MEMBER = "member";
 export const ALUMNI = "alumni";
 export const VIP = "vip";
 
+// National committee permissions are scoped explicitly below.
+export const NATIONAL_COMMITTEE_MEMBER = "national_committee_member";
+
 export const ACCESS_1 = [SUPER_ADMIN];
-export const ACCESS_2 = [...ACCESS_1, ADMIN, SOCIETY_ADMIN];
-export const ACCESS_3 = [...ACCESS_2, BOARD_MEMBER];
-export const ACCESS_4 = [...ACCESS_3, COMMITTEE_MEMBER, ACTIVE_MEMBER];
+export const ACCESS_2 = [...ACCESS_1, ADMIN, SOCIETY_ADMIN, "society_board_member"];
+export const ACCESS_3 = [...ACCESS_2, BOARD_MEMBER, "board_member"];
+export const ACCESS_4 = [...ACCESS_3, COMMITTEE_MEMBER, ACTIVE_MEMBER, "committee_member", NATIONAL_COMMITTEE_MEMBER];
+export const ALL_EVENT_REGIONS_ACCESS = [...ACCESS_2, NATIONAL_COMMITTEE_MEMBER];
+export const EVENT_MANAGEMENT_ACCESS = [...ACCESS_3, NATIONAL_COMMITTEE_MEMBER];
+export const ALL_MEMBER_REGIONS_ACCESS = [...ACCESS_2, NATIONAL_COMMITTEE_MEMBER];
+export const MEMBER_ADMIN_ACCESS = [...ACCESS_3, NATIONAL_COMMITTEE_MEMBER];
+export const MONITORING_ACCESS = [SUPER_ADMIN, ADMIN, DEVELOPER];
+
 
 export const LIMITLESS_ACCOUNT = [SUPER_ADMIN, ADMIN, VIP];
 
+// A billing hold ("locked"/"payment_awaiting") should not block admin/super
+// admin from running admin panels — staff running the org should not need a
+// paid membership. A genuine administrative hold (frozen/suspended) is not in
+// this list and must keep blocking everyone, admins included.
+export const BILLING_LOCK_EXEMPT = [SUPER_ADMIN, ADMIN, DEVELOPER];
+export const BILLING_LOCKED_STATUSES = ["locked", "payment_awaiting"];
+
 // event status
 export const EVENT_OPENED = "opened";
+export const EVENT_DRAFT = "draft";
 export const EVENT_CLOSED = "closed";
 export const EVENT_SALE_STOP = "temporary closed";
 export const EVENT_CANCELED = "canceled";
@@ -55,24 +75,39 @@ export const MEMBERSHIP_EXPIRED_TEMPLATE =
 export const DELOITTE_TEMPLATE = "7e8088d0-3408-4875-ae5d-21a810fe0c7d";
 export const PWC_TEMPLATE = "5947c9b6-795a-4bb7-aa23-916b317a8156";
 export const ALUMNI_TEMPLATE = "55b52240-b23e-4109-b0f4-2741989be36d";
+// Domakin Mailer-only templates (no matching Mailtrap-hosted template; sent
+// via queueDomakinTemplateEmail directly, not the legacy/domakin sendEmail switch).
+export const BIRTHDAY_TEMPLATE = "9b3cd024-9282-4c71-b93e-d20be8fee659";
+export const EVENT_DRAFT_REMINDER_TEMPLATE = "8e788a4c-8396-4490-97b8-c5371f829411";
+export const SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE = "19c7266b-ed3c-4b30-af54-e2258f64cd53";
+export const PROFILE_CHANGE_CONFIRM_TEMPLATE = "a4b567c0-40b3-4898-ae1e-98182d7f3189";
+export const SIGN_IN_DETAILS_CHANGED_TEMPLATE = "ade176ca-11ed-414b-8d13-553bf4340e59";
+export const MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE = "2cf8d31e-8239-4d5f-9ed3-8288a49b74b8";
 export const NON_SOCIETY_EVENT_RESEND_TEMPLATE = "gala-festival-invitation-1";
 export const NON_SOCIETY_EVENT_RESEND_EVENT_ID = "69e5c915af9057b6bce64686";
 export const NON_SOCIETY_EVENT_RESEND_TEST_EMAILS = [
   "bulgariansociety.netherlands@gmail.com",
   "vladislavmarinov3142@gmail.com",
 ];
+export const NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE =
+  "0c9bca58-82e4-42f2-87b9-a3ad4087e9d6";
+export const NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID =
+  "6a3917abcf9edd30cd1213ce";
+export const NON_SOCIETY_EVENT_FINAL_REMINDER_TEST_EMAILS = [
+  "vladislavmarinov3142@gmail.com",
+];
 
 export const NO_REPLY_EMAIL = "no-reply@bulgariansociety.nl";
 export const NO_REPLY_EMAIL_NAME = "Bulgarian Society Netherlands";
 
-export const SUBSCRIPTION_PRICE_MONTHS_6 = "price_1QOg1FAShinXgMFZ1dZiQn1P";
-export const SUBSCRIPTION_PRICE_YEAR_1 = "price_1QOg1XAShinXgMFZyH0F4P9i";
+export const SUBSCRIPTION_PRICE_MONTHS_6 = process.env.STRIPE_MEMBERSHIP_6M_PRICE_ID || "price_1QOg1FAShinXgMFZ1dZiQn1P";
+export const SUBSCRIPTION_PRICE_YEAR_1 = process.env.STRIPE_MEMBERSHIP_12M_PRICE_ID || "price_1QOg1XAShinXgMFZyH0F4P9i";
 
 // Alumni subscription price IDs
-export const ALUMNI_PRICE_TIER_1 = "price_1Rx1XKAShinXgMFZqWsg4V0D"; // 3 euro/month - tier 1
-export const ALUMNI_PRICE_TIER_2 = "price_1SGEBBAShinXgMFZuC6fiOqf"; // 5 euro/month - tier 2
-export const ALUMNI_PRICE_TIER_3 = "price_1SGEFLAShinXgMFZcWsbLjeE"; // 7 euro/month - tier 3
-export const ALUMNI_PRICE_TIER_4 = "price_1SGEFoAShinXgMFZZzo95PeT"; // 10 euro/month - tier 4
+export const ALUMNI_PRICE_TIER_1 = process.env.STRIPE_ALUMNI_TIER_1_PRICE_ID || "price_1Rx1XKAShinXgMFZqWsg4V0D"; // 3 euro/month - tier 1
+export const ALUMNI_PRICE_TIER_2 = process.env.STRIPE_ALUMNI_TIER_2_PRICE_ID || "price_1SGEBBAShinXgMFZuC6fiOqf"; // 5 euro/month - tier 2
+export const ALUMNI_PRICE_TIER_3 = process.env.STRIPE_ALUMNI_TIER_3_PRICE_ID || "price_1SGEFLAShinXgMFZcWsbLjeE"; // 7 euro/month - tier 3
+export const ALUMNI_PRICE_TIER_4 = process.env.STRIPE_ALUMNI_TIER_4_PRICE_ID || "price_1SGEFoAShinXgMFZZzo95PeT"; // 10 euro/month - tier 4
 
 // Old alumni price IDs (legacy)
 export const ALUMNI_PRICE_TIER_1_OLD = "price_1Rx1XKAShinXgMFZqWsg4V0D"; // 3 euro/month - tier 1

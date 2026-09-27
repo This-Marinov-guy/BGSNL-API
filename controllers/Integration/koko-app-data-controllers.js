@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import Event from "../../models/Event.js";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
 import { getPresenceStatsOfCity } from "../../services/background-services/google-spreadsheets.js";
 import { SPREADSHEETS_ID } from "../../util/config/SPREEDSHEATS.js";
 import { eventsCache } from "../../util/config/caches.js";
@@ -19,7 +19,7 @@ export const getCityData = async (req, res, next) => {
 
   try {
     const cacheKey = `cityData:${city}`;
-    const cachedData = eventsCache.get(cacheKey);
+    const cachedData = await eventsCache.get(cacheKey);
     if (cachedData) {
       return res.status(200).json({
         status: true,
@@ -31,7 +31,7 @@ export const getCityData = async (req, res, next) => {
 
     const data = await getPresenceStatsOfCity(SPREADSHEETS_ID[city].events);
     // Cache the data for 24 hours
-    eventsCache.set(cacheKey, data, 24 * 3600);
+    await eventsCache.set(cacheKey, data, 24 * 3600);
 
     return res.status(200).json({
       status: true,

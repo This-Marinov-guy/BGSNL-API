@@ -3,9 +3,11 @@ import AWS from "aws-sdk";
 import fs from "fs";
 import path from "path";
 import QRCode from "qrcode";
+import { ticketQrLink } from "../tickets/qr-link.js";
 import sharp from "sharp";
 import { fileURLToPath } from "url";
-import User from "../../models/User.js";
+import MemberUser from "../../models/MemberUser.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 
 const DEFAULT_TICKET_COLOR = "#faf9f6";
 const DEFAULT_TICKET_WIDTH = 1500;
@@ -21,11 +23,13 @@ const QUANTITY_TEXT_BOX_HEIGHT = 84;
 const MULTIPLIER_TEXT_BOX_WIDTH = 48;
 const MULTIPLIER_TEXT_BOX_HEIGHT = 48;
 
-const NAME_LEFT_COLUMN_X = 1210;
-const SURNAME_LEFT_COLUMN_X = 1270;
-const QUANTITY_CENTER_X = 1380;
+const NAME_LEFT_COLUMN_X = 1170;
+const SURNAME_LEFT_COLUMN_X = 1230;
+const QUANTITY_CENTER_X = 1340;
 const QUANTITY_CENTER_Y_FROM_BOTTOM = 110;
-const MULTIPLIER_CENTER_X = 1345;
+const MULTIPLIER_CENTER_X = 1305;
+const QR_SIZE = 100;
+const QR_CORNER_RADIUS = 6;
 const MULTIPLIER_CENTER_Y_FROM_BOTTOM = 115;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -39,7 +43,7 @@ const escapeXml = (value = "") =>
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
 
 const sanitizeKeyPart = (value = "") =>
@@ -68,16 +72,6 @@ const splitGuestName = (guestName = "") => {
     return { name: chunks[0], surname: "" };
   }
   return { name: chunks[0], surname: chunks.slice(1).join(" ") };
-};
-
-const buildGuestCheckLink = ({ originUrl, eventId, code, quantity }) => {
-  const baseUrl = (originUrl || "https://www.bulgariansociety.nl").replace(
-    /\/$/,
-    "",
-  );
-  return `${baseUrl}/user/check-guest-list?event=${encodeURIComponent(
-    eventId,
-  )}&code=${encodeURIComponent(code)}&count=${encodeURIComponent(quantity)}`;
 };
 
 const resolveArchiveFontPath = async () => {
@@ -128,6 +122,7 @@ const getArchiveFontBase64 = async () => {
     cachedArchiveFontBase64 = fontBuffer.toString("base64");
     return cachedArchiveFontBase64;
   } catch (err) {
+    logOperationalError("service.ticket-font-read", err);
     console.error("[ticket] Failed to read font file:", err.message);
     cachedArchiveFontBase64 = "";
     return cachedArchiveFontBase64;
@@ -222,6 +217,7 @@ const createTextOverlayBuffer = async ({
       .png()
       .toBuffer();
   } catch (err) {
+    logOperationalError("service.ticket-text-render", err);
     console.error("[ticket] Sharp text render failed:", {
       text: safeText,
       error: err.message,
@@ -242,6 +238,7 @@ const createTextOverlayBuffer = async ({
 
       return await sharp(svgBuffer).png().toBuffer();
     } catch (svgErr) {
+      logOperationalError("service.ticket-svg-render", svgErr);
       console.error("[ticket] SVG text render failed:", {
         text: safeText,
         error: svgErr.message,
@@ -277,6 +274,7 @@ const createVerticalLabelBuffer = async ({
       .png()
       .toBuffer();
   } catch (err) {
+    logOperationalError("service.ticket-text-rotate", err);
     console.error("[ticket] Vertical text rotate failed:", {
       text: String(text ?? "").trim(),
       error: err.message,
@@ -304,6 +302,7 @@ const pushCenteredOverlay = async ({
   try {
     metadata = await sharp(buffer).metadata();
   } catch (err) {
+    logOperationalError("service.ticket-overlay-metadata", err);
     console.error("[ticket] Overlay metadata read failed:", err.message);
     return;
   }
@@ -335,7 +334,7 @@ const resolveTicketHolder = async ({
 
     let user = null;
     try {
-      user = await User.findById(userId);
+      user = await MemberUser.findById(userId);
     } catch (_) {
       user = null;
     }
@@ -356,23 +355,18 @@ const uploadBufferToS3 = async ({ buffer, bucketName, key }) => {
     secretAccessKey: process.env.S3_SECRET_KEY,
   });
 
-  const uploadedFile = await s3
-    .upload({
-      Bucket: bucketName,
-      Key: key,
-      Body: buffer,
-      ContentType: "image/webp",
-    })
-    .promise();
+  let uploadedFile;
+  try {
+    uploadedFile = await s3.upload({ Bucket: bucketName, Key: key, Body: buffer, ContentType: "image/webp" }).promise();
+  } catch (error) { logIntegrationError("aws-s3", error, "ticket-upload"); throw error; }
 
   return uploadedFile.Location;
 };
 
-export const generateAndUploadEventTicket = async ({
+export const renderEventTicket = async ({
   event,
   checkoutType = "guest",
-  bucketName,
-  originUrl,
+  qrLink: existingQrLink,
   code,
   quantity = 1,
   guestName = "",
@@ -381,10 +375,6 @@ export const generateAndUploadEventTicket = async ({
 }) => {
   if (!event?.ticketImg) {
     throw new Error("Missing event ticket template image");
-  }
-
-  if (!bucketName) {
-    throw new Error("Missing bucket for ticket upload");
   }
 
   const safeQuantity = Number(quantity) > 0 ? Number(quantity) : 1;
@@ -457,25 +447,26 @@ export const generateAndUploadEventTicket = async ({
   }
 
   if (event.ticketQR) {
-    const qrLink = buildGuestCheckLink({
-      originUrl,
-      eventId: event.id || event._id?.toString() || "",
-      code: code || Date.now(),
-      quantity: safeQuantity,
-    });
+    const qrLink = existingQrLink || await ticketQrLink(event.id || event._id?.toString(), code);
 
     const qrBuffer = await QRCode.toBuffer(qrLink, {
       type: "png",
-      width: 200,
-      margin: 0,
+      width: QR_SIZE,
+      margin: 4,
+      // Lower density without shortening or changing the unique ticket token.
+      errorCorrectionLevel: "L",
     });
-    const qrResized = await sharp(qrBuffer).resize(80, 80).png().toBuffer();
+    // Round only the outer white quiet-zone corners, leaving QR modules intact.
+    const qrResized = await sharp(qrBuffer)
+      .composite([{ input: Buffer.from(`<svg width="${QR_SIZE}" height="${QR_SIZE}"><rect width="${QR_SIZE}" height="${QR_SIZE}" rx="${QR_CORNER_RADIUS}" fill="white"/></svg>`), blend: "dest-in" }])
+      .png()
+      .toBuffer();
 
     if (isNonEmptyBuffer(qrResized)) {
       composites.push({
         input: qrResized,
-        left: 1330,
-        top: Math.max(height - 380, 0),
+        left: 1290,
+        top: Math.max(height - 400, 0),
       });
     }
   }
@@ -514,11 +505,18 @@ export const generateAndUploadEventTicket = async ({
     });
   }
 
-  const finalTicketBuffer = await sharp(resizedTicketImage)
+  return await sharp(resizedTicketImage)
     .composite(composites)
-    .webp({ quality: 100 })
+    .webp({ lossless: true })
     .toBuffer();
 
+};
+
+export const generateAndUploadEventTicket = async (options) => {
+  const { event, code, checkoutType = "guest", bucketName } = options;
+  if (!bucketName) throw new Error("Missing bucket for ticket upload");
+  const finalTicketBuffer = await renderEventTicket(options);
+  const { name } = await resolveTicketHolder(options);
   const key = `${sanitizeKeyPart(
     event.id || event._id?.toString() || "event",
   )}_${sanitizeKeyPart(code || Date.now())}_${sanitizeKeyPart(
