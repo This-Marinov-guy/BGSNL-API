@@ -189,10 +189,7 @@ mountApiRouter(API_VERSIONS.V1, "/monitoring", monitoringRouter);
 
 //no page found
 app.use((req, res, next) => {
-  const error = new HttpError(
-    "No action found - please try different path!",
-    404
-  );
+  const error = new HttpError("Something went wrong - please try again!", 404);
   return next(error);
 });
 
@@ -209,7 +206,7 @@ app.use((error, req, res, _next) => {
     if ((error.statusCode || 500) >= 500) logOperationalError("endpoint.payment", error);
     return res.status(error.statusCode || 500).json({ message: error instanceof HttpError ? error.message : "Payment service is temporarily unavailable. Please try again." });
   }
-  console.error("API request failed", { status: error.statusCode || 500, path: req.path });
+  console.error("API request failed", { status: error.statusCode || 500, method: req.method, path: req.path, originalPath: req.originalUrl?.split("?")[0] });
 
   const uploadValidationError = formatUploadValidationError(error);
   if (uploadValidationError) {
