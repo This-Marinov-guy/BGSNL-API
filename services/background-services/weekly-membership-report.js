@@ -14,8 +14,6 @@ import { logIntegrationError, logOperationalError } from "../../middleware/axiom
 import { runObservedJob } from "../monitoring/job-history.js";
 
 export const WEEKLY_MEMBERSHIP_REPORT_TIME_ZONE = "Europe/Amsterdam";
-export const WEEKLY_MEMBERSHIP_REPORT_INTERVAL_MS = 5 * 60 * 1000;
-const REPORT_DELAY_MINUTES = 5;
 const REPORT_TYPE = "weekly-membership-summary";
 
 const REGION_LABELS = Object.freeze({
@@ -65,20 +63,29 @@ export const getWeeklyMembershipReportConfig = (env = process.env) => {
   };
 };
 
-// The report runs just after Monday starts and covers the previous complete
-// ISO week (Monday 00:00 up to, but excluding, the next Monday 00:00).
+export const getNextMembershipReportTime = (now = new Date(), timeZone = WEEKLY_MEMBERSHIP_REPORT_TIME_ZONE) => {
+  const current = moment(now).tz(timeZone);
+  const next = current.clone().startOf("isoWeek").isoWeekday(7).hour(18);
+  if (!next.isAfter(current)) next.add(1, "week");
+  return next.toDate();
+};
+
+// Consecutive Sunday 18:00 cutoffs include every registration, including Sunday
+// evening, without overlap. Calendar weeks respect Amsterdam daylight saving.
 export const getCompletedMembershipWeek = (
   now = new Date(),
   timeZone = WEEKLY_MEMBERSHIP_REPORT_TIME_ZONE
 ) => {
-  const periodEnd = moment(now).tz(timeZone).startOf("isoWeek");
+  const current = moment(now).tz(timeZone);
+  const periodEnd = current.clone().startOf("isoWeek").isoWeekday(7).hour(18);
+  if (periodEnd.isAfter(current)) periodEnd.subtract(1, "week");
   const periodStart = periodEnd.clone().subtract(1, "week");
   return {
     key: periodStart.format("YYYY-MM-DD"),
     periodStart: periodStart.toDate(),
     periodEnd: periodEnd.toDate(),
-    dueAt: periodEnd.clone().add(REPORT_DELAY_MINUTES, "minutes").toDate(),
-    label: `${periodStart.format("D MMMM YYYY")} – ${periodEnd.clone().subtract(1, "day").format("D MMMM YYYY")}`,
+    dueAt: periodEnd.toDate(),
+    label: `${periodStart.format("D MMMM YYYY HH:mm")} – ${periodEnd.format("D MMMM YYYY HH:mm")} (${timeZone})`,
   };
 };
 
@@ -222,7 +229,9 @@ export const processWeeklyMembershipReport = async ({
   }
 
   const period = getCompletedMembershipWeek(now, config.timeZone);
-  if (new Date(now).getTime() < period.dueAt.getTime()) {
+  // No late-week/startup catch-up, even if called outside the scheduled worker.
+  const scheduledMinute = moment(now).tz(config.timeZone);
+  if (scheduledMinute.isoWeekday() !== 7 || scheduledMinute.hour() !== 18 || scheduledMinute.minute() !== 0) {
     return { status: "not-due", sent: 0, reportKey: period.key };
   }
 
@@ -275,27 +284,35 @@ export const processWeeklyMembershipReport = async ({
 };
 
 export const startWeeklyMembershipReportWorker = ({
-  intervalMs = WEEKLY_MEMBERSHIP_REPORT_INTERVAL_MS,
   processReport = processWeeklyMembershipReport,
   config = getWeeklyMembershipReportConfig(),
+  now = () => new Date(),
+  schedule = setTimeout,
+  cancel = clearTimeout,
+  observe = runObservedJob,
 } = {}) => {
   if (!config.enabled) return async () => {};
   let stopped = false;
   let running;
+  let timer;
+  const scheduleNext = () => {
+    if (stopped) return;
+    const current = now();
+    timer = schedule(tick, getNextMembershipReportTime(current, config.timeZone).getTime() - current.getTime());
+    timer.unref?.();
+  };
   const tick = () => {
     if (stopped || running) return;
-    running = runObservedJob("scheduler", "weekly-membership-report", () => processReport({ config }))
-      .catch((error) => { logOperationalError("worker.weekly-membership-report", error); console.error("Weekly membership report failed; retrying on the next tick", {
+    running = Promise.resolve().then(() => observe("scheduler", "weekly-membership-report", () => processReport({ config, now: now() })))
+      .catch((error) => { logOperationalError("worker.weekly-membership-report", error); console.error("Weekly membership report failed", {
         code: error?.code,
       }); })
-      .finally(() => { running = null; });
+      .finally(() => { running = null; scheduleNext(); });
   };
-  const timer = setInterval(tick, intervalMs);
-  timer.unref();
-  tick();
+  scheduleNext();
   return async () => {
     stopped = true;
-    clearInterval(timer);
+    cancel(timer);
     await running;
   };
 };

@@ -21,7 +21,8 @@ jobs:
       - name: Check migration and deployment code
         run: |
           npx eslint migrations/run.js migrations/003-normalize-breda-region.js services/migrations/runner.js tests/migration-runner.test.js tests/deploy-with-migrations.test.js
-          bash -n scripts/deploy-with-migrations.sh
+          bash -n scripts/deploy-with-migrations.sh scripts/ensure-production-redis.sh
+          npx eslint scripts/check-redis.js
 
   migration-tests:
     runs-on: ubuntu-latest

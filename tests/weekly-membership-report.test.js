@@ -7,6 +7,8 @@ import {
   getWeeklyMembershipReportConfig,
   loadWeeklyMembershipSummary,
   processWeeklyMembershipReport,
+  getNextMembershipReportTime,
+  startWeeklyMembershipReportWorker,
 } from "../services/background-services/weekly-membership-report.js";
 
 const aggregateModel = (groups) => ({
@@ -37,13 +39,13 @@ test("weekly reports follow internal notifications and production-safe overrides
   }).enabled, false);
 });
 
-test("uses the last fully completed Amsterdam Monday-to-Sunday week", () => {
+test("uses consecutive Amsterdam Sunday 18:00 cutoffs", () => {
   const period = getCompletedMembershipWeek(new Date("2026-09-10T10:00:00.000Z"));
-  assert.equal(period.key, "2026-08-31");
-  assert.equal(period.periodStart.toISOString(), "2026-08-30T22:00:00.000Z");
-  assert.equal(period.periodEnd.toISOString(), "2026-09-06T22:00:00.000Z");
-  assert.equal(period.dueAt.toISOString(), "2026-09-06T22:05:00.000Z");
-  assert.equal(period.label, "31 August 2026 – 6 September 2026");
+  assert.equal(period.key, "2026-08-30");
+  assert.equal(period.periodStart.toISOString(), "2026-08-30T16:00:00.000Z");
+  assert.equal(period.periodEnd.toISOString(), "2026-09-06T16:00:00.000Z");
+  assert.equal(period.dueAt.toISOString(), "2026-09-06T16:00:00.000Z");
+  assert.equal(period.label, "30 August 2026 18:00 – 6 September 2026 18:00 (Europe/Amsterdam)");
 });
 
 test("groups member and alumni counts by city and keeps missing cities visible", async () => {
@@ -91,7 +93,7 @@ test("sends each recipient once even when the scheduler processes the week again
   const runGuard = createEmailRunGuard();
   const messages = [];
   const dependencies = {
-    now: new Date("2026-09-10T10:00:00.000Z"),
+    now: new Date("2026-09-13T16:00:00.000Z"),
     config: {
       enabled: true,
       subscribers: ["one@example.com", "two@example.com"],
@@ -117,7 +119,7 @@ test("an ambiguous provider failure is not retried within the same process", asy
   const runGuard = createEmailRunGuard();
   let calls = 0;
   const dependencies = {
-    now: new Date("2026-09-10T10:00:00.000Z"),
+    now: new Date("2026-09-13T16:00:00.000Z"),
     config: {
       enabled: true,
       subscribers: ["team@example.com"],
@@ -133,4 +135,63 @@ test("an ambiguous provider failure is not retried within the same process", asy
   assert.equal(first.status, "delivery-failed");
   assert.equal(replay.status, "already-processed");
   assert.equal(calls, 1);
+});
+
+test("next run is strictly future and follows Amsterdam daylight saving", () => {
+  for (const [now, expected] of [
+    ["2026-09-28T10:00:00Z", "2026-10-04T16:00:00.000Z"],
+    ["2026-09-27T15:59:59Z", "2026-09-27T16:00:00.000Z"],
+    ["2026-09-27T16:00:00Z", "2026-10-04T16:00:00.000Z"],
+    ["2026-03-22T17:00:00Z", "2026-03-29T16:00:00.000Z"],
+    ["2026-10-18T16:00:00Z", "2026-10-25T17:00:00.000Z"],
+  ]) assert.equal(getNextMembershipReportTime(new Date(now)).toISOString(), expected);
+  const spring = getCompletedMembershipWeek(new Date("2026-03-29T16:00:00Z"));
+  const autumn = getCompletedMembershipWeek(new Date("2026-10-25T17:00:00Z"));
+  assert.equal((spring.periodEnd - spring.periodStart) / 3600000, 167);
+  assert.equal((autumn.periodEnd - autumn.periodStart) / 3600000, 169);
+});
+
+test("does not catch up outside the scheduled Sunday minute", async () => {
+  for (const now of ["2026-09-28T10:00:00Z", "2026-09-27T15:59:59Z", "2026-09-27T16:01:00Z"]) {
+    const result = await processWeeklyMembershipReport({
+      now: new Date(now),
+      config: { enabled: true, subscribers: ["team@example.com"], timeZone: "Europe/Amsterdam" },
+      MemberModel: { aggregate() { assert.fail("Must not query reports outside schedule"); } },
+      send() { assert.fail("Must not send outside schedule"); },
+    });
+    assert.equal(result.status, "not-due");
+  }
+});
+
+test("worker schedules without sending on startup or restart and cancels on shutdown", async () => {
+  let current = new Date("2026-09-28T10:00:00Z");
+  const scheduled = [];
+  const sent = [];
+  const cancelled = [];
+  const options = {
+    config: { enabled: true, timeZone: "Europe/Amsterdam" },
+    now: () => current,
+    schedule: (callback, delay) => { const timer = { callback, delay, unref() {} }; scheduled.push(timer); return timer; },
+    cancel: timer => cancelled.push(timer),
+    observe: (_source, _name, work) => work(),
+    processReport: async ({ now }) => sent.push(now),
+  };
+  const stop = startWeeklyMembershipReportWorker(options);
+  assert.equal(sent.length, 0);
+  assert.equal(scheduled[0].delay, new Date("2026-10-04T16:00:00Z") - current);
+  current = new Date("2026-10-04T16:00:00Z");
+  scheduled[0].callback();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(sent.length, 1);
+  assert.equal(scheduled.length, 2);
+  await stop();
+  assert.equal(cancelled[0], scheduled[1]);
+  scheduled[1].callback();
+  assert.equal(sent.length, 1);
+  const stopRestart = startWeeklyMembershipReportWorker(options);
+  assert.equal(sent.length, 1);
+  assert.equal(scheduled[2].delay, 7 * 24 * 3600000);
+  await stopRestart();
+  startWeeklyMembershipReportWorker({ ...options, config: { enabled: false } });
+  assert.equal(scheduled.length, 3);
 });

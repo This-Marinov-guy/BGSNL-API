@@ -16,9 +16,15 @@ echo "Deployment logs: $run_dir"
 revision=$(git -C "$repo_dir" rev-parse HEAD)
 cd "$compose_dir"
 
+# Recover storage before touching the running API or any database migrations.
+bash "$repo_dir/scripts/ensure-production-redis.sh"
+
 # Build both before taking the old containers offline. The Dockerfile runs as
 # uid 1000; only the result subdirectory is writable by the temporary runner.
 docker compose build bgsnl-api bgsnl-worker
+for service in bgsnl-api bgsnl-worker; do
+  docker compose run --rm --no-deps -T "$service" node scripts/check-redis.js
+done
 mkdir "$run_dir/result"
 chown 1000:1000 "$run_dir/result"
 chmod 700 "$run_dir/result"
@@ -66,5 +72,8 @@ migrations_passed=true
 
 # No --build here: deploy the images that just passed the migration gate.
 docker compose up -d --no-build bgsnl-api bgsnl-worker
+for service in bgsnl-api bgsnl-worker; do
+  docker compose exec -T "$service" node scripts/check-redis.js
+done
 echo "Deployment completed for $revision. Migration result: $run_dir/result/result.json"
 # Keep old images and migration logs available for diagnosis/recovery.

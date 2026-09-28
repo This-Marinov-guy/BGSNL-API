@@ -6,8 +6,13 @@ checks out the tested commit on the VPS, and calls
 
 ## Deployment sequence
 
-1. Acquire the host deployment lock and build `bgsnl-api` and `bgsnl-worker`
-   while the current containers continue running.
+1. Acquire the host deployment lock and check the dedicated `bgsnl-storage`
+   Redis service. Leave a healthy container untouched; otherwise recreate/start
+   only `bgsnl-redis` and wait up to 60 seconds for health. The existing named
+   data volume and private configuration are preserved. Build `bgsnl-api` and
+   `bgsnl-worker`, then run an authenticated Redis PING from each release image
+   while the current containers continue running. Missing configuration, failed
+   recovery, or failed connectivity blocks deployment before stopping writers.
 2. Save the current container IDs. Stop both services gracefully and verify
    they are stopped. This starts a maintenance window: **the API is unavailable
    during migration and restoration**. All other database writers, including
@@ -16,7 +21,17 @@ checks out the tested commit on the VPS, and calls
    prevents another migration batch from running concurrently. Before the first
    mutation of a collection, save its documents, indexes, and collection options.
 4. Only after every migration and tracking write succeeds, replace the API and
-   worker using those same images, with `--no-build`.
+   worker using those same images, with `--no-build`. Verify Redis connectivity
+   again inside both running containers before reporting deployment success.
+
+Redis uses `/root/bgsnl-redis/compose.yml` and its private `.env`, with Compose
+project name `bgsnl-storage`. Override only the configuration directory with
+`BGSNL_REDIS_COMPOSE_DIR` and the health wait with `BGSNL_REDIS_WAIT_SECONDS`.
+The official Redis image has no custom build step; recovery uses Compose
+`up --build --force-recreate --no-deps --wait`, which also supports a future
+build-backed service. It never runs `down -v`, flushes Redis, changes passwords,
+or touches Domakin services. Each authenticated connection probe has a seven-second
+deadline and prints no credentials or stored data.
 
 If a migration fails, restore the **entire pending batch**, including changes
 made by earlier successful migrations, partially completed writes, collection

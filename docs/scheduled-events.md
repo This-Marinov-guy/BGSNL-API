@@ -15,7 +15,7 @@ Database-triggered work is inventoried in [triggers.md](triggers.md).
 | --- | --- | --- | --- | --- |
 | Billing maintenance | Immediately after API startup, then every 60 seconds | Not calendar-based | `NODE_ENV=production` or `BILLING_WORKER_ENABLED=true`; `BILLING_WORKER_ENABLED=false` always disables it | Processes payment reminders, recovers Checkout sessions, and refreshes stale subscription state |
 | Regional Member revenue | Within the billing worker, approximately every 60 seconds | UTC for monthly fee reports | Billing worker enabled and `MEMBER_REVENUE_SHARING_ENABLED=true` | Reconciles new Member invoice allocations, actual Stripe fees and regional Connect transfers; see [member-revenue-sharing.md](member-revenue-sharing.md) |
-| Weekly membership summary | First check after API startup, then every 5 minutes; a new report becomes due Monday at 00:05 | `Europe/Amsterdam` | Internal notifications are enabled and the API is in production, or `WEEKLY_MEMBERSHIP_REPORT_ENABLED=true`; setting the flag to `false` disables it | Emails the completed Monday–Sunday member/alumni totals per city to every internal-notification subscriber |
+| Weekly membership summary | Sunday at 18:00; no startup send or missed-run catch-up | `Europe/Amsterdam` | Internal notifications are enabled and the API is in production, or `WEEKLY_MEMBERSHIP_REPORT_ENABLED=true`; setting the flag to `false` disables it | Emails the preceding Sunday 18:00–Sunday 18:00 member/alumni totals per city to every internal-notification subscriber |
 | Birthday greetings | First check after API startup, then every minute; a daily greeting becomes due at 10:00 | `Europe/Amsterdam` | `NODE_ENV=production` or `BIRTHDAY_EMAIL_WORKER_ENABLED=true`; setting the flag to `false` disables it | Sends one non-promotional birthday greeting to each current Member or Alumni account with a valid stored date of birth |
 | Member event announcements | Immediately after API startup, then every minute; an authenticated Atlas notification can request an earlier pass | Not calendar-based | `NODE_ENV=production` or `EVENT_ANNOUNCEMENTS_ENABLED=true`; `false` disables it | Delivers pending publication announcements with personal encrypted ticket links; recovers missed trigger notifications |
 | Event draft cleanup | Daily at 03:00; checks every minute and catches up after startup later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_DRAFT_CLEANUP_ENABLED=true`; `false` disables it | Deletes event drafts created more than 30 days ago |
@@ -132,10 +132,12 @@ Related persistence:
 Source:
 [`services/background-services/weekly-membership-report.js`](../services/background-services/weekly-membership-report.js)
 
-The report covers the last fully completed ISO week: Monday 00:00 inclusive to
-the following Monday 00:00 exclusive. It becomes eligible at 00:05 on Monday
-in `Europe/Amsterdam`, including daylight-saving changes. A process starting
-later in the week sends the latest completed report if it has not attempted it in this process, providing a catch-up after downtime.
+The report is scheduled for Sunday at 18:00 in `Europe/Amsterdam`, including
+daylight-saving changes. It covers the preceding Sunday 18:00 inclusive to the
+current Sunday 18:00 exclusive, so registrations are not omitted between weeks.
+Startup only schedules the next future occurrence; it never sends immediately.
+There is no catch-up after downtime. If the scheduler is unavailable at the
+scheduled time (or delayed beyond that minute), that occurrence is skipped.
 
 The message contains:
 
@@ -162,8 +164,10 @@ WEEKLY_MEMBERSHIP_REPORT_ENABLED=true
 Each recipient receives a separate message.
 
 Weekly delivery records have been removed. A process-local schedule guard avoids
-repeating a week's sends during the same process lifetime. Restarts can repeat
-an email; there is no persistent delivery receipt or outcome log.
+repeating a week's sends during the same process lifetime. A restart schedules
+only the next future Sunday, not a replay. Only the designated email scheduler
+process owns the timer. There is no persistent delivery receipt; manual or
+multiple independently configured scheduler processes are not globally deduplicated.
 
 ## Operational timers that are not scheduled jobs
 
