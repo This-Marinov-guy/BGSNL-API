@@ -9,7 +9,7 @@ module.exports = {
       },
       instances: 2, // Changed from "max" to 2
       exec_mode: "cluster",
-      max_memory_restart: "300M",
+      max_memory_restart: process.env.BGSNL_API_MAX_MEMORY_RESTART || "1G",
       error_file: "/usr/src/app/logs/error.log",
       out_file: "/usr/src/app/logs/out.log",
       merge_logs: true,
