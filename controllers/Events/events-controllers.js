@@ -2,7 +2,6 @@ import { findPublicEvent } from "../../services/public-content/find-public-event
 import { logIntegrationError } from "../../middleware/axiom-logger.js";
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
-import TicketQr from "../../models/TicketQr.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
 import MemberUser from "../../models/MemberUser.js";
 import { validationResult } from "express-validator";
@@ -45,6 +44,7 @@ import {
   NON_SOCIETY_EVENT_RESEND_TEMPLATE,
 } from "../../util/config/defines.js";
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
+import { reserveTicketToken, resolveTicketToken } from "../../services/tickets/qr-link.js";
 import { planCheckIn, checkInMutation } from "../../services/tickets/check-in.js";
 import { futureEventDateFilter, publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
 
@@ -476,14 +476,18 @@ export const postAddGuestToEvent = async (req, res, next) => {
   const safeQuantity = Number(quantity) > 0 ? Number(quantity) : 1;
 
   let ticketLocation = req.file?.location ?? "";
+  let ticketToken;
 
   if (!ticketLocation) {
     try {
+      // Reserved before the guest rows exist; stored on each of them below.
+      ticketToken = await reserveTicketToken(societyEvent, code);
       ticketLocation = await generateAndUploadEventTicket({
         event: societyEvent,
         checkoutType: "guest",
         bucketName: process.env.BUCKET_GUEST_TICKETS,
         originUrl: req.body?.origin_url || req.body?.originUrl || "",
+        ticketToken,
         code,
         quantity: safeQuantity,
         guestName,
@@ -499,6 +503,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
   let guest = {
     type: "free guest",
     code,
+    ticketToken,
     name: guestName,
     email: guestEmail,
     phone: guestPhone,
@@ -1003,7 +1008,7 @@ export const updatePresence = async (req, res, next) => {
   const { count, token } = req.body;
   try {
     if (token) {
-      const ticket = await TicketQr.findOne({ token }).lean();
+      const ticket = await resolveTicketToken(token);
       if (!ticket) return next(new HttpError("Ticket not found", 404));
       eventId = ticket.eventId;
       code = ticket.code;

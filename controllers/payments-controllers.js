@@ -190,16 +190,28 @@ export const createTicketCheckoutSession = async ({
 
     if (duplicate) return { alreadyRegistered: true };
 
-    const storedExpiry = Number(record.data?.expiresAt || 0) * 1000;
-    if (record.data?.sessionUrl && storedExpiry > Date.now()) {
-      if (record.data.promoSignature === promoSignature && record.data.choicesSignature === choicesSignature) return { url: record.data.sessionUrl };
-      // A role or promo change must not retain a previously eligible discount.
-      await stripeClient.checkout.sessions.expire(record.data.sessionId);
+    if (record.data?.sessionId) {
+      let previous = await stripeClient.checkout.sessions.retrieve(record.data.sessionId);
+      if (previous.status === "open") {
+        if (record.data.promoSignature === promoSignature && record.data.choicesSignature === choicesSignature && previous.url) return { url: previous.url };
+        // Replace changed choices/eligibility, but never leave two payable
+        // member-ticket sessions open or race a successful payment.
+        await assertOwned();
+        try {
+          previous = await stripeClient.checkout.sessions.expire(previous.id);
+        } catch (error) {
+          previous = await stripeClient.checkout.sessions.retrieve(record.data.sessionId);
+          if (previous.status !== "expired" && previous.status !== "complete") throw error;
+        }
+      }
+      if (previous.status === "complete") throw new HttpError("Your ticket payment is being processed. Please refresh shortly.", 409);
+      if (previous.status !== "expired") throw new HttpError("Your previous checkout could not be closed. Please try again.", 409);
     }
 
     // Stripe requires Checkout sessions to remain open for at least 30 minutes.
     // Keep a small buffer so request latency cannot put us below that boundary.
     const expiresAt = Math.floor(Date.now() / 1000) + 31 * 60;
+    await assertOwned();
     const session = await createSession({
       ...checkoutData,
       expires_at: expiresAt,
@@ -583,7 +595,7 @@ export const postCheckoutFile = async (req, res, next, {
 
     // Reserved before the guest rows exist; the same token is stored on every
     // row this purchase creates, so one QR admits the whole group.
-    ticketToken = event.ticketQR ? await reserveTicketToken(eventId, ticketCode) : undefined;
+    ticketToken = await reserveTicketToken(event, ticketCode);
 
     fileLocation = await generateTicket({
       event,

@@ -1,9 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import Event from "../models/Event.js";
-import TicketQr from "../models/TicketQr.js";
 import { updatePresence, getEventGuestList } from "../controllers/Events/events-controllers.js";
-import { ticketQrLink } from "../services/tickets/qr-link.js";
+import { reserveTicketToken, ticketQrLink } from "../services/tickets/qr-link.js";
 
 const eventId = "a".repeat(24), token = "abcdefghijklmnopqrstuv";
 const event = { _id: eventId, id: eventId, title: "Test event", region: "groningen", guestList: [{ _id: "b".repeat(24), code: 123, name: "Test", status: 0 }] };
@@ -32,10 +31,10 @@ test("live guest-list reads preserve regional and read-only analytics scope", as
   } finally { Event.findById = original; }
 });
 test("short QR resolves server-side and region, wrong-event, refund and conflict checks fail closed", async () => {
-  const originals = { find: Event.findById, update: Event.updateOne, qr: TicketQr.findOne };
+  const originals = { find: Event.findById, update: Event.updateOne, one: Event.findOne };
   let writes = 0;
   try {
-    TicketQr.findOne = () => ({ lean: async () => ({ eventId, code: "123" }) });
+    Event.findOne = () => ({ select: () => ({ lean: async () => ({ _id: eventId, guestList: [{ code: 123, ticketToken: token }] }) }) });
     Event.findById = () => ({ select: async () => event });
     Event.updateOne = async () => { writes++; return { modifiedCount: 0 }; };
     async function run(body, region = "groningen") {
@@ -52,27 +51,29 @@ test("short QR resolves server-side and region, wrong-event, refund and conflict
     event.guestList[0].refunded = true;
     assert.equal((await run({ token })).code, 422);
     assert.equal(writes, 1);
-  } finally { Event.findById = originals.find; Event.updateOne = originals.update; TicketQr.findOne = originals.qr; delete event.guestList[0].refunded; }
+  } finally { Event.findById = originals.find; Event.updateOne = originals.update; Event.findOne = originals.one; delete event.guestList[0].refunded; }
 });
 
 test("issued links use a short opaque token and duplicate purchase codes fail safely", async () => {
-  const originalFind = TicketQr.findOne, originalCreate = TicketQr.create;
+  const originalExists = Event.exists;
   try {
-    TicketQr.findOne = async () => null;
-    TicketQr.create = async data => { assert.equal(data.eventId, eventId); assert.equal(data.code, "123"); return { token }; };
-    const link = await ticketQrLink(eventId, 123);
-    assert.equal(link, `https://bulgariansociety.nl/t/${token}`);
+    Event.exists = async () => null;
+    const issued = await reserveTicketToken({ _id: eventId, ticketQR: true }, 123);
+    assert.match(issued, /^[A-Za-z0-9_-]{22}$/);
+    const link = ticketQrLink(issued);
+    assert.equal(link, `https://bulgariansociety.nl/t/${issued}`);
     assert.ok(link.length < 55);
-    TicketQr.findOne = async () => ({ token });
-    await assert.rejects(ticketQrLink(eventId, 123), /already issued/);
-  } finally { TicketQr.findOne = originalFind; TicketQr.create = originalCreate; }
+    // An already-issued purchase code must never be aliased to a second token.
+    Event.exists = async () => ({ _id: eventId });
+    await assert.rejects(reserveTicketToken({ _id: eventId, ticketQR: true }, 123), /already issued/);
+  } finally { Event.exists = originalExists; }
 });
 
 test("manual scan previews never write attendance", async () => {
-  const originals = { find: Event.findById, update: Event.updateOne, qr: TicketQr.findOne };
+  const originals = { find: Event.findById, update: Event.updateOne, one: Event.findOne };
   let writes = 0, data, error;
   try {
-    TicketQr.findOne = () => ({ lean: async () => ({ eventId, code: "123" }) });
+    Event.findOne = () => ({ select: () => ({ lean: async () => ({ _id: eventId, guestList: [{ code: 123, ticketToken: token }] }) }) });
     Event.findById = () => ({ select: async () => event });
     Event.updateOne = async () => { writes++; return { modifiedCount: 1 }; };
     const response = { set() {}, status() { return this; }, json(value) { data = value; } };
@@ -91,5 +92,20 @@ test("manual scan previews never write attendance", async () => {
     assert.equal(data.ticketDetails[0].id, "b".repeat(24));
     assert.equal(data.ticketDetails[0].name, "Test");
     assert.equal(writes, 0);
-  } finally { Event.findById = originals.find; Event.updateOne = originals.update; TicketQr.findOne = originals.qr; }
+  } finally { Event.findById = originals.find; Event.updateOne = originals.update; Event.findOne = originals.one; }
+});
+
+test("events without QR tickets never reserve a token", async () => {
+  const originalExists = Event.exists;
+  let queries = 0;
+  try {
+    Event.exists = async () => { queries++; return null; };
+    // No token, and no database work: nothing would ever scan it.
+    assert.equal(await reserveTicketToken({ _id: eventId, ticketQR: false }, 123), undefined);
+    assert.equal(await reserveTicketToken({ _id: eventId }, 123), undefined);
+    assert.equal(queries, 0);
+    // The identity contract still applies before the QR flag is consulted.
+    await assert.rejects(reserveTicketToken({ ticketQR: true }, 123), /Missing ticket identity/);
+    await assert.rejects(reserveTicketToken({ _id: eventId, ticketQR: true }, "abc"), /Missing ticket identity/);
+  } finally { Event.exists = originalExists; }
 });

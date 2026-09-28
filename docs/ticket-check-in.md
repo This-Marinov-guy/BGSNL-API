@@ -1,6 +1,6 @@
 # Ticket QR and door check-in
 
-New server-rendered tickets use `https://bulgariansociety.nl/t/{token}`. Tokens contain 128 random bits (22 base64url characters). The `ticketqrs` collection has unique indexes on the token and `(eventId, code)`; collisions fail issuance or retry token allocation rather than aliasing another purchase. Checkout generates the purchase code server-side and passes the same code to image generation and payment fulfillment.
+New server-rendered tickets use `https://bulgariansociety.nl/t/{token}`. Tokens contain 128 random bits (22 base64url characters). A token lives on the guest-list entries it admits, as `Event.guestList.ticketToken`; there is no separate collection. Because one purchase may cover several guests, the same token is written to every entry sharing that purchase code, and the supporting index `guestlist_ticket_token` is therefore not unique: a unique multikey index would reject the repeated value inside a single event document. Issuance instead checks the event for an already-issued code and re-mints on the (vanishingly unlikely) token collision, so a code is never aliased to a second token. An event with QR tickets switched off never receives a token at all: `reserveTicketToken` takes the loaded event and returns nothing when `ticketQR` is false, without touching the database, so the rule holds for every call site rather than each one remembering to check. Checkout generates the purchase code server-side and passes the same code to image generation and payment fulfillment.
 
 The existing ticket format is preserved: one purchase image/QR may represent multiple guest-list entries. It is not a separate QR per attendee in a group. A decision to split group purchases requires changing fulfillment and email attachments, not merely the scan page. Old long URLs and already-issued images still work without a backfill or reissue.
 
@@ -32,7 +32,7 @@ The shared `AppModal` shell includes a fullscreen/restore control next to Close,
 ## Rollout and verification
 
 1. Deploy the frontend short `/t/` redirect and scanner alongside the API changes; do not enable new ticket generation on the API before the short route is live on the canonical domain.
-2. Apply migration `008-ticket-qr-indexes` through the existing migration runner before new ticket issuance. It creates indexes only and does not rewrite old tickets or attendance.
+2. Apply migration `011-ticket-tokens-into-guest-list` through the existing migration runner before new ticket issuance. It creates the `guestlist_ticket_token` index, copies any tokens still held in the retired `ticketqrs` collection onto their guest-list entries, and then drops that collection. Attendance rows are otherwise untouched, and already-issued QR images keep working. It supersedes `008-ticket-qr-indexes`, which indexed the retired collection.
 3. Test newly issued single/group tickets, old QR links, partial group arrivals, duplicate scans, refunds, wrong-region/event permissions, two simultaneous scanners, and network interruption on staging.
 4. Verify camera permission, QR decoding, focus and stop/restart on a physical iPhone and Android device. Codes are generated directly at 140px with a four-module quiet zone, without the previous blurred 80px downsampling.
 

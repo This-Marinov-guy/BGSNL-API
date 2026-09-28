@@ -150,7 +150,10 @@ test('cached member checkout is replaced when promo eligibility changes and then
   const record = { data: { sessionId: 'cs_old', sessionUrl: 'old', expiresAt: Math.floor(now / 1000) + 1800, promoSignature: 'old-audience' } };
   const expired = [];
   let creations = 0;
-  h.stripe.checkout = { sessions: { expire: async id => expired.push(id) } };
+  h.stripe.checkout = { sessions: {
+    retrieve: async id => ({ id, status: 'open', url: id === 'cs_old' ? 'old' : 'new' }),
+    expire: async id => { expired.push(id); return { id, status: 'expired' }; },
+  } };
   const args = { stripeClient: h.stripe, event: h.event, eventId: 'event_1', checkoutType: 'member', userId: 'member_1', member: { roles: [MEMBER], status: 'active', expireDate: new Date(now + 86400000) }, checkoutData: { ...checkoutData, metadata: { region: 'groningen' } } };
   const deps = {
     hasDuplicate: async () => false,

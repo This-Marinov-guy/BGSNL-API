@@ -4,7 +4,6 @@ import sharp from "sharp";
 import { readFile, copyFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import Event from "../models/Event.js";
-import TicketQr from "../models/TicketQr.js";
 import { renderEventTicket } from "../services/side-services/ticket-generator.js";
 
 const eventId = "6aa7eb0e6c53d4c529cb92eb";
@@ -22,10 +21,10 @@ async function main() {
     if (manifest.eventId !== eventId || !manifest.testMode) throw new Error("Unexpected fixture manifest");
     for (const purchase of manifest.purchases) {
       if (!/^purchase-\d+\.png$/.test(purchase.imageName)) throw new Error("Invalid fixture filename");
-      const qr = await TicketQr.findOne({ eventId, code: String(purchase.code), token: purchase.token });
       const guests = event.guestList.filter(row => String(row.code) === String(purchase.code));
-      if (!qr || guests.length !== purchase.quantity || guests.some(row => row.preferences?.fixture !== manifest.batch)) throw new Error("Ticket identity mismatch");
-      const expectedLink = `http://localhost:3000/t/${qr.token}`;
+      const issued = guests.find(row => typeof row.ticketToken === "string")?.ticketToken;
+      if (!issued || issued !== purchase.token || guests.length !== purchase.quantity || guests.some(row => row.preferences?.fixture !== manifest.batch)) throw new Error("Ticket identity mismatch");
+      const expectedLink = `http://localhost:3000/t/${issued}`;
       const buffer = await renderEventTicket({
         event: { ...event.toObject(), ticketQR: true },
         checkoutType: "guest", guestName: purchase.name, code: purchase.code,

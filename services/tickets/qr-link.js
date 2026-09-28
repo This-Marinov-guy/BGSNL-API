@@ -13,10 +13,15 @@ export const ticketQrLink = (token) => {
   return `https://bulgariansociety.nl/t/${token}`;
 };
 
-// A code may not be reused for a second issued purchase. Callers generate a
-// fresh server-side code; a collision fails issuance instead of aliasing it.
-export async function reserveTicketToken(eventId, code) {
+// Takes the already-loaded event so the QR rule is enforced in one place: an
+// event with QR tickets switched off never gets a token, because nothing would
+// ever scan it. A code may not be reused for a second issued purchase; callers
+// generate a fresh server-side code, and a collision fails issuance instead of
+// aliasing it.
+export async function reserveTicketToken(event, code) {
+  const eventId = event?._id ?? event?.id;
   if (!eventId || !/^\d{1,16}$/.test(String(code))) throw new Error("Missing ticket identity");
+  if (!event.ticketQR) return undefined;
   const issued = await Event.exists({ _id: eventId,
     guestList: { $elemMatch: { code: Number(code), ticketToken: { $type: "string" } } } });
   if (issued) throw new Error("Ticket identity already issued; please retry");

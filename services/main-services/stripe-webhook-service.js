@@ -256,6 +256,8 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
   let guest = {
     type: type ?? "guest",
     code,
+    // Every row of this purchase carries the QR token printed on its image.
+    ticketToken: metadata.ticketToken,
     transactionId,
     name: guestName,
     email: guestEmail,
@@ -345,6 +347,7 @@ export const handleMemberTicketPurchase = async (metadata, paymentData) => {
     userId: String(userId),
     memberPriceApplied,
     code,
+    ticketToken: metadata.ticketToken,
     transactionId,
     name: targetUser.name + " " + targetUser.surname,
     email: targetUser.email,

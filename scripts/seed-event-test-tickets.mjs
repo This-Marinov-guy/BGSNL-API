@@ -7,7 +7,6 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import Event from "../models/Event.js";
-import TicketQr from "../models/TicketQr.js";
 
 const eventId = "6aa7eb0e6c53d4c529cb92eb";
 const withAddOns = process.argv.includes("--addons");
@@ -69,7 +68,9 @@ async function main() {
       }, { idempotencyKey: identity });
     }
     if (payment.livemode || payment.status !== "succeeded" || payment.metadata.fixture !== batch) throw new Error("Test payment not confirmed");
-    const token = (await TicketQr.findOne({ eventId, code: String(code) }))?.token || randomBytes(16).toString("base64url");
+    const issuedEvent = await Event.findOne({ _id: eventId, "guestList.code": code }).select("guestList.code guestList.ticketToken").lean();
+    const token = issuedEvent?.guestList.find(row => row.code === code && typeof row.ticketToken === "string")?.ticketToken
+      || randomBytes(16).toString("base64url");
     const qrUrl = `http://localhost:3000/t/${token}`;
     const imageName = `purchase-${index + 1}.png`;
     await QRCode.toFile(`${output}${imageName}`, qrUrl, { width: 400, margin: 4, errorCorrectionLevel: "M" });
@@ -77,9 +78,8 @@ async function main() {
       const session = await mongoose.startSession();
       try {
         await session.withTransaction(async () => {
-          await TicketQr.updateOne({ eventId, code: String(code) }, { $setOnInsert: { token } }, { upsert: true, session });
           const rows = Array.from({ length: purchase.quantity }, () => ({
-            code, name: purchase.name, email, phone: "+31600000000", type: purchase.tier === "guest" ? "guest" : "member",
+            code, ticketToken: token, name: purchase.name, email, phone: "+31600000000", type: purchase.tier === "guest" ? "guest" : "member",
             memberPriceApplied: purchase.tier !== "guest", transactionId: payment.id, status: 0, refunded: false,
             preferences: { fixture: batch, pricingTier: purchase.tier },
             addOns,

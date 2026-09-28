@@ -114,10 +114,49 @@ test("real ticket controller charges DB add-on price IDs alongside a free member
 
 test("open member checkout is reused only for matching preferences and add-ons", async () => {
   const record = { data: {} }; let created = 0; const expired = [];
-  const args = { stripeClient: { checkout: { sessions: { expire: async id => expired.push(id) } } }, event: { ...event, product: {} }, eventId: event._id, checkoutType: "member", userId: member.id, member,
+  const args = { stripeClient: { checkout: { sessions: {
+    retrieve: async id => ({ id, status: "open", url: record.data.sessionUrl }),
+    expire: async id => { expired.push(id); return { id, status: "expired" }; },
+  } } }, event: { ...event, product: {} }, eventId: event._id, checkoutType: "member", userId: member.id, member,
     checkoutData: { line_items: [{ price: "price_member", quantity: 1 }], metadata: { region: "groningen", preferences: '{"Diet":"Vegetarian"}' } } };
   const deps = { hasDuplicate: async () => false, lease: async (key, run) => run({ record, assertOwned: async () => {} }), updateRecord: async (query, update) => { record.data = update.$set.data; }, createReturned: async () => ({ id: `cs_${++created}`, url: `https://checkout.stripe.com/${created}` }) };
   await createTicketCheckoutSession(args, deps); await createTicketCheckoutSession(args, deps); assert.equal(created, 1);
   args.checkoutData.metadata.preferences = '{"Diet":"Other"}'; await createTicketCheckoutSession(args, deps);
   assert.equal(created, 2); assert.deepEqual(expired, ["cs_1"]);
+});
+
+test("ticket checkout trusts Stripe over cached expiry and safely handles expiration races", async () => {
+  for (const scenario of ["expired", "lost-response", "completed", "cannot-expire"]) {
+    const record = { data: { sessionId: "cs_old", sessionUrl: "old", expiresAt: 1 } };
+    let status = scenario === "expired" ? "expired" : "open";
+    let created = 0;
+    const args = { stripeClient: { checkout: { sessions: {
+      retrieve: async () => ({ id: "cs_old", status, url: "old" }),
+      expire: async () => {
+        status = scenario === "lost-response" ? "expired" : scenario === "completed" ? "complete" : "open";
+        throw new Error("Expiration interrupted");
+      },
+    } } }, event: { ...event, product: {} }, eventId: event._id, checkoutType: "member", userId: member.id, member,
+    checkoutData: { line_items: [{ price: "price_member", quantity: 1 }], metadata: { region: "groningen" } } };
+    const deps = { hasDuplicate: async () => false, lease: async (_key, run) => run({ record, assertOwned: async () => {} }),
+      updateRecord: async () => {}, createReturned: async () => { created++; return { id: "cs_new", url: "new" }; } };
+    if (["expired", "lost-response"].includes(scenario)) {
+      assert.deepEqual(await createTicketCheckoutSession(args, deps), { url: "new" });
+      assert.equal(created, 1);
+    } else {
+      await assert.rejects(createTicketCheckoutSession(args, deps), scenario === "completed" ? /payment is being processed/ : /Expiration interrupted/);
+      assert.equal(created, 0);
+    }
+  }
+});
+
+test("guest and normal ticket checkouts are not blocked by stored member sessions", async () => {
+  for (const selection of [{ checkoutType: "guest" }, { checkoutType: "member", isNormalTicket: true }]) {
+    const result = await createTicketCheckoutSession({ ...selection, stripeClient: {}, event: { ...event, product: {} }, eventId: event._id,
+      checkoutData: { line_items: [{ price: "price_guest", quantity: 1 }], metadata: { region: "groningen" } } }, {
+      lease: async () => { throw new Error("Must not block on member checkout"); },
+      createReturned: async () => ({ url: "new-guest-checkout" }),
+    });
+    assert.deepEqual(result, { url: "new-guest-checkout" });
+  }
 });
