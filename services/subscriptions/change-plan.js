@@ -5,10 +5,11 @@ import { planForPrice, planChangeChargesImmediately, stripeId } from "../../util
 import { withBillingLease } from "./lease.js";
 import { readStripeSubscription, reconcileAccount } from "./reconcile.js";
 import { scheduleAlumniDowngrade } from "./scheduled-change.js";
+import { memberRegionMetadata } from "./member-region.js";
 
 // Member periods change now; Alumni downgrades change at renewal. Neither path
 // uses the portal's immediately-invoiced flow.
-export async function changePlanAtRenewal(user, plan, { stripe, region, dependencies = {} }) {
+export async function changePlanAtRenewal(user, plan, { stripe, region, memberRegion, dependencies = {} }) {
   const { withLease = withBillingLease, records = BillingRecord,
     readSubscription = readStripeSubscription, reconcile = reconcileAccount } = dependencies;
   const subscriptionId = user.subscription.id;
@@ -49,6 +50,7 @@ export async function changePlanAtRenewal(user, plan, { stripe, region, dependen
     const intervalChanged = item.price?.recurring?.interval !== price.recurring.interval ||
       item.price?.recurring?.interval_count !== price.recurring.interval_count;
     const params = {
+      ...(memberRegion ? { metadata: memberRegionMetadata(memberRegion, selected.priceId) } : {}),
       items: [{ id: item.id, price: selected.priceId, quantity: 1 }],
       proration_behavior: "none", payment_behavior: "error_if_incomplete",
       // Stripe otherwise resets the anchor and charges immediately when an
@@ -58,7 +60,8 @@ export async function changePlanAtRenewal(user, plan, { stripe, region, dependen
     };
     const previous = record.data?.planChange;
     const pending = previous && !previous.completed && previous.priceId !== current.priceId;
-    if (pending && (previous.priceId !== selected.priceId || previous.fromPriceId !== current.priceId || previous.renewal !== renewal)) {
+    if (pending && (previous.priceId !== selected.priceId || previous.fromPriceId !== current.priceId || previous.renewal !== renewal ||
+        previous.params?.metadata?.bgsnlMemberRegion !== memberRegion)) {
       throw new HttpError("Another plan change is still being processed. Please retry that change or contact support.", 409);
     }
     const operation = pending ? previous : {

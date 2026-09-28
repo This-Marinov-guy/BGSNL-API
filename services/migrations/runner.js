@@ -1,11 +1,21 @@
 import { randomUUID } from "node:crypto";
 
-export const RUNS = "migrationRuns";
-export const LOCKS = "migrationLocks";
+// The whole rollback system lives in this one collection. Run records, the
+// deployment lock and every snapshotted document are distinguished by an "_id"
+// prefix and a "kind" field, so a deployment adds exactly one collection to the
+// database instead of a lock collection, a run collection and one backup
+// collection per touched collection.
+export const JOURNAL = "migrationJournal";
 export const TRACKING = "_migrations";
-const BACKUP_PREFIX = "migrationBackup";
-const RESTORE_PREFIX = "migrationRestore";
-export const internalCollection = name => [RUNS, LOCKS].includes(name) || name.startsWith(BACKUP_PREFIX) || name.startsWith(RESTORE_PREFIX) || name.startsWith("system.");
+
+const LOCK_ID = "lock:deployment";
+const runKey = runId => `run:${runId}`;
+const snapshotKey = (runId, index, seq) => `snap:${runId}:${index}:${seq}`;
+const BATCH = 250;
+
+// Migrations may touch application collections and the tracking ledger (so a
+// rollback also removes its tracking rows), but never the journal itself.
+export const internalCollection = name => name === JOURNAL || name.startsWith("system.");
 
 export function safeError(error, secrets = []) {
   const clean = value => {
@@ -27,27 +37,57 @@ export class MigrationFailure extends Error {
 
 const exists = async (db, name) => (await db.listCollections({ name }).toArray())[0];
 const indexOptions = index => Object.fromEntries(Object.entries(index).filter(([key]) => !["v", "ns", "background"].includes(key)));
+const snapshotFilter = (runId, index) => ({ kind: "snapshot", runId, index });
+const storedCount = (db, runId, index) => db.collection(JOURNAL).countDocuments(snapshotFilter(runId, index));
 
-async function copyDocuments(source, target) {
+// Copies a collection into the journal. Preserves BSON numeric/binary types:
+// default driver promotion can turn a stored Double or small Long into an
+// Int32. The journal has no schema validator of its own, so these inserts
+// never need the bypassDocumentValidation privilege.
+async function captureDocuments(db, runId, index, source) {
+  const journal = db.collection(JOURNAL);
+  const cursor = source.find({}, { promoteValues: false }).batchSize(BATCH);
   let batch = [];
   let copied = 0;
-  // Preserve BSON numeric/binary types; default driver promotion can turn a
-  // stored Double or small Long into an Int32 when inserting the snapshot.
-  const cursor = source.find({}, { promoteValues: false }).batchSize(250);
   try {
     for await (const doc of cursor) {
-      batch.push(doc);
-      if (batch.length === 250) {
-        await target.insertMany(batch, { ordered: true, bypassDocumentValidation: true });
+      batch.push({ _id: snapshotKey(runId, index, copied + batch.length), kind: "snapshot", runId, index, seq: copied + batch.length, doc });
+      if (batch.length === BATCH) {
+        await journal.insertMany(batch, { ordered: true });
         copied += batch.length;
         batch = [];
       }
     }
     if (batch.length) {
-      await target.insertMany(batch, { ordered: true, bypassDocumentValidation: true });
+      await journal.insertMany(batch, { ordered: true });
       copied += batch.length;
     }
     return copied;
+  } finally { await cursor.close(); }
+}
+
+// Only a collection that carries its own validator needs the bypass privilege,
+// and only on the way back in: documents that predate a validator must still
+// restore exactly as they were.
+async function restoreDocuments(db, runId, index, target, validated) {
+  const insertOptions = validated ? { ordered: true, bypassDocumentValidation: true } : { ordered: true };
+  const cursor = db.collection(JOURNAL).find(snapshotFilter(runId, index), { promoteValues: false }).sort({ seq: 1 }).batchSize(BATCH);
+  let batch = [];
+  let restored = 0;
+  try {
+    for await (const row of cursor) {
+      batch.push(row.doc);
+      if (batch.length === BATCH) {
+        await target.insertMany(batch, insertOptions);
+        restored += batch.length;
+        batch = [];
+      }
+    }
+    if (batch.length) {
+      await target.insertMany(batch, insertOptions);
+      restored += batch.length;
+    }
+    return restored;
   } finally { await cursor.close(); }
 }
 
@@ -81,22 +121,20 @@ function journalDatabase(db, runId, { checkCancelled, progress }) {
         throw new Error(`Rollback snapshots do not support this collection type: ${name}`);
       }
       const index = entries.length;
-      const backup = `${BACKUP_PREFIX}${runId.replaceAll("-", "")}${index}`;
-      const entry = { name, backup, existed: !!info, ready: false,
+      const entry = { name, index, existed: !!info, ready: false,
         options: info?.options || {}, indexes: info ? await db.collection(name).indexes() : [] };
       entries.push(entry);
-      await db.collection(RUNS).updateOne({ _id: runId }, { $push: { snapshots: entry } });
+      await db.collection(JOURNAL).updateOne({ _id: runKey(runId) }, { $push: { snapshots: entry } });
       if (info) {
-        await db.createCollection(backup);
         const before = await db.collection(name).countDocuments();
-        const copied = await copyDocuments(db.collection(name), db.collection(backup));
-        if (copied !== before || copied !== await db.collection(backup).countDocuments() || copied !== await db.collection(name).countDocuments()) {
+        const copied = await captureDocuments(db, runId, index, db.collection(name));
+        if (copied !== before || copied !== await storedCount(db, runId, index) || copied !== await db.collection(name).countDocuments()) {
           throw new Error(`Collection changed while backing up ${name}; stop all database writers before retrying`);
         }
         entry.count = copied;
       }
       checked();
-      await db.collection(RUNS).updateOne({ _id: runId }, { $set: { [`snapshots.${index}.ready`]: true, [`snapshots.${index}.count`]: entry.count || 0 } });
+      await db.collection(JOURNAL).updateOne({ _id: runKey(runId) }, { $set: { [`snapshots.${index}.ready`]: true, [`snapshots.${index}.count`]: entry.count || 0 } });
       entry.ready = true;
       progress({ phase: "backup", collection: name, documents: entry.count || 0 });
       return entry;
@@ -131,6 +169,10 @@ function journalDatabase(db, runId, { checkCancelled, progress }) {
   } };
 }
 
+// Rebuilds each touched collection in place from the journal, newest snapshot
+// first. There is no temporary collection to swap in: the journal still holds
+// every document, so an interrupted restoration is simply replayed by
+// recoverMigrationRun, which drops and rebuilds the collection again.
 async function restore(db, run, progress) {
   const errors = [];
   for (let index = (run.snapshots || []).length - 1; index >= 0; index--) {
@@ -141,18 +183,15 @@ async function restore(db, run, progress) {
       if (!entry.existed) {
         if (await exists(db, entry.name)) await db.collection(entry.name).drop();
       } else {
-        if (!await exists(db, entry.backup) || await db.collection(entry.backup).countDocuments() !== entry.count) {
+        if (await storedCount(db, run.runId, index) !== entry.count) {
           throw new Error(`Missing or incomplete rollback snapshot for ${entry.name}`);
         }
-        const temporary = `${RESTORE_PREFIX}${run._id.replaceAll("-", "")}${index}`;
-        if (await exists(db, temporary)) await db.collection(temporary).drop();
-        await db.createCollection(temporary, entry.options);
-        const copied = await copyDocuments(db.collection(entry.backup), db.collection(temporary));
-        if (copied !== entry.count || await db.collection(temporary).countDocuments() !== entry.count) throw new Error(`Rollback count mismatch for ${entry.name}`);
+        if (await exists(db, entry.name)) await db.collection(entry.name).drop();
+        await db.createCollection(entry.name, entry.options);
+        const copied = await restoreDocuments(db, run.runId, index, db.collection(entry.name), !!entry.options?.validator);
+        if (copied !== entry.count || await db.collection(entry.name).countDocuments() !== entry.count) throw new Error(`Rollback count mismatch for ${entry.name}`);
         const indexes = entry.indexes.filter(item => item.name !== "_id_").map(indexOptions);
-        if (indexes.length) await db.collection(temporary).createIndexes(indexes);
-        // Build the restoration fully before replacing the changed collection.
-        await db.collection(temporary).rename(entry.name, { dropTarget: true });
+        if (indexes.length) await db.collection(entry.name).createIndexes(indexes);
       }
       progress({ phase: "rollback", collection: entry.name, status: "restored" });
     } catch (error) {
@@ -163,11 +202,9 @@ async function restore(db, run, progress) {
   return errors;
 }
 
-async function cleanupBackups(db, run, progress) {
-  for (const entry of run.snapshots || []) {
-    try { if (await exists(db, entry.backup)) await db.collection(entry.backup).drop(); }
-    catch (error) { progress({ phase: "backup-cleanup", collection: entry.backup, error }); }
-  }
+async function cleanupSnapshots(db, run, progress) {
+  try { await db.collection(JOURNAL).deleteMany({ kind: "snapshot", runId: run.runId }); }
+  catch (error) { progress({ phase: "backup-cleanup", error }); }
 }
 
 export async function runMigrations(db, migrations, { writersStopped = false, signal, secrets = [], log = console.log, revision = "unknown" } = {}) {
@@ -178,8 +215,10 @@ export async function runMigrations(db, migrations, { writersStopped = false, si
   if (!writersStopped) throw new MigrationFailure({ runId, status: "blocked", safeToResume: false }, new Error("Stop all API/worker writers and pass --writers-stopped"));
   const ids = migrations.map(item => item.id);
   if (new Set(ids).size !== ids.length || migrations.some(item => !item.id || typeof item.up !== "function")) throw new Error("Migration IDs must be unique and each migration must export up(db)");
-  try { await db.collection(LOCKS).insertOne({ _id: "deployment", runId, startedAt: new Date(), revision }); }
-  catch (error) {
+  try {
+    await db.collection(JOURNAL).createIndex({ kind: 1, runId: 1, index: 1, seq: 1 }, { name: "journal_snapshot_order" });
+    await db.collection(JOURNAL).insertOne({ _id: LOCK_ID, kind: "lock", runId, startedAt: new Date(), revision });
+  } catch (error) {
     progress({ phase: "lock", error });
     throw new MigrationFailure({ runId, status: "blocked", safeToResume: false }, error);
   }
@@ -187,24 +226,24 @@ export async function runMigrations(db, migrations, { writersStopped = false, si
   const journal = journalDatabase(db, runId, { checkCancelled, progress });
   let committed = false;
   try {
-    await db.collection(RUNS).insertOne({ _id: runId, status: "running", revision, startedAt: new Date(), snapshots: [], completedMigrations: [] });
+    await db.collection(JOURNAL).insertOne({ _id: runKey(runId), kind: "run", runId, status: "running", revision, startedAt: new Date(), snapshots: [], completedMigrations: [] });
     const applied = new Set((await db.collection(TRACKING).find({}, { projection: { _id: 1 } }).toArray()).map(item => item._id));
     for (const migration of migrations) {
       checkCancelled();
       if (applied.has(migration.id)) { progress({ migrationId: migration.id, phase: "skip" }); continue; }
       currentMigration = migration.id;
-      await db.collection(RUNS).updateOne({ _id: runId }, { $set: { currentMigration } });
+      await db.collection(JOURNAL).updateOne({ _id: runKey(runId) }, { $set: { currentMigration } });
       progress({ migrationId: migration.id, phase: "start" });
       await migration.up(journal.db);
       checkCancelled();
       await journal.db.collection(TRACKING).insertOne({ _id: migration.id, appliedAt: new Date(), runId });
-      await db.collection(RUNS).updateOne({ _id: runId }, { $push: { completedMigrations: migration.id } });
+      await db.collection(JOURNAL).updateOne({ _id: runKey(runId) }, { $push: { completedMigrations: migration.id } });
       progress({ migrationId: migration.id, phase: "complete" });
     }
     const writeErrors = await journal.close();
     if (writeErrors.length) throw writeErrors[0];
     checkCancelled();
-    await db.collection(RUNS).updateOne({ _id: runId }, { $set: { status: "succeeded", finishedAt: new Date() } });
+    await db.collection(JOURNAL).updateOne({ _id: runKey(runId) }, { $set: { status: "succeeded", finishedAt: new Date() } });
     committed = true;
   } catch (error) {
     // A rejected Promise.all must not leave another write racing restoration.
@@ -212,13 +251,13 @@ export async function runMigrations(db, migrations, { writersStopped = false, si
     progress({ migrationId: currentMigration, phase: "failed", error });
     let rollbackErrors = [];
     try {
-      await db.collection(RUNS).updateOne({ _id: runId }, { $set: { status: "rollingBack", failedMigration: currentMigration, error: safeError(error, secrets) } }, { upsert: true });
-      const run = await db.collection(RUNS).findOne({ _id: runId });
+      await db.collection(JOURNAL).updateOne({ _id: runKey(runId) }, { $set: { kind: "run", runId, status: "rollingBack", failedMigration: currentMigration, error: safeError(error, secrets) } }, { upsert: true });
+      const run = await db.collection(JOURNAL).findOne({ _id: runKey(runId) });
       rollbackErrors = await restore(db, run, progress);
       const status = rollbackErrors.length ? "rollbackFailed" : "rolledBack";
-      await db.collection(RUNS).updateOne({ _id: runId }, { $set: { status, finishedAt: new Date(),
+      await db.collection(JOURNAL).updateOne({ _id: runKey(runId) }, { $set: { status, finishedAt: new Date(),
         rollbackErrors: rollbackErrors.map(item => ({ collection: item.collection, error: safeError(item.error, secrets) })) } });
-      if (!rollbackErrors.length) await db.collection(LOCKS).deleteOne({ _id: "deployment", runId });
+      if (!rollbackErrors.length) await db.collection(JOURNAL).deleteOne({ _id: LOCK_ID, runId });
       const result = { runId, status, safeToResume: !rollbackErrors.length };
       progress({ phase: "result", ...result });
       throw new MigrationFailure(result, error);
@@ -230,9 +269,9 @@ export async function runMigrations(db, migrations, { writersStopped = false, si
     }
   }
   if (committed) {
-    const run = await db.collection(RUNS).findOne({ _id: runId });
-    await cleanupBackups(db, run, progress);
-    await db.collection(LOCKS).deleteOne({ _id: "deployment", runId });
+    const run = await db.collection(JOURNAL).findOne({ _id: runKey(runId) });
+    await cleanupSnapshots(db, run, progress);
+    await db.collection(JOURNAL).deleteOne({ _id: LOCK_ID, runId });
     const result = { runId, status: "succeeded", safeToResume: false };
     progress({ phase: "result", ...result });
     return result;
@@ -242,23 +281,23 @@ export async function runMigrations(db, migrations, { writersStopped = false, si
 
 export async function recoverMigrationRun(db, runId, { writersStopped = false, secrets = [], log = console.log } = {}) {
   if (!writersStopped) throw new Error("Recovery requires stopped database writers");
-  const run = await db.collection(RUNS).findOne({ _id: runId });
-  const lock = await db.collection(LOCKS).findOne({ _id: "deployment" });
-  if (!run || (lock && lock.runId !== runId) || !["running", "rollingBack", "rollbackFailed", "rolledBack", "succeeded"].includes(run.status)) throw new Error("Run cannot be recovered; inspect migrationRuns and migrationLocks");
+  const run = await db.collection(JOURNAL).findOne({ _id: runKey(runId) });
+  const lock = await db.collection(JOURNAL).findOne({ _id: LOCK_ID });
+  if (!run || (lock && lock.runId !== runId) || !["running", "rollingBack", "rollbackFailed", "rolledBack", "succeeded"].includes(run.status)) throw new Error(`Run cannot be recovered; inspect the ${JOURNAL} collection`);
   const progress = event => log(JSON.stringify({ runId, time: new Date().toISOString(), ...event,
     ...(event.error ? { error: safeError(event.error, secrets) } : {}) }));
   // A crash after the success marker must not undo a committed deployment.
   if (run.status === "succeeded") {
-    await db.collection(LOCKS).deleteOne({ _id: "deployment", runId });
+    await db.collection(JOURNAL).deleteOne({ _id: LOCK_ID, runId });
     return { runId, status: "succeeded", safeToResume: false };
   }
   if (!lock && run.status !== "rolledBack") throw new Error("Missing recovery lock; manual review required");
   if (run.status !== "rolledBack") {
     const errors = await restore(db, run, progress);
-    await db.collection(RUNS).updateOne({ _id: runId }, { $set: { status: errors.length ? "rollbackFailed" : "rolledBack", recoveredAt: new Date(),
+    await db.collection(JOURNAL).updateOne({ _id: runKey(runId) }, { $set: { status: errors.length ? "rollbackFailed" : "rolledBack", recoveredAt: new Date(),
       rollbackErrors: errors.map(item => ({ collection: item.collection, error: safeError(item.error, secrets) })) } });
     if (errors.length) throw new MigrationFailure({ runId, status: "rollbackFailed", safeToResume: false });
   }
-  await db.collection(LOCKS).deleteOne({ _id: "deployment", runId });
+  await db.collection(JOURNAL).deleteOne({ _id: LOCK_ID, runId });
   return { runId, status: "rolledBack", safeToResume: true };
 }

@@ -38,6 +38,23 @@ const checkoutHarness = () => {
     setSubscriptions: (subs) => { existingSubscriptions = subs; } };
 };
 
+test("checkout stages selected region without changing profile or Stripe account", async () => {
+  const h = checkoutHarness();
+  h.user.region = "rotterdam";
+  h.options.memberRegion = "amsterdam";
+  await h.reserve();
+  const metadata = h.calls[0].data.subscription_data.metadata;
+  assert.equal(metadata.bgsnlMemberRegion, "amsterdam");
+  assert.equal(metadata.bgsnlMemberRegionPrice, h.options.plan.priceId);
+  assert.ok(metadata.bgsnlMemberRegionOperation);
+  assert.equal(h.user.region, "rotterdam");
+  assert.equal(h.record.data.stripeRegion, "netherlands");
+  await h.reserve();
+  assert.equal(h.calls.length, 1);
+  h.options.memberRegion = "groningen";
+  await assert.rejects(h.reserve(), /another plan or region/);
+});
+
 test("repeated checkout requests reuse the same open session and verified customer", async () => {
   const h = checkoutHarness();
   const first = await h.reserve(); const second = await h.reserve();

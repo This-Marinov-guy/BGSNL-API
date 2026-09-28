@@ -20,6 +20,7 @@ import { memberRevenueMetadata } from "./stripe-revenue-state.js";
 import { memberRevenueAllocation } from "../../util/config/member-revenue.js";
 import { registerMemberRevenueSubscription } from "./revenue-sharing.js";
 import { changePlanAtRenewal } from "./change-plan.js";
+import { memberRegionMetadata, selectedMemberRegion } from "./member-region.js";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 export function billingReturnUrl(value) {
@@ -94,7 +95,7 @@ export async function portalConfiguration(stripe, region, locked, { switching = 
   });
 }
 
-export async function createMembershipPortal(user, { returnUrl, priceId, action, freeAlumni = false, dependencies = {} } = {}) {
+export async function createMembershipPortal(user, { returnUrl, priceId, action, freeAlumni = false, memberRegion, dependencies = {} } = {}) {
   const { reconcile = reconcileAccount, withLease = withBillingLease } = dependencies;
   if (action && !["cancel", "payment_method"].includes(action)) throw new HttpError("Unknown billing action", 422);
   const result = await reconcile(user);
@@ -135,6 +136,19 @@ export async function createMembershipPortal(user, { returnUrl, priceId, action,
   data.configuration = await portalConfiguration(stripe, region, locked, {
     switching: data.flow_data?.type === "subscription_update_confirm", withLease,
   });
+  if (priceId && memberRegion) {
+    // Stage only: reconciliation applies this selection after Stripe confirms
+    // the target Member plan. Opening or abandoning the portal changes no profile.
+    await withLease(`subscription:${region}:${result.sub.id}`, async ({ assertOwned }) => {
+      const fresh = await stripe.subscriptions.retrieve(result.sub.id);
+      if (stripeId(fresh.customer) !== user.subscription.customerId || fresh.pending_update || fresh.schedule ||
+          stripeId(fresh.items?.data?.[0]?.price) !== stripeId(result.sub.items.data[0].price)) {
+        throw new HttpError("Your subscription changed. Refresh and try again.", 409);
+      }
+      await assertOwned();
+      await stripe.subscriptions.update(fresh.id, { metadata: memberRegionMetadata(memberRegion, priceId) });
+    });
+  }
   // flow_data postdates the project's original 2022 API pin. Scope the newer
   // version to portal sessions so event checkout/webhook payloads stay compatible.
   return stripe.billingPortal.sessions.create(data, { apiVersion: "2024-06-20" });
@@ -148,7 +162,7 @@ async function assertNoExistingSubscription(stripe, customer) {
   }
 }
 
-export async function reserveCheckout({ key, user, registration, plan, returnUrl, region, dependencies = {} }) {
+export async function reserveCheckout({ key, user, registration, plan, returnUrl, region, memberRegion, dependencies = {} }) {
   const { withLease = withBillingLease, records = BillingRecord, prepareReturn = preparePaymentReturn } = dependencies;
   if (!user) registrationPasswordHash(registration);
   return withLease(key, async ({ record, assertOwned }) => {
@@ -159,7 +173,7 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
         dependencies.previousStripe || createStripeClient(data.stripeRegion) : stripe;
       const previous = await previousStripe.checkout.sessions.retrieve(data.sessionId);
       if (previous.status === "open") {
-        if (data.priceId !== plan.priceId) throw new HttpError("A different checkout is already open. Complete it or let it expire before choosing another plan.", 409);
+        if (data.priceId !== plan.priceId || (data.memberRegion || undefined) !== memberRegion) throw new HttpError("A different checkout is already open. Complete it or let it expire before choosing another plan or region.", 409);
         return previous;
       }
       if (previous.status === "complete" && !record.completedAt) throw new HttpError("Your payment is being processed. Please refresh your account shortly.", 409);
@@ -167,6 +181,7 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
     }
     if (data.operationId && data.stripeRegion && data.stripeRegion !== region) throw new HttpError("A checkout is still pending on your previous billing account. Please retry after it completes or expires.", 409);
     if (data.operationId && data.priceId !== plan.priceId) throw new HttpError("Another checkout is being created. Please retry the original plan shortly.", 409);
+    if (data.operationId && (data.memberRegion || undefined) !== memberRegion) throw new HttpError("Another checkout is being created for a different region. Please retry the original selection.", 409);
     const sameStripeAccount = !user?.subscription?.stripeRegion || user.subscription.stripeRegion === region ||
       canonicalStripeRegion(user.subscription.stripeRegion) === canonicalStripeRegion(region);
     if (user?.subscription?.customerId && !sameStripeAccount) throw new HttpError("Your existing billing customer belongs to another Stripe account. Please contact support.", 409);
@@ -183,9 +198,9 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
     // Persist the operation before contacting Stripe. Network retries use the
     // same idempotency key, so concurrent clicks cannot make duplicate checkouts.
     const revenueAllocation = data.operationId ? data.revenueAllocation :
-      region === DEFAULT_REGION ? memberRevenueAllocation(plan, user?.region || registration?.region) : null;
+      region === DEFAULT_REGION ? memberRevenueAllocation(plan, memberRegion || user?.region || registration?.region) : null;
     data = { ...data, reservedAt: data.reservedAt || (data.operationId ? record.createdAt : new Date()), revenueAllocation, operationId: data.operationId || randomUUID(), paymentReturnToken: data.paymentReturnToken || newPaymentToken(), customerId, priceId: plan.priceId,
-      userId: user?.id, registration: user ? undefined : data.registration || registration, stripeRegion: region,
+      userId: user?.id, memberRegion, registration: user ? undefined : data.registration || registration, stripeRegion: region,
       returnUrl: data.returnUrl || billingReturnUrl(returnUrl) };
     if (!user) registrationPasswordHash(data.registration);
     await records.updateOne({ _id: key }, { $set: { data }, $unset: { completedAt: 1 } }, { upsert: true });
@@ -199,6 +214,7 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
       cancel_url: receipt.cancel_url,
       metadata: { method: "membership_checkout", checkoutKey: key, paymentReturnId: receipt.id },
       subscription_data: { metadata: { bgsnlCheckoutKey: key,
+        ...memberRegionMetadata(data.memberRegion, plan.priceId, data.operationId),
         ...memberRevenueMetadata(data.revenueAllocation, customerId, data.operationId) } },
     }, { idempotencyKey: `checkout:${data.operationId}` });
     await assertOwned();
@@ -208,10 +224,11 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
   });
 }
 
-export async function startMembershipChange(user, { priceId, returnUrl, dependencies = {} }) {
+export async function startMembershipChange(user, { priceId, returnUrl, memberRegion: requestedRegion, dependencies = {} }) {
   const { reconcile = reconcileAccount, openPortal = createMembershipPortal, checkout = reserveCheckout, changeAtRenewal = changePlanAtRenewal } = dependencies;
   const plan = priceId === FREE_ALUMNI_PLAN.priceId ? FREE_ALUMNI_PLAN : planForPrice(priceId, { selectable: true });
   if (!plan) throw new HttpError("Unknown membership plan", 422);
+  const memberRegion = selectedMemberRegion(plan, requestedRegion, user.region);
   const result = await reconcile(user);
   user = result?.user || user;
   if (!["active", "locked", "payment_awaiting"].includes(user.status)) throw new HttpError("Please contact support about your account", 403);
@@ -219,8 +236,8 @@ export async function startMembershipChange(user, { priceId, returnUrl, dependen
     if (plan.tier === 0) return openPortal(user, { returnUrl, action: "cancel", freeAlumni: true });
     const current = planForPrice(stripeId(result?.sub?.items?.data?.[0]?.price));
     if (!current) throw new HttpError("Your current subscription could not be verified. Please try again or contact support.", 409);
-    if (!planChangeChargesImmediately(current, plan)) return changeAtRenewal(user, plan, { stripe: result.stripe, region: result.region });
-    return openPortal(user, { priceId, returnUrl });
+    if (!planChangeChargesImmediately(current, plan)) return changeAtRenewal(user, plan, { stripe: result.stripe, region: result.region, memberRegion });
+    return openPortal(user, { priceId, returnUrl, memberRegion });
   }
   if (plan.tier === 0) {
     await withBillingLease(`account-checkout:${user.id}`, async ({ assertOwned }) => {
@@ -231,7 +248,7 @@ export async function startMembershipChange(user, { priceId, returnUrl, dependen
     return { url: billingReturnUrl(returnUrl) };
   }
   return checkout({ key: `account-checkout:${user.id}`, user, plan, returnUrl,
-    region: membershipCheckoutRegion(user, result?.region) });
+    region: membershipCheckoutRegion(user, result?.region), memberRegion });
 }
 
 // Read-only invoice preview: no Checkout/Portal session, invoice, or payment is

@@ -1304,6 +1304,7 @@ export const generalCheckoutValidators = [
 ];
 
 export const changeMembershipValidators = [
+  body("region").optional().isIn(REGIONS).withMessage("Select a valid local membership region"),
   body("itemId").isString().bail().matches(/^(price_[A-Za-z0-9]+|alumni_free)$/).withMessage("Invalid membership plan"),
   requiredUrl("origin_url", "Return URL"),
 ];

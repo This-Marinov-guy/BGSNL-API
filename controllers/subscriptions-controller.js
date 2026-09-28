@@ -26,7 +26,7 @@ export const getBillingDetails = billingAction(async (req, res) => {
   res.json({ billing: await readBillingDetails(req.account) });
 });
 export const changeMembership = billingAction(async (req, res) => {
-  const session = await startMembershipChange(req.account, { priceId: req.body.itemId, returnUrl: req.body.origin_url });
+  const session = await startMembershipChange(req.account, { priceId: req.body.itemId, returnUrl: req.body.origin_url, memberRegion: req.body.region });
   res.json(session.updated ? { updated: true } : { url: session.url });
 });
 export const previewMembership = billingAction(async (req, res) => {

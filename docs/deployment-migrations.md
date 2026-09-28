@@ -57,19 +57,25 @@ Each deployment creates `/root/bgsnl-deploy-logs/run-<UTC timestamp>-<suffix>/`:
   to resume. `result/rollback.status` exists only after confirmed restoration.
 - `previous-containers.txt`: container IDs to use after successful recovery.
 
-The camelCase MongoDB collection `migrationRuns` records the commit, migration
-IDs, failure message/stack/code, snapshot manifest and restoration errors.
-`migrationLocks` holds the exclusive batch lock. Database URIs, configured
-credentials and duplicate-key values are redacted from runner error records.
+The whole rollback system lives in one collection, `migrationJournal`. Its
+documents are distinguished by an `_id` prefix and a `kind` field: `lock:deployment`
+is the exclusive batch lock, `run:<run id>` records the commit, migration IDs,
+failure message/stack/code, snapshot manifest and restoration errors, and
+`snap:<run id>:<snapshot index>:<sequence>` holds one snapshotted document each.
+A deployment therefore adds exactly one collection to the database. Database
+URIs, configured credentials and duplicate-key values are redacted from runner
+error records.
 Migrations must not log document contents or credentials themselves.
 
-Snapshots are in reserved `migrationBackup*` collections; temporary restored
-collections use `migrationRestore*`. Application migrations cannot enumerate or
-modify these collections through the supplied database facade. Successful runs
-delete their snapshots; failed runs retain them for investigation. After a
-resolved failed run has been reviewed, an operator may delete the snapshot names
-listed in its audit record. Do not delete snapshots for an unresolved run, or
-clear a lock to bypass a failure. Audit records and VPS logs are retained until
+Snapshots are `kind: "snapshot"` documents in `migrationJournal`. Application
+migrations cannot enumerate or modify that collection through the supplied
+database facade. Restoration rebuilds each collection in place from the journal
+rather than staging a temporary collection, so an interrupted rollback is simply
+replayed: the journal still holds every document. Successful runs delete their
+snapshot documents; failed runs retain them for investigation. After a resolved
+failed run has been reviewed, an operator may delete that run id's snapshot
+documents. Do not delete snapshots for an unresolved run, or clear a lock to
+bypass a failure. Audit records and VPS logs are retained until
 explicitly removed. Snapshots contain application data and need the same access
 controls as the database; logs on the VPS are private to root.
 
@@ -115,7 +121,7 @@ Use only the supplied `db` argument, and await every operation. Do not import
 application models, create separate database clients, or start detached tasks.
 Do not call Stripe, email, Sheets, Redis or other external services: those side
 effects cannot be restored by a MongoDB journal. The facade allows the collection
-read/write, rename, index and create/drop operations used by migrations 001–007;
+read/write, rename, index and create/drop operations used by migrations 001–010;
 unsupported operations fail before proceeding. Extend it with tests before
 adding new operation types.
 
@@ -132,7 +138,11 @@ Keep independent database backups for disaster recovery.
 Host defaults can be changed using `BGSNL_COMPOSE_DIR` and
 `BGSNL_DEPLOY_LOG_DIR`. The VPS needs Bash, `flock` (util-linux), Docker Compose,
 permission to stop/build/start the two services, and a database user permitted
-to create, copy, rename, index and drop collections. The result directory is
+to create, copy, rename, index and drop collections. Snapshot writes go to the
+journal, which has no schema validator, so `bypassDocumentValidation` is not
+required; it is requested only when restoring into a collection that carries a
+validator of its own. Granting `readWriteAnyDatabase` alone is enough for a
+database whose collections have no validators. The result directory is
 owned by UID 1000, matching the API Dockerfile's `node` user.
 
 ## Tests

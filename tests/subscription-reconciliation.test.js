@@ -37,6 +37,22 @@ const makeHarness = () => {
     sync: () => reconcileSubscription("sub_owner", "netherlands", { expectedCustomerId: "cus_owner", dependencies }) };
 };
 
+test("selected region waits for paid membership and is not reapplied by later webhooks", async () => {
+  const h = makeHarness();
+  h.account.region = "rotterdam";
+  h.live.metadata = { bgsnlMemberRegion: "amsterdam", bgsnlMemberRegionPrice: MEMBERSHIP_PLANS[0].priceId, bgsnlMemberRegionOperation: "region_once" };
+  h.live.status = "past_due";
+  await h.sync();
+  assert.equal(h.account.region, "rotterdam");
+  h.live.status = "active";
+  await h.sync();
+  assert.equal(h.account.region, "amsterdam");
+  assert.equal(h.account.subscription.memberRegionOperation, "region_once");
+  h.account.region = "groningen";
+  await h.sync();
+  assert.equal(h.account.region, "groningen");
+});
+
 test("failed payment immediately locks future-dated accounts and replay creates only one reminder episode", async () => {
   const h = makeHarness();
   h.live.status = "past_due";

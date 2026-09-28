@@ -46,7 +46,7 @@ handle_exit() {
       echo 'Deployment blocked. Restarting the exact previous containers after safe rollback.'
       if (( ${#old_containers[@]} )); then docker start "${old_containers[@]}" || echo 'ERROR: previous containers could not restart; manual recovery required.' >&2; fi
     else
-      echo 'ERROR: rollback is not confirmed. API/worker remain stopped. Inspect migrationRuns and the logs before recovery.' >&2
+      echo 'ERROR: rollback is not confirmed. API/worker remain stopped. Inspect migrationJournal and the logs before recovery.' >&2
     fi
   fi
   if (( code != 0 )); then echo "Deployment FAILED (exit $code). Logs retained at $run_dir" >&2; fi

@@ -4,6 +4,7 @@ export const subscriptionSchema = new mongoose.Schema({
   connected: { type: Boolean, default: false },
   period: Number, id: String, customerId: String, stripeRegion: String,
   priceId: String, status: String, hasBenefits: Boolean, lockReason: String,
+  memberRegionOperation: String,
   cancelAtPeriodEnd: Boolean, cancelAt: Date, currentPeriodStart: Date, currentPeriodEnd: Date,
   pendingUpdate: Boolean, syncedAt: Date, lastAttemptAt: Date, failureEpisode: String,
   scheduledChange: { type: new mongoose.Schema({ priceId: String, tier: Number, effectiveAt: Date }, { _id: false }), default: null },

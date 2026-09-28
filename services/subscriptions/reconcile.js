@@ -10,6 +10,7 @@ import { findBillingAccount, persistSubscriptionAccount } from "./accounts.js";
 import { membershipReportingSnapshot, refreshMembershipReporting } from "./reporting.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { syncScheduledChange } from "./scheduled-change.js";
+import { confirmedMemberRegion } from "./member-region.js";
 
 export function canonicalStripeRegion(region = DEFAULT_REGION) {
   const key = STRIPE_KEYS[region]?.secretKey;
@@ -113,6 +114,11 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
       ...(subscription.currentPeriodEnd ? { expireDate: subscription.currentPeriodEnd } : {}),
     };
     const plan = freeAlumni ? { type: "alumni", tier: 0 } : state.hasBenefits && canSetStatus ? state.plan : null;
+    const memberRegion = plan?.type === "member" && confirmedMemberRegion(sub, state, subscription);
+    if (memberRegion) {
+      fields.region = memberRegion.region;
+      subscription.memberRegionOperation = memberRegion.operation;
+    }
     subscription.connected = (plan?.type || accountType(user)) === "member" && state.plan?.type === "member" &&
       hasMemberConnectAllocation(subscription, await readRevenueAllocation(sub));
     const saved = await persistAccount(user, fields, plan, assertOwned);

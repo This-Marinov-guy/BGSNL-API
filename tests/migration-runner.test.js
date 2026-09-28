@@ -6,7 +6,7 @@ import { mkdtemp, writeFile, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { MongoClient, BSON } from "mongodb";
-import { runMigrations, recoverMigrationRun, internalCollection, safeError, RUNS, LOCKS, TRACKING } from "../services/migrations/runner.js";
+import { runMigrations, recoverMigrationRun, internalCollection, safeError, JOURNAL, TRACKING } from "../services/migrations/runner.js";
 import one from "../migrations/001-rename-users-to-member-users.js";
 import two from "../migrations/002-camelcase-collection-names.js";
 import three from "../migrations/003-normalize-breda-region.js";
@@ -133,7 +133,7 @@ test("CLI exits nonzero on failure with a rollback marker; a successful retry cl
   const failure = JSON.parse(await readFile(path.join(output, "result.json"), "utf8"));
   assert.equal(failure.status, "rolledBack");
   assert.equal(await readFile(path.join(output, "rollback.status"), "utf8"), "rolled-back\n");
-  const audit = await db.collection(RUNS).findOne({ _id: failure.runId });
+  const audit = await db.collection(JOURNAL).findOne({ kind: "run", runId: failure.runId });
   assert.equal(audit.failedMigration, "006-region-event-slugs");
   assert.equal(audit.revision, "test-revision");
   await db.collection("events").deleteOne({ _id: "event_2" });
@@ -150,8 +150,8 @@ test("all real migrations finish before success and reruns skip completed IDs", 
   assert.equal((await db.collection("memberUsers").findOne()).region, "breda_tilburg");
   assert.deepEqual((await db.collection("memberUsers").findOne()).roles, ["regional_board_member", "member"]);
   assert.equal((await db.collection("events").findOne()).slug, "welcome");
-  assert.equal(await db.collection(LOCKS).countDocuments(), 0);
-  assert.equal((await db.listCollections().toArray()).filter(item => item.name.startsWith("migrationBackup")).length, 0);
+  assert.equal(await db.collection(JOURNAL).countDocuments({ kind: "lock" }), 0);
+  assert.equal(await db.collection(JOURNAL).countDocuments({ kind: "snapshot" }), 0);
   const before = await state(db);
   await runMigrations(db, migrations.map(item => ({ id: item.id, up: () => { throw new Error("Already-applied migration was rerun"); } })), options);
   assert.equal(await state(db), before);
@@ -178,11 +178,11 @@ test("failure after all real migrations restores data, collection names, options
     throw new Error("Injected failure after event update");
   } }], { ...options, log: line => logs.push(line) }), error => error.result.status === "rolledBack" && error.result.safeToResume);
   assert.equal(await state(db), before);
-  const audit = await db.collection(RUNS).findOne();
+  const audit = await db.collection(JOURNAL).findOne({ kind: "run" });
   assert.equal(audit.failedMigration, "008-fail");
   assert.match(audit.error.message, /Injected failure/);
   assert.equal(audit.completedMigrations.length, 7);
-  assert.equal(await db.collection(LOCKS).countDocuments(), 0);
+  assert.equal(await db.collection(JOURNAL).countDocuments({ kind: "lock" }), 0);
   assert.ok(logs.some(line => line.includes('"phase":"rollback"')));
 });
 
@@ -206,16 +206,16 @@ test("real Mongo unique-index failure rolls back prior writes and records the Mo
     await scoped.collection("items").createIndex({ name: 1 }, { unique: true });
   } }], options));
   assert.equal(await state(db), before);
-  assert.equal((await db.collection(RUNS).findOne()).error.code, "11000");
+  assert.equal((await db.collection(JOURNAL).findOne({ kind: "run" })).error.code, "11000");
 });
 
 test("writers must be stopped; concurrent runner cannot steal the deployment lock", { skip: !uri }, async t => {
   const db = await setup(t);
   await assert.rejects(runMigrations(db, [], { log: () => {} }), /blocked/);
-  assert.equal(await db.collection(LOCKS).countDocuments(), 0);
-  await db.collection(LOCKS).insertOne({ _id: "deployment", runId: "other-run" });
+  assert.equal(await db.collection(JOURNAL).countDocuments({ kind: "lock" }), 0);
+  await db.collection(JOURNAL).insertOne({ _id: "lock:deployment", kind: "lock", runId: "other-run" });
   await assert.rejects(runMigrations(db, [], options), error => error.result.status === "blocked" && !error.result.safeToResume);
-  assert.equal((await db.collection(LOCKS).findOne()).runId, "other-run");
+  assert.equal((await db.collection(JOURNAL).findOne({ kind: "lock" })).runId, "other-run");
 });
 
 test("SIGTERM-style cancellation rolls back the in-flight batch", { skip: !uri }, async t => {
@@ -228,22 +228,22 @@ test("SIGTERM-style cancellation rolls back the in-flight batch", { skip: !uri }
   assert.equal(await state(db), before);
 });
 
-test("failed rollback keeps its lock and backups; explicit recovery retries restoration", { skip: !uri }, async t => {
+test("failed rollback keeps its lock and snapshots; explicit recovery retries restoration", { skip: !uri }, async t => {
   const db = await setup(t); await seed(db); const before = await state(db);
-  let backupName;
+  let snapshotIndex;
   let original;
   let runId;
   await assert.rejects(runMigrations(db, [{ id: "rollback-fails", async up(scoped) {
     await scoped.collection("events").deleteMany({});
-    const run = await db.collection(RUNS).findOne(); runId = run._id;
-    backupName = run.snapshots.find(item => item.name === "events").backup;
-    original = await db.collection(backupName).find({}).toArray();
-    await db.collection(backupName).deleteMany({}); // Simulate damaged/unavailable backup.
+    const run = await db.collection(JOURNAL).findOne({ kind: "run" }); runId = run.runId;
+    snapshotIndex = run.snapshots.find(item => item.name === "events").index;
+    original = await db.collection(JOURNAL).find({ kind: "snapshot", runId, index: snapshotIndex }).toArray();
+    await db.collection(JOURNAL).deleteMany({ kind: "snapshot", runId, index: snapshotIndex }); // Simulate a damaged/unavailable snapshot.
     throw new Error("Injected migration failure");
   } }], options), error => error.result.status === "rollbackFailed" && !error.result.safeToResume);
-  assert.equal((await db.collection(LOCKS).findOne()).runId, runId);
-  assert.equal((await db.collection(RUNS).findOne()).rollbackErrors.length, 1);
-  await db.collection(backupName).insertMany(original);
+  assert.equal((await db.collection(JOURNAL).findOne({ kind: "lock" })).runId, runId);
+  assert.equal((await db.collection(JOURNAL).findOne({ kind: "run" })).rollbackErrors.length, 1);
+  await db.collection(JOURNAL).insertMany(original);
   assert.equal((await recoverMigrationRun(db, runId, options)).safeToResume, true);
   assert.equal(await state(db), before);
 });
@@ -261,9 +261,9 @@ test("hard process exit preserves the journal so a later recovery can undo the p
     child.on("error", reject); child.on("exit", resolve);
   });
   assert.equal(exitCode, 17);
-  const run = await db.collection(RUNS).findOne();
+  const run = await db.collection(JOURNAL).findOne({ kind: "run" });
   assert.equal(run.status, "running");
   await assert.rejects(runMigrations(db, migrations, options), /blocked/);
-  await recoverMigrationRun(db, run._id, options);
+  await recoverMigrationRun(db, run.runId, options);
   assert.equal(await state(db), before);
 });
