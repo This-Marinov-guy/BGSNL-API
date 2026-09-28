@@ -1,8 +1,7 @@
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const DEFAULT_INTERNAL_NOTIFICATION_SUBSCRIBERS = Object.freeze([
-  "vladislavmarinov3142@gmail.com",
-  "bulgariansocietynetherlands@gmail.com",
+  "notifications@bulgariansociety.nl",
 ]);
 
 export const DEFAULT_DEVELOPER_NOTIFICATION_SUBSCRIBERS = Object.freeze([

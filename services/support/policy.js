@@ -145,6 +145,8 @@ export function publicConversation(record, { staff = false, before, limit = 50 }
     ...(staff ? { contact: record.contact, ownerAccountId: record.ownerAccountId || null, environment: record.environment } : {}),
   };
   if (record.messages) {
+    // Compute before pagination so an older support reply still counts.
+    output.hasSupportReply = record.messages.some((message) => message.author === "staff" && message.kind !== "status");
     const pageSize = Number(limit);
     if (!Number.isInteger(pageSize) || pageSize < 10 || pageSize > 50) throw new HttpError("Invalid message page size.", 422);
     const end = before === undefined ? record.messages.length : Math.min(Number(before), record.messages.length);

@@ -1,4 +1,5 @@
-import { sendInternalNotificationEmail } from "./email-transporter.js";
+import { sendInternalNotificationEmail, sendCustomerSupportEmail } from "./email-transporter.js";
+import { buildCustomerSupportReplyEmail } from "../support/reply-email.js";
 import { getInternalNotificationConfig } from "../../util/config/internal-notifications.js";
 import { HOME_URL } from "../../util/config/defines.js";
 import { formatRegionBadgeLabel, getRegionBadgeTheme } from "../../util/config/region-badges.js";
@@ -228,6 +229,7 @@ export const buildSupportReplyNotification = (ticket, reply) => ({
 export const createInternalNotificationService = ({
   config = getInternalNotificationConfig(),
   sendEmail = sendInternalNotificationEmail,
+  sendCustomerEmail = sendCustomerSupportEmail,
 } = {}) => {
   const queue = (notification) => {
     if (!config.enabled || config.subscribers.length === 0) return 0;
@@ -241,9 +243,13 @@ export const createInternalNotificationService = ({
 
   return {
     notifySupportTicketReplied(ticket, reply) {
-      if (!config.enabled) return 0;
-      sendEmail({ receiver: "vladislavmarinov3142@gmail.com", ...buildSupportReplyNotification(ticket, reply) });
-      return 1;
+      let queued = 0;
+      // Customer mail is transactional, independent of internal subscriptions.
+      if (reply.author === "staff" && ticket.contact?.email) {
+        sendCustomerEmail(buildCustomerSupportReplyEmail(ticket, reply));
+        queued++;
+      }
+      return queued + queue(buildSupportReplyNotification(ticket, reply));
     },
     notifyAccessRequested(request) {
       return queue(buildAccessRequestNotification(request));

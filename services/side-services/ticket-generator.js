@@ -4,6 +4,8 @@ import fs from "fs";
 import path from "path";
 import QRCode from "qrcode";
 import { ticketQrLink } from "../tickets/qr-link.js";
+import { ticketObjectKey } from "../tickets/ticket-storage.js";
+import { encodeTicketImage } from "../tickets/ticket-image.js";
 import sharp from "sharp";
 import { fileURLToPath } from "url";
 import MemberUser from "../../models/MemberUser.js";
@@ -45,12 +47,6 @@ const escapeXml = (value = "") =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
-
-const sanitizeKeyPart = (value = "") =>
-  String(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "")
-    .slice(0, 60);
 
 const escapePangoMarkup = (value = "") =>
   String(value)
@@ -509,23 +505,21 @@ export const renderEventTicket = async ({
     });
   }
 
-  return await sharp(resizedTicketImage)
-    .composite(composites)
-    .webp({ lossless: true })
-    .toBuffer();
+  return await encodeTicketImage(sharp(resizedTicketImage).composite(composites));
 
 };
 
-export const generateAndUploadEventTicket = async (options) => {
-  const { event, code, checkoutType = "guest", bucketName } = options;
+export const uploadCustomEventTicket = async ({ buffer, eventId, ticketToken, checkoutType, bucketName }) => {
   if (!bucketName) throw new Error("Missing bucket for ticket upload");
+  const key = ticketObjectKey(eventId, ticketToken, checkoutType);
+  return uploadBufferToS3({ buffer: await encodeTicketImage(sharp(buffer)), bucketName, key });
+};
+
+export const generateAndUploadEventTicket = async (options) => {
+  const { event, ticketToken, checkoutType = "guest", bucketName } = options;
+  if (!bucketName) throw new Error("Missing bucket for ticket upload");
+  const key = ticketObjectKey(event.id || event._id?.toString(), ticketToken, checkoutType);
   const finalTicketBuffer = await renderEventTicket(options);
-  const { name } = await resolveTicketHolder(options);
-  const key = `${sanitizeKeyPart(
-    event.id || event._id?.toString() || "event",
-  )}_${sanitizeKeyPart(code || Date.now())}_${sanitizeKeyPart(
-    checkoutType,
-  )}_${sanitizeKeyPart(name)}_${Date.now()}.webp`;
 
   return await uploadBufferToS3({
     buffer: finalTicketBuffer,

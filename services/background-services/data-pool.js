@@ -111,7 +111,7 @@ export const addEventToDataPool = (
  * @param {Object} event - The event object
  * @param {boolean} increment - If true, increment statistics; if false, decrement
  */
-export const updateEventStatistics = async (event, increment = true) => {
+export const updateEventStatistics = async (event, increment = true, { session } = {}) => {
   try {
     if (!event) {
       console.log("Event not found for statistics update.");
@@ -119,11 +119,11 @@ export const updateEventStatistics = async (event, increment = true) => {
     }
 
     // Find or create the statistics document
-    let eventStatistics = await Statistics.findOne({ type: "event" });
+    let eventStatistics = await Statistics.findOne({ type: "event" }).session(session || null);
 
     if (!eventStatistics) {
       console.log("Event statistics document not found. Creating new one...");
-      eventStatistics = await Statistics.create({
+      eventStatistics = new Statistics({
         type: "event",
         data: {
           count: 0,
@@ -170,7 +170,7 @@ export const updateEventStatistics = async (event, increment = true) => {
     // Mark the data field as modified to ensure Mongoose saves it
     eventStatistics.markModified("data");
 
-    const saved = await eventStatistics.save();
+    const saved = await eventStatistics.save(session ? { session } : {});
     console.log("Statistics saved successfully:", {
       count: saved.data.count,
       totalTickets: saved.data.totalTickets,

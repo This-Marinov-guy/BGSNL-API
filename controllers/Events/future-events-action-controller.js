@@ -1,6 +1,7 @@
 import { isEventDraftReady } from "../../validation/form-validators.js";
 import Event from "../../models/Event.js";
 import EventDraft from "../../models/EventDraft.js";
+import { archiveEvent, expiredEventFilter } from "../../services/events/archive-event.js";
 import HttpError from "../../models/Http-error.js";
 import {
   uploadToCloudinary,
@@ -21,7 +22,6 @@ import {
 import moment from "moment-timezone";
 import {
   addPrice,
-  deleteProduct,
   processPromocodesForCreate,
   processPromocodesForUpdate,
 } from "../../services/side-services/stripe.js";
@@ -30,10 +30,6 @@ import {
   createEventProductWithPrice,
   updateEventPrices,
 } from "../../services/main-services/event-action-service.js";
-import {
-  addEventToDataPool,
-  updateEventStatistics,
-} from "../../services/background-services/data-pool.js";
 import { eventToSpreadsheet } from "../../services/background-services/google-spreadsheets.js";
 import { notifyEventCreated } from "../../services/background-services/internal-notifications.js";
 import { sendEventDraftReminderEmail } from "../../services/background-services/email-transporter.js";
@@ -443,13 +439,14 @@ export const archiveExpiredEvents = async (req, res, next) => {
 
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   try {
-    const result = await Event.updateMany({
-      status: { $nin: ["archived", "cancelled", EVENT_DRAFT] },
-      $or: [{ date: { $lte: cutoff } }, { correctedDate: { $lte: cutoff } }],
-    }, {
-      $set: { status: "archived", isSaleClosed: true },
-    });
-    return res.status(200).json({ status: true, archived: result.modifiedCount || 0 });
+    let archived = 0, failed = 0;
+    for await (const candidate of Event.find(expiredEventFilter(cutoff)).select("_id").cursor()) {
+      try {
+        const event = await archiveEvent(candidate._id, { cutoff });
+        if (event) { archived++; void dispatchSitemapRefresh("archived", event); }
+      } catch { failed++; }
+    }
+    return res.status(failed ? 500 : 200).json({ status: failed === 0, archived, failed });
   } catch {
     return next(new HttpError("Archiving expired events failed", 500));
   }
@@ -1523,30 +1520,16 @@ export const deleteEvent = async (req, res, next) => {
     return res.status(200).json({ status: true, eventId });
   }
 
-  const folder = event.folder ?? "";
-  const region = event.region ?? "";
-  const productId = event.product?.id ?? "";
-
-  // Increment event statistics before archiving
-  await updateEventStatistics(event);
-
-  // feed the event to the data pool (for archival purposes, skip statistics update)
-  addEventToDataPool(eventId, "2024-2025", false);
-
   try {
-    event.status = "archived";
-    stampEventMetadata(event, req);
-    await event.save();
+    event = await archiveEvent(eventId, { stamp: value => stampEventMetadata(value, req) });
   } catch (err) {
     console.log(err);
-    return new HttpError(
+    return next(new HttpError(
       "Operations failed! Please try again or contact support!",
       500
-    );
+    ));
   }
 
-  if (productId) await deleteProduct(region, productId);
-  if (folder) await deleteFolder(folder);
   void dispatchSitemapRefresh("archived", event);
   res.status(200).json({ status: true, eventId });
 };

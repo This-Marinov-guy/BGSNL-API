@@ -154,7 +154,7 @@ configuration:
 
 ```dotenv
 INTERNAL_NOTIFICATIONS_ENABLED=true
-INTERNAL_NOTIFICATION_SUBSCRIBERS=first@example.com,second@example.com
+INTERNAL_NOTIFICATION_SUBSCRIBERS=notifications@bulgariansociety.nl
 
 # Optional override. Production defaults to enabled when internal notifications
 # are enabled. Set false to stop only this weekly report.

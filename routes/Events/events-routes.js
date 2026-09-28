@@ -17,7 +17,6 @@ import {
   getEventGuestList,
   updateGuestPresence,
 } from "../../controllers/Events/events-controllers.js";
-import fileUpload from "../../middleware/file-upload.js";
 import dotenv from "dotenv";
 import { adminMiddleware, authMiddleware, optionalAuthMiddleware, requireBenefits } from "../../middleware/authorization.js";
 import { EVENT_MANAGEMENT_ACCESS, COMMITTEE_MEMBER } from "../../util/config/defines.js";
@@ -83,7 +82,7 @@ eventRouter.post(
 eventRouter.post(
   "/purchase-ticket/member",
   adminMiddleware(EVENT_MANAGEMENT_ACCESS),
-  fileUpload(process.env.BUCKET_MEMBER_TICKETS).single("image"),
+  multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } }).single("image"),
   manualMemberTicketValidators,
   validateRequest,
   postAddMemberToEvent,

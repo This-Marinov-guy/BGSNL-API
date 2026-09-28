@@ -262,6 +262,7 @@ export const deliverInternalNotificationEmail = async ({
   html,
   type,
   entityId,
+  category = "internal-notification",
 }) => {
   const delivery = client.send({
     from: sender,
@@ -269,7 +270,7 @@ export const deliverInternalNotificationEmail = async ({
     subject,
     text,
     html,
-    category: "internal-notification",
+    category,
     custom_variables: {
       notification_type: type,
       entity_id: String(entityId),
@@ -295,6 +296,11 @@ export const sendInternalNotificationEmail = (message) => {
   enqueueMail(key, async () => {
     await deliverInternalNotificationEmail(message);
   });
+};
+
+export const sendCustomerSupportEmail = (message) => {
+  const key = `support-reply:${message.entityId}:${message.receiver}`;
+  enqueueMail(key, () => deliverInternalNotificationEmail({ ...message, category: "support-reply" }));
 };
 
 // The branded header/footer shell lives in Domakin Mailer's own

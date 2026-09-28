@@ -103,6 +103,7 @@ test("real ticket controller charges DB add-on price IDs alongside a free member
   let sent;
   const h = harness("checkout", { eventRecord: freeEvent, checkout: (req, res, next) => postCheckoutFile(req, res, next, {
     loadEvent: async () => freeEvent, reconcile: async user => ({ user }), generateTicket: async () => "ticket.png", stripeForRegion: () => ({}),
+    reserveToken: async () => "abcdefghijklmnopqrstuv",
     createCheckout: async args => { sent = args.checkoutData; return { url: "https://checkout.stripe.com/c/pay/free-plus-addon" }; },
   }) });
   h.req.body.revision = memberEventPreferences(freeEvent, member, false).revision;
@@ -110,6 +111,7 @@ test("real ticket controller charges DB add-on price IDs alongside a free member
   assert.equal(sent.line_items[0].price_data.unit_amount, 0);
   assert.deepEqual(sent.line_items[1], { price: "price_meal", quantity: 1 });
   assert.equal(sent.customer_email, member.email);
+  assert.equal(sent.metadata.ticketToken, "abcdefghijklmnopqrstuv");
 });
 
 test("open member checkout is reused only for matching preferences and add-ons", async () => {

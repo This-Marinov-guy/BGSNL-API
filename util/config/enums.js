@@ -5,9 +5,11 @@ export const FROZEN = 'frozen';
 export const SUSPENDED = 'suspended';
 export const ALUMNI_MIGRATED = 'alumni-migrated';
 export const PAYMENT_AWAITING = "payment_awaiting";
+export const INFO_REQUESTED = "info_requested";
 export const MEMBERSHIP_ACTIVE = "membership_active";
 
 export const USER_STATUSES = {
+  [INFO_REQUESTED]: INFO_REQUESTED,
   [ACTIVE]: ACTIVE,
   [LOCKED]: LOCKED,
   [FROZEN]: FROZEN,

@@ -79,6 +79,8 @@ const eventSchema = new Schema({
   metadata: { type: eventMetadataSchema, default: undefined },
   createdAt: { type: Date, immutable: true, default: createCurrentDate },
   status: { type: String, required: true, default: EVENT_OPENED },
+  archiveCleanupPending: { type: Boolean },
+  archiveCleanupCompletedAt: { type: Date },
   region: { type: String, required: true },
   title: { type: String, required: true },
   // Assigned once at publication. Existing records remain readable without a

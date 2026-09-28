@@ -462,6 +462,14 @@ export const postCheckoutNoFile = async (req, res, next) => {
   const lineItems = [ticketLineItem];
   lineItems.push(...resolveAddonLineItems(event, addOns));
 
+  const ticketCode = randomInt(100000000, 1000000000);
+  const ticketToken = await reserveTicketToken(event, ticketCode);
+  const ticketFile = await generateAndUploadEventTicket({ event, checkoutType,
+    bucketName: checkoutType === "member" ? process.env.BUCKET_MEMBER_TICKETS : process.env.BUCKET_GUEST_TICKETS,
+    ticketToken, code: ticketCode, quantity, originUrl: origin_url,
+    guestName: restrictedGuestMetadata?.guestName || req.body.guestName,
+    userId: effectiveUserId, memberUser: member });
+
   const checkoutData = {
     mode: "payment",
     allow_promotion_codes: true,
@@ -471,6 +479,9 @@ export const postCheckoutNoFile = async (req, res, next) => {
     metadata: {
       ...req.body,
       ...restrictedGuestMetadata,
+      code: ticketCode,
+      ticketToken,
+      file: ticketFile,
       method: checkoutType === "member" ? "buy_member_ticket" : "buy_guest_ticket",
       type: checkoutType === "member" ? "member" : "guest",
       userId: effectiveUserId,
@@ -502,6 +513,7 @@ export const postCheckoutFile = async (req, res, next, {
   loadEvent = (id) => Event.findById(id),
   reconcile = reconcileAccount,
   generateTicket = generateAndUploadEventTicket,
+  reserveToken = reserveTicketToken,
   resolvePrice,
   resolveLineItem,
   stripeForRegion = createStripeClient,
@@ -595,7 +607,7 @@ export const postCheckoutFile = async (req, res, next, {
 
     // Reserved before the guest rows exist; the same token is stored on every
     // row this purchase creates, so one QR admits the whole group.
-    ticketToken = await reserveTicketToken(event, ticketCode);
+    ticketToken = await reserveToken(event, ticketCode);
 
     fileLocation = await generateTicket({
       event,

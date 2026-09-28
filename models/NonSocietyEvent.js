@@ -17,6 +17,7 @@ const eventSchema = new Schema({
       timestamp: { type: Date, default: createCurrentDate },
       name: { type: String, required: true },
       ticket: { type: String },
+      ticketToken: { type: String },
       course: { type: String },
       university: { type: String },
       questions: { type: String },

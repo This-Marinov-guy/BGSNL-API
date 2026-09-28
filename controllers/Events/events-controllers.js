@@ -44,7 +44,8 @@ import {
   NON_SOCIETY_EVENT_RESEND_TEMPLATE,
 } from "../../util/config/defines.js";
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
-import { reserveTicketToken, resolveTicketToken } from "../../services/tickets/qr-link.js";
+import { mintTicketToken, reserveTicketToken, resolveTicketToken } from "../../services/tickets/qr-link.js";
+import { uploadCustomEventTicket } from "../../services/side-services/ticket-generator.js";
 import { planCheckIn, checkInMutation } from "../../services/tickets/check-in.js";
 import { futureEventDateFilter, publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
 
@@ -397,31 +398,39 @@ export const postAddMemberToEvent = async (req, res, next) => {
   try {
     targetUser = await MemberUser.findOne({ _id: userId });
   } catch (err) {
-    new HttpError("Could not find a user with provided id", 404);
+    return next(new HttpError("Could not find a user with provided id", 404));
   }
+  if (!targetUser) return next(new HttpError("Could not find a user with provided id", 404));
+  if (!req.file?.buffer) return next(new HttpError("A ticket image is required", 400));
+  let ticketLocation;
   try {
-    const sess = await mongoose.startSession();
-    sess.startTransaction();
+    const ticketToken = await reserveTicketToken(societyEvent, code);
+    ticketLocation = await uploadCustomEventTicket({
+      buffer: req.file.buffer, eventId: String(societyEvent._id), ticketToken,
+      checkoutType: "member", bucketName: process.env.BUCKET_MEMBER_TICKETS,
+    });
     societyEvent.guestList.push({
       type: "free member",
       code,
+      ticketToken,
       name: targetUser.name + " " + targetUser.surname,
       email: targetUser.email,
       phone: targetUser.phone,
       preferences,
       addOns,
-      ticket: req.file.location,
+      ticket: ticketLocation,
     });
     targetUser.tickets.push({
       event:
         societyEvent.title +
         " | " +
         moment(societyEvent.date).format(MOMENT_DATE_YEAR),
-      image: req.file.location,
+      image: ticketLocation,
     });
-    await societyEvent.save();
-    await targetUser.save();
-    await sess.commitTransaction();
+    await mongoose.connection.transaction(async session => {
+      await societyEvent.save({ session });
+      await targetUser.save({ session });
+    });
   } catch (err) {
     return next(
       new HttpError("Adding user to the event failed, please try again", 500)
@@ -434,7 +443,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
     societyEvent.title,
     societyEvent.date,
     targetUser.name,
-    req.file.location
+    ticketLocation
   );
 
   eventToSpreadsheet(societyEvent.id);
@@ -475,10 +484,10 @@ export const postAddGuestToEvent = async (req, res, next) => {
 
   const safeQuantity = Number(quantity) > 0 ? Number(quantity) : 1;
 
-  let ticketLocation = req.file?.location ?? "";
+  let ticketLocation;
   let ticketToken;
 
-  if (!ticketLocation) {
+  {
     try {
       // Reserved before the guest rows exist; stored on each of them below.
       ticketToken = await reserveTicketToken(societyEvent, code);
@@ -660,7 +669,8 @@ export const postNonSocietyEvent = async (req, res, next) => {
     );
   }  
 
-  let ticketLocation = req.file?.location ?? "";
+  let ticketLocation = "";
+  const ticketToken = mintTicketToken();
 
   if (!ticketLocation) {
     const normalizedTicketImg = String(ticketImg || "").trim();
@@ -691,6 +701,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
         guestName: memberName,
         userId: userId ?? "",
         memberUser: targetUser,
+        ticketToken,
       });
     } catch (err) {
       console.log(err);
@@ -703,6 +714,7 @@ export const postNonSocietyEvent = async (req, res, next) => {
   // Build guest — mirrors postAddGuestToEvent shape for non-member path
   let guest = {
     user,
+    ticketToken,
     userId: userId ?? "-",
     name: memberName,
     email: memberEmail,

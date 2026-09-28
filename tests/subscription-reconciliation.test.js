@@ -137,8 +137,8 @@ test("a Member paid-through interval bridge applies the new period immediately w
   assert.equal(h.account.subscription.hasBenefits, true);
   assert.equal(h.account.expireDate.getTime(), renewal * 1000);
 });
-test("billing recovery never clears a frozen or suspended account", async () => {
-  for (const status of ["frozen", "suspended"]) {
+test("billing recovery never clears administrative account restrictions", async () => {
+  for (const status of ["frozen", "suspended", "info_requested"]) {
     const h = makeHarness(); h.account.status = status;
     await h.sync();
     assert.equal(h.account.status, status);

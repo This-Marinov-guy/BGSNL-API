@@ -34,6 +34,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import mongoose from "mongoose";
+import { reserveTicketToken } from "../services/tickets/qr-link.js";
 import { fileURLToPath } from "url";
 import path from "path";
 
@@ -192,7 +193,9 @@ export const createTicketCheckout = async (options) => {
       // eslint-disable-next-line no-process-env
       : process.env.BUCKET_GUEST_TICKETS;
 
+  const ticketToken = await reserveTicketToken(event, options.code);
   const fileLocation = await generateAndUploadEventTicket({
+    ticketToken,
     event,
     checkoutType,
     bucketName,
@@ -247,6 +250,7 @@ export const createTicketCheckout = async (options) => {
   // Metadata mirrors the fields the frontend posts and the webhook reads to
   // build the ticket once payment completes.
   const metadata = {
+    ticketToken,
     eventId: options.eventId,
     code: options.code,
     region: event.region,

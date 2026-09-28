@@ -15,6 +15,25 @@ const photo = (name = "one") => ({ type: "image", url: `https://res.cloudinary.c
 const createInput = () => ({ id: randomUUID(), subject: "Ticket page problem", text: "The booking button does not respond.", contact: { name: "Test Guest", email: "guest@example.test" }, pagePath: "/events?private=secret#fragment" });
 const setup = (options = {}) => { const records = memorySupportStore(); return { records, service: createSupportService({ records, ...options }) }; };
 
+test("first support reply flag ignores status changes and persists across pagination and later customer messages", async () => {
+  const { service } = setup();
+  const report = await service.create(createInput(), guest);
+  assert.equal(report.hasSupportReply, false);
+  const actor = { account: admin, staff: true };
+  const resolved = await service.changeStatus(report.id, { status: "resolved", revision: report.revision }, actor);
+  assert.equal(resolved.hasSupportReply, false);
+  const reopened = await service.reply(report.id, { id: randomUUID(), text: "More details" }, guest);
+  assert.equal(reopened.hasSupportReply, false);
+  const answer = await service.reply(report.id, { id: randomUUID(), text: "", attachments: [photo()] }, actor);
+  assert.equal(answer.hasSupportReply, true);
+  for (let index = 0; index < 12; index++) await service.reply(report.id, { id: randomUUID(), text: `Follow-up ${index}` }, guest);
+  const latest = await service.get(report.id, guest, { limit: 10 });
+  assert.equal(latest.messages.every(message => message.author === "requester"), true);
+  assert.equal(latest.hasSupportReply, true);
+  const older = await service.get(report.id, guest, { before: 2, limit: 10 });
+  assert.equal(older.hasSupportReply, true);
+});
+
 test("automatic screenshots are staff-only, retries stay idempotent, manual attachments remain visible", async () => {
   const { service } = setup();
   const report = await service.create(createInput(), guest);

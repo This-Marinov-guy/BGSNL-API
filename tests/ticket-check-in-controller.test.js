@@ -95,15 +95,16 @@ test("manual scan previews never write attendance", async () => {
   } finally { Event.findById = originals.find; Event.updateOne = originals.update; Event.findOne = originals.one; }
 });
 
-test("events without QR tickets never reserve a token", async () => {
+test("events without printed QR tickets still reserve unique tokens", async () => {
   const originalExists = Event.exists;
   let queries = 0;
   try {
     Event.exists = async () => { queries++; return null; };
-    // No token, and no database work: nothing would ever scan it.
-    assert.equal(await reserveTicketToken({ _id: eventId, ticketQR: false }, 123), undefined);
-    assert.equal(await reserveTicketToken({ _id: eventId }, 123), undefined);
-    assert.equal(queries, 0);
+    const first = await reserveTicketToken({ _id: eventId, ticketQR: false }, 123);
+    const second = await reserveTicketToken({ _id: eventId }, 124);
+    assert.match(first, /^[A-Za-z0-9_-]{22}$/);
+    assert.notEqual(first, second);
+    assert.equal(queries, 4);
     // The identity contract still applies before the QR flag is consulted.
     await assert.rejects(reserveTicketToken({ ticketQR: true }, 123), /Missing ticket identity/);
     await assert.rejects(reserveTicketToken({ _id: eventId, ticketQR: true }, "abc"), /Missing ticket identity/);

@@ -105,10 +105,21 @@ email or Stripe writes. Stop it when finished; all fixture reports disappear.
 This initial version is asynchronous in-site support: replies poll every 20
 seconds while the relevant view is visible. Each newly created ticket queues a
 deduplicated internal email to each address in
-`INTERNAL_NOTIFICATION_SUBSCRIBERS`; idempotent
+`INTERNAL_NOTIFICATION_SUBSCRIBERS` (defaults to
+`notifications@bulgariansociety.nl`); idempotent
 create replays and later replies do not send another new-ticket email. It does
-not send requester email/SMS notifications, provide live-agent availability or
-offer automatic guest recovery links. The widget tells visitors to return here.
+not provide live-agent availability, SMS or automatic guest recovery links.
+
+Each newly saved staff reply also queues a transactional email to the ticket's
+contact email (phone-only tickets are skipped), independently of the internal
+notification switch. Its `Open ticket` button links to
+`/?supportTicket=<conversation UUID>` and opens the Help widget to that thread.
+The email excludes message contents and attachment URLs. Signed-out account
+holders are prompted to sign in and return to their ticket; guests must use the
+original browser with their saved, unexpired access key. The link itself grants
+no access. Replayed reply requests, status changes and automatic screenshots do
+not send another customer email. Delivery uses the existing background mail
+queue and timeout; mail failure does not undo a saved reply.
 
 Replies may include up to three JPEG, PNG or WebP photos, each no larger than
 5 MB. The API authorizes access to the conversation before accepting file data,

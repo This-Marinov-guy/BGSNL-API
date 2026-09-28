@@ -14,7 +14,7 @@ import {
   parseInternalNotificationSubscribers,
 } from "../util/config/internal-notifications.js";
 
-test("support replies go only to Vladislav, use reply-level keys and escape message HTML", () => {
+test("support replies use configured internal recipients, reply-level keys and escaped message HTML", () => {
   const messages = [];
   const config = { enabled: true, subscribers: ["someone-else@example.test"] };
   const service = createInternalNotificationService({ config, sendEmail: message => messages.push(message) });
@@ -22,7 +22,7 @@ test("support replies go only to Vladislav, use reply-level keys and escape mess
   const reply = { id: "reply-1", author: "requester", text: "<script>unsafe</script>", createdAt: new Date(), attachments: [] };
   assert.equal(service.notifySupportTicketReplied(ticket, reply), 1);
   service.notifySupportTicketReplied(ticket, { ...reply, id: "reply-2", author: "staff" });
-  assert.deepEqual(messages.map(message => message.receiver), ["vladislavmarinov3142@gmail.com", "vladislavmarinov3142@gmail.com"]);
+  assert.deepEqual(messages.map(message => message.receiver), ["someone-else@example.test", "someone-else@example.test"]);
   assert.notEqual(messages[0].entityId, messages[1].entityId);
   assert.match(messages[0].html, /&lt;script&gt;/);
   assert.doesNotMatch(messages[0].html, /<script>/);
@@ -43,6 +43,7 @@ test("reopened tickets get a clearly labeled notification and retain reply-level
 });
 
 test("uses the requested internal subscribers and normalizes overrides", () => {
+  assert.deepEqual(DEFAULT_INTERNAL_NOTIFICATION_SUBSCRIBERS, ["notifications@bulgariansociety.nl"]);
   assert.deepEqual(
     parseInternalNotificationSubscribers(),
     DEFAULT_INTERNAL_NOTIFICATION_SUBSCRIBERS
