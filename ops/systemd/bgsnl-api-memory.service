@@ -1,0 +1,7 @@
+[Unit]
+Description=Sample BGSNL API worker memory
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/bgsnl-api-memory-sample

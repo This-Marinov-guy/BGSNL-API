@@ -1,0 +1,10 @@
+[Unit]
+Description=Sample BGSNL API worker memory every five minutes
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=bgsnl-api-memory.service
+
+[Install]
+WantedBy=timers.target
