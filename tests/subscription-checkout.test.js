@@ -8,6 +8,8 @@ const checkoutHarness = () => {
   const record = { data: {} };
   const calls = [];
   const customerCreations = [];
+  const sessions = new Map();
+  const expired = [];
   let failOnce = false;
   let existingSubscriptions = [];
   const user = { id: "member_owner", email: "owner@example.test", subscription: {}, save: async () => {} };
@@ -15,11 +17,19 @@ const checkoutHarness = () => {
     customers: { create: async data => { customerCreations.push(data); return { id: "cus_verified" }; } },
     subscriptions: { list: () => (async function* () { for (const sub of existingSubscriptions) yield sub; })() },
     checkout: { sessions: {
-      retrieve: async (id) => ({ id, status: "open", url: "https://checkout.stripe.com/test-session" }),
+      retrieve: async (id) => [...sessions.values()].find(session => session.id === id),
+      expire: async (id) => {
+        const session = [...sessions.values()].find(session => session.id === id);
+        if (session.status !== "open") throw new Error("Session is not open");
+        session.status = "expired";
+        expired.push(id);
+        return session;
+      },
       create: async (data, options) => {
         calls.push(structuredClone({ data, options }));
+        if (!sessions.has(options.idempotencyKey)) sessions.set(options.idempotencyKey, { id: `cs_${sessions.size + 1}`, status: "open", url: "https://checkout.stripe.com/test-session" });
         if (failOnce) { failOnce = false; throw new Error("Network interrupted after Stripe accepted the request"); }
-        return { id: "cs_only_one", url: "https://checkout.stripe.com/test-session" };
+        return sessions.get(options.idempotencyKey);
       },
     } },
   };
@@ -34,7 +44,7 @@ const checkoutHarness = () => {
     prepareReturn: async ({ token, origin }) => ({ id: "verified_receipt", success_url: `${origin}/payment/return?token=${token}`,
       cancel_url: `${origin}/payment/return?token=${token}`, bind: async () => {} }) };
   const options = { key: "account-checkout:member_owner", user, plan: MEMBERSHIP_PLANS[0], region: "netherlands", returnUrl: "https://bulgariansociety.nl", dependencies };
-  return { record, calls, customerCreations, user, options, reserve: () => reserveCheckout(options), failNext: () => { failOnce = true; },
+  return { record, calls, customerCreations, sessions, expired, stripe, user, options, reserve: () => reserveCheckout(options), failNext: () => { failOnce = true; },
     setSubscriptions: (subs) => { existingSubscriptions = subs; } };
 };
 
@@ -52,7 +62,9 @@ test("checkout stages selected region without changing profile or Stripe account
   await h.reserve();
   assert.equal(h.calls.length, 1);
   h.options.memberRegion = "groningen";
-  await assert.rejects(h.reserve(), /another plan or region/);
+  await h.reserve();
+  assert.equal(h.expired.length, 1);
+  assert.equal(h.calls[1].data.subscription_data.metadata.bgsnlMemberRegion, "groningen");
 });
 
 test("repeated checkout requests reuse the same open session and verified customer", async () => {
@@ -178,12 +190,54 @@ test("ambiguous network failures replay the identical Stripe idempotency key and
   assert.equal(h.calls.length, 2);
   assert.deepEqual(h.calls[0], h.calls[1]);
 });
-test("a second plan cannot replace an in-flight or open checkout", async () => {
+test("a new plan recovers and expires an uncertain checkout before replacing it", async () => {
   const h = checkoutHarness(); h.failNext();
   await assert.rejects(h.reserve());
-  await assert.rejects(reserveCheckout({ ...h.options, plan: MEMBERSHIP_PLANS[1] }), (error) => error.statusCode === 409);
+  await reserveCheckout({ ...h.options, plan: MEMBERSHIP_PLANS[1] });
+  assert.deepEqual(h.calls[0], h.calls[1]);
+  assert.notEqual(h.calls[1].options.idempotencyKey, h.calls[2].options.idempotencyKey);
+  assert.equal(h.expired.length, 1);
+  assert.equal(h.calls[2].data.line_items[0].price, MEMBERSHIP_PLANS[1].priceId);
+  assert.equal([...h.sessions.values()].filter(session => session.status === "open").length, 1);
+});
+
+test("changing plan expires an open session and unchanged retries reuse its replacement", async () => {
+  const h = checkoutHarness();
+  const first = await h.reserve();
+  h.options.plan = MEMBERSHIP_PLANS[1];
+  const next = await h.reserve();
+  assert.notEqual(first.id, next.id);
+  assert.deepEqual(h.expired, [first.id]);
+  assert.equal((await h.reserve()).id, next.id);
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.customerCreations.length, 1);
+});
+
+test("completion racing expiration never creates a second checkout", async () => {
+  const h = checkoutHarness();
   await h.reserve();
-  await assert.rejects(reserveCheckout({ ...h.options, plan: MEMBERSHIP_PLANS[1] }), (error) => error.statusCode === 409);
+  h.options.plan = MEMBERSHIP_PLANS[1];
+  h.stripe.checkout.sessions.expire = async () => {
+    [...h.sessions.values()][0].status = "complete";
+    throw new Error("Payment already completed");
+  };
+  await assert.rejects(h.reserve(), /payment is being processed/);
+  assert.equal(h.calls.length, 1);
+});
+
+test("uncertain expiration fails closed but a confirmed lost response allows replacement", async () => {
+  for (const didExpire of [false, true]) {
+    const h = checkoutHarness();
+    await h.reserve();
+    h.options.plan = MEMBERSHIP_PLANS[1];
+    h.stripe.checkout.sessions.expire = async () => {
+      if (didExpire) [...h.sessions.values()][0].status = "expired";
+      throw new Error("Connection lost");
+    };
+    if (didExpire) await h.reserve();
+    else await assert.rejects(h.reserve(), /Connection lost/);
+    assert.equal(h.calls.length, didExpire ? 2 : 1);
+  }
 });
 test("past-due, active, paused and incomplete subscriptions all prevent a second checkout", async () => {
   for (const status of ["past_due", "active", "paused", "incomplete", "unpaid"]) {

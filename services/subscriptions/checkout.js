@@ -168,20 +168,57 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
   return withLease(key, async ({ record, assertOwned }) => {
     const stripe = dependencies.stripe || createStripeClient(region);
     let data = record.data || {};
+    // Replay the exact persisted request after an interrupted create, before
+    // attempting replacement. Never abandon an uncertain payable session.
+    const createReservedSession = async (saved, ownerStripe) => {
+      const savedPlan = planForPrice(saved.priceId);
+      if (!savedPlan) throw new HttpError("The previous checkout could not be recovered. Please contact support.", 409);
+      const receipt = await prepareReturn({ token: saved.paymentReturnToken, origin: new URL(saved.returnUrl).origin,
+        kind: "subscription", region: saved.stripeRegion,
+        returnPath: saved.userId ? "/user#settings" : savedPlan.type === "alumni" ? "/alumni/register" : `/${saved.registration?.region || saved.stripeRegion}/signup` });
+      await assertOwned();
+      const session = await ownerStripe.checkout.sessions.create({
+        mode: "subscription", customer: saved.customerId, allow_promotion_codes: false,
+        line_items: [{ price: saved.priceId, quantity: 1 }],
+        success_url: receipt.success_url, cancel_url: receipt.cancel_url,
+        metadata: { method: "membership_checkout", checkoutKey: key, paymentReturnId: receipt.id },
+        subscription_data: { metadata: { bgsnlCheckoutKey: key,
+          ...memberRegionMetadata(saved.memberRegion, saved.priceId, saved.operationId),
+          ...memberRevenueMetadata(saved.revenueAllocation, saved.customerId, saved.operationId) } },
+      }, { idempotencyKey: `checkout:${saved.operationId}` });
+      await assertOwned();
+      await receipt.bind(session.id);
+      await records.updateOne({ _id: key }, { $set: { "data.sessionId": session.id } });
+      return session;
+    };
+    const selectionChanged = data.priceId !== plan.priceId || (data.memberRegion || undefined) !== memberRegion ||
+      (data.stripeRegion && data.stripeRegion !== region);
+    if (data.operationId && !data.sessionId && selectionChanged) {
+      const ownerStripe = data.stripeRegion && data.stripeRegion !== region ?
+        dependencies.previousStripe || createStripeClient(data.stripeRegion) : stripe;
+      const recovered = await createReservedSession(data, ownerStripe);
+      data = { ...data, sessionId: recovered.id };
+    }
     if (data.sessionId) {
       const previousStripe = data.stripeRegion && data.stripeRegion !== region ?
         dependencies.previousStripe || createStripeClient(data.stripeRegion) : stripe;
-      const previous = await previousStripe.checkout.sessions.retrieve(data.sessionId);
+      let previous = await previousStripe.checkout.sessions.retrieve(data.sessionId);
       if (previous.status === "open") {
-        if (data.priceId !== plan.priceId || (data.memberRegion || undefined) !== memberRegion) throw new HttpError("A different checkout is already open. Complete it or let it expire before choosing another plan or region.", 409);
-        return previous;
+        if (!selectionChanged) return previous;
+        await assertOwned();
+        try {
+          previous = await previousStripe.checkout.sessions.expire(previous.id);
+        } catch (error) {
+          // Payment or expiry may have won the race; only confirmed expiry
+          // permits a replacement, including a lost expire response.
+          previous = await previousStripe.checkout.sessions.retrieve(data.sessionId);
+          if (previous.status !== "expired" && previous.status !== "complete") throw error;
+        }
       }
       if (previous.status === "complete" && !record.completedAt) throw new HttpError("Your payment is being processed. Please refresh your account shortly.", 409);
+      if (previous.status !== "expired" && previous.status !== "complete") throw new HttpError("Your previous checkout could not be closed. Please try again.", 409);
       data = { customerId: !data.stripeRegion || data.stripeRegion === region ? data.customerId : undefined };
     }
-    if (data.operationId && data.stripeRegion && data.stripeRegion !== region) throw new HttpError("A checkout is still pending on your previous billing account. Please retry after it completes or expires.", 409);
-    if (data.operationId && data.priceId !== plan.priceId) throw new HttpError("Another checkout is being created. Please retry the original plan shortly.", 409);
-    if (data.operationId && (data.memberRegion || undefined) !== memberRegion) throw new HttpError("Another checkout is being created for a different region. Please retry the original selection.", 409);
     const sameStripeAccount = !user?.subscription?.stripeRegion || user.subscription.stripeRegion === region ||
       canonicalStripeRegion(user.subscription.stripeRegion) === canonicalStripeRegion(region);
     if (user?.subscription?.customerId && !sameStripeAccount) throw new HttpError("Your existing billing customer belongs to another Stripe account. Please contact support.", 409);
@@ -204,23 +241,7 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
       returnUrl: data.returnUrl || billingReturnUrl(returnUrl) };
     if (!user) registrationPasswordHash(data.registration);
     await records.updateOne({ _id: key }, { $set: { data }, $unset: { completedAt: 1 } }, { upsert: true });
-    const origin = new URL(data.returnUrl).origin;
-    const receipt = await prepareReturn({ token: data.paymentReturnToken, origin, kind: "subscription", region,
-      returnPath: user ? "/user#settings" : plan.type === "alumni" ? "/alumni/register" : `/${registration?.region || region}/signup` });
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription", customer: customerId, allow_promotion_codes: false,
-      line_items: [{ price: plan.priceId, quantity: 1 }],
-      success_url: receipt.success_url,
-      cancel_url: receipt.cancel_url,
-      metadata: { method: "membership_checkout", checkoutKey: key, paymentReturnId: receipt.id },
-      subscription_data: { metadata: { bgsnlCheckoutKey: key,
-        ...memberRegionMetadata(data.memberRegion, plan.priceId, data.operationId),
-        ...memberRevenueMetadata(data.revenueAllocation, customerId, data.operationId) } },
-    }, { idempotencyKey: `checkout:${data.operationId}` });
-    await assertOwned();
-    await receipt.bind(session.id);
-    await records.updateOne({ _id: key }, { $set: { "data.sessionId": session.id } });
-    return session;
+    return createReservedSession(data, stripe);
   });
 }
 

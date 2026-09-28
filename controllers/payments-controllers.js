@@ -20,6 +20,7 @@ import {
 import { accountEntitlements } from "../util/subscriptions/policy.js";
 import { reconcileAccount } from "../services/subscriptions/reconcile.js";
 import { generateAndUploadEventTicket } from "../services/side-services/ticket-generator.js";
+import { mintTicketToken, reserveTicketToken } from "../services/tickets/qr-link.js";
 import BillingRecord from "../models/BillingRecord.js";
 import { createReturnedCheckout, createFreePaymentReturn, preparePaymentReturn, paymentOrigin } from "../services/payments/payment-return.js";
 import { withBillingLease } from "../services/subscriptions/lease.js";
@@ -336,6 +337,8 @@ export const postPlaygroundTicketPreview = async (req, res, next) => {
       checkoutType: "guest",
       bucketName: process.env.BUCKET_GUEST_TICKETS,
       originUrl,
+      // Preview tickets are never fulfilled, so this token admits nobody.
+      ticketToken: mintTicketToken(),
       code: Date.now(),
       quantity,
       guestName: `${name} ${surname}`.trim(),
@@ -571,17 +574,23 @@ export const postCheckoutFile = async (req, res, next, {
   let fileLocation = "";
   // Never trust a browser timestamp as a unique purchase identity.
   const ticketCode = randomInt(1, 281474976710655);
+  let ticketToken;
   try {
     const bucketName =
       checkoutType === "member"
         ? process.env.BUCKET_MEMBER_TICKETS
         : process.env.BUCKET_GUEST_TICKETS;
 
+    // Reserved before the guest rows exist; the same token is stored on every
+    // row this purchase creates, so one QR admits the whole group.
+    ticketToken = event.ticketQR ? await reserveTicketToken(eventId, ticketCode) : undefined;
+
     fileLocation = await generateTicket({
       event,
       checkoutType,
       bucketName,
       originUrl: origin_url,
+      ticketToken,
       code: ticketCode,
       quantity,
       guestName: restrictedGuestMetadata?.guestName || req.body.guestName,
@@ -604,6 +613,7 @@ export const postCheckoutFile = async (req, res, next, {
       ...restrictedGuestMetadata,
       method: checkoutType === "member" ? "buy_member_ticket" : "buy_guest_ticket",
       code: ticketCode,
+      ticketToken,
       type: checkoutType === "member" ? "member" : "guest",
       file: fileLocation ? fileLocation : "",
       userId: effectiveUserId,
@@ -667,6 +677,7 @@ export const postCheckoutFile = async (req, res, next, {
       ...restrictedGuestMetadata,
       method: checkoutType === "member" ? "buy_member_ticket" : "buy_guest_ticket",
       code: ticketCode,
+      ticketToken,
       type: checkoutType === "member" ? "member" : "guest",
       file: fileLocation ? fileLocation : null,
       userId: effectiveUserId,

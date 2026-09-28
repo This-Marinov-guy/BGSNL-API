@@ -184,6 +184,9 @@ const eventSchema = new Schema({
         },
       ],
       ticket: { type: String },
+      // Opaque QR token for this purchase. Every guest bought under the same
+      // code carries the same token: one image admits the whole group.
+      ticketToken: { type: String },
       refunded: { type: Boolean, default: false },
       refundReason: { type: String },
     },
@@ -200,6 +203,12 @@ eventSchema.static(
 );
 
 eventSchema.index({ memberAnnouncementQueuedAt: 1, memberAnnouncementCompletedAt: 1 });
+
+// Resolves a scanned QR to its event and purchase code. Not unique: a group
+// purchase repeats one token across its guests, and a unique multikey index
+// also rejects duplicates inside a single document. Issuance checks the event
+// for an already-issued code instead.
+eventSchema.index({ "guestList.ticketToken": 1 }, { name: "guestlist_ticket_token" });
 
 // Missing legacy slugs are excluded until backfilled.
 eventSchema.index({ region: 1, slug: 1 }, {

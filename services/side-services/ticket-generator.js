@@ -367,6 +367,7 @@ export const renderEventTicket = async ({
   event,
   checkoutType = "guest",
   qrLink: existingQrLink,
+  ticketToken,
   code,
   quantity = 1,
   guestName = "",
@@ -447,7 +448,10 @@ export const renderEventTicket = async ({
   }
 
   if (event.ticketQR) {
-    const qrLink = existingQrLink || await ticketQrLink(event.id || event._id?.toString(), code);
+    // The caller mints the token before the guest-list entries are pushed and
+    // stores the same value on each of them, so the QR and the rows it admits
+    // are written from one source.
+    const qrLink = existingQrLink || ticketQrLink(ticketToken);
 
     const qrBuffer = await QRCode.toBuffer(qrLink, {
       type: "png",
