@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import BillingRecord from "../../models/BillingRecord.js";
 import TemporaryCode from "../../models/TemporaryCode.js";
-import HttpError from "../../models/Http-error.js";
+import { acquireBillingLease } from "./lease-retry.js";
 import { redisClient, redisPrefix } from "../storage/redis.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 
@@ -10,7 +10,7 @@ const release = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call
 export async function withBillingLease(key, work, { clientFor = redisClient, records = BillingRecord, fences = TemporaryCode.collection } = {}) {
   const client = await clientFor(), owner = randomUUID();
   const lockKey = `${redisPrefix()}lease:${createHash("sha256").update(key).digest("hex")}`;
-  if (!await client.set(lockKey, owner, { NX: true, PX: 120000 })) throw new HttpError("A billing update is already in progress. Please try again shortly.", 409);
+  await acquireBillingLease(() => client.set(lockKey, owner, { NX: true, PX: 120000 }));
   let lost = false, heartbeat;
   const assertOwned = async (session) => {
     if (lost || !await client.eval(renew, { keys: [lockKey], arguments: [owner, "120000"] })) throw new Error("Billing lease lost; refusing a stale account update");

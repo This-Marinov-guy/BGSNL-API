@@ -4,6 +4,7 @@ import BillingRecord from "../../models/BillingRecord.js";
 import { createStripeClient, getStripeKey, STRIPE_KEYS } from "../../util/config/stripe.js";
 import { stripeId, invoiceSubscriptionId } from "../../util/subscriptions/policy.js";
 import { withBillingLease } from "../../services/subscriptions/lease.js";
+import { withWebhookBillingRetries } from "../../services/subscriptions/lease-retry.js";
 import { canonicalStripeRegion, reconcileSubscription, reconcileAccount, readStripeSubscription } from "../../services/subscriptions/reconcile.js";
 import { completeMembershipCheckout } from "../../services/subscriptions/checkout.js";
 import { resolveCheckoutAccount } from "../../services/subscriptions/checkout-account.js";
@@ -82,49 +83,51 @@ export const postWebhookCheckout = async (req, res, next) => {
     res.locals.verifiedWebhookEvent = { eventId: event.id, eventType: event.type, livemode: event.livemode };
   } catch { return res.status(400).json({ message: "Invalid Stripe webhook signature or configuration" }); }
   try {
-    const object = event.data.object;
-    await captureMemberRevenueEvent(event, region, { stripe });
-    if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
-      const session = await stripe.checkout.sessions.retrieve(object.id);
-      if (["paid", "no_payment_required"].includes(session.payment_status) ||
-          (session.mode === "subscription" && session.status === "complete" && session.subscription)) {
-        const key = `checkout-event:${region}:${session.id}`;
-        await withBillingLease(key, async ({ record, assertOwned }) => {
-          if (record.completedAt || session.metadata?.bgsnlFulfilled === "1") return;
-          if (session.mode === "subscription") {
-            if (session.metadata?.method === "membership_checkout") await completeMembershipCheckout(session, region);
-            else if (["signup", "alumni-signup", "alumni_migration", "unlock_account"].includes(session.metadata?.method)) {
-              await completeLegacyMembership(session, region, { assertOwned });
+    return await withWebhookBillingRetries(async () => {
+      const object = event.data.object;
+      await captureMemberRevenueEvent(event, region, { stripe });
+      if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
+        const session = await stripe.checkout.sessions.retrieve(object.id);
+        if (["paid", "no_payment_required"].includes(session.payment_status) ||
+            (session.mode === "subscription" && session.status === "complete" && session.subscription)) {
+          const key = `checkout-event:${region}:${session.id}`;
+          await withBillingLease(key, async ({ record, assertOwned }) => {
+            if (record.completedAt || session.metadata?.bgsnlFulfilled === "1") return;
+            if (session.mode === "subscription") {
+              if (session.metadata?.method === "membership_checkout") await completeMembershipCheckout(session, region);
+              else if (["signup", "alumni-signup", "alumni_migration", "unlock_account"].includes(session.metadata?.method)) {
+                await completeLegacyMembership(session, region, { assertOwned });
+              }
+            } else if (session.mode === "payment") {
+              const data = { transactionId: stripeId(session.payment_intent) || session.id, stripeRegion: region };
+              if (session.metadata?.method === "buy_guest_ticket") await handleGuestTicketPurchase(session.metadata, data);
+              if (session.metadata?.method === "buy_member_ticket") await handleMemberTicketPurchase(session.metadata, data);
             }
-          } else if (session.mode === "payment") {
-            const data = { transactionId: stripeId(session.payment_intent) || session.id, stripeRegion: region };
-            if (session.metadata?.method === "buy_guest_ticket") await handleGuestTicketPurchase(session.metadata, data);
-            if (session.metadata?.method === "buy_member_ticket") await handleMemberTicketPurchase(session.metadata, data);
-          }
-          await markCheckoutFulfilled(stripe, session.id, region);
-          await BillingRecord.updateOne({ _id: key }, { $set: { completedAt: new Date() } }, { upsert: true });
-        });
+            await markCheckoutFulfilled(stripe, session.id, region);
+            await BillingRecord.updateOne({ _id: key }, { $set: { completedAt: new Date() } }, { upsert: true });
+          });
+        }
+      } else if (event.type.startsWith("customer.subscription.") || event.type.startsWith("invoice.")) {
+        const subscriptionId = event.type.startsWith("customer.subscription.") ? object.id : invoiceSubscriptionId(object);
+        if (subscriptionId && event.type === "customer.subscription.deleted") {
+          // A superseded subscription may no longer map to a current profile.
+          // Its canceled renewal invoices must still become unpayable.
+          const { sub, invoices } = await readStripeSubscription(stripe, subscriptionId);
+          await recoverCanceledMembershipInvoices(stripe, sub, invoices, region);
+        }
+        if (subscriptionId && ["invoice.paid", "invoice.payment_succeeded"].includes(event.type)) {
+          // An old invoice may no longer be attached to the account's current
+          // subscription. It still needs durable review, not silent activation.
+          const [invoice, sub] = await Promise.all([
+            stripe.invoices.retrieve(object.id), stripe.subscriptions.retrieve(subscriptionId),
+          ]);
+          await flagLateMembershipPayment(stripe, sub, invoice, region);
+        }
+        if (subscriptionId) await reconcileSubscription(subscriptionId, region, { expectedCustomerId: stripeId(object.customer) });
       }
-    } else if (event.type.startsWith("customer.subscription.") || event.type.startsWith("invoice.")) {
-      const subscriptionId = event.type.startsWith("customer.subscription.") ? object.id : invoiceSubscriptionId(object);
-      if (subscriptionId && event.type === "customer.subscription.deleted") {
-        // A superseded subscription may no longer map to a current profile.
-        // Its canceled renewal invoices must still become unpayable.
-        const { sub, invoices } = await readStripeSubscription(stripe, subscriptionId);
-        await recoverCanceledMembershipInvoices(stripe, sub, invoices, region);
-      }
-      if (subscriptionId && ["invoice.paid", "invoice.payment_succeeded"].includes(event.type)) {
-        // An old invoice may no longer be attached to the account's current
-        // subscription. It still needs durable review, not silent activation.
-        const [invoice, sub] = await Promise.all([
-          stripe.invoices.retrieve(object.id), stripe.subscriptions.retrieve(subscriptionId),
-        ]);
-        await flagLateMembershipPayment(stripe, sub, invoice, region);
-      }
-      if (subscriptionId) await reconcileSubscription(subscriptionId, region, { expectedCustomerId: stripeId(object.customer) });
-    }
-    // Never log or reflect checkout metadata (legacy sessions may contain PII).
-    return res.status(200).json({ received: true });
+      // Never log or reflect checkout metadata (legacy sessions may contain PII).
+      return res.status(200).json({ received: true });
+    });
   } catch (error) {
     logIntegrationError("stripe", error, "webhook");
     console.error("Stripe webhook will be retried", { eventId: event.id, type: event.type, code: error.code });

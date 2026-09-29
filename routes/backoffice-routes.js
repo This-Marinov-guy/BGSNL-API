@@ -1,10 +1,14 @@
 import { accountActionsService } from "../services/backoffice/account-actions.js";
 import express from "express";
+import multer from "multer";
 import { adminMiddleware, authMiddleware } from "../middleware/authorization.js";
 import { accessRequestService } from "../services/backoffice/access-requests.js";
 import HttpError from "../models/Http-error.js";
 import { accountsBackofficeService } from "../services/backoffice/accounts.js";
 import { MEMBER_ADMIN_ACCESS } from "../util/config/defines.js";
+import { MAX_IMPORT_BYTES, roleImportTemplate } from "../services/backoffice/account-role-import.js";
+
+const roleSheetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_IMPORT_BYTES, files: 1 } }).single("file");
 
 export const createBackofficeRouter = ({
   service = accountsBackofficeService,
@@ -29,6 +33,32 @@ export const createBackofficeRouter = ({
     } catch (error) {
       next(error instanceof HttpError ? error : new HttpError("Could not load accounts", 500));
     }
+  });
+
+  router.get("/accounts/bulk-roles/template", (req, res, next) => {
+    try {
+      res.set("Cache-Control", "private, no-store");
+      res.set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.set("Content-Disposition", 'attachment; filename="account-role-import.xlsx"');
+      res.send(roleImportTemplate());
+    } catch (error) { next(error); }
+  });
+
+  router.post("/accounts/bulk-roles/preview", (req, res, next) => {
+    roleSheetUpload(req, res, async (uploadError) => {
+      if (uploadError) return next(new HttpError("Choose an .xlsx file smaller than 1 MB", 422));
+      try {
+        res.set("Cache-Control", "private, no-store");
+        res.json(await service.previewRoleImport({ file: req.file, actor: req.account }));
+      } catch (error) { next(error instanceof HttpError ? error : new HttpError("Could not review the import", 500)); }
+    });
+  });
+
+  router.post("/accounts/bulk-roles/apply", async (req, res, next) => {
+    try {
+      res.set("Cache-Control", "private, no-store");
+      res.json(await service.applyRoleImport({ rows: req.body?.rows, actor: req.account }));
+    } catch (error) { next(error instanceof HttpError ? error : new HttpError("Could not apply role changes", 500)); }
   });
 
   router.get("/accounts/:type/:id/membership", async (req, res, next) => {

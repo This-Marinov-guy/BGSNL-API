@@ -12,7 +12,7 @@ const PAYMENT_REASONS = {
   incorrect_cvc: "The card security code could not be verified. Review your payment details in billing.",
   card_declined: "The payment was declined. Review your payment method or contact your bank.",
 };
-const MISSING = { reason: "no_membership", title: "No membership is linked to your account", description: "We cannot see a membership subscription linked to this account. Start a subscription to activate paid benefits, or contact support if you have already paid." };
+const MISSING = { reason: "no_membership", title: "No membership is linked to your account", description: "There is no active subscription for this account - please start a new one or contact support if you have already paid one." };
 
 // Read-only, authenticated diagnostics. Never changes benefits, retries a charge,
 // or exposes raw Stripe errors, payment methods or client secrets.

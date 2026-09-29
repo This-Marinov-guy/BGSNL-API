@@ -14,6 +14,7 @@ import {
   VIP,
 } from "../../util/config/defines.js";
 import { USER_STATUSES } from "../../util/config/enums.js";
+import { parseRoleImport } from "./account-role-import.js";
 
 export const ACCOUNT_TYPES = Object.freeze({ MEMBER, ALUMNI });
 export const PROTECTED_ROLES = Object.freeze([ADMIN, SUPER_ADMIN, DEVELOPER, VIP]);
@@ -360,7 +361,115 @@ export const createAccountsBackofficeService = ({
     return { account: summary(updated, type), options: publicOptions(type) };
   };
 
-  return { list, update };
+  const reviewRoleChanges = async (inputRows, actor) => {
+    if (!Array.isArray(inputRows) || inputRows.length === 0 || inputRows.length > 200) {
+      throw new HttpError("Import between 1 and 200 accounts", 422);
+    }
+    if (inputRows.some(row => !row || String(row.email || "").length > 254 || String(row.roles || "").length > 500)) {
+      throw new HttpError("An import row is too long", 422);
+    }
+    const emails = [...new Set(inputRows.map(({ email }) => String(email || "").trim().toLowerCase())
+      .filter(email => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)))];
+    const emailFilter = { $or: emails.map(email => ({ email: exactEmailRegex(email) })) };
+    const scope = regionScopeFor(actor);
+    const [members, alumni] = emails.length ? await Promise.all([
+      memberModel.find(emailFilter).select(LIST_FIELDS).lean(),
+      canManageAccountType(actor?.roles, ALUMNI)
+        ? alumniModel.find(emailFilter).select(LIST_FIELDS).lean()
+        : Promise.resolve([]),
+    ]) : [[], []];
+    const matches = new Map();
+    for (const [type, records] of [[MEMBER, members], [ALUMNI, alumni]]) {
+      for (const record of records) {
+        if (scope !== null && (!scope || String(record.region || "").trim().toLowerCase() !== scope)) continue;
+        const key = String(record.email || "").replace(/\s+/g, "").toLowerCase();
+        matches.set(key, [...(matches.get(key) || []), { type, record }]);
+      }
+    }
+    const seen = new Set();
+    const actorId = String(actor?._id ?? actor?.id ?? "");
+    const rows = inputRows.map((input, index) => {
+      const email = String(input.email || "").trim().toLowerCase();
+      const roleText = String(input.roles || "").trim().toLowerCase();
+      const row = Number.isInteger(input.row) ? input.row : index + 2;
+      const result = { row, email, requestedRoles: [], currentRoles: [], status: "error", message: "" };
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 254) result.message = "Enter a valid email address";
+      else if (seen.has(email)) result.message = "This email appears more than once";
+      else if (!roleText) result.message = "Enter roles or none";
+      else {
+        const found = matches.get(email) || [];
+        if (found.length === 0) result.message = "No account you can manage has this email";
+        else if (found.length > 1) result.message = "Email matches more than one account";
+        else {
+          const { type, record } = found[0];
+          const existingRoles = normalizeRoleNames(record.roles);
+          const requested = roleText === "none" ? [] : [...new Set(roleText.split(",").map(role => role.trim()))];
+          result.requestedRoles = requested;
+          const invalid = requested.filter(role => !accountRoleOptions(type).includes(role));
+          if (!canEditProtectedAccount(actor?.roles, record.roles)) result.message = "This account is protected";
+          else if (actorId === String(record._id)) result.message = "You cannot change your own roles";
+          else if (invalid.length) result.message = `Unsupported ${type} role: ${invalid.join(", ")}`;
+          else {
+            result.id = String(record._id);
+            result.type = type;
+            result.name = `${record.name || ""} ${record.surname || ""}`.trim();
+            result.revision = Number(record.__v ?? 0);
+            result.currentRoles = existingRoles.filter(role => accountRoleOptions(type).includes(role));
+            const same = [...result.currentRoles].sort().join("|") === [...requested].sort().join("|");
+            result.status = same ? "unchanged" : "change";
+          }
+        }
+      }
+      seen.add(email);
+      return result;
+    });
+    return { rows, changeCount: rows.filter(row => row.status === "change").length,
+      unchangedCount: rows.filter(row => row.status === "unchanged").length,
+      errorCount: rows.filter(row => row.status === "error").length };
+  };
+
+  const previewRoleImport = async ({ file, actor }) => reviewRoleChanges(parseRoleImport(file), actor);
+
+  const applyRoleImport = async ({ rows, actor }) => {
+    if (!Array.isArray(rows) || !rows.length || rows.length > 200 || rows.some(row =>
+      !row || typeof row.email !== "string" || typeof row.roles !== "string" ||
+      typeof row.id !== "string" || ![MEMBER, ALUMNI].includes(row.type) ||
+      !Number.isInteger(row.revision) || row.revision < 0)) {
+      throw new HttpError("The review is invalid. Upload the file again", 422);
+    }
+    const reviewed = await reviewRoleChanges(rows, actor);
+    if (reviewed.errorCount) throw new HttpError("An account can no longer be updated. Upload the file and review it again", 409);
+    for (let index = 0; index < rows.length; index += 1) {
+      const original = rows[index], current = reviewed.rows[index];
+      if (original.id !== current.id || original.type !== current.type || original.revision !== current.revision) {
+        throw new HttpError("An account changed since review. Upload the file and review it again", 409);
+      }
+    }
+    let updated = 0;
+    for (const row of reviewed.rows.filter(item => item.status === "change")) {
+      const Model = modelForType(row.type, models);
+      const existingRoles = normalizeRoleNames((row.currentRoles || []));
+      // Read the exact account again to retain protected roles and detect a
+      // concurrent change before writing. The atomic filter also checks roles.
+      const existing = await Model.findById(row.id).select("roles __v").lean();
+      if (!existing || Number(existing.__v ?? 0) !== row.revision ||
+        [...normalizeRoleNames(existing.roles).filter(role => accountRoleOptions(row.type).includes(role))].sort().join("|") !== [...existingRoles].sort().join("|")) {
+        throw new HttpError(`${updated} accounts updated before another account changed. Refresh and import the remaining accounts again`, 409);
+      }
+      const retained = normalizeRoleNames(existing.roles).filter(role => PROTECTED_ROLES.includes(role));
+      const nextRoles = [...new Set([row.type, ...retained, ...row.requestedRoles])];
+      const saved = await Model.findOneAndUpdate(
+        { _id: row.id, ...versionFilter(row.revision), roles: existing.roles ?? { $exists: false } },
+        { $set: { roles: nextRoles }, $inc: { __v: 1, sessionVersion: 1 } },
+        { new: true, runValidators: true },
+      ).select("_id").lean();
+      if (!saved) throw new HttpError(`${updated} accounts updated before another account changed. Refresh and import the remaining accounts again`, 409);
+      updated += 1;
+    }
+    return { updated, unchanged: reviewed.unchangedCount };
+  };
+
+  return { list, update, previewRoleImport, applyRoleImport };
 };
 
 export const accountsBackofficeService = createAccountsBackofficeService();

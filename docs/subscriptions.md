@@ -55,6 +55,20 @@ The worker runs once per minute, sweeps a bounded batch of stale subscriptions a
 
 Failed records rotate behind other accounts; reminder retries back off for five minutes and orphaned jobs are retired. A failed verification updates only the attempt timestamp, never the trusted `syncedAt` timestamp. Thus an invalid historical record cannot monopolize a batch or refresh cached benefits without verification.
 
+### Concurrent webhook deliveries
+
+After signature verification, webhook processing shares a request-local billing
+lock retry budget. A busy Redis `SET NX` is retried up to six times with
+200/400/800/1200/1600/2000 ms delays plus up to 25% jitter, within an eight-second
+window. Nested billing operations share this budget; concurrent deliveries do
+not. Background sweeps and ordinary billing requests still fail fast.
+
+Only lock acquisition is retried, never the entire webhook or a lease callback.
+Redis failures, lost leases and business/validation errors propagate normally.
+Successful recovery returns 200 without a developer error email. Exhausted
+contention still returns 503 and triggers the existing throttled alert, allowing
+the provider to redeliver. A busy lock is never treated as proof of completion.
+
 ## Main Netherlands retry and email policy
 
 For the main Netherlands Stripe account only, configure **Revenue recovery →
