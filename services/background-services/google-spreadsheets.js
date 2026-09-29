@@ -7,7 +7,6 @@ import {
 } from "../../util/config/SPREEDSHEATS.js";
 import dotenv from "dotenv";
 dotenv.config();
-import mongoose from "mongoose";
 import moment from "moment-timezone";
 import Event from "../../models/Event.js";
 import { BGSNL_URL } from "../../util/config/defines.js";
@@ -29,6 +28,7 @@ import { enqueueSpreadsheetSync } from "../jobs/spreadsheet-sync-queue.js";
 import { publishGuestListChanged } from "../tickets/guest-list-live.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import { jobNameFromKey, observeJob } from "../monitoring/job-history.js";
+import { writeEventGuestSheet } from "./event-guest-sheet.js";
 
 // Lightweight background job queue with concurrency limit and de-duplication
 const MAX_CONCURRENCY = 1;
@@ -99,7 +99,10 @@ async function getSheetsClient() {
     const googleClient = await auth.getClient();
     const googleSheets = google.sheets({ version: "v4", auth: googleClient });
     return { auth: googleClient, googleSheets };
-  })();
+  })().catch((error) => {
+    sheetsClientPromise = null;
+    throw error;
+  });
   return sheetsClientPromise;
 }
 
@@ -182,10 +185,14 @@ const searchInDatabase = (eventName, region) => {
   }
 };
 
-export const syncEventToSpreadsheet = async ({ id }) => {
-    const { auth, googleSheets } = await getSheetsClient();
+export const syncEventToSpreadsheet = async ({ id }, {
+  getClient = getSheetsClient,
+  findEvent = (eventId) => Event.findById(eventId),
+  writeSheet = writeEventGuestSheet,
+} = {}) => {
+    const { auth, googleSheets } = await getClient();
     try {
-      const event = await Event.findById(id);
+      const event = await findEvent(id);
 
       if (!event) {
         console.log("Event not found.");
@@ -227,45 +234,7 @@ export const syncEventToSpreadsheet = async ({ id }) => {
         console.log(`Also updating cloned spreadsheet for ID: ${id}`);
       }
 
-      if (spreadsheetIds.length === 0) {
-        console.log("No spreadsheets to update.");
-        return;
-      }
-
-      // Sheets client comes from singleton
-
-      // Fetch event data and guest list from the database
-      const result = await Event.aggregate([
-        { $match: { _id: mongoose.Types.ObjectId(id) } },
-        {
-          $project: {
-            _id: 0,
-            guests: {
-              $map: {
-                input: "$guestList",
-                as: "guest",
-                in: {
-                  status: "$$guest.status",
-                  type: "$$guest.type",
-                  timestamp: "$$guest.timestamp",
-                  name: "$$guest.name",
-                  email: "$$guest.email",
-                  phone: "$$guest.phone",
-                  preferences: "$$guest.preferences",
-                  addOns: "$$guest.addOns",
-                  ticket: "$$guest.ticket",
-                  transactionId: "$$guest.transactionId",
-                },
-              },
-            },
-          },
-        },
-      ]);
-
-      if (result.length === 0) {
-        console.log("Event not found in database.");
-        return;
-      }
+      if (spreadsheetIds.length === 0) throw new Error(`No event spreadsheet is configured for region: ${region}`);
 
       // Prepare event and guest data
       const eventDetails = [
@@ -321,7 +290,7 @@ export const syncEventToSpreadsheet = async ({ id }) => {
         "Ticket",
         "Transaction Id",
       ];
-      const guests = result[0].guests.map((obj) => [
+      const guests = (event.guestList || []).map((obj) => [
         obj.status === 1 ? "present" : "missing",
         obj.type,
         moment(obj.timestamp).format(MOMENT_DATE_TIME_YEAR),
@@ -349,202 +318,10 @@ export const syncEventToSpreadsheet = async ({ id }) => {
         ...guests,
       ];
 
-      // Loop over each spreadsheetId (original and clone, if applicable) and update the spreadsheet
-      for (const spreadsheetId of spreadsheetIds) {
-        const metaData = await googleSheets.spreadsheets.get({
-          auth,
-          spreadsheetId,
-        });
-
-        const sheetsList = metaData.data.sheets;
-        let sheetId = sheetsList.find(
-          (sheet) => sheet.properties.title === sheetName
-        )?.properties.sheetId;
-
-        if (!sheetId) {
-          try {
-            // Create the sheet if it doesn't exist
-            // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
-            const newSheet = await googleSheets.spreadsheets.batchUpdate({
-              auth,
-              spreadsheetId,
-              resource: {
-                requests: [
-                  {
-                    addSheet: {
-                      properties: {
-                        title: sheetName,
-                        index: 0,
-                      },
-                    },
-                  },
-                ],
-              },
-            });
-
-            console.log(
-              `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
-            );
-            sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
-
-            // Explicitly update the sheet's position to ensure it's at the beginning
-            await googleSheets.spreadsheets.batchUpdate({
-              auth,
-              spreadsheetId,
-              resource: {
-                requests: [
-                  {
-                    updateSheetProperties: {
-                      properties: {
-                        sheetId: sheetId,
-                        index: 0,
-                      },
-                      fields: "index",
-                    },
-                  },
-                ],
-              },
-            });
-
-            console.log(
-              `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
-            );
-          } catch (createError) {
-            // Check if the error is because the sheet already exists
-            if (
-              createError.message &&
-              createError.message.includes("already exists")
-            ) {
-              console.log(
-                `Sheet '${sheetName}' already exists, fetching its ID instead`
-              );
-
-              try {
-                // Re-fetch the spreadsheet metadata to get the existing sheet ID
-                const updatedMetaData = await googleSheets.spreadsheets.get({
-                  auth,
-                  spreadsheetId,
-                });
-
-                const updatedSheetsList = updatedMetaData.data.sheets;
-                console.log(
-                  `Available sheets in spreadsheet:`,
-                  updatedSheetsList.map((s) => s.properties.title)
-                );
-
-                // Try exact match first
-                let existingSheet = updatedSheetsList.find(
-                  (sheet) => sheet.properties.title === sheetName
-                );
-
-                // If exact match fails, try case-insensitive match
-                if (!existingSheet) {
-                  existingSheet = updatedSheetsList.find(
-                    (sheet) =>
-                      sheet.properties.title.toLowerCase() ===
-                      sheetName.toLowerCase()
-                  );
-                }
-
-                // If still no match, try trimming whitespace
-                if (!existingSheet) {
-                  existingSheet = updatedSheetsList.find(
-                    (sheet) =>
-                      sheet.properties.title.trim() === sheetName.trim()
-                  );
-                }
-
-                if (existingSheet) {
-                  sheetId = existingSheet.properties.sheetId;
-                  console.log(
-                    `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
-                  );
-                } else {
-                  logIntegrationError("google-sheets", new Error("Sheet not found after create conflict"), "sheet-metadata");
-                  console.error(
-                    `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
-                    updatedSheetsList.map((s) => s.properties.title)
-                  );
-                  continue; // Skip this spreadsheet and continue with the next one
-                }
-              } catch (fetchError) {
-                logIntegrationError("google-sheets", fetchError, "sheet-metadata");
-                console.error(
-                  `Error fetching spreadsheet metadata after creation error:`,
-                  fetchError
-                );
-                continue; // Skip this spreadsheet and continue with the next one
-              }
-            } else {
-              logIntegrationError("google-sheets", createError, "sheet-create");
-              console.error(
-                `Error creating sheet '${sheetName}':`,
-                createError
-              );
-              continue; // Skip this spreadsheet and continue with the next one
-            }
-          }
-        }
-
-        // Write new data first so the sheet is never left blank if a later step fails.
-        // update() replaces from A1; clear() afterwards removes any stale rows below.
-        await googleSheets.spreadsheets.values.update({
-          auth,
-          spreadsheetId,
-          range: `${sheetName}!A1`,
-          valueInputOption: "RAW",
-          resource: { values },
-        });
-
-        await googleSheets.spreadsheets.values.clear({
-          auth,
-          spreadsheetId,
-          range: `${sheetName}!A${values.length + 1}:ZZ`,
-        });
-
+      for (const spreadsheetId of [...new Set(spreadsheetIds)]) {
+        await writeSheet({ googleSheets, auth, spreadsheetId, sheetName, values,
+          guestCount: guests.length });
         console.log(`Event data updated in spreadsheet: ${spreadsheetId}`);
-
-        // Apply conditional formatting if there are guests
-        if (guests.length > 0) {
-          const startRow = 5; // Row number where guest list starts (1-based index)
-          const endRow = startRow + guests.length; // End row number (1-based index)
-
-          const formattingRequest = {
-            spreadsheetId,
-            resource: {
-              requests: [
-                {
-                  addConditionalFormatRule: {
-                    rule: {
-                      ranges: [
-                        {
-                          sheetId: sheetId,
-                          startRowIndex: startRow - 1,
-                          endRowIndex: endRow,
-                        },
-                      ],
-                      booleanRule: {
-                        condition: {
-                          type: "CUSTOM_FORMULA",
-                          values: [{ userEnteredValue: '=$A$5:$A="present"' }],
-                        },
-                        format: {
-                          backgroundColor: { red: 0.0, green: 1.0, blue: 0.0 },
-                        },
-                      },
-                    },
-                    index: 0,
-                  },
-                },
-              ],
-            },
-          };
-
-          await googleSheets.spreadsheets.batchUpdate(formattingRequest);
-          console.log(
-            `Conditional formatting applied successfully in spreadsheet: ${spreadsheetId}`
-          );
-        }
       }
     } catch (error) {
       console.error("Error in eventToSpreadsheet:", error);
@@ -552,10 +329,14 @@ export const syncEventToSpreadsheet = async ({ id }) => {
     }
 };
 
-export const syncSpecialEventToSpreadsheet = async ({ id }) => {
-    const { auth, googleSheets } = await getSheetsClient();
+export const syncSpecialEventToSpreadsheet = async ({ id }, {
+  getClient = getSheetsClient,
+  findEvent = (eventId) => NonSocietyEvent.findById(eventId),
+  writeSheet = writeEventGuestSheet,
+} = {}) => {
+    const { auth, googleSheets } = await getClient();
     try {
-      const nonSocietyEvent = await NonSocietyEvent.findById(id);
+      const nonSocietyEvent = await findEvent(id);
 
       if (!nonSocietyEvent) {
         console.log("Event not found.");
@@ -577,43 +358,6 @@ export const syncSpecialEventToSpreadsheet = async ({ id }) => {
 
       if (IS_PROD && referenceCode === "4DEFC47D72") {
         spreadsheetIds.push(PWC_EVENT_SPREADSHEET);
-      }
-
-      // Sheets client comes from singleton
-
-      // Fetch event data and guest list from the database
-      const result = await NonSocietyEvent.aggregate([
-        { $match: { _id: mongoose.Types.ObjectId(id) } },
-        {
-          $project: {
-            _id: 0,
-            guests: {
-              $map: {
-                input: "$guestList",
-                as: "guest",
-                in: {
-                  user: "$$guest.user",
-                  userId: "$$guest.userId",
-                  timestamp: "$$guest.timestamp",
-                  name: "$$guest.name",
-                  email: "$$guest.email",
-                  phone: "$$guest.phone",
-                  university: "$$guest.university",
-                  course: "$$guest.course",
-                  questions: "$$guest.questions",
-                  extraData: "$$guest.extraData",
-                  ticket: "$$guest.ticket",
-                  transactionId: "$$guest.transactionId",
-                },
-              },
-            },
-          },
-        },
-      ]);
-
-      if (result.length === 0) {
-        console.log("Event not found in database.");
-        return;
       }
 
       // Prepare event and guest data
@@ -640,7 +384,7 @@ export const syncSpecialEventToSpreadsheet = async ({ id }) => {
         "Ticket",
         "Transaction Id",
       ];
-      const guests = result[0].guests.map((obj) => [
+      const guests = (nonSocietyEvent.guestList || []).map((obj) => [
         obj.userId ?? "-",
         moment(obj.timestamp)
           .tz(timezone)
@@ -664,159 +408,9 @@ export const syncSpecialEventToSpreadsheet = async ({ id }) => {
         ...guests,
       ];
 
-      // Loop over each spreadsheetId (original and clone, if applicable) and update the spreadsheet
-      for (const spreadsheetId of spreadsheetIds) {
-        const metaData = await googleSheets.spreadsheets.get({
-          auth,
-          spreadsheetId,
-        });
-
-        const sheetsList = metaData.data.sheets;
-        let sheetId = sheetsList.find(
-          (sheet) => sheet.properties.title === sheetName
-        )?.properties.sheetId;
-
-        if (!sheetId) {
-          try {
-            // Create the sheet if it doesn't exist
-            // Use insertSheetIndex: 0 to ensure the sheet appears at the beginning of the list
-            const newSheet = await googleSheets.spreadsheets.batchUpdate({
-              auth,
-              spreadsheetId,
-              resource: {
-                requests: [
-                  {
-                    addSheet: {
-                      properties: {
-                        title: sheetName,
-                        index: 0,
-                      },
-                    },
-                  },
-                ],
-              },
-            });
-
-            console.log(
-              `Sheet '${sheetName}' has been created in spreadsheet: ${spreadsheetId}`
-            );
-            sheetId = newSheet.data.replies[0].addSheet.properties.sheetId;
-
-            // Explicitly update the sheet's position to ensure it's at the beginning
-            await googleSheets.spreadsheets.batchUpdate({
-              auth,
-              spreadsheetId,
-              resource: {
-                requests: [
-                  {
-                    updateSheetProperties: {
-                      properties: {
-                        sheetId: sheetId,
-                        index: 0,
-                      },
-                      fields: "index",
-                    },
-                  },
-                ],
-              },
-            });
-
-            console.log(
-              `Sheet '${sheetName}' moved to the beginning of the spreadsheet`
-            );
-          } catch (createError) {
-            // Check if the error is because the sheet already exists
-            if (
-              createError.message &&
-              createError.message.includes("already exists")
-            ) {
-              console.log(
-                `Sheet '${sheetName}' already exists, fetching its ID instead`
-              );
-
-              try {
-                // Re-fetch the spreadsheet metadata to get the existing sheet ID
-                const updatedMetaData = await googleSheets.spreadsheets.get({
-                  auth,
-                  spreadsheetId,
-                });
-
-                const updatedSheetsList = updatedMetaData.data.sheets;
-                console.log(
-                  `Available sheets in spreadsheet:`,
-                  updatedSheetsList.map((s) => s.properties.title)
-                );
-
-                // Try exact match first
-                let existingSheet = updatedSheetsList.find(
-                  (sheet) => sheet.properties.title === sheetName
-                );
-
-                // If exact match fails, try case-insensitive match
-                if (!existingSheet) {
-                  existingSheet = updatedSheetsList.find(
-                    (sheet) =>
-                      sheet.properties.title.toLowerCase() ===
-                      sheetName.toLowerCase()
-                  );
-                }
-
-                // If still no match, try trimming whitespace
-                if (!existingSheet) {
-                  existingSheet = updatedSheetsList.find(
-                    (sheet) =>
-                      sheet.properties.title.trim() === sheetName.trim()
-                  );
-                }
-
-                if (existingSheet) {
-                  sheetId = existingSheet.properties.sheetId;
-                  console.log(
-                    `Found existing sheet '${existingSheet.properties.title}' with ID: ${sheetId}`
-                  );
-                } else {
-                  logIntegrationError("google-sheets", new Error("Sheet not found after create conflict"), "sheet-metadata");
-                  console.error(
-                    `Could not find sheet '${sheetName}' after creation error. Available sheets:`,
-                    updatedSheetsList.map((s) => s.properties.title)
-                  );
-                  continue; // Skip this spreadsheet and continue with the next one
-                }
-              } catch (fetchError) {
-                logIntegrationError("google-sheets", fetchError, "sheet-metadata");
-                console.error(
-                  `Error fetching spreadsheet metadata after creation error:`,
-                  fetchError
-                );
-                continue; // Skip this spreadsheet and continue with the next one
-              }
-            } else {
-              logIntegrationError("google-sheets", createError, "sheet-create");
-              console.error(
-                `Error creating sheet '${sheetName}':`,
-                createError
-              );
-              continue; // Skip this spreadsheet and continue with the next one
-            }
-          }
-        }
-
-        // Write new data first so the sheet is never left blank if a later step fails.
-        // update() replaces from A1; clear() afterwards removes any stale rows below.
-        await googleSheets.spreadsheets.values.update({
-          auth,
-          spreadsheetId,
-          range: `${sheetName}!A1`,
-          valueInputOption: "RAW",
-          resource: { values },
-        });
-
-        await googleSheets.spreadsheets.values.clear({
-          auth,
-          spreadsheetId,
-          range: `${sheetName}!A${values.length + 1}:ZZ`,
-        });
-
+      for (const spreadsheetId of [...new Set(spreadsheetIds)]) {
+        await writeSheet({ googleSheets, auth, spreadsheetId, sheetName, values,
+          guestCount: guests.length, formatPresence: false });
         console.log(`Event data updated in spreadsheet: ${spreadsheetId}`);
       }
     } catch (err) {

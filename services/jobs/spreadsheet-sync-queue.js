@@ -58,7 +58,9 @@ export const createSpreadsheetSyncProducer = ({ getQueue = getSpreadsheetSyncQue
       attempts: 5,
       backoff: { type: "exponential", delay: 1000 },
       delay: 750,
-      deduplication: { id: job.deduplicationId },
+      // A change arriving while a sheet is being written must trigger one
+      // final read after the active job finishes, or the sheet can stay stale.
+      deduplication: { id: job.deduplicationId, keepLastIfActive: true },
       removeOnComplete: { age: 24 * 60 * 60, count: 1000 },
       removeOnFail: { age: 7 * 24 * 60 * 60, count: 1000 },
     });

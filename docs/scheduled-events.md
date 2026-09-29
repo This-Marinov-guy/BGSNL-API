@@ -38,6 +38,17 @@ region, delayed briefly to coalesce rapid updates, and retried up to five times
 with exponential backoff. Completed jobs remain available for one day and
 failed jobs for seven days for operational inspection.
 
+The worker also schedules a guest-list reconciliation every six hours. Its first
+run starts when the production worker boots. It requeues society and special
+events with guests dated within the last 30 days, capped at 500 events per run.
+This repairs missed enqueue attempts and stale sheets without holding up ticket
+sales or check-in requests. Development runs it only when
+`GUEST_LIST_RECONCILIATION_ENABLED=true` is set. The event writer quotes sheet
+names, reuses its attendance formatting rule, and lets failed writes reach the
+queue retry handler.
+The monitoring Google Sheets probe checks both the national members sheet and
+the event sheet. Both documents must grant the configured service account access.
+
 The append-only data-pool export remains on its existing in-process path until
 it has an idempotency key; retrying an append without one could duplicate rows.
 

@@ -7,7 +7,7 @@ import { logOperationalError } from "../../middleware/axiom-logger.js";
 // "wait" state here so paused jobs are counted and listed exactly once.
 const PENDING_STATES = ["active", "wait", "delayed", "paused", "prioritized", "waiting-children"];
 const ALL_STATES = ["failed", ...PENDING_STATES, "completed"];
-const JOB_NAMES = new Set(["event", "special-event", "members", "alumni", "internships", MARKETING_CAPTURE_QUEUE]);
+const JOB_NAMES = new Set(["event", "special-event", "members", "alumni", "internships", "reconcile-guest-lists", MARKETING_CAPTURE_QUEUE]);
 const PAGE_SIZE = 20;
 const MAX_PAGE = 50;
 const READ_TIMEOUT_MS = 3000;

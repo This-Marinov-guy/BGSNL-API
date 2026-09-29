@@ -2,6 +2,7 @@ import { Worker } from "bullmq";
 import { redisPrefix } from "../storage/redis.js";
 import { SPREADSHEET_SYNC_QUEUE, createWorkerRedisConnection } from "./spreadsheet-sync-queue.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
+import { GUEST_LIST_RECONCILIATION_JOB, reconcileGuestLists } from "./guest-list-reconciliation.js";
 import {
   syncAlumniToSpreadsheet,
   syncEventToSpreadsheet,
@@ -16,6 +17,7 @@ export const spreadsheetSyncHandlers = Object.freeze({
   members: syncUsersToSpreadsheet,
   alumni: syncAlumniToSpreadsheet,
   internships: syncInternshipApplicationsToSpreadsheet,
+  [GUEST_LIST_RECONCILIATION_JOB]: reconcileGuestLists,
 });
 
 export const createSpreadsheetSyncProcessor = (handlers = spreadsheetSyncHandlers) => async (job) => {

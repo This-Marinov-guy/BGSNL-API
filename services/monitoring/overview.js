@@ -91,10 +91,14 @@ export async function serviceHealth({ env = process.env, database = mongoose.con
       await fetchHealth(`https://public-api.wordpress.com/wp/v2/sites/${encodeURIComponent(env.WORDPRESS_BLOG_ID)}/posts?per_page=1`);
     }),
     probe("Google Sheets", async () => {
-      if (!env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS || !SPREADSHEETS_ID.netherlands?.users) throw new Error("Google Sheets not configured");
+      if (!env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS || !SPREADSHEETS_ID.netherlands?.users || !SPREADSHEETS_ID.netherlands?.events) {
+        throw new Error("Google Sheets not configured");
+      }
       const auth = new google.auth.GoogleAuth({ credentials: JSON.parse(env.GOOGLE_APPLICATION_ADMIN_CREDENTIALS),
         scopes: "https://www.googleapis.com/auth/spreadsheets.readonly" });
-      await google.sheets({ version: "v4", auth }).spreadsheets.get({ spreadsheetId: SPREADSHEETS_ID.netherlands.users, fields: "spreadsheetId" });
+      const sheets = google.sheets({ version: "v4", auth });
+      await Promise.all([...new Set([SPREADSHEETS_ID.netherlands.users, SPREADSHEETS_ID.netherlands.events])].map(spreadsheetId =>
+        sheets.spreadsheets.get({ spreadsheetId, fields: "spreadsheetId" })));
     }),
     probe("Cloudinary", async () => {
       if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) throw new Error("Cloudinary not configured");

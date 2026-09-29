@@ -13,6 +13,7 @@ test("spreadsheet jobs use stable deduplication IDs and bounded retries", async 
     type: "special-event", data: { id: "event_123" }, deduplicationId: "special-event_event_123",
   });
   assert.equal(added[0][2].deduplication.id, "event_event_123");
+  assert.equal(added[0][2].deduplication.keepLastIfActive, true);
   assert.equal(added[0][2].attempts, 5);
   assert.deepEqual(added[0][2].backoff, { type: "exponential", delay: 1000 });
   assert.equal(added[1][2].deduplication.id, "members_all");

@@ -1,6 +1,8 @@
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { startSpreadsheetSyncWorker } from "./services/jobs/spreadsheet-sync-worker.js";
+import { closeSpreadsheetSyncQueue } from "./services/jobs/spreadsheet-sync-queue.js";
+import { scheduleGuestListReconciliation } from "./services/jobs/guest-list-reconciliation.js";
 
 dotenv.config();
 
@@ -18,6 +20,7 @@ async function stop(signal) {
   stopping = (async () => {
     console.log(`${signal} received. Stopping BGSNL background worker...`);
     await worker?.stop();
+    await closeSpreadsheetSyncQueue();
     await mongoose.connection.close();
     console.log("BGSNL background worker stopped.");
   })();
@@ -27,6 +30,9 @@ async function stop(signal) {
 async function main() {
   mongoose.set("strictQuery", true);
   await mongoose.connect(mongoUri());
+  if ((process.env.GUEST_LIST_RECONCILIATION_ENABLED ?? (process.env.APP_ENV === "prod" ? "true" : "false")) === "true") {
+    await scheduleGuestListReconciliation();
+  }
   worker = startSpreadsheetSyncWorker();
   console.log("BGSNL spreadsheet synchronization worker is running.");
 }
@@ -36,6 +42,8 @@ process.once("SIGINT", () => stop("SIGINT").then(() => process.exit(0)).catch((e
 
 main().catch(async (error) => {
   console.error("BGSNL background worker failed to start", error);
+  await worker?.stop();
+  await closeSpreadsheetSyncQueue();
   if (mongoose.connection.readyState !== 0) await mongoose.connection.close();
   process.exitCode = 1;
 });
