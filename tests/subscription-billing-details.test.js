@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { readBillingDetails } from "../services/subscriptions/billing-details.js";
+import { MEMBERSHIP_PLANS } from "../util/subscriptions/policy.js";
 
 const user = { id: "account", status: "locked", subscription: { id: "sub_owner", customerId: "cus_owner" } };
 function fixture(reason = "payment_failed", code = "insufficient_funds") {
@@ -35,7 +36,7 @@ test("diagnostics identify the failed older invoice, not a newer paid invoice", 
 for (const code of ["fraudulent", "stolen_card", "unknown_code"]) test(`sensitive/unknown decline ${code} uses safe generic wording`, async () => {
   const h = fixture("payment_failed", code);
   const notice = await readBillingDetails(user, h.dependencies);
-  assert.match(notice.description, /unpaid membership payment/);
+  assert.match(notice.description, /membership payment is still unpaid/);
   assert.equal(JSON.stringify(notice).includes(code), false);
 });
 
@@ -54,6 +55,19 @@ test("fresh paid state does not grant benefits or suggest another payment", asyn
   assert.equal(notice.reason, "account_sync_pending");
   assert.match(notice.description, /Do not start another payment/);
   assert.deepEqual(user, before);
+});
+
+test("late payment on a canceled subscription offers credit/refund review instead of another charge", async () => {
+  const h = fixture();
+  h.dependencies.resolveRegion = async () => "netherlands";
+  h.dependencies.stripeForRegion = () => ({});
+  Object.assign(h.result.sub, { status: "canceled", ended_at: 100, items: { data: [{ price: { id: MEMBERSHIP_PLANS[0].priceId } }] },
+    latest_invoice: { id: "in_paid", subscription: "sub_owner", customer: "cus_owner", status: "paid", amount_paid: 1000, status_transitions: { paid_at: 110 } } });
+  const notice = await readBillingDetails(user, h.dependencies);
+  assert.equal(notice.reason, "late_payment_review");
+  assert.match(notice.description, /credit.*refund/);
+  assert.match(notice.description, /do not pay again/);
+  assert.doesNotMatch(JSON.stringify(notice), /Stripe/);
 });
 
 test("ownership is verified before exposing invoice details", async () => {

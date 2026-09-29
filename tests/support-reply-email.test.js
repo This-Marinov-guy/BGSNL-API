@@ -38,12 +38,17 @@ test("staff replies email the customer even when internal notifications are disa
   assert.equal(customer.length, 1);
 });
 
-test("existing internal reply notifications are preserved alongside customer mail", () => {
+test("staff replies notify the customer, while requester replies notify only developers", () => {
   const recipients = [];
   const service = createInternalNotificationService({ config: { enabled: true, subscribers: ["notifications@bulgariansociety.nl"] },
+    developerConfig: { enabled: true, subscribers: ["developer@example.test"] },
     sendEmail: message => recipients.push(message.receiver), sendCustomerEmail: message => recipients.push(message.receiver) });
-  assert.equal(service.notifySupportTicketReplied(ticket, reply), 2);
-  assert.deepEqual(recipients, [ticket.contact.email, "notifications@bulgariansociety.nl"]);
+  assert.equal(service.notifySupportTicketReplied(ticket, reply), 1);
+  assert.deepEqual(recipients, [ticket.contact.email]);
+  assert.equal(service.notifySupportTicketReplied({ ...ticket, contact: {} }, reply), 0);
+  assert.deepEqual(recipients, [ticket.contact.email]);
+  assert.equal(service.notifySupportTicketReplied(ticket, { ...reply, author: "requester" }), 1);
+  assert.deepEqual(recipients, [ticket.contact.email, "developer@example.test"]);
 });
 
 test("a saved staff reply queues exactly one customer email across optimistic conflicts and request replay", async () => {

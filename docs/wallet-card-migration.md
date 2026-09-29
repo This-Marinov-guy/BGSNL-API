@@ -6,7 +6,11 @@ Automatic provisioning does not populate consent fields. Historical opt-in recor
 
 ## Backfill existing accounts
 
-Applied to the verified development cluster (`test` database) on 2026-09-22: 543 account records scanned, 435 wallet records added, 436 wallet records total. The final scan found all 543 accounts covered with zero missing tokens. Member/alumni identities may share a wallet record. Existing token/revocation values were preserved and token uniqueness was verified. Production was not changed.
+Applied to the verified development cluster (`test` database) on 2026-09-22: 543 account records scanned, 435 wallet records added, 436 wallet records total. The final scan found all 543 accounts covered with zero missing tokens. Member/alumni identities may share a wallet record. Existing token/revocation values were preserved and token uniqueness was verified. That run changed development only.
+
+Applied to production on 2026-09-28 using the running `bgsnl-api` container's database configuration, verified against the production target and distinct from development. Both clusters use a database named `test`; the database name alone does not identify the environment. The dry-run scanned 543 accounts and found 541 without coverage. Apply created 435 wallet records because member/alumni counterparts can share a card. Final verification found 543 accounts covered, zero missing, 436 total wallet records, zero invalid tokens, and unchanged pre-existing card ownership, token and revocation values. The unique token index was verified before inserting. No API restart or deployment was required.
+
+The pre-backfill wallet documents and indexes are stored on the VPS at `/root/bgsnl-backups/wallet-cards-before-20260928.json` with mode `0600`. This backup contains private card tokens; do not commit or publish it. Production's MemberUser and AlumniUser models already have the automatic provisioning plugin enabled, and signup/payment creation paths use their save hooks. Wallet provisioning, card behavior and account-readiness tests passed (12 tests).
 
 For another run, take a database backup and choose the target explicitly. Configure `WALLET_MIGRATION_MONGODB_URI` and `WALLET_MIGRATION_DB_NAME` securely in your shell or an ignored environment file; never commit them.
 

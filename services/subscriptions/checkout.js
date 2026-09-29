@@ -221,7 +221,7 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
     }
     const sameStripeAccount = !user?.subscription?.stripeRegion || user.subscription.stripeRegion === region ||
       canonicalStripeRegion(user.subscription.stripeRegion) === canonicalStripeRegion(region);
-    if (user?.subscription?.customerId && !sameStripeAccount) throw new HttpError("Your existing billing customer belongs to another Stripe account. Please contact support.", 409);
+    if (user?.subscription?.customerId && !sameStripeAccount) throw new HttpError("Your existing billing details belong to a different billing account. Please contact support.", 409);
     const customerId = user?.subscription?.customerId || data.customerId ||
       (await stripe.customers.create({ email: user?.email || registration.email }, { idempotencyKey: `customer:${key}` })).id;
     if (user && !user.subscription?.id && !user.subscription?.customerId) {

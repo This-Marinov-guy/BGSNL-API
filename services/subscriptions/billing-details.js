@@ -2,6 +2,7 @@ import HttpError from "../../models/Http-error.js";
 import { createStripeClient } from "../../util/config/stripe.js";
 import { invoiceSubscriptionId, stripeId } from "../../util/subscriptions/policy.js";
 import { readStripeSubscription, resolveSubscriptionRegion } from "./reconcile.js";
+import { lateCanceledPayment } from "./invoice-recovery.js";
 
 const PAYMENT_REASONS = {
   insufficient_funds: "The payment method had insufficient funds. Review your payment method in billing.",
@@ -28,7 +29,12 @@ export async function readBillingDetails(user, { resolveRegion = resolveSubscrip
   if (sub.id !== user.subscription.id || !user.subscription.customerId || stripeId(sub.customer) !== user.subscription.customerId) {
     throw new HttpError("We could not verify billing ownership. Please contact support.", 503);
   }
-  if (state.hasBenefits) return { reason: "account_sync_pending", title: "Your membership payment is confirmed", description: "Stripe confirms an eligible membership. Your account is refreshing; if it remains locked, contact support. Do not start another payment." };
+  if (lateCanceledPayment(sub, sub.latest_invoice || {}, region) &&
+      !["credited", "refunded", "replacement_term"].includes(sub.latest_invoice.metadata?.bgsnlLatePaymentReview)) {
+    return { reason: "late_payment_review", title: "We received a payment for an ended subscription",
+      description: "This payment did not start a new subscription. Contact support so we can review credit toward a new membership term or a refund. Please do not pay again." };
+  }
+  if (state.hasBenefits) return { reason: "account_sync_pending", title: "Your membership payment is confirmed", description: "We have confirmed your membership payment. Your account is refreshing; if it remains locked, contact support. Do not start another payment." };
   if (state.lockReason === "payment_failed") {
     const invoice = invoices.find((item) => item.id === state.failureInvoiceId) ||
       (sub.latest_invoice?.id === state.failureInvoiceId ? sub.latest_invoice : null);
@@ -36,17 +42,17 @@ export async function readBillingDetails(user, { resolveRegion = resolveSubscrip
     const error = ownedInvoice?.payment_intent?.last_payment_error;
     const code = error?.decline_code || error?.code;
     return { reason: "payment_failed", title: "Your membership payment was unsuccessful",
-      description: PAYMENT_REASONS[code] || "Stripe reports an unpaid membership payment. Open billing to review the invoice and payment method.",
+      description: PAYMENT_REASONS[code] || "Your membership payment is still unpaid. Open billing to review the invoice and payment method.",
       paymentNote: "Benefits return after payment is confirmed. Cancelling does not settle an outstanding invoice.",
       ...(ownedInvoice && Number.isSafeInteger(ownedInvoice.amount_remaining) && /^[a-z]{3}$/.test(ownedInvoice.currency)
         ? { amountDue: ownedInvoice.amount_remaining, currency: ownedInvoice.currency } : {}),
     };
   }
   const notices = {
-    subscription_ended: { title: "Your membership has ended", description: "Your subscription was cancelled or its initial checkout expired. Start a new subscription to restore paid benefits." },
-    subscription_paused: { title: "Your membership is paused", description: "Stripe shows a paused subscription or paused payment collection. Review billing or contact support to restore your membership." },
+    subscription_ended: { title: "Your membership has ended", description: "Your subscription was cancelled. Start a new subscription or renew to restore paid benefits." },
+    subscription_paused: { title: "Your membership is paused", description: "Your subscription or payment collection is paused. Review billing or contact support to restore your membership." },
     unsupported_plan: { title: "Your membership plan needs review", description: "The subscription linked to this account does not match a supported membership plan. Contact support before making another payment." },
-    payment_pending: { title: "Your membership payment is not confirmed", description: "Stripe has not confirmed an eligible paid membership yet. Review billing for any required steps. If payment is processing, wait before paying again." },
+    payment_pending: { title: "Your membership payment is not confirmed", description: "We have not confirmed your membership payment yet. Review billing for any required steps. If payment is processing, wait before paying again." },
   };
   return { reason: state.lockReason || "payment_pending", ...(notices[state.lockReason] || notices.payment_pending) };
 }

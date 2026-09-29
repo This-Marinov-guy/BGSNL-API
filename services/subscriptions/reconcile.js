@@ -11,6 +11,8 @@ import { membershipReportingSnapshot, refreshMembershipReporting } from "./repor
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { syncScheduledChange } from "./scheduled-change.js";
 import { confirmedMemberRegion } from "./member-region.js";
+import { stripeOwnsBillingEmails } from "../../util/subscriptions/recovery-policy.js";
+import { recoverCanceledMembershipInvoices } from "./invoice-recovery.js";
 
 export function canonicalStripeRegion(region = DEFAULT_REGION) {
   const key = STRIPE_KEYS[region]?.secretKey;
@@ -43,7 +45,8 @@ export async function readStripeSubscription(stripe, id) {
     for await (const invoice of stripe.invoices.list({ subscription: id, status, limit: 100, expand: ["data.payment_intent"] })) invoices.push(invoice);
   }
   let state = subscriptionState(sub, invoices);
-  if (!state.hasBenefits && !invoices.length && sub.status === "active" && sub.latest_invoice?.status === "void" && !sub.pending_update) {
+  if (!state.hasBenefits && !invoices.length && !sub.pending_update && state.periodEnd * 1000 > Date.now() &&
+      (sub.status === "canceled" || (sub.status === "active" && sub.latest_invoice?.status === "void"))) {
     for await (const invoice of stripe.invoices.list({ subscription: id, status: "paid", limit: 100 })) {
       if (invoice.lines?.has_more) {
         const lines = [];
@@ -63,19 +66,29 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
     withLease = withBillingLease, findAccount = findBillingAccount,
     readSubscription = readStripeSubscription, persistAccount = persistSubscriptionAccount,
     readRevenueAllocation = registerMemberRevenueSubscription, attention = BillingAttention, stripe = createStripeClient(region), onChanged = refreshMembershipReporting,
+    stripeEmails = stripeOwnsBillingEmails(region),
+    recoverInvoices = recoverCanceledMembershipInvoices,
   } = dependencies;
   return withLease(`subscription:${region}:${subscriptionId}`, async ({ record, assertOwned }) => {
     const user = await findAccount({ "subscription.id": subscriptionId });
     if (!user) return null; // Checkout can arrive after invoice.paid; checkout reconciles again.
     const previousReporting = membershipReportingSnapshot(user);
     if (user.subscription.stripeRegion && canonicalStripeRegion(user.subscription.stripeRegion) !== region) return null;
-    const { sub, state } = await readSubscription(stripe, subscriptionId);
+    let { sub, state, invoices } = await readSubscription(stripe, subscriptionId);
     if (stripeId(sub.customer) !== user.subscription.customerId ||
         (expectedCustomerId && stripeId(sub.customer) !== expectedCustomerId)) throw new Error("Subscription ownership mismatch");
+    if (await recoverInvoices(stripe, sub, invoices, region)) {
+      ({ sub, state } = await readSubscription(stripe, subscriptionId));
+    }
     const now = new Date();
     const scheduledChange = await syncScheduledChange(stripe, sub, state, assertOwned, { record, key: `subscription:${region}:${subscriptionId}` });
     let episode = user.subscription.failureEpisode;
-    if (!episode && state.reminderNeeded) {
+    if (stripeEmails) {
+      // Retire legacy jobs instead of sending extra 0/48-hour application mail
+      // on top of Stripe's email after each failed collection attempt.
+      if (episode) await attention.updateOne({ _id: episode }, { $set: { resolvedAt: now }, $unset: { nextAttemptAt: 1 } });
+      episode = undefined;
+    } else if (!episode && state.reminderNeeded) {
       const reminder = await attention.findOneAndUpdate({ subscriptionId, stripeRegion: region, resolvedAt: null }, { $setOnInsert: {
         _id: episode || randomUUID(),
         subscriptionId, stripeRegion: region, invoiceId: state.failureInvoiceId,
@@ -106,7 +119,7 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
     };
     // Billing recovery cannot lift an administrative suspension.
     const canSetStatus = ["active", "locked", "payment_awaiting"].includes(user.status);
-    const freeAlumni = state.ended && subscription.freeAlumniRequested && canSetStatus;
+    const freeAlumni = state.ended && !state.hasBenefits && subscription.freeAlumniRequested && canSetStatus;
     if (freeAlumni) subscription.lockReason = null;
     const fields = { subscription,
       status: canSetStatus ? state.hasBenefits || freeAlumni ? "active" : "locked" : user.status,

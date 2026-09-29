@@ -10,6 +10,7 @@ import { resolveCheckoutAccount } from "../../services/subscriptions/checkout-ac
 import { persistSubscriptionAccount } from "../../services/subscriptions/accounts.js";
 import { handleAlumniSignup, handleUserSignup, handleGuestTicketPurchase, handleMemberTicketPurchase } from "../../services/main-services/stripe-webhook-service.js";
 import { logIntegrationError } from "../../middleware/axiom-logger.js";
+import { flagLateMembershipPayment, recoverCanceledMembershipInvoices } from "../../services/subscriptions/invoice-recovery.js";
 
 async function markCheckoutFulfilled(stripe, sessionId, region) {
   const metadata = { bgsnlFulfilled: "1" };
@@ -106,6 +107,20 @@ export const postWebhookCheckout = async (req, res, next) => {
       }
     } else if (event.type.startsWith("customer.subscription.") || event.type.startsWith("invoice.")) {
       const subscriptionId = event.type.startsWith("customer.subscription.") ? object.id : invoiceSubscriptionId(object);
+      if (subscriptionId && event.type === "customer.subscription.deleted") {
+        // A superseded subscription may no longer map to a current profile.
+        // Its canceled renewal invoices must still become unpayable.
+        const { sub, invoices } = await readStripeSubscription(stripe, subscriptionId);
+        await recoverCanceledMembershipInvoices(stripe, sub, invoices, region);
+      }
+      if (subscriptionId && ["invoice.paid", "invoice.payment_succeeded"].includes(event.type)) {
+        // An old invoice may no longer be attached to the account's current
+        // subscription. It still needs durable review, not silent activation.
+        const [invoice, sub] = await Promise.all([
+          stripe.invoices.retrieve(object.id), stripe.subscriptions.retrieve(subscriptionId),
+        ]);
+        await flagLateMembershipPayment(stripe, sub, invoice, region);
+      }
       if (subscriptionId) await reconcileSubscription(subscriptionId, region, { expectedCustomerId: stripeId(object.customer) });
     }
     // Never log or reflect checkout metadata (legacy sessions may contain PII).

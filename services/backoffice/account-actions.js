@@ -94,7 +94,7 @@ export const createAccountActionsService = ({ memberModel = MemberUser, alumniMo
       // A stale reference or unavailable Stripe account must never look like
       // a cancellable subscription. Transfer requests do not modify billing.
       return { canTransfer, canCancel: false, billingUnavailable: true, confirmation: null,
-        cancellationReason: "The subscription could not be verified with Stripe. Cancellation is unavailable until the billing reference and Stripe connection are checked.",
+        cancellationReason: "We could not verify the subscription. Cancellation is unavailable until the billing reference and connection are checked.",
         subscription: null };
     }
     const reason = cancellationReason(sub, now());

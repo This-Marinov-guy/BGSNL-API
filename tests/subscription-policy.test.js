@@ -29,6 +29,29 @@ test("scheduled cancellation keeps benefits until the paid period ends", () => {
   assert.equal(state.hasBenefits, true);
   assert.equal(state.ended, false);
 });
+
+test("immediate cancellation keeps verified paid benefits until the exact paid period end", () => {
+  for (const plan of MEMBERSHIP_PLANS) {
+    const subscription = sub({ status: "canceled", items: { data: [{ id: "si_one", quantity: 1, price: { id: plan.priceId } }] } });
+    const paid = { id: "in_paid", subscription: subscription.id, status: "paid", lines: { data: [{
+      subscription_item: "si_one", price: { id: plan.priceId }, amount: 600,
+      period: { start: subscription.current_period_start, end: subscription.current_period_end },
+    }] } };
+    const state = subscriptionState({ ...subscription, latest_invoice: paid }, [], now);
+    assert.equal(state.hasBenefits, true);
+    assert.equal(state.ended, true);
+    assert.equal(state.lockReason, null);
+    assert.equal(subscriptionState(subscription, [], now, [paid]).hasBenefits, true);
+    assert.equal(subscriptionState(subscription, [], subscription.current_period_end * 1000, [paid]).hasBenefits, false);
+    assert.equal(subscriptionState(subscription, [{ subscription: subscription.id, status: "open", amount_remaining: 600, attempted: true }], now, [paid]).hasBenefits, false);
+    assert.equal(subscriptionState(subscription, [], now, [{ ...paid, subscription: "sub_other" }]).hasBenefits, false);
+    const line = paid.lines.data[0];
+    for (const change of [{ subscription_item: "si_other" }, { price: { id: "price_other" } }, { amount: -600 },
+      { period: { start: 1, end: subscription.current_period_start } }]) {
+      assert.equal(subscriptionState(subscription, [], now, [{ ...paid, lines: { data: [{ ...line, ...change }] } }]).hasBenefits, false);
+    }
+  }
+});
 for (const status of ["past_due", "unpaid", "canceled", "incomplete", "incomplete_expired", "paused"]) {
   test(`${status} never grants benefits even when a previous invoice was paid`, () => {
     assert.equal(subscriptionState(sub({ status }), [], now).hasBenefits, false);

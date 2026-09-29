@@ -4,7 +4,7 @@ import { processBillingReminders, nextReminderSlot, REMINDER_DELAY_MS, deliverBi
 import { SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE, USER_URL } from "../util/config/defines.js";
 
 const harness = () => {
-  const job = { _id: "episode", subscriptionId: "sub_one", stripeRegion: "netherlands", nextAttemptAt: new Date(0) };
+  const job = { _id: "episode", subscriptionId: "sub_one", stripeRegion: "amsterdam", nextAttemptAt: new Date(0) };
   let failed = true;
   const sent = [];
   const attention = {
@@ -33,6 +33,15 @@ test("first reminder is due immediately, second no earlier than 48 hours", async
   assert.equal(h.job.nextAttemptAt - h.job.firstAttemptAt, REMINDER_DELAY_MS);
   await h.process();
   assert.equal(h.sent.length, 1);
+});
+
+test("queued central billing reminders are retired without sending duplicate Stripe emails", async () => {
+  const h = harness(); h.job.stripeRegion = "netherlands";
+  h.dependencies.reconcile = () => assert.fail("No Stripe lookup is needed to retire legacy central reminders");
+  await h.process(); await h.process();
+  assert.equal(h.sent.length, 0);
+  assert.ok(h.job.resolvedAt);
+  assert.equal(h.job.nextAttemptAt, undefined);
 });
 test("concurrent workers and replays cannot send more than two emails per episode", async () => {
   const h = harness();

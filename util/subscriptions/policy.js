@@ -51,15 +51,19 @@ export function subscriptionState(subscription, unpaidInvoices = [], now = Date.
   // An expired/abandoned pending update can leave latest_invoice void while
   // the original plan is still paid. Require evidence for this exact item,
   // price and full remaining period, never merely a historical paid invoice.
-  const paidCoverage = latest?.status === "void" && !subscription.pending_update && paidInvoices.some((invoice) =>
+  // Immediate cancellation also retains demonstrably paid coverage. A future
+  // current_period_end alone is not proof: failed renewals advance it too.
+  const paidCoverage = (subscription.status === "canceled" || latest?.status === "void") && !subscription.pending_update && [latest, ...paidInvoices].some((invoice) =>
+    invoice && items[0]?.id && plan &&
     invoice.status === "paid" && invoiceSubscriptionId(invoice) === subscription.id &&
     invoice.lines?.data?.some((line) =>
       stripeId(line.subscription_item || line.parent?.subscription_item_details?.subscription_item) === items[0]?.id &&
       stripeId(line.price || line.pricing?.price_details?.price) === plan?.priceId &&
       line.amount >= 0 && line.period?.start * 1000 <= now && line.period?.end >= periodEnd)
   );
-  const paid = subscription.status === "active" && (latest?.status === "paid" || paidCoverage);
-  const hasBenefits = !!plan && !subscription.pause_collection && !outstanding && !paymentFailed && !ended &&
+  const paid = (subscription.status === "active" && (latest?.status === "paid" || paidCoverage)) ||
+    (subscription.status === "canceled" && paidCoverage);
+  const hasBenefits = !!plan && !subscription.pause_collection && !outstanding && !paymentFailed &&
     (paid || trial) && periodEnd * 1000 > now;
   const lockReason = hasBenefits ? null : ended ? "subscription_ended"
     : paymentFailed ? "payment_failed" : !plan ? "unsupported_plan"

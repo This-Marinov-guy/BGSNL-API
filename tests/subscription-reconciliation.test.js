@@ -14,6 +14,7 @@ const makeHarness = () => {
   const jobs = [];
   let invoices = [];
   const dependencies = {
+    stripeEmails: false, // Explicitly exercise the retained regional reminder path.
     stripe: {}, onChanged: async () => {}, withLease: async (_key, run) => run({ assertOwned: async () => {} }),
     findAccount: async (query) => { assert.deepEqual(Object.keys(query), ["subscription.id"]); return query["subscription.id"] === account.subscription.id ? account : null; },
     readSubscription: async () => ({ sub: live, state: subscriptionState(live, invoices) }),
@@ -92,6 +93,65 @@ test("reordered webhook delivery always reads current Stripe state, never restor
   assert.equal(h.account.status, "active");
   assert.ok(h.jobs[0].resolvedAt);
   assert.equal(h.account.subscription.failureEpisode, undefined);
+});
+
+test("invoice cleanup runs only after ownership verification and refreshes benefits before saving", async () => {
+  const h = makeHarness(); let cleaned = 0, reads = 0;
+  h.dependencies.recoverInvoices = async () => { cleaned++; h.live.status = "active"; return true; };
+  h.dependencies.readSubscription = async () => { reads++; return { sub: h.live, state: subscriptionState(h.live) }; };
+  h.live.customer = "cus_other";
+  await assert.rejects(h.sync(), /ownership mismatch/);
+  assert.equal(cleaned, 0);
+  h.live.customer = "cus_owner"; h.live.status = "past_due";
+  await h.sync();
+  assert.equal(cleaned, 1); assert.equal(reads, 3);
+  assert.equal(h.account.status, "active");
+  assert.equal(h.account.subscription.hasBenefits, true);
+});
+
+test("central billing locks on the first failure, restores on payment and never queues application emails", async () => {
+  const h = makeHarness(); delete h.dependencies.stripeEmails;
+  h.live.status = "past_due";
+  await h.sync(); await h.sync();
+  assert.equal(h.account.status, "locked");
+  assert.equal(h.account.subscription.hasBenefits, false);
+  assert.equal(h.jobs.length, 0);
+  h.live.status = "active";
+  await h.sync(); await h.sync();
+  assert.equal(h.account.status, "active");
+  assert.equal(h.account.subscription.hasBenefits, true);
+  assert.equal(h.account.subscription.failureEpisode, undefined);
+  assert.equal(h.jobs.length, 0);
+});
+
+test("central billing retires existing reminder episodes without waiting for recovery", async () => {
+  const h = makeHarness(); h.live.status = "past_due";
+  await h.sync(); assert.equal(h.jobs.length, 1);
+  h.dependencies.stripeEmails = true;
+  await h.sync();
+  assert.ok(h.jobs[0].resolvedAt);
+  assert.equal(h.account.subscription.failureEpisode, undefined);
+  assert.equal(h.account.status, "locked");
+});
+
+test("paid cancellation preserves the plan until paid coverage ends, including a pending free-alumni request", async () => {
+  const h = makeHarness();
+  h.account.subscription.freeAlumniRequested = true;
+  h.live.items.data[0].id = "si_paid";
+  h.live.latest_invoice = { id: "in_paid", subscription: h.live.id, status: "paid", lines: { data: [{
+    subscription_item: "si_paid", price: h.live.items.data[0].price, amount: 600,
+    period: { start: h.live.current_period_start, end: h.live.current_period_end },
+  }] } };
+  h.live.status = "canceled";
+  await h.sync();
+  assert.equal(h.account.status, "active");
+  assert.equal(h.account.subscription.hasBenefits, true);
+  assert.deepEqual(h.account.roles, ["member"]);
+  h.live.current_period_end = Math.floor(Date.now() / 1000) - 1;
+  await h.sync();
+  assert.deepEqual(h.account.roles, ["alumni"]);
+  assert.equal(h.account.tier, 0);
+  assert.equal(h.account.subscription.hasBenefits, false);
 });
 test("old subscription events cannot take over an account by matching the customer", async () => {
   const h = makeHarness();
@@ -216,6 +276,48 @@ test("voided upgrades search all invoice lines for evidence of the current paid 
   } };
   const { state } = await readStripeSubscription(stripe, h.live.id);
   assert.equal(state.hasBenefits, true); assert.equal(linePagesRead, 1);
+});
+
+test("canceled subscriptions read paid invoice pages before restoring benefits", async () => {
+  const h = makeHarness();
+  h.live.status = "canceled"; h.live.items.data[0].id = "si_original";
+  const statuses = [];
+  let linePagesRead = 0;
+  const stripe = { subscriptions: { retrieve: async () => h.live }, invoices: {
+    list: ({ status }) => (async function* () {
+      statuses.push(status);
+      if (status === "paid") {
+        yield { id: "in_expired", subscription: "sub_owner", status: "paid", lines: { data: [{
+          subscription_item: "si_original", price: h.live.items.data[0].price, amount: 600,
+          period: { start: 1, end: h.live.current_period_start },
+        }] } };
+        yield { id: "in_current", subscription: "sub_owner", status: "paid", lines: { data: [], has_more: true } };
+      }
+    })(),
+    listLineItems: (id) => (async function* () {
+      assert.equal(id, "in_current"); linePagesRead++;
+      yield { subscription_item: "si_original", price: h.live.items.data[0].price, amount: 600,
+        period: { start: h.live.current_period_start, end: h.live.current_period_end } };
+    })(),
+  } };
+  const { state } = await readStripeSubscription(stripe, h.live.id);
+  assert.deepEqual(statuses, ["open", "uncollectible", "paid"]);
+  assert.equal(state.hasBenefits, true);
+  assert.equal(state.ended, true);
+  assert.equal(linePagesRead, 1);
+});
+
+test("canceled unpaid renewals never recover benefits from an older paid invoice", async () => {
+  const h = makeHarness(); h.live.status = "canceled";
+  const stripe = { subscriptions: { retrieve: async () => h.live }, invoices: {
+    list: ({ status }) => (async function* () {
+      assert.notEqual(status, "paid", "an outstanding renewal must fail closed before historical coverage lookup");
+      if (status === "open") yield { subscription: h.live.id, status: "open", amount_remaining: 600, attempted: true };
+    })(),
+  } };
+  const { state } = await readStripeSubscription(stripe, h.live.id);
+  assert.equal(state.hasBenefits, false);
+  assert.equal(state.lockReason, "subscription_ended");
 });
 test("material changes refresh reporting once; duplicate webhooks do not enqueue exports", async () => {
   const h = makeHarness(); let refreshes = 0;

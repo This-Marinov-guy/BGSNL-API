@@ -14,15 +14,17 @@ import {
   parseInternalNotificationSubscribers,
 } from "../util/config/internal-notifications.js";
 
-test("support replies use configured internal recipients, reply-level keys and escaped message HTML", () => {
+test("support replies use only developer recipients, reply-level keys and escaped message HTML", () => {
   const messages = [];
   const config = { enabled: true, subscribers: ["someone-else@example.test"] };
-  const service = createInternalNotificationService({ config, sendEmail: message => messages.push(message) });
+  const developerConfig = { enabled: true, subscribers: ["dev@example.test"] };
+  const service = createInternalNotificationService({ config, developerConfig, sendEmail: message => messages.push(message) });
   const ticket = { id: "ticket-1", reference: "ABC123", subject: "Help", contact: { name: "Guest" } };
   const reply = { id: "reply-1", author: "requester", text: "<script>unsafe</script>", createdAt: new Date(), attachments: [] };
   assert.equal(service.notifySupportTicketReplied(ticket, reply), 1);
-  service.notifySupportTicketReplied(ticket, { ...reply, id: "reply-2", author: "staff" });
-  assert.deepEqual(messages.map(message => message.receiver), ["someone-else@example.test", "someone-else@example.test"]);
+  assert.equal(service.notifySupportTicketReplied(ticket, { ...reply, id: "staff-reply", author: "staff" }), 0);
+  service.notifySupportTicketReplied(ticket, { ...reply, id: "reply-2" });
+  assert.deepEqual(messages.map(message => message.receiver), ["dev@example.test", "dev@example.test"]);
   assert.notEqual(messages[0].entityId, messages[1].entityId);
   assert.match(messages[0].html, /&lt;script&gt;/);
   assert.doesNotMatch(messages[0].html, /<script>/);
@@ -84,6 +86,7 @@ test("queues a separate internship application notification for each subscriber"
     phone: "+31 6 12345678",
     companyName: "BGSNL",
     position: "Events intern",
+    cv: "https://files.example.com/ada-cv.pdf?download=1&version=2",
     createdAt: "2026-09-03T09:00:00.000Z",
   });
 
@@ -94,7 +97,17 @@ test("queues a separate internship application notification for each subscriber"
   ]);
   assert.match(messages[0].subject, /Events intern/);
   assert.match(messages[0].html, /Ada Applicant/);
+  assert.match(messages[0].html, /href="https:\/\/files\.example\.com\/ada-cv\.pdf\?download=1&amp;version=2"[^>]*>View CV<\/a>/);
+  assert.match(messages[0].text, /CV: https:\/\/files\.example\.com\/ada-cv\.pdf\?download=1&version=2/);
   assert.equal(messages[0].type, "internship-application-created");
+});
+
+test("internship notification handles missing or unsafe CV links without creating a clickable link", () => {
+  for (const cv of [undefined, null, "", "not a URL", "javascript:alert(1)", "data:text/html,test", "https://user:password@example.com/cv.pdf"]) {
+    const message = buildInternshipApplicationNotification({ name: "Applicant", cv });
+    assert.match(message.text, /CV: Not provided/);
+    assert.doesNotMatch(message.html, /href=|>View CV</);
+  }
 });
 
 test("queues a new-event notification with the operational event details", () => {
@@ -121,13 +134,14 @@ test("queues a new-event notification with the operational event details", () =>
   assert.equal(messages[0].type, "event-created");
 });
 
-test("new support tickets notify every internal subscriber with ticket diagnostics", () => {
+test("new support tickets notify only developer subscribers with ticket diagnostics", () => {
   const messages = [];
   const notify = createSupportTicketNotifier({
     config: {
       enabled: true,
       subscribers: ["one@example.com", "two@example.com"],
     },
+    developerConfig: { enabled: true, subscribers: ["dev-one@example.com", "dev-two@example.com"] },
     sendEmail: (message) => messages.push(message),
   });
   assert.equal(notify({ id: "ticket-id", reference: "ABC12345", subject: "Checkout is stuck", pagePath: "/signup",
@@ -135,8 +149,8 @@ test("new support tickets notify every internal subscriber with ticket diagnosti
     environment: { deviceType: "Mobile", browser: "Safari", platform: "iOS", viewport: { width: 390, height: 844 }, devicePixelRatio: 3 } }), 2);
   assert.equal(messages.length, 2);
   assert.deepEqual(messages.map(({ receiver }) => receiver), [
-    "one@example.com",
-    "two@example.com",
+    "dev-one@example.com",
+    "dev-two@example.com",
   ]);
   assert.match(messages[0].subject, /ABC12345/);
   assert.match(messages[0].text, /Mobile · Safari · iOS/);
@@ -184,10 +198,36 @@ test("support ticket notifications follow the internal notification switch", () 
   const messages = [];
   const notify = createSupportTicketNotifier({
     config: { enabled: false, subscribers: ["team@example.com"] },
+    developerConfig: { enabled: true, subscribers: ["dev@example.com"] },
     sendEmail: (message) => messages.push(message),
   });
   assert.equal(notify({ id: "ticket-id", subject: "Test" }), 0);
   assert.equal(messages.length, 0);
+});
+
+test("disabling developer notifications suppresses support mail but leaves other internal mail", () => {
+  const messages = [];
+  const service = createInternalNotificationService({
+    config: { enabled: true, subscribers: ["team@example.com"] },
+    developerConfig: { enabled: false, subscribers: ["dev@example.com"] },
+    sendEmail: message => messages.push(message),
+  });
+  assert.equal(service.notifySupportTicketCreated({ id: "ticket-1" }), 0);
+  assert.equal(service.notifySupportTicketReplied({ id: "ticket-1" }, { id: "reply-1", author: "requester" }), 0);
+  assert.equal(service.notifyEventCreated({ id: "event-1" }), 1);
+  assert.deepEqual(messages.map(message => message.receiver), ["team@example.com"]);
+});
+
+test("an empty developer list never falls back to general internal subscribers", () => {
+  const messages = [];
+  const service = createInternalNotificationService({
+    config: { enabled: true, subscribers: ["team@example.com"] },
+    developerConfig: { enabled: true, subscribers: [] },
+    sendEmail: message => messages.push(message),
+  });
+  assert.equal(service.notifySupportTicketCreated({ id: "ticket-1" }), 0);
+  assert.equal(service.notifySupportTicketReplied({ id: "ticket-1" }, { id: "reply-1", author: "requester" }), 0);
+  assert.deepEqual(messages, []);
 });
 
 test("support-ticket notification HTML escapes reporter-provided content", () => {

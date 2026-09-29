@@ -11,6 +11,7 @@ import { reconcileAccount, reconcileSubscription } from "./reconcile.js";
 import { processMemberRevenueMaintenance } from "./revenue-fees.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
+import { stripeOwnsBillingEmails } from "../../util/subscriptions/recovery-policy.js";
 
 export const REMINDER_DELAY_MS = 48 * 60 * 60 * 1000;
 export const nextReminderSlot = (job, now = Date.now()) => {
@@ -32,6 +33,10 @@ export async function processBillingReminders({ send = deliverBillingReminder, a
   const jobs = await attention.find({ resolvedAt: null, nextAttemptAt: { $lte: new Date() } }).sort({ nextAttemptAt: 1 }).limit(50);
   for (const job of jobs) {
     try {
+      if (stripeOwnsBillingEmails(job.stripeRegion)) {
+        await attention.updateOne({ _id: job._id, resolvedAt: null }, { $set: { resolvedAt: new Date() }, $unset: { nextAttemptAt: 1 } });
+        continue;
+      }
       // Never send an obsolete reminder after recovery/cancellation, even if a
       // webhook was missed. A Stripe outage leaves the job pending for later.
       const result = await reconcile(job.subscriptionId, job.stripeRegion);

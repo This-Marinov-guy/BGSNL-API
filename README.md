@@ -102,6 +102,11 @@ MAILER_BULGARIANSOCIETY_SECRET=your-bulgarian-society-scoped-secret
 INTERNAL_NOTIFICATIONS_ENABLED=true
 INTERNAL_NOTIFICATION_SUBSCRIBERS=vladislavmarinov3142@gmail.com,bulgariansocietynetherlands@gmail.com
 
+# Support tickets and requester replies use the separate developer group.
+# These emails also require INTERNAL_NOTIFICATIONS_ENABLED=true.
+DEVELOPER_NOTIFICATIONS_ENABLED=true
+DEVELOPER_NOTIFICATION_SUBSCRIBERS=vladislavmarinov3142@gmail.com
+
 # Optional override. In production the report is enabled whenever internal
 # notifications are enabled; set false to disable it. It covers the completed
 # Monday–Sunday week and runs at 00:05 Monday in Europe/Amsterdam.

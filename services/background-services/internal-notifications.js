@@ -1,6 +1,6 @@
 import { sendInternalNotificationEmail, sendCustomerSupportEmail } from "./email-transporter.js";
 import { buildCustomerSupportReplyEmail } from "../support/reply-email.js";
-import { getInternalNotificationConfig } from "../../util/config/internal-notifications.js";
+import { getDeveloperNotificationConfig, getInternalNotificationConfig } from "../../util/config/internal-notifications.js";
 import { HOME_URL } from "../../util/config/defines.js";
 import { formatRegionBadgeLabel, getRegionBadgeTheme } from "../../util/config/region-badges.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
@@ -40,7 +40,7 @@ const renderRowValue = (value, options) => {
     return `<span style="display:inline-block;padding:5px 10px;border:1px solid ${theme.border};border-radius:999px;background-color:${theme.background};color:${theme.color};font-size:14px;font-weight:700;line-height:1.4;">${content}</span>`;
   }
   if (options?.href) {
-    return `<a href="${escapeHtml(options.href)}" style="color:#017363;font-weight:700;text-decoration:underline;overflow-wrap:anywhere;">View event</a>`;
+    return `<a href="${escapeHtml(options.href)}" style="color:#017363;font-weight:700;text-decoration:underline;overflow-wrap:anywhere;">${escapeHtml(options.linkLabel || "View event")}</a>`;
   }
   return content.replaceAll("\n", "<br>");
 };
@@ -98,6 +98,11 @@ const renderNotification = ({ title, rows }) => {
 
 export const buildInternshipApplicationNotification = (application) => {
   const position = present(application?.position, "Unspecified position");
+  let cvLink = null;
+  try {
+    const url = new URL(application?.cv);
+    if (["https:", "http:"].includes(url.protocol) && !url.username && !url.password) cvLink = url.href;
+  } catch { /* Applications without a valid CV URL still receive a notification. */ }
   const message = renderNotification({
     title: "New internship application",
     rows: [
@@ -106,6 +111,7 @@ export const buildInternshipApplicationNotification = (application) => {
       ["Phone", application?.phone],
       ["Company", application?.companyName],
       ["Position", position],
+      ["CV", cvLink, { href: cvLink, linkLabel: "View CV" }],
       ["Submitted", formatDateTime(application?.createdAt ?? new Date())],
       ["Application ID", application?._id ?? application?.id],
     ],
@@ -228,28 +234,35 @@ export const buildSupportReplyNotification = (ticket, reply) => ({
 
 export const createInternalNotificationService = ({
   config = getInternalNotificationConfig(),
+  developerConfig = getDeveloperNotificationConfig(),
   sendEmail = sendInternalNotificationEmail,
   sendCustomerEmail = sendCustomerSupportEmail,
 } = {}) => {
-  const queue = (notification) => {
-    if (!config.enabled || config.subscribers.length === 0) return 0;
+  const queue = (notification, subscribers = config.subscribers, enabled = config.enabled) => {
+    if (!enabled || subscribers.length === 0) return 0;
 
-    for (const receiver of config.subscribers) {
+    for (const receiver of subscribers) {
       sendEmail({ receiver, ...notification });
     }
 
-    return config.subscribers.length;
+    return subscribers.length;
   };
+  const queueSupport = (notification) => queue(
+    notification,
+    developerConfig.subscribers,
+    config.enabled && developerConfig.enabled
+  );
 
   return {
     notifySupportTicketReplied(ticket, reply) {
-      let queued = 0;
-      // Customer mail is transactional, independent of internal subscriptions.
-      if (reply.author === "staff" && ticket.contact?.email) {
+      // Support replies notify the requester, not the internal support team.
+      // Customer mail remains independent of internal notification subscriptions.
+      if (reply.author === "staff") {
+        if (!ticket.contact?.email) return 0;
         sendCustomerEmail(buildCustomerSupportReplyEmail(ticket, reply));
-        queued++;
+        return 1;
       }
-      return queued + queue(buildSupportReplyNotification(ticket, reply));
+      return queueSupport(buildSupportReplyNotification(ticket, reply));
     },
     notifyAccessRequested(request) {
       return queue(buildAccessRequestNotification(request));
@@ -261,7 +274,7 @@ export const createInternalNotificationService = ({
       return queue(buildEventCreatedNotification(event));
     },
     notifySupportTicketCreated(ticket) {
-      return queue(buildSupportTicketNotification(ticket));
+      return queueSupport(buildSupportTicketNotification(ticket));
     },
   };
 };

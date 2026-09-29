@@ -104,9 +104,11 @@ email or Stripe writes. Stop it when finished; all fixture reports disappear.
 
 This initial version is asynchronous in-site support: replies poll every 20
 seconds while the relevant view is visible. Each newly created ticket queues a
-deduplicated internal email to each address in
-`INTERNAL_NOTIFICATION_SUBSCRIBERS` (defaults to
-`notifications@bulgariansociety.nl`); idempotent
+deduplicated internal email only to the developer group configured by
+`DEVELOPER_NOTIFICATION_SUBSCRIBERS` (defaults to
+`vladislavmarinov3142@gmail.com`). Requester replies also notify only that
+group. Both `INTERNAL_NOTIFICATIONS_ENABLED` and
+`DEVELOPER_NOTIFICATIONS_ENABLED` must be enabled. Idempotent
 create replays and later replies do not send another new-ticket email. It does
 not provide live-agent availability, SMS or automatic guest recovery links.
 
