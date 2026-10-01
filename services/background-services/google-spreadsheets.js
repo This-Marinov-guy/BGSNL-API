@@ -266,9 +266,9 @@ export const syncEventToSpreadsheet = async ({ id }, {
             .tz("Europe/Amsterdam")
             .format(MOMENT_DATE_TIME_YEAR),
           ticketLimit,
-          product?.guest.price ?? "-",
-          product?.member.price ?? "-",
-          product?.activeMember.price ?? "-",
+          product?.guest?.price ?? "-",
+          product?.member?.price ?? "-",
+          product?.activeMember?.price ?? "-",
           ticketLink,
           createdAt != "-"
             ? moment(createdAt)
