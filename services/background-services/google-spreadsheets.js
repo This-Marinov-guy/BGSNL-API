@@ -865,11 +865,10 @@ export const syncInternshipApplicationsToSpreadsheet = async () => {
       const spreadsheetId = INTERNSHIP_SHEET;
       const sheetName = "Applications";
 
-      // Fetch all internship applications from MongoDB
+      // Oldest first so new applications are appended at the bottom. The _id
+      // carries the real insert time; migrated records share a createdAt.
       const applications = await InternshipApplication.find({})
-        .sort({
-          createdAt: -1,
-        })
+        .sort({ _id: 1 })
         .lean();
 
       const values = applications.map((application) => {

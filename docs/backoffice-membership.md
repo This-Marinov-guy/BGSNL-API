@@ -1,6 +1,6 @@
 # Back-office membership management
 
-The member/alumni editor includes membership controls for regional board members, national board members, Admin and Super Admin. The API independently checks active staff status, regional scope and target hierarchy. Only Super Admins can edit or manage Admin, Super Admin or VIP accounts, including transfers and cancellation. Regional board members additionally cannot manage Alumni accounts, accounts outside their region or national-board accounts. National committee can edit ordinary Member profiles across regions but cannot execute membership transfer/cancellation actions. Billing holds retain administration only for Admin/Super Admin.
+The member/alumni editor includes membership controls for regional board members, national board members, Admin and Super Admin. The API independently checks active staff status, regional scope and target hierarchy. Only Super Admins can edit Admin or Super Admin accounts, or manage VIP membership transfers and cancellation. Admins can edit VIP and Developer roles. Regional board members additionally cannot manage Alumni accounts, accounts outside their region or national-board accounts. National committee can edit ordinary Member profiles across regions but cannot execute membership transfer/cancellation actions. Billing holds retain administration only for Admin/Super Admin.
 
 ## Transfer request
 
@@ -20,6 +20,8 @@ The API validates Stripe subscription/customer ownership, uses an idempotency ke
 
 ## Roles and UI
 
-VIP cannot be assigned through the editor or API. Existing VIP, Admin and Super Admin roles remain protected and read-only. Editable selected roles use label blue; checkboxes use the purchase-page style. Alumni editors offer only national board and national committee roles. Save profile changes before executing membership actions. Pending actions disable editing and dismissal; inline confirmation is required before sending or cancelling.
+Admins can assign VIP, Support and Developer; Super Admins can also assign Admin and Super Admin. National board members can assign regional board and national committee roles across regions. Regional board members can assign regional board and regional committee roles only in their own region. Other roles remain read-only for these editors. Regional committee members have no role controls. Alumni retain national structural roles, with privileged roles available to administrators. Save profile changes before executing membership actions. Pending actions disable editing and dismissal; inline confirmation is required before sending or cancelling.
+
+Bulk role import remains limited to Support assignments by Admin and Super Admin. It retains every other role on the account.
 
 Deploy the website and API together. Existing JWT signing secret, Stripe, Redis, email and cookie/CSRF configuration are reused; no new environment variable is required. Tests mock all billing and email mutations.

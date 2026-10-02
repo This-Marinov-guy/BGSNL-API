@@ -155,6 +155,8 @@ export const buildWeeklyMembershipSummaryNotification = ({
   label,
   rows,
   totals,
+  totalLabel = "All cities",
+  region,
 }) => {
   const textRows = rows.map((row) =>
     `${row.city}: ${row.members} member${row.members === 1 ? "" : "s"}, ${row.alumni} alumn${row.alumni === 1 ? "us" : "i"}, ${row.total} total`
@@ -168,16 +170,16 @@ export const buildWeeklyMembershipSummaryNotification = ({
     </tr>`).join("");
 
   return {
-    subject: `Weekly membership summary — ${label}`,
-    type: REPORT_TYPE,
-    entityId: key,
+    subject: `Weekly membership summary${region ? ` — ${regionLabel(region)}` : ""} — ${label}`,
+    type: region ? "regional-weekly-membership-summary" : REPORT_TYPE,
+    entityId: region ? `${key}:${region}` : key,
     text: [
       "Weekly membership summary",
       label,
       "",
       ...textRows,
       "",
-      `All cities: ${totals.members} members, ${totals.alumni} alumni, ${totals.total} total`,
+      `${totalLabel}: ${totals.members} members, ${totals.alumni} alumni, ${totals.total} total`,
     ].join("\n"),
     html: `<!doctype html>
       <html lang="en">
@@ -201,7 +203,7 @@ export const buildWeeklyMembershipSummaryNotification = ({
                 <tbody>${htmlRows}</tbody>
                 <tfoot>
                   <tr style="background:#ecfdf5;">
-                    <th style="padding:12px 8px;text-align:left;">All cities</th>
+                    <th style="padding:12px 8px;text-align:left;">${escapeHtml(totalLabel)}</th>
                     <th style="padding:12px 8px;text-align:right;">${totals.members}</th>
                     <th style="padding:12px 8px;text-align:right;">${totals.alumni}</th>
                     <th style="padding:12px 8px;text-align:right;">${totals.total}</th>
@@ -290,6 +292,7 @@ export const startWeeklyMembershipReportWorker = ({
   schedule = setTimeout,
   cancel = clearTimeout,
   observe = runObservedJob,
+  jobName = "weekly-membership-report",
 } = {}) => {
   if (!config.enabled) return async () => {};
   let stopped = false;
@@ -303,8 +306,8 @@ export const startWeeklyMembershipReportWorker = ({
   };
   const tick = () => {
     if (stopped || running) return;
-    running = Promise.resolve().then(() => observe("scheduler", "weekly-membership-report", () => processReport({ config, now: now() })))
-      .catch((error) => { logOperationalError("worker.weekly-membership-report", error); console.error("Weekly membership report failed", {
+    running = Promise.resolve().then(() => observe("scheduler", jobName, () => processReport({ config, now: now() })))
+      .catch((error) => { logOperationalError(`worker.${jobName}`, error); console.error("Weekly membership report failed", {
         code: error?.code,
       }); })
       .finally(() => { running = null; scheduleNext(); });

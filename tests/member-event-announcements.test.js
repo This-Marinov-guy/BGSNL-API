@@ -11,7 +11,7 @@ import { ACCESS_4, MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE } from "../util/config/def
 
 const env = { JWT_STRING: "test-secret-only-".repeat(4), NODE_ENV: "test" };
 const event = { _id: "a".repeat(24), region: "groningen", slug: "autumn-meetup", title: 'Meet <friends> & "dance"', description: "An evening together", status: "opened", date: new Date("2099-10-20T17:00:00Z"), ticketTimer: new Date("2099-10-20T16:00:00Z"), location: "Groningen", ticketLimit: 20, guestList: [], product: { member: { price: 8, priceId: "price_member" }, activeMember: { price: 5, priceId: "price_active" }, guest: { price: 12, priceId: "price_guest" } }, memberAnnouncementQueuedAt: new Date("2026-09-11") };
-const member = { _id: `member_${"b".repeat(24)}`, email: "mila@example.test", name: "Mila <test>", status: "active", roles: ["member"], expireDate: new Date("2099-12-01") };
+const member = { _id: `member_${"b".repeat(24)}`, region: "groningen", email: "mila@example.test", name: "Mila <test>", status: "active", roles: ["member"], expireDate: new Date("2099-12-01") };
 const makeLink = (e = event, m = member) => createMemberEventLink(e, m, { env });
 const paramsFor = (e = event, m = member) => ({ token: new URL(makeLink(e, m)).searchParams.get("token") });
 
@@ -83,7 +83,40 @@ test("worker is production-only by default and requires explicit publication mar
   assert.equal(h.calls.eventQueries[0].memberAnnouncementCompletedAt.$exists, false);
   assert.deepEqual(h.calls.eventQueries[0].status.$nin, ["draft", "archived"]);
   assert.equal(h.calls.memberQueries[0].status, "active");
+  assert.deepEqual(h.calls.memberQueries[0].region, { $in: ["groningen", "leeuwarden"] });
   assert.ok(h.calls.memberQueries[0].$or[0].expireDate.$gt instanceof Date);
+});
+
+test("announcements only reach eligible host and nearby members, including regional VIPs", async () => {
+  const h = workerHarness();
+  const candidates = [member,
+    { ...member, email: "nearby@example.test", region: "leeuwarden" },
+    { ...member, email: "vip@example.test", region: "leeuwarden", roles: ["vip"], expireDate: new Date(0) },
+    { ...member, email: "far@example.test", region: "amsterdam" },
+    { ...member, email: "far-vip@example.test", region: "amsterdam", roles: ["vip"] },
+    { ...member, email: "missing@example.test", region: undefined },
+    { ...member, email: "alumni@example.test", region: "leeuwarden", roles: ["alumni"] },
+    { ...member, email: "locked@example.test", region: "leeuwarden", status: "locked" },
+    { ...member, email: "expired@example.test", region: "leeuwarden", expireDate: new Date(0) },
+    { ...member, email: member.email.toUpperCase(), region: "leeuwarden" },
+  ];
+  h.dependencies.MemberModel = { find: () => ({ select: fields => {
+    assert.ok(fields.split(" ").includes("region"));
+    return { lean: async () => candidates };
+  } }) };
+  assert.equal((await processMemberEventAnnouncements(h.dependencies)).sent, 3);
+  assert.deepEqual(h.calls.sent.map(message => message.to[0].email), [member.email, "nearby@example.test", "vip@example.test"]);
+});
+
+test("unknown host regions stay pending without querying or emailing members", async () => {
+  for (const region of [undefined, "unknown", "netherlands", "__proto__"]) {
+    const h = workerHarness();
+    h.dependencies.EventModel.find = () => ({ limit: async () => [{ ...event, region }] });
+    await processMemberEventAnnouncements(h.dependencies);
+    assert.equal(h.calls.memberQueries.length, 0);
+    assert.equal(h.calls.sent.length, 0);
+    assert.equal(h.calls.completed.length, 0);
+  }
 });
 
 test("repeated and concurrent worker runs within one process send once per inbox", async () => {
@@ -108,6 +141,7 @@ function checkoutHarness({ eventRecord = event, account = member, reconcile, che
   const handler = createMemberEventCheckoutHandler({
     verify: (input) => verifyMemberEventLink(input, { env }),
     preferencesUrl: (e, m) => memberEventPreferencesUrl(e, m, { env }),
+    freeReturn: async () => `https://bulgariansociety.nl/payment/return?token=${"f".repeat(64)}`,
     EventModel: { async findById() { calls.reads++; return structuredClone(eventRecord); } },
     MemberModel: { async findById() { calls.reads++; return structuredClone(account); } },
     reconcile: reconcile || (async (user) => ({ user })),
@@ -172,11 +206,87 @@ test("events requiring choices use the scoped preferences page and late duplicat
   assert.equal(duplicate.calls.headers.Location, "https://checkout.stripe.com/c/pay/guest");
 });
 
-test("free email tickets use the checkout adapter and unsafe redirect destinations are rejected", async () => {
-  const free = checkoutHarness({ eventRecord: { ...event, isMemberFree: true } }); await free.run();
-  assert.equal(free.calls.checkout[0].emailTicketCheckout, true);
+test("free email links issue immediately and redirect to success; unsafe paid redirects are rejected", async () => {
+  const url = `https://bulgariansociety.nl/payment/return?token=${"a".repeat(64)}`;
+  const free = checkoutHarness({ eventRecord: { ...event, isMemberFree: true }, result: { free: true, url } }); await free.run();
+  assert.equal(free.calls.checkout.length, 1);
+  assert.equal(free.calls.checkout[0].emailTicketConfirmed, true);
+  assert.equal(free.calls.checkout[0].emailTicketFreeOnly, true);
+  assert.equal(free.calls.headers.Location, url);
   const bad = checkoutHarness({ result: { url: "https://attacker.example" } }); await bad.run();
   assert.equal(bad.calls.errors.length, 1); assert.equal(bad.calls.headers.Location, undefined);
+});
+
+test("one-click free links invoke real ticket issuance without a payment session and are repeat-safe", async () => {
+  const { postCheckoutFile } = await import("../controllers/payments-controllers.js");
+  for (const flags of [{ isFree: true }, { isMemberFree: true }]) {
+    const freeEvent = { ...event, ...flags, guestList: [] };
+    let issued = 0;
+    const url = `https://bulgariansociety.nl/payment/return?token=${"a".repeat(64)}`;
+    const h = checkoutHarness({ eventRecord: freeEvent, checkout: (req, res, next) => postCheckoutFile(req, res, next, {
+      loadEvent: async () => freeEvent, reconcile: async user => ({ user }),
+      reserveToken: async () => "abcdefghijklmnopqrstuv", generateTicket: async () => "ticket.png",
+      fulfillMember: async (metadata, _payment, options) => {
+        assert.equal(options.confirmedFree, true);
+        assert.equal(metadata.quantity, 1);
+        issued++;
+        freeEvent.guestList.push({ userId: member._id, type: "member", ticket: metadata.file });
+        return { success: true };
+      },
+      freeReturn: async () => url,
+      stripeForRegion: () => { throw new Error("Must not open Stripe for a free link"); },
+    }) });
+    await h.run();
+    assert.equal(issued, 1);
+    assert.equal(h.calls.status, 303);
+    assert.equal(h.calls.headers.Location, url);
+    await h.run();
+    assert.equal(issued, 1);
+    assert.equal(h.calls.checkout.length, 1);
+    assert.deepEqual(h.calls.errors, []);
+    assert.match(h.calls.headers.Location, /\/payment\/return\?token=/);
+  }
+});
+
+test("free-link HEAD stays inert and events requiring choices still open preferences", async () => {
+  const head = checkoutHarness({ eventRecord: { ...event, isFree: true } });
+  head.req.method = "HEAD"; await head.run();
+  assert.equal(head.calls.reads, 0); assert.equal(head.calls.checkout.length, 0);
+  assert.equal(head.calls.status, 204);
+  for (const patch of [{ extraInputsForm: [{ placeholder: "Meal", required: true }] }, { addOns: { isEnabled: true, items: [{ _id: "meal", price: 3 }] } }]) {
+    const h = checkoutHarness({ eventRecord: { ...event, isFree: true, ...patch } }); await h.run();
+    assert.equal(h.calls.checkout.length, 0);
+    assert.match(h.calls.headers.Location, /payment\/event-ticket\/start\?token=/);
+  }
+});
+
+test("one-click issuance conflicts return existing success only when a ticket really exists", async () => {
+  for (const exists of [false, true]) {
+    const freeEvent = { ...event, isFree: true, guestList: [] };
+    const h = checkoutHarness({ eventRecord: freeEvent, checkout: (_req, _res, next) => {
+      if (exists) freeEvent.guestList.push({ email: member.email, type: "member" });
+      return next(Object.assign(new Error("Seat claim conflict"), { statusCode: 409 }));
+    } });
+    await h.run();
+    assert.equal(h.calls.checkout.length, 1);
+    assert.equal(h.calls.errors.length, exists ? 0 : 1);
+    if (exists) assert.match(h.calls.headers.Location, /\/payment\/return\?token=/);
+    else assert.equal(h.calls.headers.Location, undefined);
+  }
+});
+
+test("one-click free tickets refuse changed prices/options before generation", async () => {
+  const { postCheckoutFile } = await import("../controllers/payments-controllers.js");
+  for (const changed of [{ ...event }, { ...event, isFree: true, addOns: { isEnabled: true, items: [{ _id: "meal", price: 3 }] } }]) {
+    const h = checkoutHarness({ eventRecord: { ...event, isFree: true }, checkout: (req, res, next) => postCheckoutFile(req, res, next, {
+      loadEvent: async () => changed, reconcile: async user => ({ user }),
+      reserveToken: async () => { throw new Error("Must not generate a ticket after price/options changed"); },
+      stripeForRegion: () => { throw new Error("Must not start a payment"); },
+    }) });
+    await h.run();
+    assert.equal(h.calls.errors[0].statusCode, 409);
+    assert.equal(h.calls.headers.Location, undefined);
+  }
 });
 
 test("ticket capabilities and member information are excluded from request logs", () => {
@@ -190,7 +300,7 @@ test("both publication paths save the announcement marker atomically with the ev
   assert.equal((source.match(/new Event\(\{\s*memberAnnouncementQueuedAt: new Date\(\)/g) || []).length, 2);
 });
 
-test("real ticket controller prefills member email, preserves fulfillment metadata and confirms free tickets in Stripe", async () => {
+test("unconfirmed email checkout never directly issues tickets and preserves member metadata", async () => {
   const { postCheckoutFile } = await import("../controllers/payments-controllers.js");
   for (const free of [false, true]) {
     const e = { ...event, isMemberFree: free };
@@ -200,6 +310,7 @@ test("real ticket controller prefills member email, preserves fulfillment metada
     await postCheckoutFile(req, res, (error) => { throw error; }, {
       loadEvent: async () => e,
       reconcile: async (user) => ({ user }),
+      reserveToken: async () => "abcdefghijklmnopqrstuv",
       generateTicket: async (data) => { calls.ticket = data; return "https://tickets.example.test/test.png"; },
       resolvePrice: async () => { assert.equal(free, false); return "price_member"; },
       stripeForRegion: (region) => { assert.equal(region, event.region); return {}; },
@@ -366,6 +477,7 @@ test("email guest checkout uses guest price, prefilled details and guest fulfill
       checkout: (req, res, next) => postCheckoutFile(req, res, next, {
         loadEvent: async () => purchased,
         reconcile: async (user) => ({ user }),
+        reserveToken: async () => "abcdefghijklmnopqrstuv",
         generateTicket: async (data) => { calls.ticket = data; return "https://tickets.example.test/guest.png"; },
         resolvePrice: async (record, type, userId) => {
           assert.equal(type, "guest"); assert.equal(userId, "");
@@ -377,6 +489,11 @@ test("email guest checkout uses guest price, prefilled details and guest fulfill
     });
     await h.run();
     assert.deepEqual(h.calls.errors, []);
+    if (["member-free", "all-free"].includes(mode)) {
+      assert.match(h.calls.headers.Location, /payment\/return\?token=/);
+      assert.equal(h.calls.checkout.length, 0);
+      continue;
+    }
     assert.equal(h.calls.headers.Location, "https://checkout.stripe.com/c/pay/guest");
     assert.equal(h.calls.checkout.length, mode === "late" ? 2 : 1);
     assert.equal(calls.ticket.checkoutType, "guest");

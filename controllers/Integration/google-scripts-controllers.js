@@ -1,7 +1,8 @@
-import mongoose from "mongoose";
 import dotenv from "dotenv";
 import Event from "../../models/Event.js";
 import MemberUser from "../../models/MemberUser.js";
+import HttpError from "../../models/Http-error.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 dotenv.config();
 
 // TODO: find a way to make this work with 2 db connections
@@ -81,11 +82,7 @@ export const readDatabaseCollection = async (req, res, next) => {
       data: documents,
     });
   } catch (err) {
-    console.log(err);
-
-    return res.status(500).json({
-      status: false,
-      message: "Error while fetching collection, please make sure it exists!",
-    });
+    logOperationalError("integration.google-scripts.collection", err);
+    return next(new HttpError("Collection request failed", 503));
   }
 };

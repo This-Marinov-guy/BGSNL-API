@@ -170,6 +170,10 @@ test("a new-ticket notification is emitted once and not on an idempotent create 
   assert.equal(notifications.length, 1);
   assert.equal(notifications[0].contact.email, "guest@example.test");
   assert.equal(notifications[0].reference, input.id.slice(0, 8).toUpperCase());
+  assert.equal(notifications[0].id, input.id);
+  assert.equal(notifications[0].messages[0].text, input.text);
+  assert.equal(notifications[0].messages[0].author, "requester");
+  assert.equal(notifications[0].messages[0].kind, "message");
 });
 
 test("create retries and concurrent duplicate submissions create one conversation", async () => {

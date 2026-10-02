@@ -36,6 +36,31 @@ test("public card has only approved fields and conservative current status", () 
   assert.equal(publicCard({ ...member, image: "javascript:alert(1)" }).profileImage.startsWith("/assets/"), true);
 });
 
+test("membership labels show the highest priority board or committee role", () => {
+  const cases = [
+    ["regional_board_member", "Board Member of Groningen"],
+    ["national_board_member", "National Board Member"],
+    ["regional_committee_member", "Committee Member of Groningen"],
+    ["national_committee_member", "National Committee Member"],
+  ];
+  for (const [role, title] of cases) {
+    assert.equal(publicCard({ ...member, roles: ["member", role] }).membershipLabel, title);
+    assert.equal(publicCard({ ...member, roles: ["alumni", role], tier: 2 }).membershipLabel, `Alumni Tier II & ${title}`);
+  }
+  assert.equal(publicCard({ ...member, roles: ["alumni", "national_board_member"], tier: 0 }).membershipLabel,
+    "Alumni Tier 0 & National Board Member");
+  assert.equal(publicCard({ ...member, roles: ["member", "regional_committee_member", "national_committee_member",
+    "regional_board_member", "national_board_member"] }).membershipLabel, "National Board Member");
+  assert.equal(publicCard({ ...member, roles: ["member", "regional_committee_member", "national_committee_member",
+    "regional_board_member"] }).membershipLabel, "Board Member of Groningen");
+  assert.equal(publicCard({ ...member, roles: ["member", "regional_committee_member", "national_committee_member"] }).membershipLabel,
+    "National Committee Member");
+  for (const [legacy, title] of [["society_board_member", "National Board Member"],
+    ["board_member", "Board Member of Groningen"], ["committee_member", "Committee Member of Groningen"]]) {
+    assert.equal(publicCard({ ...member, roles: ["member", legacy] }).membershipLabel, title);
+  }
+});
+
 test("public ticket images contain no ticket or account metadata", () => {
   const ticket = { event: "Private event name", purchaseDate: new Date("2026-09-20T12:00:00Z"),
     image: "https://tickets.example.test/ticket.png", internal: "private" };

@@ -5,7 +5,7 @@ or its dedicated worker service. Update it whenever a recurring worker, queued
 job, cron job, or externally scheduled API task is added, removed, or changes
 frequency.
 
-Last reviewed: 15 September 2026.
+Last reviewed: 1 October 2026.
 
 Database-triggered work is inventoried in [triggers.md](triggers.md).
 
@@ -16,6 +16,8 @@ Database-triggered work is inventoried in [triggers.md](triggers.md).
 | Billing maintenance | Immediately after API startup, then every 60 seconds | Not calendar-based | `NODE_ENV=production` or `BILLING_WORKER_ENABLED=true`; `BILLING_WORKER_ENABLED=false` always disables it | Processes payment reminders, recovers Checkout sessions, and refreshes stale subscription state |
 | Regional Member revenue | Within the billing worker, approximately every 60 seconds | UTC for monthly fee reports | Billing worker enabled and `MEMBER_REVENUE_SHARING_ENABLED=true` | Reconciles new Member invoice allocations, actual Stripe fees and regional Connect transfers; see [member-revenue-sharing.md](member-revenue-sharing.md) |
 | Weekly membership summary | Sunday at 18:00; no startup send or missed-run catch-up | `Europe/Amsterdam` | Internal notifications are enabled and the API is in production, or `WEEKLY_MEMBERSHIP_REPORT_ENABLED=true`; setting the flag to `false` disables it | Emails the preceding Sunday 18:00–Sunday 18:00 member/alumni totals per city to every internal-notification subscriber |
+| Regional new-member summary | Sunday at 18:00; no startup send or missed-run catch-up | `Europe/Amsterdam` | Same gates as the weekly membership summary; PM2 worker 0 only | Sends the same internal report template, restricted to one region, to its database contact; skips regions without new members |
+| Monthly alumni supporter summary | Last calendar day at 23:59; no startup send or missed-run catch-up | `Europe/Amsterdam` | Production by default, or `MONTHLY_SUPPORTER_SUMMARY_ENABLED=true`; `false` disables it; PM2 worker 0 only | Thanks eligible active alumni and internal subscribers with hosted events, new-account counts and optional staff news; see [monthly-supporter-summary.md](monthly-supporter-summary.md) |
 | Birthday greetings | First check after API startup, then every minute; a daily greeting becomes due at 10:00 | `Europe/Amsterdam` | `NODE_ENV=production` or `BIRTHDAY_EMAIL_WORKER_ENABLED=true`; setting the flag to `false` disables it | Sends one non-promotional birthday greeting to each current Member or Alumni account with a valid stored date of birth |
 | Member event announcements | Immediately after API startup, then every minute; an authenticated Atlas notification can request an earlier pass | Not calendar-based | `NODE_ENV=production` or `EVENT_ANNOUNCEMENTS_ENABLED=true`; `false` disables it | Delivers pending publication announcements with personal encrypted ticket links; recovers missed trigger notifications |
 | Event draft cleanup | Daily at 03:00; checks every minute and catches up after startup later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_DRAFT_CLEANUP_ENABLED=true`; `false` disables it | Deletes event drafts created more than 30 days ago |
@@ -168,7 +170,7 @@ INTERNAL_NOTIFICATIONS_ENABLED=true
 INTERNAL_NOTIFICATION_SUBSCRIBERS=notifications@bulgariansociety.nl
 
 # Optional override. Production defaults to enabled when internal notifications
-# are enabled. Set false to stop only this weekly report.
+# are enabled. Set false to stop both national and regional weekly reports.
 WEEKLY_MEMBERSHIP_REPORT_ENABLED=true
 ```
 
@@ -179,6 +181,13 @@ repeating a week's sends during the same process lifetime. A restart schedules
 only the next future Sunday, not a replay. Only the designated email scheduler
 process owns the timer. There is no persistent delivery receipt; manual or
 multiple independently configured scheduler processes are not globally deduplicated.
+
+## Regional new-member summary
+
+The regional variant uses the same weekly template and schedule, with recipients
+loaded from `regionContacts`. It sends only for regions with new members and
+never includes another region’s counts. See [Regional contact directory and
+weekly report](region-contacts.md) for migration, routing and delivery semantics.
 
 ## Operational timers that are not scheduled jobs
 

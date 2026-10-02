@@ -7,6 +7,7 @@ import HttpError from "../models/Http-error.js";
 import { accountsBackofficeService } from "../services/backoffice/accounts.js";
 import { MEMBER_ADMIN_ACCESS } from "../util/config/defines.js";
 import { MAX_IMPORT_BYTES, roleImportTemplate } from "../services/backoffice/account-role-import.js";
+import { normalizeRoleNames } from "../util/config/account-roles.js";
 
 const roleSheetUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_IMPORT_BYTES, files: 1 } }).single("file");
 
@@ -37,6 +38,9 @@ export const createBackofficeRouter = ({
 
   router.get("/accounts/bulk-roles/template", (req, res, next) => {
     try {
+      if (!normalizeRoleNames(req.account?.roles).some(role => ["admin", "super_admin"].includes(role))) {
+        throw new HttpError("Only Admin and Super Admin can import Support roles", 403);
+      }
       res.set("Cache-Control", "private, no-store");
       res.set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.set("Content-Disposition", 'attachment; filename="account-role-import.xlsx"');
@@ -46,7 +50,7 @@ export const createBackofficeRouter = ({
 
   router.post("/accounts/bulk-roles/preview", (req, res, next) => {
     roleSheetUpload(req, res, async (uploadError) => {
-      if (uploadError) return next(new HttpError("Choose an .xlsx file smaller than 1 MB", 422));
+      if (uploadError) { next(new HttpError("Choose an .xlsx file smaller than 1 MB", 422)); return; }
       try {
         res.set("Cache-Control", "private, no-store");
         res.json(await service.previewRoleImport({ file: req.file, actor: req.account }));

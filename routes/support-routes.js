@@ -9,6 +9,7 @@ import { formatUploadValidationError } from "../middleware/upload-validation-err
 import { uploadSupportImages } from "../services/support/attachments.js";
 import { notifySupportTicketCreated, notifySupportTicketReplied } from "../services/background-services/internal-notifications.js";
 import { logOperationalError } from "../middleware/axiom-logger.js";
+import { errorStatus, isSystemError, publicError } from "../util/http/public-error.js";
 import { publishSupportChanged, supportLiveScopes, streamSupport } from "../services/support/live.js";
 
 export function supportPrivacy(req, res, next) {
@@ -25,8 +26,11 @@ export function supportPrivacy(req, res, next) {
 // Express JSON parse errors can contain the original private request body.
 export function supportError(error, req, res, next) {
   if (!req.supportPrivate) return next(error);
-  if ((error.statusCode || 503) >= 500) logOperationalError("endpoint.support", error);
-  if (error instanceof HttpError) return res.status(error.statusCode || 500).json({ message: error.message });
+  if (isSystemError(errorStatus(error), error.endpointNotFound)) logOperationalError("endpoint.support", error);
+  if (error instanceof HttpError) {
+    const { status, body } = publicError(error);
+    return res.status(status).json(body);
+  }
   const uploadValidation = formatUploadValidationError(error);
   if (uploadValidation) return res.status(422).json(uploadValidation);
   if (error.type === "entity.too.large") return res.status(413).json({ message: "This report is too large. Shorten your message and try again." });

@@ -134,7 +134,7 @@ test("queues a new-event notification with the operational event details", () =>
   assert.equal(messages[0].type, "event-created");
 });
 
-test("new support tickets notify only developer subscribers with ticket diagnostics", () => {
+test("new support tickets notify only developer subscribers with details, a direct link and the first message", () => {
   const messages = [];
   const notify = createSupportTicketNotifier({
     config: {
@@ -146,6 +146,10 @@ test("new support tickets notify only developer subscribers with ticket diagnost
   });
   assert.equal(notify({ id: "ticket-id", reference: "ABC12345", subject: "Checkout is stuck", pagePath: "/signup",
     contact: { name: "Test Member", email: "member@example.test" }, createdAt: "2026-09-07T10:00:00.000Z",
+    messages: [
+      { author: "requester", kind: "message", text: "The button does nothing.\nPlease help." },
+      { author: "requester", kind: "message", text: "Later message" },
+    ],
     environment: { deviceType: "Mobile", browser: "Safari", platform: "iOS", viewport: { width: 390, height: 844 }, devicePixelRatio: 3 } }), 2);
   assert.equal(messages.length, 2);
   assert.deepEqual(messages.map(({ receiver }) => receiver), [
@@ -154,7 +158,23 @@ test("new support tickets notify only developer subscribers with ticket diagnost
   ]);
   assert.match(messages[0].subject, /ABC12345/);
   assert.match(messages[0].text, /Mobile · Safari · iOS/);
-  assert.match(messages[0].text, /390 × 844 at 3×/);
+  for (const line of ["Reference: ABC12345", "Type: Problem report", "Subject: Checkout is stuck",
+    "Reporter: Test Member", "Email: member@example.test", "Submitted: 7 September 2026 at 12:00",
+    "Ticket: https://bulgariansociety.nl/user/dashboard/support?ticket=ticket-id",
+    "First message: The button does nothing.\nPlease help."]) assert.ok(messages[0].text.includes(line), line);
+  assert.match(messages[0].html, /href="https:\/\/bulgariansociety.nl\/user\/dashboard\/support\?ticket=ticket-id"/);
+  assert.match(messages[0].html, /View ticket #ABC12345/);
+  assert.match(messages[0].html, /The button does nothing\.<br>Please help\./);
+  assert.doesNotMatch(messages[0].text, /Phone:|Reported page:|Viewport:|Open inbox:|Later message/);
+});
+
+test("new-ticket recommendations handle missing details and encode the ticket ID", () => {
+  const notice = buildSupportTicketNotification({ id: "ticket&other=value", type: "recommendation" });
+  assert.match(notice.text, /Type: Recommendation/);
+  assert.match(notice.text, /Device: Not provided/);
+  assert.match(notice.text, /First message: Not provided/);
+  assert.match(notice.html, /href="https:\/\/bulgariansociety.nl\/user\/dashboard\/support\?ticket=ticket%26other%3Dvalue"/);
+  assert.doesNotMatch(buildSupportTicketNotification({}).html, /href=/);
 });
 
 test("event notifications include the website region badge, ticket tiers and public slug link", () => {
@@ -231,9 +251,12 @@ test("an empty developer list never falls back to general internal subscribers",
 });
 
 test("support-ticket notification HTML escapes reporter-provided content", () => {
-  const notification = buildSupportTicketNotification({ id: "ticket", subject: "<img src=x onerror=alert(1)>", contact: { name: "<b>Name</b>" } });
+  const notification = buildSupportTicketNotification({ id: "ticket", subject: "<img src=x onerror=alert(1)>", contact: { name: "<b>Name</b>" },
+    messages: [{ author: "requester", kind: "message", text: '<script>alert("message")</script>\nSecond line & details' }] });
   assert.doesNotMatch(notification.html, /<img src=x/);
   assert.match(notification.html, /&lt;img src=x/);
+  assert.doesNotMatch(notification.html, /<script>/);
+  assert.match(notification.html, /&lt;script&gt;alert\(&quot;message&quot;\)&lt;\/script&gt;<br>Second line &amp; details/);
 });
 
 test("does not enqueue mail when internal notifications are disabled", () => {

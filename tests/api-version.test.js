@@ -10,7 +10,6 @@ import {
 import {
   API_VERSIONS,
   DEFAULT_API_VERSION,
-  ENABLED_API_VERSIONS,
   getApiRoutePath,
 } from "../util/config/api-versions.js";
 
@@ -107,27 +106,10 @@ test("rejects an explicit API version until it is enabled", () => {
 
   assert.equal(result.nextCalled, true);
 
-  let nextCalled = false;
-  requireEnabledApiVersion(result.req, {
-    json(body) {
-      result.responseState.body = body;
-      return this;
-    },
-    status(statusCode) {
-      result.responseState.statusCode = statusCode;
-      return this;
-    },
-  }, () => {
-    nextCalled = true;
-  });
-
-  assert.equal(nextCalled, false);
-  assert.equal(result.responseState.statusCode, 404);
-  assert.deepEqual(
-    result.responseState.body.supportedVersions,
-    ENABLED_API_VERSIONS
-  );
-  assert.equal(result.responseState.body.defaultVersion, API_VERSIONS.V1);
+  let error;
+  requireEnabledApiVersion(result.req, {}, (value) => { error = value; });
+  assert.equal(error.statusCode, 404);
+  assert.equal(error.endpointNotFound, true);
 });
 
 test("serves explicit v1 and unversioned paths through the same router", async (t) => {

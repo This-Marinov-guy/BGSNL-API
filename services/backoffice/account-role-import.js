@@ -1,6 +1,5 @@
 import XLSX from "xlsx";
 import HttpError from "../../models/Http-error.js";
-import { MEMBER_ACCOUNT_ROLES, NATIONAL_ACCOUNT_ROLES } from "../../util/config/account-roles.js";
 
 export const MAX_IMPORT_ROWS = 200;
 export const MAX_IMPORT_BYTES = 1024 * 1024;
@@ -13,11 +12,9 @@ export const roleImportTemplate = () => {
   const instructions = XLSX.utils.aoa_to_sheet([
     ["Bulk account role changes"],
     ["Enter one account per row on the Role changes sheet. Email matches a member or alumni account."],
-    ["List the complete set of editable roles, separated by commas. These roles replace the account's current editable roles."],
-    ["Use none to remove all editable roles. Do not leave Roles blank."],
-    ["Base account roles and protected roles are always retained."],
-    ["Member roles", MEMBER_ACCOUNT_ROLES.join(", ")],
-    ["Alumni roles", NATIONAL_ACCOUNT_ROLES.join(", ")],
+    ["Enter support to grant the Support role, or none to remove it. Do not leave Roles blank."],
+    ["Only Admin and Super Admin may import Support role changes."],
+    ["The account's other roles are retained."],
     ["At most 200 accounts can be imported at once."],
   ]);
   instructions["!cols"] = [{ wch: 96 }, { wch: 100 }];

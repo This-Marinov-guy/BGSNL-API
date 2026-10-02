@@ -24,6 +24,7 @@ import { mintTicketToken, reserveTicketToken } from "../services/tickets/qr-link
 import BillingRecord from "../models/BillingRecord.js";
 import { createReturnedCheckout, createFreePaymentReturn, preparePaymentReturn, paymentOrigin } from "../services/payments/payment-return.js";
 import { withBillingLease } from "../services/subscriptions/lease.js";
+import { requiresEventChoices } from "../services/events/member-event-links.js";
 import {
   isExistingMemberTicket,
   isExistingEventTicket,
@@ -518,6 +519,9 @@ export const postCheckoutFile = async (req, res, next, {
   resolveLineItem,
   stripeForRegion = createStripeClient,
   createCheckout = createTicketCheckoutSession,
+  fulfillMember = handleMemberTicketPurchase,
+  fulfillGuest = handleGuestTicketPurchase,
+  freeReturn = createFreePaymentReturn,
 } = {}) => {
   const { origin_url, eventId, normalTicket } = req.body;
   paymentOrigin(origin_url);
@@ -571,6 +575,14 @@ export const postCheckoutFile = async (req, res, next, {
   }
 
   const isNormalTicket = normalTicket === "true" || normalTicket === true;
+
+  // Re-read server state must still support the free action promised by the
+  // email link. Never silently turn one-click redemption into paid checkout.
+  if (req.emailTicketFreeOnly &&
+      (checkoutType !== "member" || isNormalTicket || !(event.isFree || event.isMemberFree) ||
+       event.ticketLink || requiresEventChoices(event))) {
+    return next(new HttpError("The ticket options or price changed. Please open the event page.", 409));
+  }
 
   // For member flow: warn once if user already has a ticket, then allow normal/guest-price fallback.
   if (checkoutType === "member") {
@@ -629,9 +641,15 @@ export const postCheckoutFile = async (req, res, next, {
   const isFreeCheckout =
     event.isFree || (checkoutType === "member" && !isNormalTicket && event.isMemberFree);
 
-  // Even free email tickets go through Checkout confirmation: opening a link
-  // (including mail scanning) must never issue a ticket.
-  if (isFreeCheckout && !req.emailTicketCheckout) {
+  // Only the verified email adapter can authorise direct issuance. Paid add-ons
+  // still go through checkout even when the base ticket is free.
+  const selectedAddonItems = resolveAddonLineItems(event, addOns);
+  const hasPaidAddOns = addOns.some(addon => {
+    const item = (event.addOns?.items || []).find(option => String(option._id) === String(addon._id ?? addon.id));
+    return !item || !Number.isFinite(Number(item.price)) || Number(item.price) !== 0;
+  });
+  const freeEmailConfirmed = req.emailTicketCheckout && req.emailTicketConfirmed === true;
+  if (isFreeCheckout && !hasPaidAddOns && (!req.emailTicketCheckout || freeEmailConfirmed)) {
     const metadata = {
       ...req.body,
       ...restrictedGuestMetadata,
@@ -651,19 +669,19 @@ export const postCheckoutFile = async (req, res, next, {
     };
 
     if (checkoutType === "member") {
-      const result = await handleMemberTicketPurchase(metadata, freePaymentData);
+      const result = await fulfillMember(metadata, freePaymentData, { confirmedFree: freeEmailConfirmed });
       if (result.duplicate) {
         return res.status(200).json({ alreadyRegistered: true });
       }
     } else {
-      await handleGuestTicketPurchase(metadata, freePaymentData);
+      await fulfillGuest(metadata, freePaymentData);
     }
 
     return res.status(200).json({
       status: true,
       free: true,
       message: "Success",
-      url: await createFreePaymentReturn({ origin: origin_url, region: event.region,
+      url: await freeReturn({ origin: origin_url, region: event.region,
         returnPath: `/${event.region}/event-details/${eventId}`, title: event.title, quantity }),
     });
   }
@@ -687,7 +705,7 @@ export const postCheckoutFile = async (req, res, next, {
   const lineItems = isFreeCheckout
     ? [{ price_data: { currency: "eur", product_data: { name: event.title }, unit_amount: 0 }, quantity }]
     : [ticketLineItem];
-  lineItems.push(...resolveAddonLineItems(event, addOns));
+  lineItems.push(...selectedAddonItems);
 
   const checkoutData = {
     mode: "payment",

@@ -8,6 +8,15 @@ import {
 
 const SCOPED_SECRET = "bulgarian-society-scoped-secret-123456";
 
+test("bulk campaigns preserve durable operation and audience metadata for opt-out enforcement", async () => {
+  let body;
+  const client = createDomakinMailerClient({ baseUrl: "https://mailer.example.test", secret: SCOPED_SECRET,
+    httpClient: { post: async (_url, payload) => { body = payload; return { data: { ok: true } }; } } });
+  const bulk = { batchId: "d0bdeee2-c1b4-4a7a-9cda-60d8f2744428", batchType: "event-announcement", totalRecipients: 2 };
+  await client.queueTemplateEmail("59f51c9c-88e0-49bc-9e62-b14c8aa4a71d", "person@example.test", {}, { bulk });
+  assert.deepEqual(body.bulk, bulk);
+});
+
 test("queues through the Bulgarian Society channel without accepting a sender", async () => {
   const calls = [];
   const client = createDomakinMailerClient({

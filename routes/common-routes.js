@@ -1,5 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
+import { getRegionEmails } from "../services/region-contacts.js";
 import {
   acceptMarketingEmail,
   getAboutUsData,
@@ -16,6 +17,8 @@ import {
 dotenv.config();
 
 const commonRouter = express.Router();
+
+commonRouter.get("/region-emails", getRegionEmails);
 
 commonRouter.get("/get-total-member-count", getTotalMemberCount);
 

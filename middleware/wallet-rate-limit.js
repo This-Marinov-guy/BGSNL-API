@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { redisRateLimits as limits } from "../services/storage/rate-limits.js";
 import { requestClientAddress } from "../util/auth/request-client.js";
+import HttpError from "../models/Http-error.js";
 
 // Applies even to SSR-proxied reads; token rotation cannot create new buckets.
 export async function walletPublicRateLimit(req, res, next) {
@@ -13,7 +14,10 @@ export async function walletPublicRateLimit(req, res, next) {
       if (error.code !== 11000) throw error;
       record = await limits.findOneAndUpdate({ _id: id }, { $inc: { count: 1 } }, { new: true });
     }
-    if (!record || record.count > 120) return res.status(429).set("Retry-After", "60").json({ message: "Please wait before checking this card again." });
+    if (!record || record.count > 120) {
+      res.set("Retry-After", "60");
+      return next(new HttpError("Wallet verification rate limit exceeded", 429));
+    }
     return next();
-  } catch { return res.status(503).json({ message: "Card verification is temporarily unavailable." }); }
+  } catch { return next(new HttpError("Card verification is temporarily unavailable.", 503)); }
 }

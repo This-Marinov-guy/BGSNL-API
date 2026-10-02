@@ -63,6 +63,16 @@ export async function createFreePaymentReturn(options, dependencies = {}) {
   return receipt.url;
 }
 
+export function freePaymentReturnUrl(value) {
+  try {
+    const url = new URL(value);
+    paymentOrigin(url.href);
+    if (url.pathname !== "/payment/return" || url.hash ||
+        [...url.searchParams.keys()].length !== 1 || !/^[a-f0-9]{64}$/.test(url.searchParams.get("token") || "")) return null;
+    return url.href;
+  } catch { return null; }
+}
+
 export function checkoutState(session) {
   if (session.status === "complete" && ["paid", "no_payment_required"].includes(session.payment_status)) return "success";
   const intent = session.payment_intent;

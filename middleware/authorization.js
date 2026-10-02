@@ -7,20 +7,24 @@ import { sessions } from "../services/authentication/sessions.js";
 import { BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT } from "../util/config/defines.js";
 
 export const createAuthMiddleware = ({ findAccount = findUserById, validateSession = sessions.validate } = {}) => async (req, res, next) => {
+  const invalidSession = (message) => {
+    res.set("X-BGSNL-Session-Invalid", "1");
+    return next(new HttpError(message, 401));
+  };
   const token = req.headers.authorization?.match(/^Bearer (\S+)$/i)?.[1];
-  if (!token) return next(new HttpError("Please login to access this request", 401));
+  if (!token) return invalidSession("Please login to access this request");
   let claims;
   try {
     claims = verifySessionToken(token);
   } catch (error) {
     // Only this pre-handler failure is eligible for one safe server-side retry.
     if (error.name === "TokenExpiredError") return res.status(401).json({ code: "ACCESS_TOKEN_EXPIRED", message: "Access token expired" });
-    return next(new HttpError("Session invalid: please login again!", 401));
+    return invalidSession("Session invalid: please login again!");
   }
   try {
     const account = await findAccount(claims.userId);
-    if (!account) return next(new HttpError("Account no longer available. Please login again.", 401));
-    if (Number(claims.sessionVersion ?? 0) !== Number(account.sessionVersion ?? 0)) return next(new HttpError("Session revoked. Please login again.", 401));
+    if (!account) return invalidSession("Account no longer available. Please login again.");
+    if (Number(claims.sessionVersion ?? 0) !== Number(account.sessionVersion ?? 0)) return invalidSession("Session revoked. Please login again.");
     await validateSession(claims, account);
     req.account = account;
     req.authClaims = claims;
@@ -29,7 +33,10 @@ export const createAuthMiddleware = ({ findAccount = findUserById, validateSessi
       customerId: account.subscription?.customerId, ...accountEntitlements(account) };
     res.set("Cache-Control", "private, no-store");
     return next();
-  } catch (error) { return next(error instanceof HttpError ? error : new HttpError("Could not verify your account. Please try again.", 503)); }
+  } catch (error) {
+    if (error instanceof HttpError && error.statusCode === 401) return invalidSession(error.message);
+    return next(error instanceof HttpError ? error : new HttpError("Could not verify your account. Please try again.", 503));
+  }
 };
 export const authMiddleware = createAuthMiddleware();
 

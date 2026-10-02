@@ -5,6 +5,7 @@ dotenv.config();
 import mongoose from "mongoose";
 import cors from "cors";
 import HttpError from "./models/Http-error.js";
+import { diagnosticError, isSystemError, publicError } from "./util/http/public-error.js";
 import userRouter from "./routes/users-routes.js";
 import eventRouter from "./routes/Events/events-routes.js";
 import paymentRouter from "./routes/payments-routes.js";
@@ -55,7 +56,12 @@ import SupportConversation from "./models/SupportConversation.js";
 import WalletCard from "./models/WalletCard.js";
 import MonitoringJob from "./models/MonitoringJob.js";
 import { startWeeklyMembershipReportWorker } from "./services/background-services/weekly-membership-report.js";
+import { startRegionalMembershipReportWorker } from "./services/background-services/regional-membership-report.js";
+import MonthlySummary, { MonthlySummaryDelivery } from "./models/MonthlySummary.js";
+import { startMonthlySummaryWorker } from "./services/monthly-summary/worker.js";
 import { startMemberEventAnnouncementWorker } from "./services/events/member-event-announcements.js";
+import { eventCampaignsEnabled, startEventCampaignWorker } from "./services/events/event-campaign-worker.js";
+import EventEmailCampaign, { EventEmailDelivery } from "./models/EventEmailCampaign.js";
 import { startBirthdayEmailWorker } from "./services/background-services/birthday-emails.js";
 import { startEventDraftCleanupWorker } from "./services/background-services/event-draft-cleanup.js";
 import supportRouter, { supportError, supportPrivacy } from "./routes/support-routes.js";
@@ -189,7 +195,8 @@ mountApiRouter(API_VERSIONS.V1, "/monitoring", monitoringRouter);
 
 //no page found
 app.use((req, res, next) => {
-  const error = new HttpError("Something went wrong - please try again!", 404);
+  const error = new HttpError("Endpoint not found", 404);
+  error.endpointNotFound = true;
   return next(error);
 });
 
@@ -198,35 +205,32 @@ app.use(supportError);
 
 // error handling (not sure if needed)
 app.use((error, req, res, _next) => {
+  const { status, body } = publicError(error);
   if (req.walletPrivate) {
-    if ((error.statusCode || 500) >= 500) logOperationalError("endpoint.wallet", error);
-    return res.status(error.statusCode || 500).json({ message: error instanceof HttpError ? error.message : "Membership card service is temporarily unavailable." });
+    if (isSystemError(status, error.endpointNotFound)) logOperationalError("endpoint.wallet", error);
+    return res.status(status).json(body);
   }
   if (req.paymentPrivate) {
-    if ((error.statusCode || 500) >= 500) logOperationalError("endpoint.payment", error);
-    return res.status(error.statusCode || 500).json({ message: error instanceof HttpError ? error.message : "Payment service is temporarily unavailable. Please try again." });
+    if (isSystemError(status, error.endpointNotFound)) logOperationalError("endpoint.payment", error);
+    return res.status(status).json(body);
   }
-  console.error("API request failed", { status: error.statusCode || 500, method: req.method, path: req.path, originalPath: req.originalUrl?.split("?")[0] });
+  console.error("API request failed", { status, method: req.method, path: req.route?.path || "<unmatched>", error: describeError(error) });
 
   const uploadValidationError = formatUploadValidationError(error);
   if (uploadValidationError) {
     return res.status(422).json(uploadValidationError);
   }
 
-  const status = error.statusCode || 500;
-  const message = error.message;
-  const data = error.data;
-
-  const logEvent = status >= 500 ? createErrorEvent({
+  const logEvent = isSystemError(status, error.endpointNotFound) ? createErrorEvent({
     req,
     res: { statusCode: status, statusMessage: "", durationMs: 0 },
-    meta: { source: "endpoint" },
+    meta: { source: "endpoint", ...diagnosticError(error) },
     error: describeError(error),
     redact: redactSensitive,
   }) : null;
   if (logEvent && !req.monitoringPrivate) ingestLog(logEvent);
 
-  return res.status(status).json({ message: message, data: data });
+  return res.status(status).json(body);
 });
 
 //db connection
@@ -234,8 +238,11 @@ mongoose.set("strictQuery", true);
 let server;
 let stopBillingWorker;
 let stopWeeklyMembershipReportWorker;
+let stopRegionalMembershipReportWorker;
+let stopMonthlySummaryWorker;
 let stopBirthdayEmailWorker;
 let stopMemberEventAnnouncementWorker;
+let stopEventCampaignWorker;
 let stopEventDraftCleanupWorker;
 let marketingCaptureWorker;
 
@@ -249,8 +256,13 @@ mongoose
     marketingCaptureWorker = startMarketingCaptureWorker();
     stopBillingWorker = startBillingWorker();
     stopWeeklyMembershipReportWorker = startWeeklyMembershipReportWorker();
+    stopRegionalMembershipReportWorker = startRegionalMembershipReportWorker();
+    await Promise.all([MonthlySummary.init(), MonthlySummaryDelivery.init()]);
+    stopMonthlySummaryWorker = startMonthlySummaryWorker();
     stopBirthdayEmailWorker = startBirthdayEmailWorker();
-    stopMemberEventAnnouncementWorker = startMemberEventAnnouncementWorker();
+    await Promise.all([EventEmailCampaign.init(), EventEmailDelivery.init()]);
+    stopEventCampaignWorker = startEventCampaignWorker();
+    stopMemberEventAnnouncementWorker = startMemberEventAnnouncementWorker(eventCampaignsEnabled() ? { enabled: false } : {});
     stopEventDraftCleanupWorker = startEventDraftCleanupWorker();
     server = app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
@@ -271,8 +283,11 @@ const gracefulShutdown = async (signal) => {
   // Flush Axiom logs
   await stopBillingWorker?.();
   await stopWeeklyMembershipReportWorker?.();
+  await stopRegionalMembershipReportWorker?.();
+  await stopMonthlySummaryWorker?.();
   await stopBirthdayEmailWorker?.();
   await stopMemberEventAnnouncementWorker?.();
+  await stopEventCampaignWorker?.();
   await stopEventDraftCleanupWorker?.();
   try { await marketingCaptureWorker?.stop(); await closeMarketingCaptureQueue(); }
   catch (error) { logOperationalError("shutdown.marketing-queue", error); }

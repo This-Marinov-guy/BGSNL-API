@@ -7,6 +7,7 @@ import {
   memberTicketClaimKey,
   memberTicketDuplicateMatcher,
   normalizeCheckoutQuantity,
+  freeMemberTicketClaimQuery,
 } from "../services/tickets/member-ticket-policy.js";
 
 test("member checkout accepts exactly one ticket", () => {
@@ -14,6 +15,22 @@ test("member checkout accepts exactly one ticket", () => {
   assert.equal(normalizeCheckoutQuantity("1", "member"), 1);
   assert.equal(normalizeCheckoutQuantity("2", "member"), null);
   assert.equal(normalizeCheckoutQuantity(10, "guest"), 10);
+});
+
+test("free confirmation atomically checks capacity, sale state, free pricing and any existing ticket", () => {
+  const now = new Date();
+  const query = freeMemberTicketClaimQuery("event", { userId: "member", userIds: ["old"], email: "test@example.test" }, now);
+  assert.equal(query._id, "event");
+  assert.equal(query.guestList.$not.$elemMatch.type, undefined);
+  assert.equal(query.guestList.$not.$elemMatch.refunded.$ne, true);
+  assert.deepEqual(query.guestList.$not.$elemMatch.$or.slice(0, 2), [{ userId: "member" }, { userId: "old" }]);
+  assert.deepEqual(query.$expr, { $lt: [{ $size: { $ifNull: ["$guestList", []] } }, "$ticketLimit"] });
+  assert.equal(query.ticketTimer.$gt, now);
+  assert.deepEqual(query.status.$nin, ["draft", "archived", "cancelled"]);
+  assert.equal(query.hidden.$ne, true);
+  assert.equal(query.isSaleClosed.$ne, true);
+  assert.deepEqual(query.$and[0].$or, [{ isFree: true }, { isMemberFree: true }]);
+  assert.deepEqual(query.$and[1].$or, [{ correctedDate: { $gt: now } }, { correctedDate: null, date: { $gt: now } }]);
 });
 
 test("only active accounts may retain member tickets", () => {

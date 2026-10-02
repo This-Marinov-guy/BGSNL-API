@@ -1,4 +1,4 @@
-import { canManageAccountType, canEditProtectedAccount, accountRoleOptions, MEMBER_ACCOUNT_ROLES, normalizeRoleNames } from "../../util/config/account-roles.js";
+import { canManageAccountType, canEditProtectedAccount, assignableAccountRoles, MEMBER_ACCOUNT_ROLES, normalizeRoleNames } from "../../util/config/account-roles.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import HttpError from "../../models/Http-error.js";
 import MemberUser from "../../models/MemberUser.js";
@@ -189,11 +189,13 @@ const regionScopeFor = (actor) => {
   return EDITABLE_CITIES.includes(region) ? region : "";
 };
 
-const publicOptions = (type, citiesOverride) => ({
+const publicOptions = (type, actorRoles, citiesOverride) => ({
   cities: citiesOverride ?? EDITABLE_CITIES,
-  roles: accountRoleOptions(type),
+  roles: assignableAccountRoles(actorRoles, type),
   statuses: EDITABLE_STATUSES,
 });
+
+const importableRoles = (actorRoles, type) => assignableAccountRoles(actorRoles, type).filter(role => role === "support");
 
 export const createAccountsBackofficeService = ({
   memberModel = MemberUser,
@@ -233,7 +235,7 @@ export const createAccountsBackofficeService = ({
       pageSize,
       total,
       totalPages,
-      options: publicOptions(type, scope !== null ? (scope ? [scope] : []) : undefined),
+      options: publicOptions(type, actor?.roles, scope !== null ? (scope ? [scope] : []) : undefined),
     };
   };
 
@@ -247,7 +249,7 @@ export const createAccountsBackofficeService = ({
     const existing = await Model.findById(id).select(LIST_FIELDS).lean();
     if (!existing) throw new HttpError("Account not found", 404);
     if (!canEditProtectedAccount(actor?.roles, existing.roles)) {
-      throw new HttpError("Only Super Admins can edit Admin, Super Admin or VIP accounts", 403);
+      throw new HttpError("You cannot edit this account's protected roles", 403);
     }
 
     const scope = regionScopeFor(actor);
@@ -255,6 +257,15 @@ export const createAccountsBackofficeService = ({
       const existingRegion = typeof existing.region === "string" ? existing.region.trim().toLowerCase() : "";
       if (!scope || existingRegion !== scope) throw new HttpError("You can only manage accounts in your own region", 403);
     }
+
+    const assignableRoles = assignableAccountRoles(actor?.roles, type);
+    if (!Array.isArray(body.roles) || body.roles.some((role) => !assignableRoles.includes(role))) {
+      throw new HttpError("You cannot assign one or more of these account roles", 403);
+    }
+    const baseRole = type === MEMBER ? MEMBER : ALUMNI;
+    const existingRoles = normalizeRoleNames(existing.roles);
+    const retainedRoles = existingRoles.filter((role) => role !== baseRole && !assignableRoles.includes(role));
+    const nextRoles = [...new Set([baseRole, ...retainedRoles, ...body.roles])];
 
     const next = {
       name: requiredText(body.name, "First name", 80),
@@ -272,8 +283,8 @@ export const createAccountsBackofficeService = ({
       studentNumber: optionalText(body.studentNumber, "Student number", 80),
       profession: optionalText(body.profession, "Profession", 180),
     };
-    if (!existing.roles?.includes(VIP)) {
-      const requestedExpiry = body.expireDate === undefined && existing.expireDate
+    if (!nextRoles.includes(VIP)) {
+      const requestedExpiry = body.expireDate === undefined && existing.expireDate && !existingRoles.includes(VIP)
         ? new Date(existing.expireDate).toISOString().slice(0, 10)
         : body.expireDate;
       const expireDate = dateValue(requestedExpiry, "Membership expiry", new Date("2200-12-31T00:00:00.000Z"));
@@ -290,15 +301,9 @@ export const createAccountsBackofficeService = ({
     }
     next.status = requestedStatus;
 
-    if (!Array.isArray(body.roles) || body.roles.some((role) => !accountRoleOptions(type).includes(role))) {
-      throw new HttpError("Account roles are invalid", 422);
-    }
-    const baseRole = type === MEMBER ? MEMBER : ALUMNI;
-    const existingRoles = normalizeRoleNames(existing.roles);
-    // Privileged roles are controlled outside this panel. Never derive them
-    // from the request or drop them when saving the editable role selection.
-    const protectedRoles = existingRoles.filter((role) => PROTECTED_ROLES.includes(role));
-    next.roles = [...new Set([baseRole, ...protectedRoles, ...body.roles])];
+    // Preserve roles outside this actor's assignment scope when saving the
+    // roles they are allowed to change.
+    next.roles = nextRoles;
     const rolesChanged = JSON.stringify([...existingRoles].sort()) !== JSON.stringify([...next.roles].sort());
     const statusChanged = existing.status !== next.status;
     const expiryChanged = next.expireDate && new Date(existing.expireDate).getTime() !== next.expireDate.getTime();
@@ -358,10 +363,13 @@ export const createAccountsBackofficeService = ({
       throw error;
     }
     if (!updated) throw new HttpError("This account was changed by someone else. Refresh and try again.", 409);
-    return { account: summary(updated, type), options: publicOptions(type) };
+    return { account: summary(updated, type), options: publicOptions(type, actor?.roles) };
   };
 
   const reviewRoleChanges = async (inputRows, actor) => {
+    if (!normalizeRoleNames(actor?.roles).some(role => ["admin", "super_admin"].includes(role))) {
+      throw new HttpError("Only Admin and Super Admin can import Support roles", 403);
+    }
     if (!Array.isArray(inputRows) || inputRows.length === 0 || inputRows.length > 200) {
       throw new HttpError("Import between 1 and 200 accounts", 422);
     }
@@ -405,7 +413,8 @@ export const createAccountsBackofficeService = ({
           const existingRoles = normalizeRoleNames(record.roles);
           const requested = roleText === "none" ? [] : [...new Set(roleText.split(",").map(role => role.trim()))];
           result.requestedRoles = requested;
-          const invalid = requested.filter(role => !accountRoleOptions(type).includes(role));
+          const assignableRoles = importableRoles(actor?.roles, type);
+          const invalid = requested.filter(role => !assignableRoles.includes(role));
           if (!canEditProtectedAccount(actor?.roles, record.roles)) result.message = "This account is protected";
           else if (actorId === String(record._id)) result.message = "You cannot change your own roles";
           else if (invalid.length) result.message = `Unsupported ${type} role: ${invalid.join(", ")}`;
@@ -414,7 +423,7 @@ export const createAccountsBackofficeService = ({
             result.type = type;
             result.name = `${record.name || ""} ${record.surname || ""}`.trim();
             result.revision = Number(record.__v ?? 0);
-            result.currentRoles = existingRoles.filter(role => accountRoleOptions(type).includes(role));
+            result.currentRoles = existingRoles.filter(role => assignableRoles.includes(role));
             const same = [...result.currentRoles].sort().join("|") === [...requested].sort().join("|");
             result.status = same ? "unchanged" : "change";
           }
@@ -449,14 +458,15 @@ export const createAccountsBackofficeService = ({
     for (const row of reviewed.rows.filter(item => item.status === "change")) {
       const Model = modelForType(row.type, models);
       const existingRoles = normalizeRoleNames((row.currentRoles || []));
-      // Read the exact account again to retain protected roles and detect a
+      const assignableRoles = importableRoles(actor?.roles, row.type);
+      // Read the exact account again to retain other roles and detect a
       // concurrent change before writing. The atomic filter also checks roles.
       const existing = await Model.findById(row.id).select("roles __v").lean();
       if (!existing || Number(existing.__v ?? 0) !== row.revision ||
-        [...normalizeRoleNames(existing.roles).filter(role => accountRoleOptions(row.type).includes(role))].sort().join("|") !== [...existingRoles].sort().join("|")) {
+        [...normalizeRoleNames(existing.roles).filter(role => assignableRoles.includes(role))].sort().join("|") !== [...existingRoles].sort().join("|")) {
         throw new HttpError(`${updated} accounts updated before another account changed. Refresh and import the remaining accounts again`, 409);
       }
-      const retained = normalizeRoleNames(existing.roles).filter(role => PROTECTED_ROLES.includes(role));
+      const retained = normalizeRoleNames(existing.roles).filter(role => role !== row.type && !assignableRoles.includes(role));
       const nextRoles = [...new Set([row.type, ...retained, ...row.requestedRoles])];
       const saved = await Model.findOneAndUpdate(
         { _id: row.id, ...versionFilter(row.revision), roles: existing.roles ?? { $exists: false } },

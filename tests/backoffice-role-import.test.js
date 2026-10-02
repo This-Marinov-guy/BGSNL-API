@@ -36,7 +36,7 @@ const admin = { _id: "admin-1", roles: ["admin"] };
 test("template uses Email and Roles and its instructions describe replacement and none", () => {
   const book = XLSX.read(roleImportTemplate(), { type: "buffer" });
   assert.deepEqual(XLSX.utils.sheet_to_json(book.Sheets["Role changes"], { header: 1 })[0], ["Email", "Roles"]);
-  assert.match(JSON.stringify(XLSX.utils.sheet_to_json(book.Sheets.Instructions, { header: 1 })), /Use none/);
+  assert.match(JSON.stringify(XLSX.utils.sheet_to_json(book.Sheets.Instructions, { header: 1 })), /none to remove/);
 });
 
 test("parser rejects formulas and extra columns", () => {
@@ -57,11 +57,11 @@ test("preview matches by email, detects duplicates and keeps unsupported alumni 
     ["Email", "Roles"],
     ["PERSON@example.com", "support"],
     ["person@example.com", "none"],
-    ["alumni@example.com", "support"],
+    ["alumni@example.com", "regional_board_member"],
   ]), actor: admin });
   assert.equal(result.changeCount, 1);
   assert.equal(result.errorCount, 2);
-  assert.deepEqual(result.rows[0].currentRoles, ["active_member"]);
+  assert.deepEqual(result.rows[0].currentRoles, []);
   assert.deepEqual(result.rows[0].requestedRoles, ["support"]);
   assert.match(result.rows[1].message, /more than once/);
   assert.match(result.rows[2].message, /Unsupported alumni role/);
@@ -76,24 +76,22 @@ test("apply retains the base role, revokes sessions and rejects a stale revision
   const row = preview.rows[0];
   const input = [{ id: row.id, type: row.type, revision: row.revision, email: row.email, roles: "support" }];
   assert.deepEqual(await service.applyRoleImport({ rows: input, actor: admin }), { updated: 1, unchanged: 0 });
-  assert.deepEqual(target.roles, ["member", "support"]);
+  assert.deepEqual(target.roles, ["member", "active_member", "support"]);
   assert.equal(members.state.updates[0].change.$inc.sessionVersion, 1);
   await assert.rejects(service.applyRoleImport({ rows: input, actor: admin }), /changed since review/);
 });
 
-test("a regional board cannot import accounts from another region or their own roles", async () => {
+test("a regional board cannot import Support roles", async () => {
   const members = model([member({ region: "rotterdam" })]);
   const service = createAccountsBackofficeService({ memberModel: members, alumniModel: model() });
   const file = workbookFile([["Email", "Roles"], ["person@example.com", "support"]]);
-  const preview = await service.previewRoleImport({ file, actor: { _id: "board-1", region: "amsterdam", roles: ["regional_board_member"] } });
-  assert.match(preview.rows[0].message, /No account you can manage has this email/);
-  const own = await service.previewRoleImport({ file, actor: { _id: "member-1", region: "rotterdam", roles: ["regional_board_member"] } });
-  assert.match(own.rows[0].message, /own roles/);
+  await assert.rejects(service.previewRoleImport({ file, actor: { _id: "board-1", region: "amsterdam", roles: ["regional_board_member"] } }), { code: 403 });
+  await assert.rejects(service.previewRoleImport({ file, actor: { _id: "member-1", region: "rotterdam", roles: ["regional_board_member"] } }), { code: 403 });
   assert.equal(members.state.updates.length, 0);
 });
 
-test("protected roles are retained and only a super admin can update those accounts", async () => {
-  const target = member({ roles: ["member", "active_member", "vip"] });
+test("only a super admin can update an admin account through import", async () => {
+  const target = member({ roles: ["member", "active_member", "admin"] });
   const members = model([target]);
   const service = createAccountsBackofficeService({ memberModel: members, alumniModel: model() });
   const file = workbookFile([["Email", "Roles"], ["person@example.com", "support"]]);
@@ -104,5 +102,15 @@ test("protected roles are retained and only a super admin can update those accou
   const preview = await service.previewRoleImport({ file, actor });
   const row = preview.rows[0];
   await service.applyRoleImport({ rows: [{ id: row.id, type: row.type, revision: row.revision, email: row.email, roles: "support" }], actor });
-  assert.deepEqual(target.roles, ["member", "vip", "support"]);
+  assert.deepEqual(target.roles, ["member", "active_member", "admin", "support"]);
+});
+
+test("bulk import cannot change any role except Support", async () => {
+  const service = createAccountsBackofficeService({ memberModel: model([member()]), alumniModel: model() });
+  for (const role of ["vip", "developer", "admin", "regional_board_member"]) {
+    const result = await service.previewRoleImport({ file: workbookFile([["Email", "Roles"], ["person@example.com", role]]),
+      actor: { _id: "super", roles: ["super_admin"] } });
+    assert.equal(result.errorCount, 1);
+    assert.match(result.rows[0].message, /Unsupported member role/);
+  }
 });

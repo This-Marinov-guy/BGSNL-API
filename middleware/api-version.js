@@ -1,8 +1,5 @@
-import {
-  DEFAULT_API_VERSION,
-  ENABLED_API_VERSIONS,
-  getApiRoutePath,
-} from "../util/config/api-versions.js";
+import { DEFAULT_API_VERSION, ENABLED_API_VERSIONS, getApiRoutePath } from "../util/config/api-versions.js";
+import HttpError from "../models/Http-error.js";
 
 const API_PREFIX_PATTERN = /^\/api(?=\/|\?|$)/i;
 const VERSIONED_API_PREFIX_PATTERN = /^\/api\/(v[1-9]\d*)(?=\/|\?|$)/i;
@@ -33,9 +30,7 @@ export const requireEnabledApiVersion = (req, res, next) => {
     return next();
   }
 
-  return res.status(404).json({
-    message: `API version ${req.apiVersion} is not available.`,
-    defaultVersion: DEFAULT_API_VERSION,
-    supportedVersions: ENABLED_API_VERSIONS,
-  });
+  const error = new HttpError("API version is not available", 404);
+  error.endpointNotFound = true;
+  return next(error);
 };

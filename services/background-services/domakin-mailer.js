@@ -53,7 +53,7 @@ export const createDomakinMailerClient = ({
     templateId,
     receiver,
     templateVariables = {},
-    { operationId = randomUUID() } = {}
+    { operationId = randomUUID(), bulk } = {}
   ) {
     const normalizedTemplateId = requiredString(templateId, "templateId");
     const normalizedSecret = requiredString(
@@ -76,6 +76,7 @@ export const createDomakinMailerClient = ({
         // The caller cannot select a sender. Domakin Mailer resolves this
         // channel to its server-configured Bulgarian Society identity.
         channel: DOMAKIN_MAILER_CHANNEL,
+        ...(bulk ? { bulk } : {}),
       },
       {
         headers: {

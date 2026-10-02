@@ -1,10 +1,64 @@
 # New event announcements and personal ticket checkout
 
-Publishing a new event queues an announcement for every active regular member
-whose `expireDate` is in the future, across all regions. Alumni accounts are not
-regular memberships and are excluded. Duplicate email addresses receive one
+Publishing a new event queues an announcement for active regular members in the
+host region and its configured nearby regions whose `expireDate` is in the
+future. Active VIP members in that same audience are eligible without a future
+expiry date. Alumni accounts are excluded. Duplicate email addresses receive one
 announcement. Expiry and account status are checked again when checkout opens;
 Stripe-backed membership benefits are reconciled before granting member pricing.
+
+## Regional audience
+
+The single source of truth is
+[`NEARBY_REGIONS`](../util/config/nearby-regions.js). The worker filters the
+Member query by `event.region` plus its immediate neighbours, and checks each
+returned member's region before sending. VIP/staff roles do not bypass this
+geographic restriction. It never expands through neighbours of neighbours.
+
+| Host region (always included) | Additional recipient regions |
+| --- | --- |
+| Amsterdam | Rotterdam, Leiden–The Hague |
+| Breda–Tilburg | Eindhoven, Rotterdam, Leiden–The Hague |
+| Eindhoven | Breda–Tilburg |
+| Groningen | Leeuwarden |
+| Leeuwarden | Groningen |
+| Maastricht | None |
+| Rotterdam | Amsterdam, Breda–Tilburg, Leiden–The Hague |
+| Leiden–The Hague | Amsterdam, Breda–Tilburg, Rotterdam |
+
+Policy reviewed 1 October 2026: normal station-to-station train journeys strictly
+under 60 minutes, not door-to-door travel or a live journey-planner check. For
+combined regions, a qualifying connection involving **either city** is enough
+(explicitly confirmed). Amsterdam Zuid qualifies as an Amsterdam station.
+Fast services that require a supplement can qualify. This is a maintained
+audience map, not a guarantee for every departure, venue or member address.
+
+Route references used to select the links:
+
+- [NS Intercity direct](https://www.ns.nl/reizen/treinen/intercity-direct):
+  Amsterdam Zuid–Rotterdam under 40 minutes.
+- [NS Amsterdam Zuid–Leiden](https://www.ns.nl/trajecten/amsterdam-zuid-naar-leiden):
+  26 minutes.
+- [NS Den Haag–Breda route announcement](https://nieuws.ns.nl/maandag-start-tests-met-nieuwe-intercity--den-haag---eindhoven/):
+  49 minutes via Rotterdam; both Rotterdam legs are shorter parts of that route.
+  This is an older operator reference, so recheck it when reviewing timetables.
+- [NS Tilburg–Eindhoven](https://www.ns.nl/en/routes/tilburg-to-eindhoven):
+  26 minutes.
+- [Arriva Leeuwarden–Groningen](https://www.arriva.nl/kaartjes-abonnementen/acties-uitjes/noord/leeuwarden-groningen/):
+  35–47 minutes.
+
+Borderline/unverified sub-hour links such as Amsterdam–Breda and
+Rotterdam–Eindhoven are not included. Maastricht currently has no qualifying
+neighbour among the configured regions. Revisit the map when timetables or
+supported regions change; do not round a 60-minute journey down.
+
+Missing/unknown event regions (including `netherlands`, which is not a local
+event region) leave the announcement pending and emit an operational error,
+rather than falling back to all members. Members with missing/unknown profile
+regions do not receive regional announcements. Correct the data before retrying.
+Completed announcements are not reopened or resent by this change.
+
+Verification: `node --test tests/nearby-regions.test.js tests/member-event-announcements.test.js`.
 
 Both direct publication and publication of an EventDraft save
 `memberAnnouncementQueuedAt` in the same write/transaction as the Event. Draft
@@ -51,14 +105,31 @@ The endpoint does not create a login session. It builds a trusted one-ticket
 request and delegates to the usual ticket controller: member pricing, ticket
 image generation, the existing checkout lease, return receipts and Stripe
 webhook fulfillment are reused. Stripe receives the member's email so it is
-prefilled. Repeated clicks reuse the open member Checkout session; an already
-purchased ticket uses the guest checkout for the additional ticket.
+prefilled. For paid events, repeated clicks reuse the open member Checkout
+session; an already purchased ticket uses guest checkout for an additional
+ticket. One-click free links instead return success for an existing ticket.
 
 The endpoint redirects straight to Stripe with HTTP 303 and sends no response
 body containing the checkout URL. Request logging omits the encrypted URL and
 member data. Responses disable caching and referrers. HEAD requests do not
-create checkouts. Free tickets also require Stripe Checkout confirmation, so a
-mail scanner visiting the GET link cannot issue a free ticket.
+create checkouts. Free-event and member-free email links with no ticket choices
+issue the ticket immediately on a verified GET, then redirect to the signed
+success page without confirmation or payment checkout. Repeated links and
+concurrent claims never create an additional guest ticket: when an existing
+ticket is verified, the user is redirected to success instead.
+
+**Intentional one-click tradeoff (1 October 2026):** email scanners following
+GET can also redeem the ticket and cause its normal ticket email to be sent.
+HEAD requests remain inert, but GET cannot reliably distinguish a human click
+from a scanner. This behavior follows the explicit one-click requirement.
+
+Events with choices still use the existing preferences page. A zero-total
+booking there uses **Get free ticket**; selected paid add-ons require payment.
+If an immediate free action becomes paid or gains options before fulfillment,
+it fails for review instead of silently opening a payment session.
+The server validates the current price/options and membership, and atomically
+checks the free seat claim against capacity, sale state and duplicate tickets.
+Concurrent confirmations do not silently create additional guest tickets.
 
 Closed, sold-out, hidden, past and expired-sale events cannot start a checkout.
 Events with any extra form fields or enabled add-ons (including optional add-ons)

@@ -44,6 +44,14 @@ The Function sends only the event ID. The API reads committed event state and
 uses its own recipient, price and link calculations. The webhook cannot choose
 recipients, alter prices, or create/reset publication markers.
 
+Recipient policy (local code updated 1 October 2026): eligible Members only in
+the host region and its immediate `NEARBY_REGIONS` entries. Combined regions
+qualify through either city under the normal sub-hour train-journey rule. No
+nationwide fallback or transitive neighbour expansion. See the
+[regional audience](member-event-announcements.md#regional-audience) for the map
+and sources. This policy change does not enable the Atlas trigger or resend
+completed announcements; deployed status has not been rechecked by this change.
+
 ### Publication contract
 
 Both supported API publication paths insert an Event with

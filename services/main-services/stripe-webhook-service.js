@@ -19,7 +19,9 @@ import {
   isRestrictedTicketAccount,
   memberTicketClaimKey,
   memberTicketDuplicateMatcher,
+  freeMemberTicketClaimQuery,
 } from "../tickets/member-ticket-policy.js";
+import { accountEntitlements } from "../../util/subscriptions/policy.js";
 import { refundDuplicateMemberTicket } from "../tickets/member-ticket-refund.js";
 
 const resolveJoinDateFromSubscription = async (
@@ -299,7 +301,7 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
 /**
  * Handle member ticket purchase checkout session
  */
-export const handleMemberTicketPurchase = async (metadata, paymentData) => {
+export const handleMemberTicketPurchase = async (metadata, paymentData, { confirmedFree = false } = {}) => {
   const { transactionId, stripeRegion } = paymentData;
   const { eventId, userId, code, preferences } = metadata;
   let societyEvent;
@@ -322,6 +324,10 @@ export const handleMemberTicketPurchase = async (metadata, paymentData) => {
 
   if (!targetUser) {
     throw new HttpError("Could not find ticket account", 404);
+  }
+
+  if (confirmedFree && !accountEntitlements(targetUser).memberDiscount) {
+    throw new HttpError("Your membership changed. Please reload the booking page.", 409);
   }
 
   // A checkout may complete after an administrator or billing reconciliation
@@ -364,8 +370,10 @@ export const handleMemberTicketPurchase = async (metadata, paymentData) => {
     image: metadata.file,
   };
 
-  const eventQuery = { _id: eventId };
-  if (memberPriceApplied) {
+  const eventQuery = confirmedFree
+    ? freeMemberTicketClaimQuery(eventId, { userId, userIds: targetUser.accountAliases, email: targetUser.email })
+    : { _id: eventId };
+  if (memberPriceApplied && !confirmedFree) {
     eventQuery.guestList = {
       $not: {
         $elemMatch: memberTicketDuplicateMatcher({
@@ -404,6 +412,7 @@ export const handleMemberTicketPurchase = async (metadata, paymentData) => {
   }
 
   if (!updatedEvent) {
+    if (confirmedFree) throw new HttpError("You already have a ticket, or this free booking is no longer available. Please reload the booking page.", 409);
     const refunded = memberPriceApplied
       ? await refundDuplicateMemberTicket({
         transactionId,

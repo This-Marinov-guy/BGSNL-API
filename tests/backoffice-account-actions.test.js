@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createAccountActionsService } from "../services/backoffice/account-actions.js";
 
 const currentTime = 1800000000000;
-const actor = { _id: "board_1", roles: ["regional_board_member"], region: "groningen", status: "active" };
+const actor = { _id: "admin_1", roles: ["admin"], region: "groningen", status: "active" };
 function fixture(overrides = {}) {
   const state = {
     target: { _id: "member_1", id: "member_1", __v: 0, roles: ["member"], status: "active", region: "groningen", name: "Member", email: "member@example.test", subscription: { id: "sub_member", customerId: "cus_member" } },
@@ -44,12 +44,22 @@ test("cancellation uses the selected account and schedules period-end cancellati
   assert.equal(f.state.messages.length, 0);
 });
 
-test("board aliases, national board and admins have membership action access", async () => {
-  for (const role of ["board_member", "regional_board_member", "national_board_member", "society_board_member", "admin", "super_admin"]) {
+test("only Admin and Super Admin have membership action access", async () => {
+  for (const role of ["admin", "super_admin"]) {
     const f = fixture();
     const result = await f.service.inspect({ ...f.args, actor: { ...actor, roles: [role] } });
     assert.equal(result.canCancel, true);
     assert.equal(result.canTransfer, true);
+  }
+});
+
+test("board members cannot inspect, cancel or transfer membership", async () => {
+  for (const role of ["board_member", "regional_board_member", "national_board_member", "society_board_member"]) {
+    const f = fixture();
+    const args = { ...f.args, actor: { ...actor, roles: [role] }, body: {} };
+    for (const method of ["inspect", "cancel", "requestTransfer"]) await assert.rejects(f.service[method](args), { code: 403 });
+    assert.equal(f.state.reads, 0);
+    assert.equal(f.state.updates.length + f.state.messages.length, 0);
   }
 });
 
@@ -63,24 +73,13 @@ test("committee, support, active member and ordinary accounts cannot inspect or 
   }
 });
 
-test("regional boards cannot manage other regions or unassigned accounts", async () => {
+test("admins can act on accounts in any region or without a region", async () => {
   for (const region of ["amsterdam", "netherlands", "", undefined]) {
     const f = fixture(); f.state.target.region = region;
-    await assert.rejects(f.service.inspect(f.args), { code: 403 });
-    await assert.rejects(f.service.requestTransfer({ ...f.args, body: {} }), { code: 403 });
+    assert.equal((await f.service.inspect(f.args)).canCancel, true);
   }
   const f = fixture();
-  await assert.rejects(f.service.inspect({ ...f.args, actor: { ...actor, region: "" } }), { code: 403 });
-});
-
-test("national board can act across regions but cannot manage Admin or Super Admin membership", async () => {
-  const f = fixture(); f.state.target.region = "amsterdam";
-  const args = { ...f.args, actor: { ...actor, roles: ["national_board_member"] } };
-  assert.equal((await f.service.inspect(args)).canCancel, true);
-  for (const role of ["admin", "super_admin"]) {
-    f.state.target.roles = ["member", role];
-    await assert.rejects(f.service.inspect(args), { code: 403 });
-  }
+  assert.equal((await f.service.inspect({ ...f.args, actor: { ...actor, region: "" } })).canCancel, true);
 });
 
 test("frozen actors are blocked and only admins retain actions through billing holds", async () => {
@@ -126,7 +125,7 @@ test("cancellation rejects tampering, expired review and changed target or billi
   for (const body of [{}, { confirmation: `${currentTime}.${"0".repeat(64)}` }, { confirmation: review.confirmation, subscriptionId: "sub_other" }]) {
     await assert.rejects(f.service.cancel({ ...f.args, body }));
   }
-  await assert.rejects(f.service.cancel({ ...f.args, actor: { ...actor, _id: "board_other" }, body: { confirmation: review.confirmation } }), { code: 409 });
+  await assert.rejects(f.service.cancel({ ...f.args, actor: { ...actor, _id: "admin_other" }, body: { confirmation: review.confirmation } }), { code: 409 });
   assert.equal(f.state.updates.length, 0);
 });
 
@@ -141,7 +140,7 @@ test("transfer requests email only the stored owner and make no billing or accou
   for (const type of ["member", "alumni"]) {
     const f = fixture(); f.state.target.name = "<script>";
     const snapshot = structuredClone(f.state.target);
-    const result = await f.service.requestTransfer({ ...f.args, type, actor: { ...actor, roles: ["national_board_member"] }, body: {} });
+    const result = await f.service.requestTransfer({ ...f.args, type, body: {} });
     const desired = type === "member" ? "alumni" : "member";
     assert.equal(result.targetType, desired);
     assert.deepEqual(f.state.messages[0].to, [{ email: "member@example.test" }]);

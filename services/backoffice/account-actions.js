@@ -5,7 +5,7 @@ import { HOME_URL, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME } from "../../util/config
 import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import HttpError from "../../models/Http-error.js";
-import { ACCESS_2, ACCESS_3, BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT, REGIONS } from "../../util/config/defines.js";
+import { ADMIN, BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT, SUPER_ADMIN } from "../../util/config/defines.js";
 import { canManageAccountType, canEditProtectedAccount, normalizeRoleNames } from "../../util/config/account-roles.js";
 import { ENDED_SUBSCRIPTION_STATUSES, stripeId } from "../../util/subscriptions/policy.js";
 import { resolveSubscriptionRegion, reconcileSubscription } from "../subscriptions/reconcile.js";
@@ -13,16 +13,18 @@ import { createStripeClient } from "../../util/config/stripe.js";
 import { withBillingLease } from "../subscriptions/lease.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 
+// Cancelling billing and transferring between Member and Alumni are
+// restricted to Admin and Super Admin, regardless of region.
+export const MEMBERSHIP_ACTION_ACCESS = [ADMIN, SUPER_ADMIN];
+
 export function assertAccountManagementAccess(actor, target) {
   const roles = normalizeRoleNames(actor?.roles);
   const statusAllowed = actor?.status === "active" ||
     (BILLING_LOCKED_STATUSES.includes(actor?.status) && roles.some(role => BILLING_LOCK_EXEMPT.includes(role)));
-  if (!statusAllowed || !roles.some(role => ACCESS_3.includes(role))) throw new HttpError("Only board members and admins can manage membership", 403);
-  if (!roles.some(role => ACCESS_2.includes(role)) &&
-      (!REGIONS.includes(actor.region) || target.region !== actor.region)) throw new HttpError("You can only manage accounts in your own region", 403);
+  if (!statusAllowed || !roles.some(role => MEMBERSHIP_ACTION_ACCESS.includes(role))) throw new HttpError("Only Admin and Super Admin can manage membership", 403);
   const targetRoles = normalizeRoleNames(target.roles);
   if (!canEditProtectedAccount(roles, targetRoles) ||
-      (targetRoles.includes("national_board_member") && !roles.some(role => ACCESS_2.includes(role)))) {
+      (targetRoles.includes("vip") && !roles.includes("super_admin"))) {
     throw new HttpError("Your role cannot manage this account's membership", 403);
   }
 }

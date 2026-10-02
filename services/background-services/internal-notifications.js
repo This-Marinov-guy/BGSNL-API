@@ -175,9 +175,10 @@ export const buildSupportTicketNotification = (ticket) => {
   const reference = present(ticket?.reference ?? String(ticket?.id || "").slice(0, 8).toUpperCase(), "unknown");
   const environment = ticket?.environment || {};
   const device = [environment.deviceType, environment.browser, environment.platform].filter(Boolean).join(" · ");
-  const viewport = environment.viewport?.width && environment.viewport?.height
-    ? `${environment.viewport.width} × ${environment.viewport.height}${environment.devicePixelRatio ? ` at ${environment.devicePixelRatio}×` : ""}`
-    : "Not provided";
+  const link = ticket?.id
+    ? `${HOME_URL}/user/dashboard/support?ticket=${encodeURIComponent(ticket.id)}`
+    : null;
+  const firstMessage = ticket?.messages?.find(message => message.author === "requester" && message.kind === "message");
   const message = renderNotification({
     title: ticket?.type === "recommendation" ? "New recommendation" : "New website support ticket",
     rows: [
@@ -186,12 +187,10 @@ export const buildSupportTicketNotification = (ticket) => {
       ["Subject", subject],
       ["Reporter", ticket?.contact?.name],
       ["Email", ticket?.contact?.email],
-      ["Phone", ticket?.contact?.phone],
-      ["Reported page", ticket?.pagePath],
       ["Device", device],
-      ["Viewport", viewport],
       ["Submitted", formatDateTime(ticket?.createdAt ?? new Date())],
-      ["Open inbox", "https://www.bulgariansociety.nl/user/dashboard/support"],
+      ["Ticket", link, { href: link, linkLabel: `View ticket #${reference}` }],
+      ["First message", firstMessage?.text],
     ],
   });
   return { ...message, subject: `${ticket?.type === "recommendation" ? "New recommendation" : "New support ticket"} #${reference} — ${subject}`, type: "support-ticket-created", entityId: present(ticket?.id, reference) };

@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { signSessionToken, verifySessionToken, SESSION_LIFETIME_SECONDS, ACCESS_LIFETIME_SECONDS } from "../util/auth/session-token.js";
 import { createSessionService, ROTATION_GRACE_MS } from "../services/authentication/sessions.js";
 import { createAuthMiddleware } from "../middleware/authorization.js";
+import HttpError from "../models/Http-error.js";
 import { memorySessionStore } from "./fixtures/session-store.mjs";
 import { sessionAction } from "../controllers/session-controller.js";
 
@@ -134,6 +135,32 @@ test("expired access is a recognizable 401 before DB or the business handler, ne
   const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; } };
   await createAuthMiddleware({ findAccount: async () => { reached = true; } })({ headers: { authorization: `Bearer ${signSessionToken(account, { now: start })}` } }, res, () => { reached = true; });
   assert.equal(res.code, 401); assert.equal(res.body.code, "ACCESS_TOKEN_EXPIRED"); assert.equal(reached, false);
+});
+test("auth middleware marks only confirmed session failures as invalid", async (t) => {
+  t.mock.method(Date, "now", () => start + 1000);
+  const token = signSessionToken(account, { now: start });
+  for (const scenario of [
+    { authorization: undefined },
+    { authorization: "Bearer forged" },
+    { authorization: `Bearer ${token}`, findAccount: async () => null },
+    { authorization: `Bearer ${token}`, findAccount: async () => ({ ...account, sessionVersion: 3 }) },
+    { authorization: `Bearer ${token}`, validateSession: async () => { throw new HttpError("Revoked", 401); } },
+  ]) {
+    const headers = new Map(); let failure;
+    const res = { set(name, value) { headers.set(name.toLowerCase(), value); } };
+    const middleware = createAuthMiddleware({ findAccount: scenario.findAccount || (async () => account),
+      validateSession: scenario.validateSession || (async () => {}) });
+    await middleware({ headers: { authorization: scenario.authorization } }, res, (error) => { failure = error; });
+    assert.equal(failure?.statusCode, 401);
+    assert.equal(headers.get("x-bgsnl-session-invalid"), "1");
+  }
+  const headers = new Map(); let failure;
+  await createAuthMiddleware({ findAccount: async () => { throw new Error("Database unavailable"); } })(
+    { headers: { authorization: `Bearer ${token}` } },
+    { set(name, value) { headers.set(name.toLowerCase(), value); } },
+    (error) => { failure = error; });
+  assert.equal(failure?.statusCode, 503);
+  assert.equal(headers.get("x-bgsnl-session-invalid"), undefined);
 });
 test("renewal is server-key protected and activity never trusts a client timestamp or lifetime", async (t) => {
   const previous = process.env.SSR_SERVER_KEY;

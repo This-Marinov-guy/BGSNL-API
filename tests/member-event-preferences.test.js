@@ -114,6 +114,51 @@ test("real ticket controller charges DB add-on price IDs alongside a free member
   assert.equal(sent.metadata.ticketToken, "abcdefghijklmnopqrstuv");
 });
 
+test("confirmed free bookings fulfil a ticket and return our success page without Stripe", async () => {
+  for (const flags of [{ isFree: true }, { isMemberFree: true }]) {
+    const freeEvent = { ...event, ...flags };
+    let fulfillment;
+    const url = `https://bulgariansociety.nl/payment/return?token=${"a".repeat(64)}`;
+    const h = harness("checkout", { eventRecord: freeEvent, checkout: (req, res, next) => postCheckoutFile(req, res, next, {
+      loadEvent: async () => freeEvent, reconcile: async user => ({ user }),
+      reserveToken: async () => "abcdefghijklmnopqrstuv", generateTicket: async () => "ticket.png",
+      fulfillMember: async (metadata, payment, options) => { fulfillment = { metadata, payment, options }; return { success: true }; },
+      freeReturn: async () => url,
+      stripeForRegion: () => { throw new Error("Free confirmation must not create a payment"); },
+    }) });
+    h.req.body.addOns = [];
+    h.req.body.revision = memberEventPreferences(freeEvent, member, false).revision;
+    await h.run();
+    assert.equal(h.calls.errors.length, 0);
+    assert.equal(h.calls.checkout[0].emailTicketConfirmed, true);
+    assert.equal(fulfillment.metadata.userId, member.id);
+    assert.equal(fulfillment.metadata.file, "ticket.png");
+    assert.equal(fulfillment.options.confirmedFree, true);
+    assert.deepEqual(JSON.parse(fulfillment.metadata.preferences), choices().preferences);
+    assert.deepEqual(h.calls.result, { free: true, url });
+  }
+});
+
+test("free fulfilment races do not silently create an additional guest ticket", async () => {
+  const freeEvent = { ...event, isMemberFree: true };
+  const h = harness("checkout", { eventRecord: freeEvent, checkout: (_req, res) => res.json({ alreadyRegistered: true }) });
+  h.req.body.addOns = [];
+  h.req.body.revision = memberEventPreferences(freeEvent, member, false).revision;
+  await h.run();
+  assert.equal(h.calls.checkout.length, 1);
+  assert.equal(h.calls.errors[0].code, 409);
+});
+
+test("free confirmation only accepts POST and trusted receipt destinations", async () => {
+  const get = harness("checkout"); get.req.method = "GET"; await get.run();
+  assert.equal(get.calls.errors[0].code, 405);
+  assert.equal(get.calls.checkout.length, 0);
+  for (const url of ["https://attacker.test/payment/return?token=" + "a".repeat(64), "https://bulgariansociety.nl/user", "https://bulgariansociety.nl/payment/return?token=bad"]) {
+    const h = harness("checkout", { checkout: (_req, res) => res.json({ free: true, url }) });
+    await h.run(); assert.equal(h.calls.errors[0].code, 503);
+  }
+});
+
 test("open member checkout is reused only for matching preferences and add-ons", async () => {
   const record = { data: {} }; let created = 0; const expired = [];
   const args = { stripeClient: { checkout: { sessions: {

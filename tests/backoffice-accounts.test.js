@@ -161,7 +161,7 @@ test("member and alumni roles cannot be assigned without account migration", asy
       body: updateBody({ roles: ["alumni"] }),
       actor: { _id: "member_admin", roles: ["admin"] },
     }),
-    (error) => error.statusCode === 422 && /roles/.test(error.message),
+    (error) => error.statusCode === 403 && /roles/.test(error.message),
   );
 });
 
@@ -215,48 +215,95 @@ test("frozen and suspended are distinct editable statuses without changing exist
   }
 });
 
-test("Admin and Super admin are never offered as editable roles", async () => {
+test("role choices follow the editor's authority", async () => {
   const service = createAccountsBackofficeService({ memberModel: fakeModel(), alumniModel: fakeModel() });
   for (const type of ["member", "alumni"]) {
     const result = await service.list({ type }, { roles: ["admin"] });
     assert.ok(!result.options.roles.includes("admin"));
     assert.ok(!result.options.roles.includes("super_admin"));
-    assert.equal(result.options.roles.includes("support"), type === "member");
+    for (const role of ["support", "vip", "developer"]) assert.ok(result.options.roles.includes(role));
+    const superAdmin = await service.list({ type }, { roles: ["super_admin"] });
+    for (const role of ["admin", "super_admin"]) assert.ok(superAdmin.options.roles.includes(role));
   }
+  assert.deepEqual((await service.list({ type: "member" }, { roles: ["regional_board_member"], region: "amsterdam" })).options.roles,
+    ["regional_board_member", "regional_committee_member"]);
+  assert.deepEqual((await service.list({ type: "member" }, { roles: ["national_board_member"] })).options.roles,
+    ["regional_board_member", "national_committee_member"]);
+  assert.deepEqual((await service.list({ type: "member" }, { roles: ["regional_committee_member"] })).options.roles, []);
 });
 
-test("direct requests cannot assign privileged roles, even when made by a super admin", async () => {
+test("direct requests cannot assign roles above the editor's authority", async () => {
   for (const type of ["member", "alumni"]) {
     for (const role of ["admin", "super_admin"]) {
       const target = fakeModel(account({ _id: `${type}_1`, roles: [type] }));
       const service = createAccountsBackofficeService({ memberModel: target, alumniModel: target });
       await assert.rejects(service.update({ type, id: `${type}_1`,
-        body: updateBody({ roles: ["support", role] }), actor: { _id: "super_admin_actor", roles: ["super_admin"] } }),
-      (error) => error.statusCode === 422 && /roles/.test(error.message));
+        body: updateBody({ roles: [role] }), actor: { _id: "admin_actor", roles: ["admin"] } }),
+      (error) => error.statusCode === 403 && /roles/.test(error.message));
       assert.equal(target.state.update, null);
     }
   }
+  for (const role of ["vip", "support", "developer", "admin"]) {
+    const target = fakeModel(account({ roles: ["member"] }));
+    const service = createAccountsBackofficeService({ memberModel: target, alumniModel: fakeModel() });
+    await assert.rejects(service.update({ type: "member", id: "member_1", body: updateBody({ roles: [role] }),
+      actor: { _id: "board", roles: ["regional_board_member"], region: "amsterdam" } }), { code: 403 });
+    assert.equal(target.state.update, null);
+  }
 });
 
-test("profile and editable-role changes retain every existing privileged role", async () => {
+test("regional and national board assignments obey their role and region limits", async () => {
+  for (const role of ["regional_board_member", "regional_committee_member"]) {
+    const target = fakeModel(account({ roles: ["member"] }));
+    const service = createAccountsBackofficeService({ memberModel: target, alumniModel: fakeModel() });
+    const result = await service.update({ type: "member", id: "member_1", body: updateBody({ roles: [role] }),
+      actor: { _id: "board", roles: ["regional_board_member"], region: "amsterdam" } });
+    assert.deepEqual(result.account.roles, ["member", role]);
+  }
+  for (const role of ["regional_board_member", "national_committee_member"]) {
+    const target = fakeModel(account({ region: "rotterdam", roles: ["member"] }));
+    const service = createAccountsBackofficeService({ memberModel: target, alumniModel: fakeModel() });
+    const result = await service.update({ type: "member", id: "member_1", body: updateBody({ region: "rotterdam", roles: [role] }),
+      actor: { _id: "national", roles: ["national_board_member"], region: "amsterdam" } });
+    assert.deepEqual(result.account.roles, ["member", role]);
+  }
+  for (const actorRole of ["regional_committee_member", "national_committee_member"]) {
+    const target = fakeModel(account({ roles: ["member", "active_member"] }));
+    const service = createAccountsBackofficeService({ memberModel: target, alumniModel: fakeModel() });
+    await assert.rejects(service.update({ type: "member", id: "member_1", body: updateBody({ roles: ["regional_board_member"] }),
+      actor: { _id: "committee", roles: [actorRole], region: "amsterdam" } }), { code: 403 });
+    const saved = await service.update({ type: "member", id: "member_1", body: updateBody({ roles: [] }),
+      actor: { _id: "committee", roles: [actorRole], region: "amsterdam" } });
+    assert.deepEqual(saved.account.roles, ["member", "active_member"]);
+  }
+});
+
+test("administrators can assign privileged roles within their tier", async () => {
+  for (const [actorRole, assignedRole] of [["admin", "vip"], ["admin", "support"], ["admin", "developer"], ["super_admin", "admin"], ["super_admin", "super_admin"]]) {
+    const target = fakeModel(account({ roles: ["member"] }));
+    const service = createAccountsBackofficeService({ memberModel: target, alumniModel: fakeModel() });
+    const saved = await service.update({ type: "member", id: "member_1", body: updateBody({ roles: [assignedRole] }),
+      actor: { _id: "other", roles: [actorRole] } });
+    assert.deepEqual(saved.account.roles, ["member", assignedRole]);
+  }
+});
+
+test("profile edits retain roles outside the editor's assignment scope", async () => {
   for (const type of ["member", "alumni"]) {
-    for (const protectedRoles of [["admin"], ["super_admin"], ["admin", "super_admin"]]) {
-      const target = fakeModel(account({ _id: `${type}_1`, roles: [type, ...protectedRoles, "support"] }));
-      const service = createAccountsBackofficeService({ memberModel: target, alumniModel: target });
-      const editableRole = "national_committee_member";
-      const result = await service.update({ type, id: `${type}_1`, body: updateBody({ name: "Updated", roles: [editableRole] }), actor: { _id: "other", roles: ["super_admin"] } });
-      assert.deepEqual(result.account.roles, [type, ...protectedRoles, editableRole]);
-      assert.equal(result.account.name, "Updated");
-      assert.equal(target.state.update.update.$inc.sessionVersion, 1);
-      assert.deepEqual(target.state.update.filter.roles, [type, ...protectedRoles, "support"]);
-    }
+    const target = fakeModel(account({ _id: `${type}_1`, roles: [type, "active_member", "national_board_member"] }));
+    const service = createAccountsBackofficeService({ memberModel: target, alumniModel: target });
+    const result = await service.update({ type, id: `${type}_1`, body: updateBody({ name: "Updated", roles: ["national_committee_member"] }),
+      actor: { _id: "other", roles: ["national_board_member"] } });
+    assert.deepEqual(result.account.roles, [type, "active_member", "national_board_member", "national_committee_member"]);
+    assert.equal(result.account.name, "Updated");
+    assert.equal(target.state.update.update.$inc.sessionVersion, 1);
   }
 });
 
 test("privileged accounts can save their own profile without a role change or session revocation", async () => {
   const target = fakeModel(account({ roles: ["member", "admin", "super_admin", "support"] }));
   const service = createAccountsBackofficeService({ memberModel: target, alumniModel: fakeModel() });
-  const result = await service.update({ type: "member", id: "member_1", body: updateBody({ name: "Updated", roles: ["support"] }), actor: { _id: "member_1", roles: ["member", "admin", "super_admin", "support"] } });
+  const result = await service.update({ type: "member", id: "member_1", body: updateBody({ name: "Updated", roles: ["admin", "super_admin", "support"] }), actor: { _id: "member_1", roles: ["member", "admin", "super_admin", "support"] } });
   assert.deepEqual(result.account.roles, ["member", "admin", "super_admin", "support"]);
   assert.equal(target.state.update.update.$inc.sessionVersion, undefined);
 });
@@ -308,7 +355,7 @@ test("a board member cannot edit an account outside their region", async () => {
     service.update({
       type: "member",
       id: "member_1",
-      body: updateBody({ region: "rotterdam" }),
+      body: updateBody({ region: "rotterdam", roles: [] }),
       actor: { _id: "board_actor", roles: ["board_member"], region: "amsterdam" },
     }),
     (error) => error.statusCode === 403 && /own region/.test(error.message),
@@ -323,7 +370,7 @@ test("a board member cannot move an account into another region", async () => {
     service.update({
       type: "member",
       id: "member_1",
-      body: updateBody({ region: "rotterdam" }),
+      body: updateBody({ region: "rotterdam", roles: [] }),
       actor: { _id: "board_actor", roles: ["board_member"], region: "amsterdam" },
     }),
     (error) => error.statusCode === 403 && /own region/.test(error.message),
@@ -344,18 +391,18 @@ test("a board member can edit an account within their own region", async () => {
 });
 
 
-test("Alumni options contain exactly the two national roles", async () => {
+test("Alumni options include national roles and administrator-only roles", async () => {
   const service = createAccountsBackofficeService({ memberModel: fakeModel(), alumniModel: fakeModel() });
   const result = await service.list({ type: "alumni" }, { roles: ["admin"] });
-  assert.deepEqual(result.options.roles, ["national_board_member", "national_committee_member"]);
+  assert.deepEqual(result.options.roles, ["national_board_member", "national_committee_member", "vip", "support", "developer"]);
 });
 
-test("Alumni assignments reject regional, active member, support, VIP and legacy role names", async () => {
-  for (const role of ["regional_board_member", "regional_committee_member", "active_member", "support", "vip", "board_member", "committee_member", "society_board_member"]) {
+test("Alumni assignments reject regional, active member and legacy role names", async () => {
+  for (const role of ["regional_board_member", "regional_committee_member", "active_member", "board_member", "committee_member", "society_board_member"]) {
     const alumniModel = fakeModel(account({ _id: "alumni_1", roles: ["alumni"] }));
     const service = createAccountsBackofficeService({ memberModel: fakeModel(), alumniModel });
     await assert.rejects(service.update({ type: "alumni", id: "alumni_1", body: updateBody({ roles: [role] }),
-      actor: { _id: "admin_actor", roles: ["admin"] } }), error => error.statusCode === 422);
+      actor: { _id: "admin_actor", roles: ["admin"] } }), error => error.statusCode === 403);
     assert.equal(alumniModel.state.update, null);
   }
 });
@@ -368,15 +415,15 @@ test("Alumni can receive either national role and retain the Alumni base role", 
       actor: { _id: "admin_actor", roles: ["admin"] } });
     assert.deepEqual(result.account.roles, ["alumni", role]);
     assert.equal(alumniModel.state.update.update.$inc.sessionVersion, 1);
-    assert.deepEqual(result.options.roles, ["national_board_member", "national_committee_member"]);
+    assert.deepEqual(result.options.roles, ["national_board_member", "national_committee_member", "vip", "support", "developer"]);
   }
 });
 
 test("saving a renamed role does not change permissions or revoke a self-editing session", async () => {
-  for (const [oldRole, newRole] of [["society_board_member", "national_board_member"], ["board_member", "regional_board_member"], ["committee_member", "regional_committee_member"]]) {
+  for (const [oldRole, newRole, requested] of [["society_board_member", "national_board_member", []], ["board_member", "regional_board_member", ["regional_board_member"]], ["committee_member", "regional_committee_member", []]]) {
     const memberModel = fakeModel(account({ roles: ["member", oldRole] }));
     const service = createAccountsBackofficeService({ memberModel, alumniModel: fakeModel() });
-    const result = await service.update({ type: "member", id: "member_1", body: updateBody({ roles: [newRole] }),
+    const result = await service.update({ type: "member", id: "member_1", body: updateBody({ roles: requested }),
       actor: { _id: "member_1", roles: [oldRole], region: "amsterdam" } });
     assert.deepEqual(result.account.roles, ["member", newRole]);
     assert.equal(memberModel.state.update.update.$inc.sessionVersion, undefined);
@@ -394,36 +441,44 @@ test("regional board scope survives renaming and national board remains unrestri
 });
 
 
-test("VIP cannot be newly assigned but existing VIP is preserved on profile saves", async () => {
+test("admins can assign VIP and its removal requires membership expiry", async () => {
   for (const type of ["member", "alumni"]) {
-    const target = fakeModel(account({ _id: `${type}_1`, roles: [type, "vip"] }));
+    const target = fakeModel(account({ _id: `${type}_1`, roles: [type] }));
     const service = createAccountsBackofficeService({ memberModel: target, alumniModel: target });
-    const listed = await service.list({ type }, { roles: ["super_admin"] });
-    assert.equal(listed.options.roles.includes("vip"), false);
-    await assert.rejects(service.update({ type, id: `${type}_1`, body: updateBody({ roles: ["vip"] }), actor: { _id: "other", roles: ["super_admin"] } }), { code: 422 });
-    const saved = await service.update({ type, id: `${type}_1`, body: updateBody({ roles: [] }), actor: { _id: "other", roles: ["super_admin"] } });
+    const saved = await service.update({ type, id: `${type}_1`, body: updateBody({ roles: ["vip"] }), actor: { _id: "other", roles: ["admin"] } });
     assert.deepEqual(saved.account.roles, [type, "vip"]);
-    assert.equal(target.state.update.update.$inc.sessionVersion, undefined);
+    assert.equal(target.state.update.update.$inc.sessionVersion, 1);
+    const vipTarget = fakeModel(account({ _id: `${type}_1`, roles: [type, "vip"], expireDate: null }));
+    const vipService = createAccountsBackofficeService({ memberModel: vipTarget, alumniModel: vipTarget });
+    await assert.rejects(vipService.update({ type, id: `${type}_1`, body: updateBody({ roles: [], expireDate: "" }),
+      actor: { _id: "other", roles: ["admin"] } }), { code: 422 });
+    const removed = await vipService.update({ type, id: `${type}_1`, body: updateBody({ roles: [], expireDate: "2027-01-01" }),
+      actor: { _id: "other", roles: ["admin"] } });
+    assert.deepEqual(removed.account.roles, [type]);
   }
 });
 
 
-test("only Super Admins can edit protected member and alumni accounts", async () => {
-  for (const type of ["member", "alumni"]) for (const protectedRole of ["admin", "super_admin", "vip"]) {
+test("admins can edit VIP and developer accounts but only super admins can edit admins", async () => {
+  for (const type of ["member", "alumni"]) for (const protectedRole of ["admin", "super_admin", "vip", "developer"]) {
     for (const actorRole of ["admin", "national_board_member", "regional_board_member", "board_member"]) {
       const target = fakeModel(account({ _id: `${type}_1`, roles: [type, protectedRole] }));
       const service = createAccountsBackofficeService({ memberModel: target, alumniModel: target });
-      // Using the target ID as actor ID must not create an administration exception.
-      await assert.rejects(service.update({ type, id: `${type}_1`, body: updateBody({ name: "Blocked", roles: [] }),
-        actor: { _id: `${type}_1`, roles: [actorRole], region: "amsterdam" } }), { code: 403 });
-      assert.equal(target.state.update, null);
+      if (actorRole === "admin" && ["vip", "developer"].includes(protectedRole)) {
+        await service.update({ type, id: `${type}_1`, body: updateBody({ name: "Allowed", roles: [protectedRole] }),
+          actor: { _id: "other", roles: [actorRole], region: "amsterdam" } });
+      } else {
+        await assert.rejects(service.update({ type, id: `${type}_1`, body: updateBody({ name: "Blocked", roles: [] }),
+          actor: { _id: "other", roles: [actorRole], region: "amsterdam" } }), { code: 403 });
+        assert.equal(target.state.update, null);
+      }
     }
     const target = fakeModel(account({ _id: `${type}_1`, roles: [type, protectedRole] }));
     const service = createAccountsBackofficeService({ memberModel: target, alumniModel: target });
     const saved = await service.update({ type, id: `${type}_1`, body: updateBody({ name: "Allowed", roles: [] }),
       actor: { _id: "other_super", roles: ["super_admin"] } });
     assert.equal(saved.account.name, "Allowed");
-    assert.deepEqual(saved.account.roles, [type, protectedRole]);
+    assert.deepEqual(saved.account.roles, [type]);
   }
 });
 

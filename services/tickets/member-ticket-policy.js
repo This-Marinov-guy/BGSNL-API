@@ -59,3 +59,23 @@ export const isExistingEventTicket = (ticket, { userId, userIds, email }) => {
 
 export const isExistingMemberTicket = (ticket, member) =>
   ticket?.type === "member" && isExistingEventTicket(ticket, member);
+
+// Free email confirmation has no paid checkout to settle later. Reserve the
+// seat atomically, and match any existing ticket for this identity, not only
+// discounted member tickets. Never turn a failed claim into a guest ticket.
+export function freeMemberTicketClaimQuery(eventId, member, now = new Date()) {
+  const duplicate = memberTicketDuplicateMatcher(member);
+  delete duplicate.type;
+  return {
+    _id: eventId,
+    hidden: { $ne: true }, isSaleClosed: { $ne: true },
+    status: { $nin: ["draft", "archived", "cancelled"] },
+    ticketTimer: { $gt: now },
+    guestList: { $not: { $elemMatch: duplicate } },
+    $expr: { $lt: [{ $size: { $ifNull: ["$guestList", []] } }, "$ticketLimit"] },
+    $and: [
+      { $or: [{ isFree: true }, { isMemberFree: true }] },
+      { $or: [{ correctedDate: { $gt: now } }, { correctedDate: null, date: { $gt: now } }] },
+    ],
+  };
+}

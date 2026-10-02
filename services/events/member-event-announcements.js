@@ -6,6 +6,7 @@ import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
 import { NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE } from "../../util/config/defines.js";
+import { eventAnnouncementRegions } from "../../util/config/nearby-regions.js";
 import { createMemberEventLink, eventPageUrl, isCurrentEventMember, isPublicUpcomingEvent, memberEventPrice } from "./member-event-links.js";
 
 const plainText = (value) => String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -55,11 +56,18 @@ export async function processMemberEventAnnouncements({ now = new Date(), enable
       await EventModel.updateOne({ _id: event._id }, { $set: { memberAnnouncementCompletedAt: now } });
       continue;
     }
-    const members = await MemberModel.find({ status: "active", $or: [{ expireDate: { $gt: now } }, { roles: "vip" }] }).select("_id name surname email roles status expireDate").lean();
+    const regions = eventAnnouncementRegions(event.region);
+    // Leave invalid configuration pending for correction; never email everyone
+    // or mark the announcement complete without a valid regional audience.
+    if (!regions.length) {
+      logOperationalError("worker.event-announcement-region", new Error("Unknown event announcement region"));
+      continue;
+    }
+    const members = await MemberModel.find({ region: { $in: regions }, status: "active", $or: [{ expireDate: { $gt: now } }, { roles: "vip" }] }).select("_id name surname email roles status expireDate region").lean();
     const seen = new Set();
     for (const member of members) {
       const email = String(member.email || "").trim().toLowerCase();
-      if (!isCurrentEventMember(member, now.getTime()) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || seen.has(email)) continue;
+      if (!regions.includes(member.region) || !isCurrentEventMember(member, now.getTime()) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || seen.has(email)) continue;
       seen.add(email);
       // Build first: configuration failures leave the event pending for retry.
       const notification = buildMemberEventEmail({ event, member, ticketUrl: makeLink(event, member) });

@@ -112,6 +112,13 @@ group. Both `INTERNAL_NOTIFICATIONS_ENABLED` and
 create replays and later replies do not send another new-ticket email. It does
 not provide live-agent availability, SMS or automatic guest recovery links.
 
+The new-ticket email contains the reference, type, subject, reporter name,
+email, device, submission time (Europe/Amsterdam), and the first message.
+Its `View ticket` link opens `/user/dashboard/support?ticket=<conversation UUID>`
+directly in the staff detail view; normal staff authentication and permissions
+still apply. User-provided text is HTML-escaped, with message line breaks
+preserved. Full diagnostics remain available in the ticket rather than the email.
+
 Each newly saved staff reply also queues a transactional email to the ticket's
 contact email (phone-only tickets are skipped), independently of the internal
 notification switch. Its `Open ticket` button links to

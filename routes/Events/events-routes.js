@@ -1,4 +1,5 @@
 import express from "express";
+import { eventCampaignHandlers } from "../../controllers/Events/event-campaign-controller.js";
 import multer from "multer";
 import {
   checkEligibleMemberForPurchase,
@@ -33,6 +34,9 @@ import {
 dotenv.config();
 
 const eventRouter = express.Router();
+eventRouter.post("/:eventId/campaigns/preview", adminMiddleware(EVENT_MANAGEMENT_ACCESS), eventCampaignHandlers.preview);
+eventRouter.post("/:eventId/campaigns/confirm", adminMiddleware(EVENT_MANAGEMENT_ACCESS), eventCampaignHandlers.confirm);
+eventRouter.get("/:eventId/campaigns/:campaignId", adminMiddleware(EVENT_MANAGEMENT_ACCESS), eventCampaignHandlers.status);
 const formDataUpload = multer({ storage: multer.memoryStorage() });
 
 eventRouter.get(
