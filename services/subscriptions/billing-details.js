@@ -2,7 +2,6 @@ import HttpError from "../../models/Http-error.js";
 import { createStripeClient } from "../../util/config/stripe.js";
 import { invoiceSubscriptionId, stripeId } from "../../util/subscriptions/policy.js";
 import { readStripeSubscription, resolveSubscriptionRegion } from "./reconcile.js";
-import { lateCanceledPayment } from "./invoice-recovery.js";
 
 const PAYMENT_REASONS = {
   insufficient_funds: "The payment method had insufficient funds. Review your payment method in billing.",
@@ -12,7 +11,7 @@ const PAYMENT_REASONS = {
   incorrect_cvc: "The card security code could not be verified. Review your payment details in billing.",
   card_declined: "The payment was declined. Review your payment method or contact your bank.",
 };
-const MISSING = { reason: "no_membership", title: "No membership is linked to your account", description: "There is no active subscription for this account - please start a new one or contact support if you have already paid one." };
+const MISSING = { reason: "no_membership", title: "No active subscription", description: "Choose a subscription to start your membership." };
 
 // Read-only, authenticated diagnostics. Never changes benefits, retries a charge,
 // or exposes raw Stripe errors, payment methods or client secrets.
@@ -29,11 +28,6 @@ export async function readBillingDetails(user, { resolveRegion = resolveSubscrip
   if (sub.id !== user.subscription.id || !user.subscription.customerId || stripeId(sub.customer) !== user.subscription.customerId) {
     throw new HttpError("We could not verify billing ownership. Please contact support.", 503);
   }
-  if (lateCanceledPayment(sub, sub.latest_invoice || {}, region) &&
-      !["credited", "refunded", "replacement_term"].includes(sub.latest_invoice.metadata?.bgsnlLatePaymentReview)) {
-    return { reason: "late_payment_review", title: "We received a payment for an ended subscription",
-      description: "This payment did not start a new subscription. Contact support so we can review credit toward a new membership term or a refund. Please do not pay again." };
-  }
   if (state.hasBenefits) return { reason: "account_sync_pending", title: "Your membership payment is confirmed", description: "We have confirmed your membership payment. Your account is refreshing; if it remains locked, contact support. Do not start another payment." };
   if (state.lockReason === "payment_failed") {
     const invoice = invoices.find((item) => item.id === state.failureInvoiceId) ||
@@ -49,7 +43,7 @@ export async function readBillingDetails(user, { resolveRegion = resolveSubscrip
     };
   }
   const notices = {
-    subscription_ended: { title: "Your membership has ended", description: "Your subscription was cancelled. Start a new subscription or renew to restore paid benefits." },
+    subscription_ended: { title: "No active subscription", description: "Renew your previous subscription or choose another plan to restore paid benefits." },
     subscription_paused: { title: "Your membership is paused", description: "Your subscription or payment collection is paused. Review billing or contact support to restore your membership." },
     unsupported_plan: { title: "Your membership plan needs review", description: "The subscription linked to this account does not match a supported membership plan. Contact support before making another payment." },
     payment_pending: { title: "Your membership payment is not confirmed", description: "We have not confirmed your membership payment yet. Review billing for any required steps. If payment is processing, wait before paying again." },

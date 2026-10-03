@@ -112,6 +112,7 @@ export async function reconcileSubscription(subscriptionId, region, { expectedCu
       currentPeriodEnd: state.periodEnd ? new Date(state.periodEnd * 1000) : null,
       pendingUpdate: !!sub.pending_update || !!sub.schedule, scheduledChange,
       syncedAt: now, lastAttemptAt: now, failureEpisode: episode,
+      recoveryAttempts: 0, nextRecoveryAt: null,
       // A successful paid plan change supersedes an abandoned free-tier request.
       freeAlumniRequested: user.subscription.freeAlumniRequested &&
         !(state.hasBenefits && (user.subscription.freeAlumniPriceId || user.subscription.priceId) &&

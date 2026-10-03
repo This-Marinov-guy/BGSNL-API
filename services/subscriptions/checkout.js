@@ -240,7 +240,7 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
       userId: user?.id, memberRegion, registration: user ? undefined : data.registration || registration, stripeRegion: region,
       returnUrl: data.returnUrl || billingReturnUrl(returnUrl) };
     if (!user) registrationPasswordHash(data.registration);
-    await records.updateOne({ _id: key }, { $set: { data }, $unset: { completedAt: 1 } }, { upsert: true });
+    await records.updateOne({ _id: key }, { $set: { data }, $unset: { completedAt: 1, recovery: 1 } }, { upsert: true });
     return createReservedSession(data, stripe);
   });
 }

@@ -48,6 +48,13 @@ const checkoutHarness = () => {
     setSubscriptions: (subs) => { existingSubscriptions = subs; } };
 };
 
+test("a fresh checkout does not inherit the previous checkout's recovery backoff", async () => {
+  const h = checkoutHarness();
+  h.record.recovery = { attempts: 5, nextAttemptAt: new Date(Date.now() + 86400_000) };
+  await h.reserve();
+  assert.equal(h.record.recovery, undefined);
+});
+
 test("checkout stages selected region without changing profile or Stripe account", async () => {
   const h = checkoutHarness();
   h.user.region = "rotterdam";

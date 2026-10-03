@@ -7,6 +7,7 @@ export const subscriptionSchema = new mongoose.Schema({
   memberRegionOperation: String,
   cancelAtPeriodEnd: Boolean, cancelAt: Date, currentPeriodStart: Date, currentPeriodEnd: Date,
   pendingUpdate: Boolean, syncedAt: Date, lastAttemptAt: Date, failureEpisode: String,
+  recoveryAttempts: Number, nextRecoveryAt: Date,
   scheduledChange: { type: new mongoose.Schema({ priceId: String, tier: Number, effectiveAt: Date }, { _id: false }), default: null },
   freeAlumniRequested: Boolean, freeAlumniPriceId: String,
 }, { _id: false });

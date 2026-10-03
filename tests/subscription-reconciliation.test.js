@@ -38,6 +38,16 @@ const makeHarness = () => {
     sync: () => reconcileSubscription("sub_owner", "netherlands", { expectedCustomerId: "cus_owner", dependencies }) };
 };
 
+test("successful reconciliation clears background backoff without delaying webhook recovery", async () => {
+  const h = makeHarness();
+  h.account.subscription.recoveryAttempts = 5;
+  h.account.subscription.nextRecoveryAt = new Date(Date.now() + 86400_000);
+  await h.sync();
+  assert.equal(h.account.subscription.recoveryAttempts, 0);
+  assert.equal(h.account.subscription.nextRecoveryAt, null);
+  assert.equal(h.account.status, "active");
+});
+
 test("selected region waits for paid membership and is not reapplied by later webhooks", async () => {
   const h = makeHarness();
   h.account.region = "rotterdam";

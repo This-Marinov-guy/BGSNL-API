@@ -5,7 +5,7 @@ or its dedicated worker service. Update it whenever a recurring worker, queued
 job, cron job, or externally scheduled API task is added, removed, or changes
 frequency.
 
-Last reviewed: 1 October 2026.
+Last reviewed: 2 October 2026.
 
 Database-triggered work is inventoried in [triggers.md](triggers.md).
 
@@ -13,8 +13,8 @@ Database-triggered work is inventoried in [triggers.md](triggers.md).
 
 | Job | Schedule | Time zone | Enabled when | Main effect |
 | --- | --- | --- | --- | --- |
-| Billing maintenance | Immediately after API startup, then every 60 seconds | Not calendar-based | `NODE_ENV=production` or `BILLING_WORKER_ENABLED=true`; `BILLING_WORKER_ENABLED=false` always disables it | Processes payment reminders, recovers Checkout sessions, and refreshes stale subscription state |
-| Regional Member revenue | Within the billing worker, approximately every 60 seconds | UTC for monthly fee reports | Billing worker enabled and `MEMBER_REVENUE_SHARING_ENABLED=true` | Reconciles new Member invoice allocations, actual Stripe fees and regional Connect transfers; see [member-revenue-sharing.md](member-revenue-sharing.md) |
+| Billing maintenance | Checks at startup and every 60 seconds; shared lease/due time permits one sweep across API processes; errors back off | Not calendar-based | `NODE_ENV=production` or `BILLING_WORKER_ENABLED=true`; `BILLING_WORKER_ENABLED=false` always disables it | Processes payment reminders, recovers membership-only Checkout sessions, and refreshes stale subscription state |
+| Regional Member revenue | Separate coordinated task at startup, then 15 minutes after each successful run; errors back off | UTC for monthly fee reports | Billing worker enabled and `MEMBER_REVENUE_SHARING_ENABLED=true` | Reconciles new Member invoice allocations, actual Stripe fees and regional Connect transfers; cannot block membership recovery; see [member-revenue-sharing.md](member-revenue-sharing.md) |
 | Weekly membership summary | Sunday at 18:00; no startup send or missed-run catch-up | `Europe/Amsterdam` | Internal notifications are enabled and the API is in production, or `WEEKLY_MEMBERSHIP_REPORT_ENABLED=true`; setting the flag to `false` disables it | Emails the preceding Sunday 18:00–Sunday 18:00 member/alumni totals per city to every internal-notification subscriber |
 | Regional new-member summary | Sunday at 18:00; no startup send or missed-run catch-up | `Europe/Amsterdam` | Same gates as the weekly membership summary; PM2 worker 0 only | Sends the same internal report template, restricted to one region, to its database contact; skips regions without new members |
 | Monthly alumni supporter summary | Last calendar day at 23:59; no startup send or missed-run catch-up | `Europe/Amsterdam` | Production by default, or `MONTHLY_SUPPORTER_SUMMARY_ENABLED=true`; `false` disables it; PM2 worker 0 only | Thanks eligible active alumni and internal subscribers with hosted events, new-account counts and optional staff news; see [monthly-supporter-summary.md](monthly-supporter-summary.md) |
@@ -110,7 +110,12 @@ BIRTHDAY_EMAIL_WORKER_ENABLED=true
 
 Source: [`services/subscriptions/reminders.js`](../services/subscriptions/reminders.js)
 
-The worker performs three bounded tasks on each one-minute tick:
+Each process checks once per minute, but a renewable distributed lease and a
+persisted next-run time allow only one billing sweep. A second process skips
+without creating a monitoring failure, even when the first has already finished.
+The worker performs three bounded tasks (checkout recovery, subscriptions, then
+reminders). Each phase stops starting new operations after 50 seconds; in-flight
+operations are awaited, never abandoned with a timeout while still writing.
 
 1. **Payment-failure reminders**
    - Reads up to 50 due `BillingAttention` records.
@@ -120,7 +125,10 @@ The worker performs three bounded tasks on each one-minute tick:
    - Atomic claims ensure concurrent API instances do not send the same
      reminder slot twice.
 2. **Checkout recovery**
-   - Checks up to 25 incomplete Checkout records, oldest first.
+   - Checks up to 25 due, incomplete membership Checkout records, oldest first
+     (`account-checkout:` and `signup:` records). Event-ticket claims are excluded.
+   - Requires the recorded billing region and verifies subscription mode and
+     membership metadata before calling fulfillment. There is no account fallback.
    - Completes paid membership checkouts whose initial webhook was missed.
    - Closes expired sessions and removes their stored registration payload.
 3. **Subscription reconciliation**
@@ -135,10 +143,31 @@ Configuration:
 BILLING_WORKER_ENABLED=true
 ```
 
+Recovery lookup failures back off for 5, 10, 20, 40 minutes, etc., capped at six
+hours. A missing provider resource is checked again after 24 hours, not every
+minute. Expected `BillingLeaseBusyError` contention defers for one minute without
+incrementing the failure count; other HTTP 409 errors remain genuine failures.
+Open checkouts are polled after five minutes. No records are silently marked
+paid, completed, or deleted just because lookup failed. Existing checkout-state
+expiry remains unchanged. These intervals do not change customer charge retries.
+
+Successful subscription reconciliation (including webhooks and account requests)
+clears recovery backoff. Failure updates cannot overwrite a newer webhook
+snapshot or a replacement checkout. Whole-task errors also back off, including
+a process-local fallback when Redis cannot persist the schedule. Revenue work
+has an independent timer/backoff and does not delay membership recovery.
+
 Related persistence:
 
-- `billingattentions` stores reminder timing, attempts, and resolution state.
-- `billingrecords` stores Checkout recovery records and distributed leases.
+- Redis reminder state stores reminder timing, attempts, and resolution state.
+- Redis `checkout-state` stores bounded checkout recovery state; Redis leases
+  coordinate work and expiring MongoDB fence markers protect billing writes.
+- Redis `scheduled-job` stores shared due times/backoff with a seven-day TTL.
+- Member/alumni subscriptions store `recoveryAttempts` and `nextRecoveryAt`.
+  No data migration is required: absent fields are immediately eligible.
+
+Existing failed monitoring records are preserved and age out normally; deploying
+this change does not retry the historical spreadsheet queue or clear failures.
 
 ## Weekly membership summary
 

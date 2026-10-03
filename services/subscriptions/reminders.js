@@ -1,16 +1,12 @@
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
 import BillingAttention from "../../models/BillingAttention.js";
-import MemberUser from "../../models/MemberUser.js";
-import AlumniUser from "../../models/AlumniUser.js";
-import BillingRecord from "../../models/BillingRecord.js";
-import { createStripeClient } from "../../util/config/stripe.js";
-import { completeMembershipCheckout } from "./checkout.js";
 import { USER_URL, SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE } from "../../util/config/defines.js";
-import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
-import { reconcileAccount, reconcileSubscription } from "./reconcile.js";
+import { reconcileSubscription } from "./reconcile.js";
 import { processMemberRevenueMaintenance } from "./revenue-fees.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
-import { runObservedJob } from "../monitoring/job-history.js";
+import { runCoordinatedSchedule } from "../jobs/coordinated-schedule.js";
+import { isBusyLease, recoveryDelay } from "../jobs/recovery-backoff.js";
+import { recoverMembershipCheckouts, recoverSubscriptions } from "./maintenance.js";
 import { stripeOwnsBillingEmails } from "../../util/subscriptions/recovery-policy.js";
 
 export const REMINDER_DELAY_MS = 48 * 60 * 60 * 1000;
@@ -25,13 +21,16 @@ export async function deliverBillingReminder({ email, second, send = queueDomaki
   await send(SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE, email, { second: !!second, manageUrl: `${USER_URL}#settings` });
 }
 
-export async function processBillingReminders({ send = deliverBillingReminder, attention = BillingAttention, reconcile = reconcileSubscription } = {}) {
+export async function processBillingReminders({ send = deliverBillingReminder, attention = BillingAttention, reconcile = reconcileSubscription,
+  shouldStop = () => false, assertOwned = async () => {} } = {}) {
   let failed = 0;
   const postpone = (job) => attention.updateOne({ _id: job._id, resolvedAt: null, nextAttemptAt: { $lte: new Date() } }, {
     $set: { nextAttemptAt: new Date(Date.now() + 5 * 60000) },
   });
   const jobs = await attention.find({ resolvedAt: null, nextAttemptAt: { $lte: new Date() } }).sort({ nextAttemptAt: 1 }).limit(50);
   for (const job of jobs) {
+    if (shouldStop()) break;
+    await assertOwned();
     try {
       if (stripeOwnsBillingEmails(job.stripeRegion)) {
         await attention.updateOne({ _id: job._id, resolvedAt: null }, { $set: { resolvedAt: new Date() }, $unset: { nextAttemptAt: 1 } });
@@ -68,73 +67,59 @@ export async function processBillingReminders({ send = deliverBillingReminder, a
         console.error("Billing email delivery was not confirmed", { episode: job._id, code: error.code });
       }
     } catch (error) {
-      failed += 1;
-      logOperationalError("worker.billing-reminder", error);
-      await postpone(job);
-      console.error("Billing reminder postponed", { episode: job._id, code: error.code });
+      const busy = isBusyLease(error);
+      const attempts = (job.recoveryAttempts || 0) + (busy ? 0 : 1);
+      await assertOwned();
+      await attention.updateOne({ _id: job._id, resolvedAt: null, nextAttemptAt: { $lte: new Date() } }, {
+        $set: { recoveryAttempts: attempts, nextAttemptAt: new Date(Date.now() + recoveryDelay(attempts, error)) },
+      });
+      if (!busy) {
+        failed += 1;
+        logOperationalError("worker.billing-reminder", error);
+        console.error("Billing reminder postponed", { episode: job._id, code: error.code });
+      }
     }
   }
   return { failed };
 }
 
-export function startBillingWorker() {
-  if (process.env.BILLING_WORKER_ENABLED === "false" ||
-      (process.env.BILLING_WORKER_ENABLED !== "true" && process.env.NODE_ENV !== "production")) return async () => {};
+export function startBillingWorker({ env = process.env, coordinate = runCoordinatedSchedule,
+  reminders = processBillingReminders, checkouts = recoverMembershipCheckouts, subscriptions = recoverSubscriptions,
+  revenue = processMemberRevenueMaintenance, now = Date.now, schedule = setInterval, cancel = clearInterval,
+  report = logOperationalError } = {}) {
+  if (env.BILLING_WORKER_ENABLED === "false" ||
+      (env.BILLING_WORKER_ENABLED !== "true" && env.NODE_ENV !== "production")) return async () => {};
   let stopped = false;
-  let running;
-  const tick = () => {
-    if (stopped || running) return;
-    running = runObservedJob("scheduler", "billing-maintenance", async () => {
-      let failures = (await processBillingReminders()).failed;
-      // A reporting or Connect failure must not block membership recovery.
-      try { await processMemberRevenueMaintenance(); }
-      catch (error) { failures += 1; logOperationalError("worker.revenue-sharing", error); console.error("Member revenue sharing postponed", { code: error.code }); }
-      // Recover paid checkouts even if their initial webhook was never delivered.
-      const checkouts = await BillingRecord.find({ "data.sessionId": { $exists: true }, completedAt: null })
-        .sort({ updatedAt: 1 }).limit(25);
-      for (const checkout of checkouts) {
-        if (stopped) return { failed: failures };
-        try {
-          const stripe = createStripeClient(checkout.data.stripeRegion);
-          const payment = await stripe.checkout.sessions.retrieve(checkout.data.sessionId);
-          if (payment.status === "complete") await completeMembershipCheckout(payment, checkout.data.stripeRegion);
-          if (payment.status === "expired") {
-            await BillingRecord.updateOne({ _id: checkout._id }, { $unset: { "data.registration": 1 }, $set: { completedAt: new Date() } });
-          } else await BillingRecord.updateOne({ _id: checkout._id }, { $set: { updatedAt: new Date() } });
-        } catch (error) {
-          failures += 1;
-          logOperationalError("worker.checkout-reconciliation", error);
-          await BillingRecord.updateOne({ _id: checkout._id }, { $set: { updatedAt: new Date() } });
-          console.error("Checkout reconciliation postponed", { checkoutId: checkout._id, code: error.code });
-        }
+  const tasks = [
+    { name: "billing-maintenance", work: async ({ assertOwned }) => {
+      let failed = 0;
+      for (const process of [checkouts, subscriptions, reminders]) {
+        if (stopped) break;
+        // A slow phase cannot permanently starve reminders or other accounts.
+        // Stop between operations; never race a timeout against live writes.
+        const deadline = now() + 50_000;
+        failed += (await process({ assertOwned, shouldStop: () => stopped || now() >= deadline })).failed;
       }
-      // Bounded recovery sweep; the oldest snapshots go first. Webhooks remain
-      // the immediate path, and benefit requests also reconcile with Stripe.
-      for (const Model of [MemberUser, AlumniUser]) {
-        const users = await Model.find({ ...CURRENT_ACCOUNT_FILTER,
-          "subscription.id": { $exists: true, $nin: [null, ""] },
-          $or: [{ "subscription.syncedAt": { $exists: false } },
-            { "subscription.syncedAt": { $lt: new Date(Date.now() - 5 * 60000) } }],
-        }).sort({ "subscription.lastAttemptAt": 1, "subscription.syncedAt": 1 }).limit(25);
-        for (const user of users) {
-          if (stopped) return { failed: failures };
-          try { await reconcileAccount(user); }
-          catch (error) {
-            failures += 1;
-            logOperationalError("worker.subscription-reconciliation", error);
-            // Rotate failed records behind other accounts without making an
-            // unverified entitlement snapshot appear fresh.
-            await Model.updateOne({ _id: user.id, "subscription.id": user.subscription.id }, { $set: { "subscription.lastAttemptAt": new Date() } });
-            console.error("Subscription reconciliation postponed", { accountId: user.id, code: error.code });
-          }
-        }
-      }
-      return { failed: failures };
-    }).catch((error) => { logOperationalError("worker.billing-maintenance", error); console.error("Billing maintenance failed; retrying on the next tick"); })
-      .finally(() => { running = null; });
-  };
-  const timer = setInterval(tick, 60000);
+      return { failed };
+    } },
+    { name: "member-revenue-maintenance", intervalMs: 15 * 60_000, work: async ({ assertOwned }) => {
+      await assertOwned();
+      await revenue();
+    } },
+  ];
+  const tick = () => Promise.all(tasks.map(task => {
+    if (stopped || task.running || now() < (task.nextLocalAttemptAt || 0)) return task.running;
+    task.running = Promise.resolve().then(() => coordinate(task.name, task.work, { intervalMs: task.intervalMs }))
+      .then(() => { task.failures = 0; task.nextLocalAttemptAt = 0; })
+      .catch(error => {
+        task.failures = (task.failures || 0) + 1;
+        task.nextLocalAttemptAt = now() + recoveryDelay(task.failures);
+        report(`worker.${task.name}`, error);
+      }).finally(() => { task.running = null; });
+    return task.running;
+  }));
+  const timer = schedule(tick, 60000);
   timer.unref();
   tick();
-  return async () => { stopped = true; clearInterval(timer); await running; };
+  return async () => { stopped = true; cancel(timer); await Promise.all(tasks.map(task => task.running)); };
 }

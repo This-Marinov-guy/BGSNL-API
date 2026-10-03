@@ -20,7 +20,7 @@ function fixture(reason = "payment_failed", code = "insufficient_funds") {
 test("missing membership is distinguished without calling Stripe", async () => {
   const notice = await readBillingDetails({ status: "locked" }, { resolveRegion: () => assert.fail("No Stripe request") });
   assert.equal(notice.reason, "no_membership");
-  assert.match(notice.description, /linked to this account/);
+  assert.equal(notice.title, "No active subscription");
 });
 
 test("diagnostics identify the failed older invoice, not a newer paid invoice", async () => {
@@ -57,16 +57,17 @@ test("fresh paid state does not grant benefits or suggest another payment", asyn
   assert.deepEqual(user, before);
 });
 
-test("late payment on a canceled subscription offers credit/refund review instead of another charge", async () => {
+test("late payment on a canceled subscription shows the ended state for renewal", async () => {
   const h = fixture();
   h.dependencies.resolveRegion = async () => "netherlands";
   h.dependencies.stripeForRegion = () => ({});
   Object.assign(h.result.sub, { status: "canceled", ended_at: 100, items: { data: [{ price: { id: MEMBERSHIP_PLANS[0].priceId } }] },
     latest_invoice: { id: "in_paid", subscription: "sub_owner", customer: "cus_owner", status: "paid", amount_paid: 1000, status_transitions: { paid_at: 110 } } });
+  h.result.state = { lockReason: "subscription_ended", hasBenefits: false };
   const notice = await readBillingDetails(user, h.dependencies);
-  assert.equal(notice.reason, "late_payment_review");
-  assert.match(notice.description, /credit.*refund/);
-  assert.match(notice.description, /do not pay again/);
+  assert.equal(notice.reason, "subscription_ended");
+  assert.equal(notice.title, "No active subscription");
+  assert.match(notice.description, /Renew your previous subscription/);
   assert.doesNotMatch(JSON.stringify(notice), /Stripe/);
 });
 

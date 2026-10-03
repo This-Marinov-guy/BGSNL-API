@@ -109,7 +109,8 @@ payouts.
 
 ## Worker and records
 
-The billing worker runs maintenance approximately every minute. It paginates
+The billing worker runs coordinated revenue maintenance every 15 minutes, with
+independent backoff on failure so it cannot block membership recovery. It paginates
 Stripe subscriptions and paid invoices, reconstructs calculations in memory,
 reuses Stripe's complete monthly fee reports, and settles each region. No Mongo
 invoice statements, billing receipts or enrollment ledger are retained.

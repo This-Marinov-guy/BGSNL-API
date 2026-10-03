@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { processBillingReminders, nextReminderSlot, REMINDER_DELAY_MS, deliverBillingReminder } from "../services/subscriptions/reminders.js";
 import { SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE, USER_URL } from "../util/config/defines.js";
+import { BillingLeaseBusyError } from "../services/subscriptions/lease-retry.js";
 
 const harness = () => {
   const job = { _id: "episode", subscriptionId: "sub_one", stripeRegion: "amsterdam", nextAttemptAt: new Date(0) };
@@ -66,6 +67,15 @@ test("ambiguous provider failures are recorded and never retried as an extra ema
 test("Stripe outages postpone reminders without consuming an email attempt", async () => {
   const h = harness(); h.dependencies.reconcile = async () => { throw new Error("Unavailable"); };
   await h.process(); assert.equal(h.job.firstAttemptAt, undefined); assert.equal(h.sent.length, 0);
+  assert.ok(h.job.nextAttemptAt > new Date());
+});
+test("a reminder lease conflict defers without consuming a send or recording a failure", async () => {
+  const h = harness();
+  h.dependencies.reconcile = async () => { throw new BillingLeaseBusyError(); };
+  assert.equal((await h.process()).failed, 0);
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.job.firstAttemptAt, undefined);
+  assert.equal(h.job.recoveryAttempts, 0);
   assert.ok(h.job.nextAttemptAt > new Date());
 });
 test("orphaned reminder jobs are retired so they cannot starve other accounts", async () => {
