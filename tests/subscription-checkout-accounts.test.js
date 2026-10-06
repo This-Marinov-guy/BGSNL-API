@@ -68,22 +68,81 @@ function completionHarness(plan, user) {
   return { calls, record, session, dependencies, complete: () => completeMembershipCheckout(session, "netherlands", dependencies) };
 }
 
-test("stale checkout completion does not hide a paid replacement subscription", async () => {
-  const user = existing("member");
-  user.subscription.id = "sub_canceled";
-  const h = completionHarness(memberPlan, user);
-  h.record.completedAt = new Date("2026-10-03T11:38:50Z");
-  h.dependencies.reconcileExisting = async () => ({ user, state: { ended: true } });
-  await h.complete();
-  assert.equal(h.calls.updated.length, 1);
-  assert.equal(h.calls.updated[0].fields.subscription.id, "sub_new");
-  assert.deepEqual(h.calls.reconciled[0], ["sub_new", "netherlands", { expectedCustomerId: "cus_owner" }]);
+test("a stale completion marker cannot hide a paid replacement for any plan or account type", async (t) => {
+  for (const plan of MEMBERSHIP_PLANS) for (const type of ["member", "alumni"]) {
+    await t.test(`${type} renews with ${plan.label}`, async () => {
+      const user = existing(type);
+      user.subscription.id = "sub_canceled";
+      const h = completionHarness(plan, user);
+      h.record.completedAt = new Date("2026-10-03T11:38:50Z");
+      h.dependencies.reconcileExisting = async () => ({ user, state: { ended: true } });
+      await h.complete();
+      assert.equal(h.calls.created.length, 0);
+      assert.equal(h.calls.updated.length, 1);
+      assert.equal(h.calls.updated[0].fields.subscription.id, "sub_new");
+      assert.equal(h.calls.updated[0].fields.subscription.priceId, plan.priceId);
+      assert.equal(h.calls.updated[0].fields.subscription.customerId, "cus_owner");
+      assert.deepEqual(h.calls.reconciled[0], ["sub_new", "netherlands", { expectedCustomerId: "cus_owner" }]);
+      await h.complete();
+      assert.equal(h.calls.updated.length, 1, "a webhook replay must not rebind the account");
+    });
+  }
 });
 
 test("checkout completion fails closed when reconciliation cannot find the paid account", async () => {
   const h = completionHarness(memberPlan, existing("member"));
   h.dependencies.reconcile = async () => null;
   await assert.rejects(h.complete(), /not linked to its account/);
+});
+
+test("checkout completion rejects reconciliation to a different subscription or customer", async () => {
+  for (const subscription of [{ id: "sub_old", customerId: "cus_owner" }, { id: "sub_new", customerId: "cus_other" }]) {
+    const h = completionHarness(memberPlan, existing("member"));
+    h.dependencies.reconcile = async () => ({ user: { subscription } });
+    await assert.rejects(h.complete(), /not linked to its account/);
+  }
+});
+
+test("a completed checkout linked to its account skips duplicate writes but still reconciles", async () => {
+  const user = existing("member");
+  user.subscription.id = "sub_new";
+  const h = completionHarness(memberPlan, user);
+  h.record.completedAt = new Date("2026-10-03T11:40:00Z");
+  h.dependencies.readSubscription = async () => assert.fail("A fulfilled replay must not reread the subscription");
+  await h.complete();
+  assert.equal(h.calls.updated.length, 0);
+  assert.equal(h.calls.created.length, 0);
+  assert.equal(h.calls.reconciled.length, 1);
+});
+
+test("an obsolete session, wrong customer or wrong Stripe region cannot claim a replacement", async () => {
+  for (const change of [
+    (h) => { h.session.id = "cs_expired"; },
+    (h) => { h.session.customer = "cus_other"; },
+  ]) {
+    const h = completionHarness(memberPlan, existing("member"));
+    h.record.completedAt = new Date("2026-10-03T11:38:50Z");
+    change(h);
+    await assert.rejects(h.complete(), /Checkout ownership mismatch/);
+    assert.equal(h.calls.updated.length, 0);
+    assert.equal(h.calls.reconciled.length, 0);
+  }
+  const h = completionHarness(memberPlan, existing("member"));
+  await assert.rejects(completeMembershipCheckout(h.session, "amsterdam", h.dependencies), /Checkout ownership mismatch/);
+  assert.equal(h.calls.updated.length, 0);
+});
+
+test("a paid session with the wrong Stripe customer or selected price cannot update an account", async () => {
+  for (const mismatch of ["customer", "price"]) {
+    const h = completionHarness(memberPlan, existing("member"));
+    h.dependencies.readSubscription = async () => ({
+      sub: { customer: mismatch === "customer" ? "cus_other" : "cus_owner", created: Date.parse("2026-10-03T11:39:12Z") / 1000 },
+      state: { plan: mismatch === "price" ? alumniPlan : memberPlan, hasBenefits: true, periodEnd: 1900000000 },
+    });
+    await assert.rejects(h.complete(), /Checkout price mismatch/);
+    assert.equal(h.calls.updated.length, 0);
+    assert.equal(h.calls.reconciled.length, 0);
+  }
 });
 
 test("membership checkout without a usable subscription cannot be marked fulfilled", async () => {
@@ -103,34 +162,40 @@ test("replayed older checkout cannot replace a later subscription", async () => 
   assert.equal(h.calls.updated.length, 0);
 });
 
-test("new checkout accounts are created in the chosen programme and replays do not duplicate them", async () => {
-  for (const plan of [memberPlan, alumniPlan]) {
+test("new checkout accounts are created once for every paid Member and Alumni plan", async (t) => {
+  for (const plan of MEMBERSHIP_PLANS) await t.test(plan.label, async () => {
     const h = completionHarness(plan, null);
     await h.complete(); await h.complete();
     assert.equal(h.calls.created.length, 1);
     assert.equal(h.calls.created[0].constructor.modelName, plan.type === "alumni" ? "AlumniUser" : "MemberUser");
     assert.equal(h.calls.created[0].status, "payment_awaiting");
+    assert.equal(h.calls.created[0].subscription.priceId, plan.priceId);
+    assert.equal(h.calls.created[0].subscription.customerId, "cus_owner");
     assert.deepEqual(h.calls.notices, [plan.type]);
     assert.equal(h.calls.reconciled.length, 2);
-  }
+  });
 });
 
-test("same-type and cross-type checkout reuse the account and reconcile instead of creating duplicates", async () => {
-  for (const type of ["member", "alumni"]) for (const plan of [memberPlan, alumniPlan]) {
-    const user = existing(type), h = completionHarness(plan, user);
-    await h.complete();
-    assert.equal(h.calls.created.length, 0);
-    assert.equal(h.calls.updated[0].account, user);
-    assert.equal(h.calls.updated[0].fields.subscription.id, "sub_new");
-    assert.equal(user.password, "existing-hash");
-    assert.equal(h.calls.notices.length, 0);
-    assert.deepEqual(h.calls.reconciled[0], ["sub_new", "netherlands", { expectedCustomerId: "cus_owner" }]);
+test("existing Member and Alumni accounts reuse their identity for every paid plan", async (t) => {
+  for (const type of ["member", "alumni"]) for (const plan of MEMBERSHIP_PLANS) {
+    await t.test(`${type} subscribes to ${plan.label}`, async () => {
+      const user = existing(type), h = completionHarness(plan, user);
+      await h.complete();
+      assert.equal(h.calls.created.length, 0);
+      assert.equal(h.calls.updated[0].account, user);
+      assert.equal(h.calls.updated[0].fields.subscription.id, "sub_new");
+      assert.equal(h.calls.updated[0].fields.subscription.priceId, plan.priceId);
+      assert.equal(user.password, "existing-hash");
+      assert.equal(h.calls.notices.length, 0);
+      assert.deepEqual(h.calls.reconciled[0], ["sub_new", "netherlands", { expectedCustomerId: "cus_owner" }]);
+    });
   }
 });
 
 test("checkout never replaces a running subscription and only rebinds an ended one", async () => {
   const user = existing("member"); user.subscription.id = "sub_old";
   const h = completionHarness(alumniPlan, user);
+  h.record.completedAt = new Date("2026-10-03T11:38:50Z");
   await assert.rejects(h.complete(), /existing subscription/);
   assert.equal(h.calls.updated.length, 0);
   h.dependencies.reconcileExisting = async () => ({ user, state: { ended: true } });

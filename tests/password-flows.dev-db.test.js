@@ -37,13 +37,14 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
   // dependency stub cannot authenticate with Stripe. No values are printed.
   for (const key of Object.keys(process.env)) if (/STRIPE.*(?:SECRET_KEY|WEBHOOK)/.test(key)) process.env[key] = "sk_test_password_fixture_not_a_real_key";
   const [{ default: MemberUser }, { default: Alumni }, { default: BillingRecord }, { default: RefreshSession }, { default: Reset }, { default: Profile },
-    passwords, checkout, security, helpers, loginService, tokens, policy, legacy, resetService, profileService] = await Promise.all([
+    passwords, checkout, security, helpers, loginService, tokens, policy, legacy, resetService, profileService, redisStore] = await Promise.all([
     import("../models/MemberUser.js"), import("../models/AlumniUser.js"), import("../models/BillingRecord.js"), import("../models/RefreshSession.js"),
     import("../models/PasswordResetChallenge.js"), import("../models/ProfileChange.js"),
     import("../services/authentication/passwords.js"), import("../services/subscriptions/checkout.js"), import("../controllers/security-controller.js"),
     import("../util/functions/helpers.js"), import("../services/authentication/login.js"), import("../util/auth/session-token.js"),
     import("../util/subscriptions/policy.js"), import("../services/main-services/stripe-webhook-service.js"),
     import("../services/authentication/password-reset.js"), import("../services/authentication/profile-change.js"),
+    import("../services/storage/redis.js"),
   ]);
   const uri = `mongodb+srv://${encodeURIComponent(process.env.DB_USER)}:${encodeURIComponent(process.env.DB_PASS)}@${host}`;
   try {
@@ -53,12 +54,16 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
     throw new Error("Could not connect to the isolated development DB; check network/access permissions (credentials redacted).");
   }
   let isolationVerified = false;
+  const initialIds = { walletCards: [], temporaryCodes: [] };
   t.after(async () => {
     try {
       if (!isolationVerified) return;
       assert.equal(mongoose.connection.name, databaseName);
       assert.ok(safeName(mongoose.connection.name));
       assert.ok(emails.every((email) => email.startsWith(`${run}-`) && email.endsWith(`@${domain}`)));
+      for (const [collection, ids] of Object.entries(initialIds)) {
+        await mongoose.connection.db.collection(collection).deleteMany({ _id: { $nin: ids } });
+      }
       const owned = (await Promise.all([MemberUser.find({ email: { $in: emails } }).select("_id").lean(), Alumni.find({ email: { $in: emails } }).select("_id").lean()])).flat().map((u) => u._id);
       // Exact records created by THIS run only; no dropDatabase/dropCollection.
       for (const Model of [Reset, Profile]) await Model.deleteMany({ _id: { $in: owned } });
@@ -67,14 +72,18 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
       for (const Model of [MemberUser, Alumni]) await Model.deleteMany({ _id: { $in: owned }, email: { $in: emails } });
       assert.equal(await MemberUser.countDocuments({ email: { $in: emails } }) + await Alumni.countDocuments({ email: { $in: emails } }), 0);
       t.diagnostic(`Cleaned this run's ${owned.length} synthetic accounts and associated auth/checkout records from ${databaseName}.`);
-    } finally { await mongoose.disconnect(); }
+    } finally { await mongoose.disconnect(); await redisStore.closeRedis(); }
   });
   assert.equal(mongoose.connection.name, databaseName);
   for (const Model of [MemberUser, Alumni]) assert.equal(await Model.exists({ email: { $not: /@password-tests\.bgsnl\.invalid$/ } }), null,
     "Database contains non-fixture accounts; no writes allowed");
   const allowedCollections = [MemberUser, Alumni, Reset, Profile];
   const existingCollections = await mongoose.connection.db.listCollections({}, { nameOnly: true }).toArray();
-  assert.ok(existingCollections.every((c) => allowedCollections.some((Model) => Model.collection.name === c.name)), "Unexpected collections: refusing this database");
+  assert.ok(existingCollections.every((c) => allowedCollections.some((Model) => Model.collection.name === c.name) ||
+    Object.hasOwn(initialIds, c.name)), "Unexpected collections: refusing this database");
+  for (const collection of Object.keys(initialIds)) {
+    initialIds[collection] = (await mongoose.connection.db.collection(collection).find({}, { projection: { _id: 1 } }).toArray()).map(row => row._id);
+  }
   isolationVerified = true;
   for (const Model of allowedCollections) await Model.createCollection();
   // Only these two indexes are required for real unique-account behaviour.
@@ -130,7 +139,10 @@ test("development Mongo password flows", { skip: !databaseName, timeout: 180000 
     const options = { stripeClient: () => stripe,
       readSubscription: async () => ({ sub: { id: subscriptionId, customer: customerId, created: Math.floor(Date.now() / 1000) },
         state: { plan, hasBenefits: true, periodEnd: Math.floor(Date.now() / 1000) + 86400 } }),
-      reconcile: async () => {}, notifyMember: () => notifications++, notifyAlumni: () => notifications++ };
+      reconcile: async (id, _region, { expectedCustomerId }) => ({ user:
+        await MemberUser.findOne({ "subscription.id": id, "subscription.customerId": expectedCustomerId }) ||
+        await Alumni.findOne({ "subscription.id": id, "subscription.customerId": expectedCustomerId }),
+      }), notifyMember: () => notifications++, notifyAlumni: () => notifications++ };
     return { input, key, session, storedHash, options, notices: () => notifications,
       complete: (override = {}) => checkout.completeMembershipCheckout(session, "netherlands", { ...options, ...override }) };
   }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MEMBERSHIP_PLANS } from "../util/subscriptions/policy.js";
-import { reserveCheckout, startMembershipChange, membershipPrices, membershipCheckoutRegion } from "../services/subscriptions/checkout.js";
+import { completeMembershipCheckout, reserveCheckout, startMembershipChange, membershipPrices, membershipCheckoutRegion } from "../services/subscriptions/checkout.js";
 import { STRIPE_KEYS } from "../util/config/stripe.js";
 
 const checkoutHarness = () => {
@@ -57,13 +57,68 @@ test("a fresh checkout does not inherit the previous checkout's recovery backoff
 
 test("replacement checkout clears a completion written while Stripe creates its session", async () => {
   const h = checkoutHarness();
-  h.stripe.checkout.sessions.create = async () => {
-    h.record.completedAt = new Date(); // Expired-session recovery races the replacement.
-    return { id: "cs_replacement", status: "open", url: "https://checkout.stripe.com/test-session" };
+  const create = h.stripe.checkout.sessions.create;
+  h.stripe.checkout.sessions.create = async (...args) => {
+    const session = await create(...args);
+    if (h.calls.length === 2) h.record.completedAt = new Date(); // Expired-session recovery races the replacement.
+    return session;
   };
-  await h.reserve();
-  assert.equal(h.record.data.sessionId, "cs_replacement");
+  const first = await h.reserve();
+  h.options.plan = MEMBERSHIP_PLANS[1];
+  const replacement = await h.reserve();
+  assert.notEqual(replacement.id, first.id);
+  assert.deepEqual(h.expired, [first.id]);
+  assert.equal(h.record.data.sessionId, replacement.id);
   assert.equal(h.record.completedAt, undefined);
+  assert.equal(h.record.data.priceId, MEMBERSHIP_PLANS[1].priceId);
+  assert.equal(h.customerCreations.length, 1);
+  assert.notEqual(h.calls[0].options.idempotencyKey, h.calls[1].options.idempotencyKey);
+});
+
+test("paid replacement after an expired plan choice updates the existing account", async (t) => {
+  for (const [type, nextPlan] of [["member", MEMBERSHIP_PLANS[1]], ["alumni", MEMBERSHIP_PLANS[0]]]) {
+    await t.test(`${type} chooses ${nextPlan.label}`, async () => {
+      const h = checkoutHarness();
+      h.user.roles = [type];
+      h.user.status = "locked";
+      h.user.subscription = { id: "sub_old_canceled", customerId: "cus_verified", stripeRegion: "netherlands", status: "canceled" };
+      h.setSubscriptions([{ id: "sub_old_canceled", status: "canceled" }]);
+      h.options.plan = type === "alumni" ? MEMBERSHIP_PLANS.find(plan => plan.type === "alumni") : MEMBERSHIP_PLANS[0];
+      const first = await h.reserve();
+      const create = h.stripe.checkout.sessions.create;
+      h.stripe.checkout.sessions.create = async (...args) => {
+        const session = await create(...args);
+        h.record.completedAt = new Date("2026-10-03T11:38:50Z");
+        return session;
+      };
+      h.options.plan = nextPlan;
+      const replacement = await h.reserve();
+      assert.deepEqual(h.expired, [first.id]);
+      assert.equal(h.record.completedAt, undefined);
+      assert.equal(h.record.data.sessionId, replacement.id);
+      const paid = { ...replacement, mode: "subscription", status: "complete", subscription: "sub_paid_replacement",
+        customer: "cus_verified", metadata: h.calls[1].data.metadata };
+      let persisted = 0;
+      await completeMembershipCheckout(paid, "netherlands", {
+        withLease: h.options.dependencies.withLease,
+        records: h.options.dependencies.records,
+        stripeClient: () => h.stripe,
+        readSubscription: async () => ({ sub: { id: paid.subscription, customer: paid.customer, created: Date.parse("2026-10-03T11:39:12Z") / 1000 },
+          state: { plan: nextPlan, hasBenefits: true, periodEnd: 1900000000 } }),
+        readRevenueAllocation: async () => null,
+        resolveAccount: async () => h.user,
+        reconcileExisting: async () => ({ user: h.user, state: { ended: true } }),
+        persistAccount: async (user, fields) => { persisted++; user.status = fields.status; user.subscription = fields.subscription; return user; },
+        reconcile: async () => ({ user: h.user }),
+      });
+      assert.equal(persisted, 1);
+      assert.equal(h.user.subscription.id, paid.subscription);
+      assert.equal(h.user.subscription.customerId, paid.customer);
+      assert.equal(h.user.subscription.priceId, nextPlan.priceId);
+      assert.ok(h.record.completedAt);
+      assert.equal(h.customerCreations.length, 0);
+    });
+  }
 });
 
 test("checkout stages selected region without changing profile or Stripe account", async () => {
