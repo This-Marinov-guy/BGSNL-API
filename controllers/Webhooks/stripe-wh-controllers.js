@@ -97,12 +97,13 @@ export const postWebhookCheckout = async (req, res, next) => {
               if (session.metadata?.method === "membership_checkout") await completeMembershipCheckout(session, region);
               else if (["signup", "alumni-signup", "alumni_migration", "unlock_account"].includes(session.metadata?.method)) {
                 await completeLegacyMembership(session, region, { assertOwned });
-              }
+              } else return;
             } else if (session.mode === "payment") {
               const data = { transactionId: stripeId(session.payment_intent) || session.id, stripeRegion: region };
               if (session.metadata?.method === "buy_guest_ticket") await handleGuestTicketPurchase(session.metadata, data);
-              if (session.metadata?.method === "buy_member_ticket") await handleMemberTicketPurchase(session.metadata, data);
-            }
+              else if (session.metadata?.method === "buy_member_ticket") await handleMemberTicketPurchase(session.metadata, data);
+              else return;
+            } else return;
             await markCheckoutFulfilled(stripe, session.id, region);
             await BillingRecord.updateOne({ _id: key }, { $set: { completedAt: new Date() } }, { upsert: true });
           });

@@ -55,6 +55,17 @@ test("a fresh checkout does not inherit the previous checkout's recovery backoff
   assert.equal(h.record.recovery, undefined);
 });
 
+test("replacement checkout clears a completion written while Stripe creates its session", async () => {
+  const h = checkoutHarness();
+  h.stripe.checkout.sessions.create = async () => {
+    h.record.completedAt = new Date(); // Expired-session recovery races the replacement.
+    return { id: "cs_replacement", status: "open", url: "https://checkout.stripe.com/test-session" };
+  };
+  await h.reserve();
+  assert.equal(h.record.data.sessionId, "cs_replacement");
+  assert.equal(h.record.completedAt, undefined);
+});
+
 test("checkout stages selected region without changing profile or Stripe account", async () => {
   const h = checkoutHarness();
   h.user.region = "rotterdam";

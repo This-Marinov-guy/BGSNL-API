@@ -47,25 +47,61 @@ test("ambiguous current member and alumni matches never select one arbitrarily",
 });
 
 function completionHarness(plan, user) {
+  let currentUser = user;
   const record = { data: { sessionId: "cs_checkout", customerId: "cus_owner", stripeRegion: "netherlands", priceId: plan.priceId,
     ...(user ? { userId: user.id } : { registration: { email: identity.email, name: "Test", surname: "Person", image: "avatar.png",
       phone: "+31600000000", university: "University", password: "$2b$12$" + "a".repeat(53) } }) } };
   const session = { id: "cs_checkout", mode: "subscription", status: "complete", subscription: "sub_new", customer: "cus_owner", metadata: { checkoutKey: "checkout_test" } };
   const calls = { created: [], updated: [], reconciled: [], notices: [] };
-  const readSubscription = async () => ({ sub: { id: "sub_new", customer: "cus_owner", created: 1700000000 }, state: { plan, hasBenefits: true, periodEnd: 1900000000 } });
+  const readSubscription = async () => ({ sub: { id: "sub_new", customer: "cus_owner", created: Date.parse("2026-10-03T11:39:12Z") / 1000 }, state: { plan, hasBenefits: true, periodEnd: 1900000000 } });
   const dependencies = {
     withLease: async (_key, run) => run({ record, assertOwned: async () => {} }),
     records: { updateOne: async () => { record.completedAt = new Date(); } },
     stripeClient: () => ({}), readSubscription, readRevenueAllocation: async () => null,
-    resolveAccount: async () => user,
-    createAccount: async (account) => { calls.created.push(account); return account; },
-    persistAccount: async (account, fields) => { calls.updated.push({ account, fields }); return account; },
-    reconcile: async (...args) => { calls.reconciled.push(args); },
+    resolveAccount: async () => currentUser,
+    createAccount: async (account) => { calls.created.push(account); currentUser = account; return account; },
+    persistAccount: async (account, fields) => { calls.updated.push({ account, fields }); account.subscription = fields.subscription; currentUser = account; return account; },
+    reconcile: async (...args) => { calls.reconciled.push(args); return { user: currentUser }; },
     reconcileExisting: async () => ({ user, state: { ended: false } }),
     notifyMember: () => calls.notices.push("member"), notifyAlumni: () => calls.notices.push("alumni"),
   };
-  return { calls, session, dependencies, complete: () => completeMembershipCheckout(session, "netherlands", dependencies) };
+  return { calls, record, session, dependencies, complete: () => completeMembershipCheckout(session, "netherlands", dependencies) };
 }
+
+test("stale checkout completion does not hide a paid replacement subscription", async () => {
+  const user = existing("member");
+  user.subscription.id = "sub_canceled";
+  const h = completionHarness(memberPlan, user);
+  h.record.completedAt = new Date("2026-10-03T11:38:50Z");
+  h.dependencies.reconcileExisting = async () => ({ user, state: { ended: true } });
+  await h.complete();
+  assert.equal(h.calls.updated.length, 1);
+  assert.equal(h.calls.updated[0].fields.subscription.id, "sub_new");
+  assert.deepEqual(h.calls.reconciled[0], ["sub_new", "netherlands", { expectedCustomerId: "cus_owner" }]);
+});
+
+test("checkout completion fails closed when reconciliation cannot find the paid account", async () => {
+  const h = completionHarness(memberPlan, existing("member"));
+  h.dependencies.reconcile = async () => null;
+  await assert.rejects(h.complete(), /not linked to its account/);
+});
+
+test("membership checkout without a usable subscription cannot be marked fulfilled", async () => {
+  const h = completionHarness(memberPlan, existing("member"));
+  h.session.subscription = null;
+  await assert.rejects(h.complete(), /Invalid membership checkout completion/);
+  assert.equal(h.calls.updated.length, 0);
+});
+
+test("replayed older checkout cannot replace a later subscription", async () => {
+  const user = existing("member");
+  user.subscription.id = "sub_later_canceled";
+  const h = completionHarness(memberPlan, user);
+  h.record.completedAt = new Date("2026-10-03T11:40:00Z");
+  h.dependencies.reconcileExisting = async () => ({ user, state: { ended: true } });
+  await assert.rejects(h.complete(), /manual review required/);
+  assert.equal(h.calls.updated.length, 0);
+});
 
 test("new checkout accounts are created in the chosen programme and replays do not duplicate them", async () => {
   for (const plan of [memberPlan, alumniPlan]) {

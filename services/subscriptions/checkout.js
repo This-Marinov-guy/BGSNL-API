@@ -188,7 +188,10 @@ export async function reserveCheckout({ key, user, registration, plan, returnUrl
       }, { idempotencyKey: `checkout:${saved.operationId}` });
       await assertOwned();
       await receipt.bind(session.id);
-      await records.updateOne({ _id: key }, { $set: { "data.sessionId": session.id } });
+      // An expired checkout may have been marked complete while Stripe created
+      // its replacement. The completion flag belongs to the previous session.
+      await records.updateOne({ _id: key }, { $set: { "data.sessionId": session.id },
+        $unset: { completedAt: 1, recovery: 1 } });
       return session;
     };
     const selectionChanged = data.priceId !== plan.priceId || (data.memberRegion || undefined) !== memberRegion ||
@@ -339,7 +342,9 @@ export async function completeMembershipCheckout(session, region, {
   createAccount = createSubscriptionAccount, persistAccount = persistSubscriptionAccount,
 } = {}) {
   const key = session.metadata?.checkoutKey;
-  if (!key || session.mode !== "subscription" || session.status !== "complete" || !session.subscription) return;
+  if (!key || session.mode !== "subscription" || session.status !== "complete" || !session.subscription) {
+    throw new Error("Invalid membership checkout completion");
+  }
   const subscriptionId = stripeId(session.subscription);
   await withLease(key, async ({ record, assertOwned }) => {
     const data = record.data;
@@ -350,11 +355,22 @@ export async function completeMembershipCheckout(session, region, {
     }
     if ( data.sessionId !== session.id || data.customerId !== stripeId(session.customer) ||
         canonicalStripeRegion(data.stripeRegion) !== canonicalStripeRegion(region)) throw new Error("Checkout ownership mismatch");
-    if (record.completedAt) return;
+    let user;
+    if (record.completedAt) {
+      // This key is reused when a member changes plans during checkout. A
+      // completed flag is trustworthy only if this subscription reached DB.
+      user = await resolveAccount({ subscriptionId, customerId: data.customerId, userId: data.userId, email: data.registration?.email });
+      if (user?.subscription?.id === subscriptionId && user.subscription.customerId === data.customerId) return;
+    }
     const { sub, state } = await readSubscription(stripeClient(region), subscriptionId);
     if (stripeId(sub.customer) !== data.customerId || !state.plan || state.plan.priceId !== data.priceId) throw new Error("Checkout price mismatch");
+    if (record.completedAt && new Date(record.completedAt).getTime() >= sub.created * 1000) {
+      // A previously fulfilled checkout may have been superseded by a later
+      // membership. Never rebind that older subscription on webhook replay.
+      throw new Error("Completed membership checkout no longer matches its account; manual review required");
+    }
     const revenueAllocation = await readRevenueAllocation(sub, { records });
-    let user = await resolveAccount({ subscriptionId, customerId: data.customerId, userId: data.userId, email: data.registration?.email });
+    user ||= await resolveAccount({ subscriptionId, customerId: data.customerId, userId: data.userId, email: data.registration?.email });
     if (user?.subscription?.id && user.subscription.id !== subscriptionId) {
       const previous = await reconcileExisting(user);
       if (!previous?.state.ended) throw new Error("Refusing to replace an existing subscription");
@@ -388,5 +404,9 @@ export async function completeMembershipCheckout(session, region, {
       else notifyMember(user.email, user.name, user.region);
     }
   });
-  await reconcile(subscriptionId, region, { expectedCustomerId: stripeId(session.customer) });
+  const reconciled = await reconcile(subscriptionId, region, { expectedCustomerId: stripeId(session.customer) });
+  if (reconciled?.user?.subscription?.id !== subscriptionId ||
+      reconciled.user.subscription.customerId !== stripeId(session.customer)) {
+    throw new Error("Membership checkout was not linked to its account");
+  }
 }
