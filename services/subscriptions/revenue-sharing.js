@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readMemberRevenueAllocation, createRevenueSnapshot } from "./stripe-revenue-state.js";
 import { DEFAULT_REGION } from "../../util/config/defines.js";
 import { createStripeClient } from "../../util/config/stripe.js";
-import { MEMBER_REVENUE_PLATFORM, MEMBER_REVENUE_ACCOUNTS, memberRevenueEnabled, memberRevenueLiveMode } from "../../util/config/member-revenue.js";
+import { MEMBER_REVENUE_PLATFORM, MEMBER_REVENUE_ACCOUNTS, memberRevenueEnabled, memberRevenueLiveMode, migratedMemberRevenueEnabled } from "../../util/config/member-revenue.js";
 import { invoiceSubscriptionId, planForPrice, stripeId } from "../../util/subscriptions/policy.js";
 import { withBillingLease } from "./lease.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
@@ -39,6 +39,20 @@ const linePrice = (line) => stripeId(line.price || line.pricing?.price_details?.
 const lineSubscription = (line) => stripeId(line.subscription || line.parent?.subscription_item_details?.subscription);
 const creditedInvoice = (line) => stripeId(line.proration_details?.credited_items?.invoice || line.parent?.subscription_item_details?.proration_details?.credited_items?.invoice);
 
+// Service periods, rather than payment timestamps, exclude old invoices that
+// happen to be collected after migration. A crossing or incomplete period is
+// held for review. Existing v1 Checkout allocations retain their behavior.
+export function migratedInvoiceBoundary(invoice, lines, allocation) {
+  if (allocation.version !== 2) return "eligible";
+  if (!Number.isSafeInteger(invoice.created) || invoice.created < allocation.enrolledAt) return "exclude";
+  const memberLines = lines.filter((line) => line.amount > 0 && planForPrice(linePrice(line))?.type === "member");
+  if (!memberLines.length) return "credits-only";
+  if (memberLines.every((line) => Number.isSafeInteger(line.period?.end) && line.period.end <= allocation.effectivePeriodStart)) return "exclude";
+  if (memberLines.some((line) => !Number.isSafeInteger(line.period?.start) || !Number.isSafeInteger(line.period?.end) ||
+      line.period.start < allocation.effectivePeriodStart || line.period.end <= line.period.start)) return "review";
+  return "eligible";
+}
+
 export async function recordMemberRevenueInvoice(invoiceId, { stripe = createStripeClient(DEFAULT_REGION), shares = createRevenueSnapshot(stripe), visiting = new Set(), assertOwned = async () => {} } = {}) {
   if (visiting.has(invoiceId)) throw new Error("Circular invoice credit reference");
   visiting.add(invoiceId);
@@ -49,6 +63,8 @@ export async function recordMemberRevenueInvoice(invoiceId, { stripe = createStr
   const allocation = await registerMemberRevenueSubscription(sub);
   if (!allocation || invoice.livemode !== allocation.livemode || stripeId(invoice.customer) !== allocation.customerId) return null;
   const lines = await invoiceLines(stripe, invoice);
+  const boundary = migratedInvoiceBoundary(invoice, lines, allocation);
+  if (boundary === "exclude") return null;
   // A Member -> Alumni proration credits the prior Member invoice. Recover
   // that region's share even though the new Alumni invoice earns no payout.
   const credits = new Map();
@@ -59,11 +75,18 @@ export async function recordMemberRevenueInvoice(invoiceId, { stripe = createStr
     }
   }
   let memberCredits = 0;
+  let migrationCreditReview = false;
   for (const [id, amount] of credits) {
     // Webhooks and Stripe lists can arrive newest first. Establish the credited
     // statement before applying its adjustment, including on the first sweep.
     if (!await shares.findById(id)) await recordMemberRevenueInvoice(id, { stripe, shares, visiting, assertOwned });
     const original = await shares.findById(id);
+    if (!original && allocation.version === 2) {
+      // No regional share was paid on a pre-boundary invoice. A later Member
+      // charge funded by that credit needs human allocation review.
+      if (boundary !== "credits-only") migrationCreditReview = true;
+      continue;
+    }
     if (!original || original.reviewReason || original.accountId !== allocation.accountId || original.subscriptionId !== subscriptionId || !cents(amount)) {
       throw new Error("Member proration credit requires review");
     }
@@ -73,7 +96,7 @@ export async function recordMemberRevenueInvoice(invoiceId, { stripe = createStr
   }
   const positive = lines.filter((line) => line.amount > 0);
   if (!positive.some((line) => planForPrice(linePrice(line))?.type === "member")) return null;
-  const review = positive.some((line) => planForPrice(linePrice(line))?.type !== "member" || (lineSubscription(line) && lineSubscription(line) !== subscriptionId)) ||
+  const review = boundary === "review" || migrationCreditReview || positive.some((line) => planForPrice(linePrice(line))?.type !== "member" || (lineSubscription(line) && lineSubscription(line) !== subscriptionId)) ||
     (invoice.amount_paid === 0 && memberCredits > 0) || invoice.currency !== "eur" || !cents(invoice.amount_paid) || !!invoice.paid_out_of_band ||
     lines.some((line) => line.amount < 0 && planForPrice(linePrice(line))?.type === "member" && !creditedInvoice(line));
   let charge = invoice.charge;
@@ -260,6 +283,7 @@ export async function processMemberRevenueSharing({ stripe = createStripeClient(
     try { allocation = await registerMemberRevenueSubscription(sub); }
     catch { throw new Error("A Stripe allocation needs review before regional settlement"); }
     if (!allocation || allocation.livemode !== memberRevenueLiveMode()) continue;
+    if (allocation.version === 2 && !migratedMemberRevenueEnabled()) continue;
     try {
       await assertOwned();
       const invoices = [];

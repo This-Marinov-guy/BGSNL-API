@@ -1,7 +1,7 @@
 # Existing Member regional Connect migration plan
 
 Date: 2026-09-29  
-Status: Proposed — not implemented or approved for production execution.
+Status: Boundary-aware implementation and dry-run runner prepared locally on 2026-10-08. Production subscriptions and database records have not been changed.
 
 ## Objective
 
@@ -144,6 +144,50 @@ Acceptance criteria:
 6. Continue in small resumable batches, stopping on unexpected billing changes or accounting discrepancies.
 
 Do not treat `subscription.connected = true` as proof of a completed transfer or bank payout.
+
+### Prepared runner and boundary policy
+
+`scripts/migrate-existing-member-connect.js` defaults to a read-only live
+inventory. It checks the central Stripe account and all five recipients, reads
+Member and Alumni identities, verifies candidate subscriptions and customers,
+and writes a private manifest only when given `--output`. It excludes noncurrent
+Members, unsupported regions, legacy regional billing, existing allocations,
+nonactive or scheduled subscriptions, plan mismatches, duplicate identities,
+and renewals within 24 hours. A pilot manifest contains one eligible Member per
+region whose next renewal is at least seven days away where available.
+
+The migration allocation is version 2. It stores the current period end as
+`effectivePeriodStart` and the actual enrolment time as `enrolledAt`. The worker
+shares only paid Member invoices created after enrolment whose positive Member
+service lines begin on or after the boundary. Old service periods are excluded
+even if payment arrives late. Crossing or incomplete service periods and Member
+charges using credits from a pre-boundary invoice are held for review. Version 1
+Checkout allocations keep their existing behavior. Set
+`MEMBER_REVENUE_MIGRATED_ENABLED=false` to pause the migrated cohort while
+leaving version 1 sharing active.
+
+Apply needs a fresh, explicitly approved manifest hash, a private exclusive
+backup path, and a separate audit path. The runner rechecks the Stripe account,
+recipient, subscription billing snapshot, Member document, billing lease and
+period boundary before changing two Stripe metadata fields and then the MongoDB
+`subscription.connected` flag. If Stripe succeeds and MongoDB fails, rerun the
+same manifest with new backup/audit paths; it recognizes the exact allocation
+and reconciles the flag without writing Stripe again. A manifest expires after
+24 hours. Never add version 2 metadata until the API and worker release that
+understands it is deployed and verified in every process; an older worker will
+reject it.
+
+Example read-only invocation on a host with production credentials:
+
+```bash
+node scripts/migrate-existing-member-connect.js --output=/private/secure/connect-inventory.json
+node scripts/migrate-existing-member-connect.js --pilot --output=/private/secure/connect-pilot.json
+```
+
+After the approved release is deployed and the approved pilot manifest is
+reviewed, run `--apply` with `--manifest`, `--approved-sha256`, `--backup`, and
+`--audit` pointing to private files. Do not run a broad cohort until the pilot's
+first eligible invoices and transfers have been reconciled.
 
 ## Monitoring and rollback
 

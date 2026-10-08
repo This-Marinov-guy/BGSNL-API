@@ -23,6 +23,13 @@ jobs:
           npx eslint migrations/run.js migrations/003-normalize-breda-region.js services/migrations/runner.js tests/migration-runner.test.js tests/deploy-with-migrations.test.js
           bash -n scripts/deploy-with-migrations.sh scripts/ensure-production-redis.sh
           npx eslint scripts/check-redis.js
+      - name: Verify existing Member Connect migration
+        run: |
+          npx eslint scripts/migrate-existing-member-connect.js services/subscriptions/revenue-sharing.js services/subscriptions/stripe-revenue-state.js util/config/member-revenue.js tests/existing-member-connect-migration.test.js tests/subscription-revenue-sharing.test.js
+          node --test tests/existing-member-connect-migration.test.js tests/subscription-revenue-sharing.test.js
+        env:
+          STRIPE_NL_SECRET_KEY: sk_test_unit
+          STRIPE_GRO_SECRET_KEY: sk_test_unit
 
   migration-tests:
     runs-on: ubuntu-latest

@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { MEMBER_REVENUE_ACCOUNTS, MEMBER_REVENUE_PLATFORM, memberRevenueAllocation } from "../util/config/member-revenue.js";
 import { MEMBERSHIP_PLANS } from "../util/subscriptions/policy.js";
-import { captureMemberRevenueEvent, recordMemberRevenueInvoice, registerMemberRevenueSubscription, revenueTarget, settleMemberRevenueRegion, processMemberRevenueSharing } from "../services/subscriptions/revenue-sharing.js";
+import { captureMemberRevenueEvent, recordMemberRevenueInvoice, registerMemberRevenueSubscription, revenueTarget, settleMemberRevenueRegion, processMemberRevenueSharing, migratedInvoiceBoundary } from "../services/subscriptions/revenue-sharing.js";
 import { allocateMemberFees, parseMemberFeeReport, downloadMemberFeeReport, processMemberRevenueFees, processMemberRevenueMaintenance, resolveMemberFeeReferences } from "../services/subscriptions/revenue-fees.js";
 
 const member = MEMBERSHIP_PLANS.find(p => p.type === "member");
 const alumni = MEMBERSHIP_PLANS.find(p => p.type === "alumni");
 const accountId = MEMBER_REVENUE_ACCOUNTS.amsterdam;
 const allocation = memberRevenueAllocation(member, "amsterdam", { MEMBER_REVENUE_SHARING_ENABLED: "true" });
+const migratedAllocation = { ...allocation, version: 2, enrolledAt: 1767400000, effectivePeriodStart: 1768000000 };
 const get = (o, key) => key.split('.').reduce((v, k) => v?.[k], o);
 function matches(o, query) {
   return Object.entries(query).every(([key, value]) => {
@@ -102,6 +103,62 @@ test("first invoice and renewals are idempotent; Alumni invoices earn no regiona
   for (const invoice of [...invoices, ...invoices]) await recordMemberRevenueInvoice(invoice.id, { stripe, records, shares });
   assert.deepEqual([...shares.docs.keys()], ["in_one", "in_renewal"]);
   assert.equal(shares.docs.get("in_one").processingFee, 40);
+});
+test("migrated subscriptions share only invoices created after enrolment for a full eligible service period", async () => {
+  const old = invoiceFor("in_old", { created: 1769000000, lines: { data: [
+    { amount: 1000, price: { id: member.priceId }, period: { start: 1767000000, end: migratedAllocation.effectivePeriodStart } },
+  ] } });
+  const prepaid = invoiceFor("in_prepaid", { created: migratedAllocation.enrolledAt - 1, lines: { data: [
+    { amount: 1000, price: { id: member.priceId }, period: { start: migratedAllocation.effectivePeriodStart, end: 1770000000 } },
+  ] } });
+  const renewal = invoiceFor("in_renewal", { created: 1769000000, lines: { data: [
+    { amount: 1000, price: { id: member.priceId }, period: { start: migratedAllocation.effectivePeriodStart, end: 1770000000 } },
+  ] } });
+  const h = stripeFor([old, prepaid, renewal]);
+  h.stripe.subscriptions.retrieve = async () => ({ ...sub, metadata: memberRevenueMetadata(migratedAllocation, sub.customer, "migration:one") });
+  const shares = memory();
+  assert.equal(await recordMemberRevenueInvoice(old.id, { stripe: h.stripe, shares }), null);
+  assert.equal(await recordMemberRevenueInvoice(prepaid.id, { stripe: h.stripe, shares }), null);
+  await recordMemberRevenueInvoice(renewal.id, { stripe: h.stripe, shares });
+  assert.deepEqual([...shares.docs.keys()], [renewal.id]);
+  assert.equal(shares.docs.get(renewal.id).reviewReason, null);
+});
+test("crossing periods and credits from an old invoice cannot create an automatic migrated transfer", async () => {
+  const crossing = invoiceFor("in_crossing", { created: 1769000000, lines: { data: [
+    { amount: 1000, price: { id: member.priceId }, period: { start: 1767500000, end: 1770000000 } },
+  ] } });
+  const old = invoiceFor("in_old", { created: 1769000000, lines: { data: [
+    { amount: 1000, price: { id: member.priceId }, period: { start: 1767000000, end: migratedAllocation.effectivePeriodStart } },
+  ] } });
+  const credited = invoiceFor("in_credited", { created: 1769000000, lines: { data: [
+    { amount: -500, price: { id: member.priceId }, period: { start: 1767000000, end: migratedAllocation.effectivePeriodStart }, proration_details: { credited_items: { invoice: old.id } } },
+    { amount: 1500, price: { id: member.priceId }, period: { start: migratedAllocation.effectivePeriodStart, end: 1770000000 } },
+  ] } });
+  const h = stripeFor([old, crossing, credited]);
+  h.stripe.subscriptions.retrieve = async () => ({ ...sub, metadata: memberRevenueMetadata(migratedAllocation, sub.customer, "migration:one") });
+  const shares = memory();
+  await recordMemberRevenueInvoice(crossing.id, { stripe: h.stripe, shares });
+  await recordMemberRevenueInvoice(credited.id, { stripe: h.stripe, shares });
+  assert.match(shares.docs.get(crossing.id).reviewReason, /review/);
+  assert.match(shares.docs.get(credited.id).reviewReason, /review/);
+  assert.equal(shares.docs.has(old.id), false);
+  assert.equal(migratedInvoiceBoundary(old, old.lines.data, allocation), "eligible");
+});
+test("the migrated-cohort pause leaves existing Checkout allocations running", async () => {
+  const h = stripeFor([invoiceFor()]);
+  const migrated = { ...sub, id: "sub_migrated", metadata: memberRevenueMetadata(migratedAllocation, sub.customer, "migration:one") };
+  h.stripe.subscriptions.list = async function* () { yield structuredClone(sub); yield structuredClone(migrated); };
+  const captured = [];
+  const previous = process.env.MEMBER_REVENUE_MIGRATED_ENABLED;
+  process.env.MEMBER_REVENUE_MIGRATED_ENABLED = "false";
+  try {
+    await processMemberRevenueSharing({ stripe: h.stripe, enabled: true, capture: async id => { captured.push(id); },
+      settle: async () => ({}) });
+    assert.deepEqual(captured, ["in_one"]);
+  } finally {
+    if (previous === undefined) delete process.env.MEMBER_REVENUE_MIGRATED_ENABLED;
+    else process.env.MEMBER_REVENUE_MIGRATED_ENABLED = previous;
+  }
 });
 test("Alumni switch credits recover the prior region allocation even when delivered first", async () => {
   const invoices = [invoiceFor(), invoiceFor("in_alumni", { lines: { data: [

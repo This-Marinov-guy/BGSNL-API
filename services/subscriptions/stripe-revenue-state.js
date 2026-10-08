@@ -2,13 +2,14 @@ import { matchesRecord, recordQuery, updateRecord } from "../storage/record-oper
 import { validMemberRevenueAllocation } from "../../util/config/member-revenue.js";
 import { stripeId } from "../../util/subscriptions/policy.js";
 
-// Set only by the server when creating an eligible NEW Member checkout.
-// Stripe retains this on the subscription through renewals and Alumni changes.
+// New Checkout allocations use v1; prospective existing-Member migrations use
+// v2 with an explicit service-period and invoice-creation boundary.
 export function memberRevenueMetadata(allocation, customerId, operationId) {
   if (!allocation) return {};
   if (!validMemberRevenueAllocation(allocation)) throw new Error("Invalid regional subscription allocation");
   return { bgsnlRevenueOperation: operationId,
-    bgsnlRevenueAllocation: JSON.stringify({ version: allocation.version, accountId: allocation.accountId, region: allocation.region, platformPercent: allocation.platformPercent, livemode: allocation.livemode, customerId, operationId }) };
+    bgsnlRevenueAllocation: JSON.stringify({ version: allocation.version, accountId: allocation.accountId, region: allocation.region, platformPercent: allocation.platformPercent, livemode: allocation.livemode, customerId, operationId,
+      ...(allocation.version === 2 ? { effectivePeriodStart: allocation.effectivePeriodStart, enrolledAt: allocation.enrolledAt } : {}) }) };
 }
 export function readMemberRevenueAllocation(sub) {
   const raw = sub.metadata?.bgsnlRevenueAllocation;
