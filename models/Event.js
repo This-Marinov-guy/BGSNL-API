@@ -180,7 +180,9 @@ const eventSchema = new Schema({
       },
       addOns: [
         {
-          id: { type: Number },
+          // Checkout choices use the event add-on's Mongo ID; older tickets
+          // stored a numeric index. String accepts both without cast failures.
+          id: { type: String },
           title: { type: String },
           price: { type: Number },
         },
