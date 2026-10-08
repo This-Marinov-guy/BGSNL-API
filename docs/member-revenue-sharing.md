@@ -5,16 +5,18 @@ payment methods stay on central BGSNL Stripe account `acct_1QLOPaAShinXgMFZ`.
 Regions receive separate Connect transfers. The existing central billing portal
 continues to handle Member/Alumni switches, renewals and cancellation.
 
-Status: implemented locally; disabled until `MEMBER_REVENUE_SHARING_ENABLED=true`
-is configured and this version is deployed. No live subscriptions, products,
-transfers, payouts or Stripe settings were changed to implement this feature.
+Status: deployed and enabled for new Member Checkouts in production. Five
+existing Member subscriptions were enrolled in a prospective pilot on
+2026-10-08; see [the migration plan](existing-member-connect-migration-plan.md).
 
 ## Allocation
 
-Only a **new Member Checkout operation created while sharing is enabled** can
-be enrolled. Its server-stored region determines the recipient. An in-flight
-Checkout keeps its original allocation on retries, even if the feature flag or
-profile region changes. Existing subscriptions are not enrolled retroactively.
+New Member Checkout operations created while sharing is enabled receive a
+version 1 allocation. Their server-stored region determines the recipient. An
+in-flight Checkout keeps its original allocation on retries, even if the
+feature flag or profile region changes. Existing subscriptions are enrolled
+only through the separately approved version 2 migration runner, with sharing
+starting at the next billing period. The ordinary worker does not enrol them.
 Alumni signups and unmatched regions retain their current central billing.
 
 | Profile region | Connected account |
@@ -30,8 +32,9 @@ were active and payouts enabled. Three other accounts were unnamed/inactive and
 are not mapped. Routes live in `util/config/member-revenue.js`. Preserve account
 IDs referenced by existing allocations when adding future routes.
 
-The durable subscription allocation applies to the first paid Member invoice
-and every future paid Member renewal. It survives account migration, Checkout
+The version 1 subscription allocation applies to the first paid Member invoice
+and every future paid Member renewal. Version 2 allocations begin with the
+next eligible service period after enrolment. Both survive account migration, Checkout
 reservation reuse and changes to the member's profile region. Alumni invoices
 produce no regional transfer. If the same enrolled subscription later returns
 to a Member plan, its original region allocation resumes. An Alumni-origin or
@@ -147,13 +150,15 @@ MEMBER_REVENUE_SHARING_LIVEMODE=true
 BILLING_WORKER_ENABLED=true
 ```
 
-Before enabling production sharing, exercise the full flow in an isolated
+Before enabling sharing in another environment, exercise the full flow in an isolated
 database with central Stripe test keys, equivalent test prices and connected
 test recipients. Set `MEMBER_REVENUE_SHARING_LIVEMODE=false` for that environment.
 Verify first payment, renewal, Alumni switch, refund, failed reversal and report
 reconciliation. Keep test and production databases separate.
 
-Disabling sharing pauses new enrolment and all reconciliation/transfers; it
+Set `MEMBER_REVENUE_MIGRATED_ENABLED=false` to pause only the version 2 migrated
+cohort while version 1 Checkout sharing continues. Disabling sharing pauses new
+enrolment and all reconciliation/transfers; it
 does not delete existing allocations. Re-enabling resumes those subscriptions'
 eligible invoices. This code does not alter any existing region Stripe keys or
 move historical subscriptions between accounts.

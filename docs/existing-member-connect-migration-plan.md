@@ -1,7 +1,7 @@
 # Existing Member regional Connect migration plan
 
 Date: 2026-09-29  
-Status: Boundary-aware implementation and dry-run runner prepared locally on 2026-10-08. Production subscriptions and database records have not been changed.
+Status: Boundary-aware code deployed and five-subscription production pilot applied on 2026-10-08. The wider eligible cohort remains pending pilot renewal reconciliation.
 
 ## Objective
 
@@ -188,6 +188,26 @@ After the approved release is deployed and the approved pilot manifest is
 reviewed, run `--apply` with `--manifest`, `--approved-sha256`, `--backup`, and
 `--audit` pointing to private files. Do not run a broad cohort until the pilot's
 first eligible invoices and transfers have been reconciled.
+
+### Production pilot record — 2026-10-08
+
+- The pre-apply inventory found 126 eligible existing Members across the five
+  regions, 7 already-enrolled active Members, 12 subscriptions needing state
+  review, 2 with imminent renewals, and 30 active Members in unsupported
+  regions. The remaining eligible cohort is 121 after this pilot.
+- One subscription in each of Amsterdam, Groningen, Leeuwarden,
+  Leiden–The Hague, and Rotterdam was enrolled. The approved manifest, exact
+  subscription IDs, metadata and MongoDB backups, and per-row audit are private
+  files under `/root/bgsnl-connect-migration/` on the production host; they are
+  intentionally absent from Git.
+- Post-apply read-only checks found five matching version 2 allocations and
+  five `subscription.connected` flags. All five Stripe billing snapshots and
+  unrelated metadata values matched the pre-apply baseline. No invoice was
+  created and no historical regional transfer was found. All five previously
+  paid invoices classify as excluded by the prospective boundary.
+- The pilot's next billing periods begin from 2026-10-16 through 2026-10-28.
+  Reconcile the first eligible invoices, actual fees, transfers and account
+  flags before approving another batch.
 
 ## Monitoring and rollback
 
