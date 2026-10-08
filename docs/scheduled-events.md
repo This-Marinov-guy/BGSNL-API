@@ -21,11 +21,11 @@ Database-triggered work is inventoried in [triggers.md](triggers.md).
 | Birthday greetings | First check after API startup, then every minute; a daily greeting becomes due at 10:00 | `Europe/Amsterdam` | `NODE_ENV=production` or `BIRTHDAY_EMAIL_WORKER_ENABLED=true`; setting the flag to `false` disables it | Sends one non-promotional birthday greeting to each current Member or Alumni account with a valid stored date of birth |
 | Member event announcements | Immediately after API startup, then every minute; an authenticated Atlas notification can request an earlier pass | Not calendar-based | `NODE_ENV=production` or `EVENT_ANNOUNCEMENTS_ENABLED=true`; `false` disables it | Delivers pending publication announcements with personal encrypted ticket links; recovers missed trigger notifications |
 | Event sitemap expiry | At startup and every minute | UTC event instants | Production worker 0 with `GITHUB_SITEMAP_REPOSITORY` and `GITHUB_SITEMAP_DISPATCH_TOKEN`; `EVENT_SITEMAP_EXPIRY_ENABLED=false` disables it | Requests a sitemap refresh when a public event passes the 48-hour post-start cutoff; retries until GitHub accepts the dispatch |
-| Event draft cleanup | Daily at 03:00; checks every minute and catches up after startup later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_DRAFT_CLEANUP_ENABLED=true`; `false` disables it | Deletes event drafts created more than 30 days ago |
+| Daily cleanup | Daily at 03:00; checks every minute and catches up after startup later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_DRAFT_CLEANUP_ENABLED=true`; `false` disables it | Deletes event drafts created more than 30 days ago and completed migration journal runs older than 30 days |
 
 All workers start only after MongoDB and Redis are ready and the required
 account/temporary-code indexes exist. In PM2 cluster mode, only worker 0 runs
-birthday, weekly-summary, event-announcement, event-sitemap expiry and event-draft cleanup schedules. They stop accepting new work during graceful API shutdown.
+birthday, weekly-summary, event-announcement, event-sitemap expiry and daily cleanup schedules. They stop accepting new work during graceful API shutdown.
 
 The event sitemap expiry worker checks the same effective date and visibility
 filter as the public event list. It sends one GitHub dispatch for up to 100 newly

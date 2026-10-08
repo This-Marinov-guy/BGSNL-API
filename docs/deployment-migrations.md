@@ -72,11 +72,13 @@ migrations cannot enumerate or modify that collection through the supplied
 database facade. Restoration rebuilds each collection in place from the journal
 rather than staging a temporary collection, so an interrupted rollback is simply
 replayed: the journal still holds every document. Successful runs delete their
-snapshot documents; failed runs retain them for investigation. After a resolved
-failed run has been reviewed, an operator may delete that run id's snapshot
-documents. Do not delete snapshots for an unresolved run, or clear a lock to
-bypass a failure. Audit records and VPS logs are retained until
-explicitly removed. Snapshots contain application data and need the same access
+snapshot documents; failed runs retain them for investigation and recovery.
+The daily cleanup deletes completed run records and any remaining snapshots
+after 30 days, measured from success or confirmed rollback (or later recovery).
+Unresolved runs, orphan snapshots and the deployment lock are never pruned
+automatically. Do not delete snapshots for an unresolved run, or clear a lock to
+bypass a failure. VPS logs are retained until explicitly removed. Snapshots
+contain application data and need the same access
 controls as the database; logs on the VPS are private to root.
 
 ## Recover an interrupted or failed rollback
