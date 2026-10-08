@@ -5,7 +5,7 @@ or its dedicated worker service. Update it whenever a recurring worker, queued
 job, cron job, or externally scheduled API task is added, removed, or changes
 frequency.
 
-Last reviewed: 2 October 2026.
+Last reviewed: 8 October 2026.
 
 Database-triggered work is inventoried in [triggers.md](triggers.md).
 
@@ -20,11 +20,19 @@ Database-triggered work is inventoried in [triggers.md](triggers.md).
 | Monthly alumni supporter summary | Last calendar day at 23:59; no startup send or missed-run catch-up | `Europe/Amsterdam` | Production by default, or `MONTHLY_SUPPORTER_SUMMARY_ENABLED=true`; `false` disables it; PM2 worker 0 only | Thanks eligible active alumni and internal subscribers with hosted events, new-account counts and optional staff news; see [monthly-supporter-summary.md](monthly-supporter-summary.md) |
 | Birthday greetings | First check after API startup, then every minute; a daily greeting becomes due at 10:00 | `Europe/Amsterdam` | `NODE_ENV=production` or `BIRTHDAY_EMAIL_WORKER_ENABLED=true`; setting the flag to `false` disables it | Sends one non-promotional birthday greeting to each current Member or Alumni account with a valid stored date of birth |
 | Member event announcements | Immediately after API startup, then every minute; an authenticated Atlas notification can request an earlier pass | Not calendar-based | `NODE_ENV=production` or `EVENT_ANNOUNCEMENTS_ENABLED=true`; `false` disables it | Delivers pending publication announcements with personal encrypted ticket links; recovers missed trigger notifications |
+| Event sitemap expiry | At startup and every minute | UTC event instants | Production worker 0 with `GITHUB_SITEMAP_REPOSITORY` and `GITHUB_SITEMAP_DISPATCH_TOKEN`; `EVENT_SITEMAP_EXPIRY_ENABLED=false` disables it | Requests a sitemap refresh when a public event passes the 48-hour post-start cutoff; retries until GitHub accepts the dispatch |
 | Event draft cleanup | Daily at 03:00; checks every minute and catches up after startup later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_DRAFT_CLEANUP_ENABLED=true`; `false` disables it | Deletes event drafts created more than 30 days ago |
 
 All workers start only after MongoDB and Redis are ready and the required
 account/temporary-code indexes exist. In PM2 cluster mode, only worker 0 runs
-birthday, weekly-summary, event-announcement and event-draft cleanup schedules. They stop accepting new work during graceful API shutdown.
+birthday, weekly-summary, event-announcement, event-sitemap expiry and event-draft cleanup schedules. They stop accepting new work during graceful API shutdown.
+
+The event sitemap expiry worker checks the same effective date and visibility
+filter as the public event list. It sends one GitHub dispatch for up to 100 newly
+past events, then records each event's effective date. A failed dispatch leaves
+the events eligible for retry. Publication, published edits and archival request
+an immediate refresh through their event handlers. The API needs a GitHub token
+with `Contents: write` access to `This-Marinov-guy/BGSNL` for this dispatch.
 
 ## Redis spreadsheet worker
 

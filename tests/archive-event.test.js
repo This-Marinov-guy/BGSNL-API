@@ -10,7 +10,8 @@ function harness() {
   const dependencies = { load: async () => event, lease: async (_key, run) => run({ assertOwned: async () => {} }),
     transaction: run => run({ mockSession: true }), statistics: async () => { calls.push("statistics"); },
     dataPool: () => { calls.push("dataPool"); }, removeProduct: async () => { calls.push("product"); },
-    removeFolder: async () => { calls.push("folder"); }, removeGuestTickets: async () => { calls.push("guestTickets"); } };
+    removeFolder: async () => { calls.push("folder"); }, removeGuestTickets: async () => { calls.push("guestTickets"); },
+    refresh: async () => { calls.push("refresh"); } };
   return { event, calls, dependencies, run: () => archiveEvent(event._id, { dependencies }) };
 }
 test("archive and delete share cleanup without deleting the guest-list history", async () => {
@@ -21,9 +22,10 @@ test("archive and delete share cleanup without deleting the guest-list history",
   assert.equal(h.event.archiveCleanupPending, false);
   assert.ok(h.event.archiveCleanupCompletedAt);
   assert.equal(h.event.guestList.length, 1);
-  assert.deepEqual(h.calls, ["statistics", "save", "dataPool", "guestTickets", "product", "folder", "save"]);
+  assert.deepEqual(h.calls, ["statistics", "save", "refresh", "dataPool", "guestTickets", "product", "folder", "save"]);
   await h.run();
   assert.equal(h.calls.filter(call => call === "statistics").length, 1);
+  assert.equal(h.calls.filter(call => call === "refresh").length, 1);
 });
 test("failed bucket cleanup stays pending and retry does not recount statistics", async () => {
   const h = harness();
@@ -31,10 +33,25 @@ test("failed bucket cleanup stays pending and retry does not recount statistics"
   await assert.rejects(h.run(), /S3 unavailable/);
   assert.equal(h.event.archiveCleanupPending, true);
   assert.equal(h.event.status, "archived");
+  assert.equal(h.calls.filter(call => call === "refresh").length, 1);
   h.dependencies.removeGuestTickets = async () => {};
   await h.run();
   assert.equal(h.event.archiveCleanupPending, false);
   assert.equal(h.calls.filter(call => call === "statistics").length, 1);
+  assert.equal(h.calls.filter(call => call === "refresh").length, 1);
+});
+test("a dispatch error cannot undo a committed archival", async () => {
+  const h = harness();
+  h.dependencies.refresh = async () => { throw new Error("GitHub unavailable"); };
+  await h.run();
+  assert.equal(h.event.status, "archived");
+  assert.equal(h.event.archiveCleanupPending, false);
+});
+test("an uncommitted archival never requests a sitemap refresh", async () => {
+  const h = harness();
+  h.dependencies.transaction = async () => { throw new Error("transaction failed"); };
+  await assert.rejects(h.run(), /transaction failed/);
+  assert.equal(h.calls.includes("refresh"), false);
 });
 test("scheduler respects a corrected future date and includes pending cleanup", async () => {
   const h = harness();

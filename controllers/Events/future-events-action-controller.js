@@ -443,7 +443,7 @@ export const archiveExpiredEvents = async (req, res, next) => {
     for await (const candidate of Event.find(expiredEventFilter(cutoff)).select("_id").cursor()) {
       try {
         const event = await archiveEvent(candidate._id, { cutoff });
-        if (event) { archived++; void dispatchSitemapRefresh("archived", event); }
+        if (event) archived++;
       } catch { failed++; }
     }
     return res.status(failed ? 500 : 200).json({ status: failed === 0, archived, failed });
@@ -1467,6 +1467,10 @@ export const editEvent = async (req, res, next) => {
     notifyEventCreated(event);
     eventToSpreadsheet(event.id);
     void dispatchSitemapRefresh("published", event);
+  } else {
+    // Published edits can move an event into or out of the public sitemap
+    // through hidden, date, correctedDate, or region changes.
+    void dispatchSitemapRefresh("updated", event);
   }
 
   try {
@@ -1530,7 +1534,6 @@ export const deleteEvent = async (req, res, next) => {
     ));
   }
 
-  void dispatchSitemapRefresh("archived", event);
   res.status(200).json({ status: true, eventId });
 };
 

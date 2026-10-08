@@ -107,7 +107,7 @@ export const publicEventQuery = {
   status: { $nin: ["archived", "draft"] },
 };
 
-const FUTURE_EVENT_GRACE_MS = 2 * 24 * 60 * 60 * 1000;
+export const FUTURE_EVENT_GRACE_MS = 2 * 24 * 60 * 60 * 1000;
 
 // Public listings (future-events pages, home carousels, sitemap) should drop
 // an event once at least two days have passed since it started — not the instant

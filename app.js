@@ -64,6 +64,7 @@ import { eventCampaignsEnabled, startEventCampaignWorker } from "./services/even
 import EventEmailCampaign, { EventEmailDelivery } from "./models/EventEmailCampaign.js";
 import { startBirthdayEmailWorker } from "./services/background-services/birthday-emails.js";
 import { startEventDraftCleanupWorker } from "./services/background-services/event-draft-cleanup.js";
+import { startEventSitemapExpiryWorker } from "./services/public-content/sitemap-expiry.js";
 import supportRouter, { supportError, supportPrivacy } from "./routes/support-routes.js";
 import backofficeRouter from "./routes/backoffice-routes.js";
 import monitoringRouter from "./routes/monitoring-routes.js";
@@ -244,6 +245,7 @@ let stopBirthdayEmailWorker;
 let stopMemberEventAnnouncementWorker;
 let stopEventCampaignWorker;
 let stopEventDraftCleanupWorker;
+let stopEventSitemapExpiryWorker;
 let marketingCaptureWorker;
 
 mongoose
@@ -264,6 +266,7 @@ mongoose
     stopEventCampaignWorker = startEventCampaignWorker();
     stopMemberEventAnnouncementWorker = startMemberEventAnnouncementWorker(eventCampaignsEnabled() ? { enabled: false } : {});
     stopEventDraftCleanupWorker = startEventDraftCleanupWorker();
+    stopEventSitemapExpiryWorker = startEventSitemapExpiryWorker();
     server = app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
@@ -289,6 +292,7 @@ const gracefulShutdown = async (signal) => {
   await stopMemberEventAnnouncementWorker?.();
   await stopEventCampaignWorker?.();
   await stopEventDraftCleanupWorker?.();
+  await stopEventSitemapExpiryWorker?.();
   try { await marketingCaptureWorker?.stop(); await closeMarketingCaptureQueue(); }
   catch (error) { logOperationalError("shutdown.marketing-queue", error); }
   try { await closeSpreadsheetSyncQueue(); }

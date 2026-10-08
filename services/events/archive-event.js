@@ -5,6 +5,7 @@ import { updateEventStatistics, addEventToDataPool } from "../background-service
 import { deleteProduct } from "../side-services/stripe.js";
 import { deleteFolder } from "../../util/functions/cloudinary.js";
 import { deleteEventGuestTickets } from "../tickets/ticket-storage.js";
+import { dispatchSitemapRefresh } from "../public-content/sitemap-dispatch.js";
 
 export const expiredEventFilter = cutoff => ({
   $or: [
@@ -21,11 +22,12 @@ export async function archiveEvent(eventId, { cutoff, stamp, dependencies = {} }
   const { lease = withBillingLease, load = (id, session) => Event.findById(id).session(session || null), statistics = updateEventStatistics,
     transaction = run => mongoose.connection.transaction(run),
     dataPool = addEventToDataPool, removeProduct = deleteProduct, removeFolder = deleteFolder,
-    removeGuestTickets = deleteEventGuestTickets } = dependencies;
+    removeGuestTickets = deleteEventGuestTickets, refresh = dispatchSitemapRefresh } = dependencies;
   return lease(`event-archive:${eventId}`, async ({ assertOwned }) => {
-    let event, skip;
+    let event, skip, becameArchived;
     await transaction(async session => {
       skip = false;
+      becameArchived = false;
       event = await load(eventId, session);
       if (!event) throw new Error("Event not found");
       if (event.status === "draft") throw new Error("Drafts cannot be archived");
@@ -33,6 +35,7 @@ export async function archiveEvent(eventId, { cutoff, stamp, dependencies = {} }
         !(new Date(event.correctedDate || event.date) <= cutoff))) { event = null; return; }
       if (event.status === "archived" && event.archiveCleanupCompletedAt && !event.archiveCleanupPending) { skip = true; return; }
       await assertOwned(session);
+      becameArchived = event.status !== "archived";
       if (event.status !== "archived") await statistics(event, true, { session });
       event.status = "archived";
       event.isSaleClosed = true;
@@ -41,6 +44,11 @@ export async function archiveEvent(eventId, { cutoff, stamp, dependencies = {} }
       await event.save({ session });
     });
     if (!event || skip) return event;
+    // The status is committed before external cleanup. A later storage failure
+    // must not leave an archived event in the public sitemap.
+    if (becameArchived) {
+      try { await refresh("archived", event); } catch { /* Best effort. */ }
+    }
     // External side effects must not run inside a retried Mongo transaction.
     event.$session?.(null);
     dataPool(String(event._id || event.id), "2024-2025", false);

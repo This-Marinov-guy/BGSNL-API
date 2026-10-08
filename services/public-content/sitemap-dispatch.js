@@ -11,7 +11,10 @@ const githubToken = () => process.env.GITHUB_SITEMAP_DISPATCH_TOKEN?.trim();
 export async function dispatchSitemapRefresh(change, event) {
   const repository = githubRepository();
   const token = githubToken();
-  if (!repository || !token) return false;
+  if (!repository || !token) {
+    logIntegrationError("github", { name: "SitemapDispatchNotConfigured" }, "sitemap-dispatch");
+    return false;
+  }
 
   try {
     const response = await fetch(`https://api.github.com/repos/${repository}/dispatches`, {

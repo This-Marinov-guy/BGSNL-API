@@ -79,6 +79,7 @@ const eventSchema = new Schema({
   metadata: { type: eventMetadataSchema, default: undefined },
   createdAt: { type: Date, immutable: true, default: createCurrentDate },
   status: { type: String, required: true, default: EVENT_OPENED },
+  sitemapPastRefreshedFor: { type: Date },
   archiveCleanupPending: { type: Boolean },
   archiveCleanupCompletedAt: { type: Date },
   region: { type: String, required: true },
