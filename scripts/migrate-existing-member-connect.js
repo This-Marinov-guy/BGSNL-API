@@ -11,6 +11,7 @@ import { MEMBER_REVENUE_ACCOUNTS, MEMBER_REVENUE_PLATFORM, validMemberRevenueAll
 import { planForPrice, stripeId } from "../util/subscriptions/policy.js";
 import { memberRevenueMetadata, readMemberRevenueAllocation } from "../services/subscriptions/stripe-revenue-state.js";
 import { withBillingLease } from "../services/subscriptions/lease.js";
+import { closeRedis } from "../services/storage/redis.js";
 
 const hash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -236,7 +237,9 @@ async function main() {
         summary: full.summary, pilot: args.has("pilot") ? manifest.rows.map(row => ({ region: row.region, subscriptionId: row.subscriptionId })) : undefined,
         manifestSha256: args.get("output") ? hash(manifest) : undefined }));
     }
-  } finally { await mongoose.disconnect(); }
+  } finally {
+    try { await closeRedis(); } finally { await mongoose.disconnect(); }
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
