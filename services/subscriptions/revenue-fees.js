@@ -10,16 +10,19 @@ import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const REPORT_TYPE = "all_fees.balance_transaction_created.itemized.2";
 const COLUMNS = ["amount", "tax", "currency", "balance_transaction_id", "fee_transaction_id", "incurred_by", "incurred_by_type", "settled_via"];
-const roundCents = (micros) => {
-  const value = Number((micros + (micros < 0n ? -5000000000n : 5000000000n)) / 10000000000n);
+const FEE_UNITS_PER_EURO = 10n ** 18n;
+const FEE_UNITS_PER_CENT = FEE_UNITS_PER_EURO / 100n;
+const roundCents = (feeUnits) => {
+  const halfCent = FEE_UNITS_PER_CENT / 2n;
+  const value = Number((feeUnits + (feeUnits < 0n ? -halfCent : halfCent)) / FEE_UNITS_PER_CENT);
   if (!Number.isSafeInteger(value)) throw new Error("Fee report amount is too large");
   return value;
 };
 const decimal = (value) => {
-  if (!/^-?\d+(?:\.\d{1,12})?$/.test(value || "")) throw new Error("Invalid fee report amount");
+  if (!/^-?\d+(?:\.\d{1,18})?$/.test(value || "")) throw new Error("Invalid fee report amount");
   const negative = value.startsWith("-");
   const [whole, fraction = ""] = value.replace(/^-/, "").split(".");
-  return (BigInt(whole) * 1000000000000n + BigInt(fraction.padEnd(12, "0"))) * (negative ? -1n : 1n);
+  return (BigInt(whole) * FEE_UNITS_PER_EURO + BigInt(fraction.padEnd(18, "0"))) * (negative ? -1n : 1n);
 };
 
 export async function parseMemberFeeReport(body) {
@@ -49,11 +52,11 @@ export function allocateMemberFees(rows, statements) {
     // They require review rather than automatically billing a region again.
     if (!["balance", "invoice"].includes(row.settled_via)) { unattributed++; continue; }
     const id = share?._id || `region:${row.incurred_by}`;
-    const entry = all.get(id) || { id, accountId: share?.accountId || row.incurred_by, region: share?.region || region, micros: 0n };
-    entry.micros += decimal(row.amount);
+    const entry = all.get(id) || { id, accountId: share?.accountId || row.incurred_by, region: share?.region || region, feeUnits: 0n };
+    entry.feeUnits += decimal(row.amount);
     all.set(id, entry);
   }
-  return { allocations: [...all.values()].map(({ micros, ...entry }) => ({ ...entry, amount: roundCents(micros) })), unattributed };
+  return { allocations: [...all.values()].map(({ feeUnits, ...entry }) => ({ ...entry, amount: roundCents(feeUnits) })), unattributed };
 }
 
 // Fees can identify the refund/dispute/transfer rather than its original

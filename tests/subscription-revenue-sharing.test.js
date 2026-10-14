@@ -243,6 +243,16 @@ test("fee reports avoid charging processing fees twice, include tax once and rou
   assert.equal(result.allocations.length, 1); assert.equal(result.allocations[0].amount, 8);
   assert.equal(result.unattributed, 0);
 });
+test("Stripe fee report amounts with 18 decimal places retain subcent precision until aggregation", () => {
+  const result = allocateMemberFees([
+    feeRow({ amount: "0.340000000000000000" }),
+    feeRow({ amount: "0.004000000000000000" }),
+    feeRow({ amount: "0.004000000000000000" }),
+    feeRow({ amount: "-0.002000000000000000" }),
+  ], [shareFor()]);
+  assert.equal(result.allocations[0].amount, 35);
+  assert.throws(() => allocateMemberFees([feeRow({ amount: "0.0000000000000000001" })], [shareFor()]), /Invalid fee report amount/);
+});
 test("regional overhead, negative fee adjustments and unattributed fees remain explicit", () => {
   const result = allocateMemberFees([feeRow({ incurred_by: accountId, incurred_by_type: "account", amount: "2.00" }), feeRow({ amount: "-0.07" }), feeRow({ incurred_by: "" }), feeRow({ settled_via: "credit" })], [shareFor()]);
   assert.deepEqual(result.allocations.map(a => a.amount), [200, -7]); assert.equal(result.unattributed, 2);
