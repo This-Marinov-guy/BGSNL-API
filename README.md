@@ -92,8 +92,8 @@ AXIOM_QUERY_TOKEN=your-read-only-query-token
 #   openssl rand -hex 32
 SSR_SERVER_KEY=your-shared-ssr-secret
 
-# Optional additive Domakin Mailer connection. Existing Mailtrap/Resend sends
-# continue unchanged when these are not configured.
+# Domakin Mailer connection. The ten Bulgarian Society campaign templates
+# require this connection; ordinary legacy messages keep their existing route.
 MAILER_API_URL=https://your-domakin-mailer.example/api
 MAILER_BULGARIANSOCIETY_SECRET=your-bulgarian-society-scoped-secret
 

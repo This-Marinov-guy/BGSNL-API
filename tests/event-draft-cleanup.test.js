@@ -9,25 +9,49 @@ import {
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 test("cleanup is scoped to draft status in the dedicated collection with a strict 30-day cutoff", async () => {
-  let query;
+  let findQuery, deleteQuery;
+  const drafts = [{ _id: "a", folder: "old-folder" }, { _id: "b", folder: "shared-folder" }];
+  const remembered = [];
   const result = await deleteExpiredEventDrafts({
     now: new Date("2026-10-15T01:00:00Z"),
-    DraftModel: { deleteMany: async value => { query = value; return { deletedCount: 4 }; } },
+    DraftModel: {
+      find: value => { findQuery = value; return { select: () => ({ lean: async () => drafts }) }; },
+      deleteMany: async value => { deleteQuery = value; return { deletedCount: 2 }; },
+    },
+    rememberMedia: async draft => { remembered.push(draft._id); },
   });
   const cutoff = new Date("2026-09-15T01:00:00Z");
   assert.equal(EventDraft.collection.collectionName, "eventDrafts");
-  assert.deepEqual(query, { status: "draft", $or: [
+  assert.deepEqual(findQuery, { status: "draft", deletedAt: null, $or: [
     { createdAt: { $type: "date", $lt: cutoff } },
     { createdAt: null, "metadata.createdAt": { $type: "date", $lt: cutoff } },
   ] });
-  assert.deepEqual(result, { deletedCount: 4, cutoff });
-  assert(!JSON.stringify(query).includes("updatedAt"));
+  assert.deepEqual(remembered, ["a", "b"]);
+  assert.equal(deleteQuery, undefined);
+  assert.deepEqual(result, { deletedCount: 2, cutoff });
+  assert(!JSON.stringify(findQuery).includes("updatedAt"));
 });
 
 test("invalid clock values cannot issue a delete", async () => {
   await assert.rejects(deleteExpiredEventDrafts({ now: "invalid", DraftModel: {
     deleteMany() { assert.fail("Must not delete on an invalid clock"); },
   } }), /Invalid event draft cleanup time/);
+});
+
+test("a failed media record keeps the draft for a later retry", async () => {
+  await assert.rejects(deleteExpiredEventDrafts({ DraftModel: {
+    find: () => ({ select: () => ({ lean: async () => [{ _id: "a", folder: "draft-assets" }] }) }),
+    deleteMany: () => assert.fail("Must keep draft if its media was not recorded"),
+  }, rememberMedia: async () => { throw new Error("ledger unavailable"); } }), /ledger unavailable/);
+});
+
+test("expired drafts without media are deleted immediately", async () => {
+  let deleted;
+  await deleteExpiredEventDrafts({ DraftModel: {
+    find: () => ({ select: () => ({ lean: async () => [{ _id: "a" }] }) }),
+    deleteMany: async filter => { deleted = filter; return { deletedCount: 1 }; },
+  } });
+  assert.deepEqual(deleted, { _id: { $in: ["a"] }, status: "draft", deletedAt: null });
 });
 
 test("scheduler defaults to production worker zero, with explicit on/off overrides", () => {

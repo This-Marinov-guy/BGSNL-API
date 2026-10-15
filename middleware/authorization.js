@@ -4,7 +4,32 @@ import { findUserById } from "../services/main-services/user-service.js";
 import { accountEntitlements } from "../util/subscriptions/policy.js";
 import { reconcileAccount } from "../services/subscriptions/reconcile.js";
 import { sessions } from "../services/authentication/sessions.js";
-import { BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT } from "../util/config/defines.js";
+import { ALL_EVENT_REGIONS_ACCESS, ALL_MEMBER_REGIONS_ACCESS, BILLING_LOCKED_STATUSES, BILLING_LOCK_EXEMPT, REGIONS } from "../util/config/defines.js";
+
+const unrestricted = (roles, allowed) => roles?.some((role) => allowed.includes(role));
+const scopeFor = (roles, allowed, region) =>
+  unrestricted(roles, allowed) ? null : region;
+
+// null means all regions. A scoped value is always taken from the signed token.
+export const authorizedRegion = (req, kind = "event") => {
+  if (req.regionScope && Object.hasOwn(req.regionScope, kind)) return req.regionScope[kind];
+  if (req.account) return undefined;
+  const allowed = kind === "member" ? ALL_MEMBER_REGIONS_ACCESS : ALL_EVENT_REGIONS_ACCESS;
+  return unrestricted(req.user?.roles, allowed) ? null : req.user?.region;
+};
+
+export const regionFilter = (req, kind, requestedRegion) => {
+  const scope = authorizedRegion(req, kind);
+  if (scope === null) return requestedRegion ? { region: requestedRegion } : {};
+  if (!REGIONS.includes(scope)) throw new HttpError("No access to a regional scope", 403);
+  if (requestedRegion && requestedRegion !== scope) throw new HttpError("No access for this region", 403);
+  return { region: scope };
+};
+
+export const canAccessRegion = (req, kind, resourceRegion) => {
+  const scope = authorizedRegion(req, kind);
+  return scope === null || (REGIONS.includes(scope) && scope === resourceRegion);
+};
 
 export const createAuthMiddleware = ({ findAccount = findUserById, validateSession = sessions.validate } = {}) => async (req, res, next) => {
   const invalidSession = (message) => {
@@ -26,10 +51,16 @@ export const createAuthMiddleware = ({ findAccount = findUserById, validateSessi
     if (!account) return invalidSession("Account no longer available. Please login again.");
     if (Number(claims.sessionVersion ?? 0) !== Number(account.sessionVersion ?? 0)) return invalidSession("Session revoked. Please login again.");
     await validateSession(claims, account);
+    if (claims.region !== account.region) return invalidSession("Your region changed. Please sign in again.");
     req.account = account;
     req.authClaims = claims;
+    const effectiveRoles = account.roles.filter((role) => claims.roles.includes(role));
+    req.regionScope = Object.freeze({
+      member: scopeFor(effectiveRoles, ALL_MEMBER_REGIONS_ACCESS, claims.region),
+      event: scopeFor(effectiveRoles, ALL_EVENT_REGIONS_ACCESS, claims.region),
+    });
     req.user = { userId: account.id, email: account.email, image: account.image,
-      roles: account.roles, status: account.status, region: account.region,
+      roles: effectiveRoles, status: account.status, region: claims.region,
       customerId: account.subscription?.customerId, ...accountEntitlements(account) };
     res.set("Cache-Control", "private, no-store");
     return next();
@@ -49,7 +80,8 @@ export const requireBenefits = (benefit = "hasBenefits") => async (req, res, nex
     const result = await reconcileAccount(req.account);
     req.account = result?.user || req.account;
     const access = accountEntitlements(req.account);
-    req.user = { ...req.user, userId: req.account.id, roles: req.account.roles, ...access };
+    req.user = { ...req.user, userId: req.account.id,
+      roles: req.account.roles.filter((role) => req.authClaims?.roles.includes(role)), ...access };
     if (!access[benefit]) return next(new HttpError("Your membership benefits are unavailable. Please manage your subscription in account settings.", 403));
     return next();
   } catch { return next(new HttpError("We could not verify your subscription. Please try again shortly.", 503)); }
@@ -58,10 +90,11 @@ export const requireBenefits = (benefit = "hasBenefits") => async (req, res, nex
 export const adminMiddleware = (requiredRoles = []) => (req, res, next) =>
   authMiddleware(req, res, (error) => {
     if (error) return next(error);
-    const { status, roles } = req.account;
+    const { status } = req.account;
+    const roles = req.user.roles;
     const statusOk = status === "active" ||
       (BILLING_LOCKED_STATUSES.includes(status) && BILLING_LOCK_EXEMPT.some((role) => roles?.includes(role)));
-    if (!statusOk || !requiredRoles.some((role) => roles?.includes(role))) {
+    if (!statusOk || !requiredRoles.some((role) => roles.includes(role))) {
       return next(new HttpError("No access for such request", 403));
     }
     return next();

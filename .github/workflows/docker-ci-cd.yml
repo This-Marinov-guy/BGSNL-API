@@ -21,6 +21,7 @@ jobs:
       - name: Check migration and deployment code
         run: |
           npx eslint migrations/run.js migrations/003-normalize-breda-region.js services/migrations/runner.js tests/migration-runner.test.js tests/deploy-with-migrations.test.js
+          npx eslint services/public-content/sitemap-expiry.js services/events/archive-event.js tests/sitemap-expiry.test.js tests/archive-event.test.js
           bash -n scripts/deploy-with-migrations.sh scripts/ensure-production-redis.sh
           npx eslint scripts/check-redis.js
       - name: Verify existing Member Connect migration
@@ -51,6 +52,10 @@ jobs:
       - run: npm ci
       - name: Verify migration rollback and deployment gate
         run: npm run test:migrations
+        env:
+          BGSNL_MIGRATION_TEST_URL: mongodb://127.0.0.1:27017
+      - name: Verify event sitemap refresh transitions
+        run: node --test tests/sitemap-expiry.test.js tests/archive-event.test.js tests/public-event-age.test.js
         env:
           BGSNL_MIGRATION_TEST_URL: mongodb://127.0.0.1:27017
 

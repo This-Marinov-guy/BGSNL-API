@@ -8,7 +8,7 @@ Follow-up: [refresh sessions](refresh-sessions.md) supersedes the initial fixed-
 
 - Browser requests now use the website's same-origin `/api/...` routes. Only the Next.js server forwards the bearer JWT and server key to BGSNL-API. The API still verifies the JWT and current account permissions; public client session metadata is not an authorization credential.
 - Production cookies are `__Host-bgsnl-session`, `__Host-bgsnl-refresh` and `__Host-bgsnl-csrf`: HttpOnly, Secure, SameSite=Lax, Path=/, no Domain. Development uses unprefixed cookies without Secure on localhost ports 3000–3002.
-- Access JWTs last 15 minutes. Original login time is preserved; after day 30, logout occurs after an hour of inactivity, not during active use. Revocation can end it earlier. See the follow-up for rotation, idle tracking and single safe pre-handler retry.
+- Access JWTs last 15 minutes. Original login time is preserved; the current session deadline is 14 days after the last recorded activity. Revocation can end it earlier. See the follow-up for rotation, idle tracking and single safe pre-handler retry.
 - `/api/session/current` restores only API-verified public account state. Browser JWT responses and legacy localStorage account credentials are removed. Other existing browser storage, including preferences and guest-support conversation capabilities, is not an account session and has not been migrated in this change.
 - `/api/session/csrf` issues a signed, one-hour, session-bound CSRF value. Unsafe requests require the matching cookie/header and an exact same-origin request. Login, anonymous submissions and logout are protected too. Expired checks return an actionable error; mutations are not automatically replayed.
 - A small TTL-indexed refresh-grant record now supports rotation and per-device logout/replay revocation; it stores no raw credentials. Account-wide revocation still uses `sessionVersion`.
@@ -36,9 +36,9 @@ This does not fix the separate audit findings concerning direct integration serv
 4. Final confirmation atomically consumes the challenge, applies the credentials and increments `sessionVersion`. A changed email disconnects the old Google identity to preserve the same-email policy. Existing passkeys and account restrictions remain unchanged.
 5. The page returns to `/user#profile` with a success/error/info toast. If the browser is not authenticated, it must sign in first; the profile notice survives that navigation. The requesting browser may retain its original login deadline. Opening a confirmation link elsewhere does not silently log that browser in.
 
-`ProfileChange` stores one pending request per account, with an expiration/TTL index. Tokens have 32 random bytes and are HMAC-hashed at rest; proposed passwords are bcrypt-hashed before storage. Resending supersedes older links. Runtime expiry, single-use consumption and transaction fences are authoritative even before TTL cleanup. Email delivery uses the existing provider; no new email credentials or templates are required for the legacy provider. Domakin uses the existing generic notification template mapping.
+`ProfileChange` stores one pending request per account, with an expiration/TTL index. Tokens have 32 random bytes and are HMAC-hashed at rest; proposed passwords are bcrypt-hashed before storage. Resending supersedes older links. Runtime expiry, single-use consumption and transaction fences are authoritative even before TTL cleanup. The approval and new-address verification emails use the Domakin Mailer confirmation template.
 
-Approval-email delivery failure cancels that pending generation without changing credentials. Failure of a post-change notification does not incorrectly report that a committed change failed. As with any remote write, a lost HTTP response is ambiguous; the UI asks the user to check their profile or request another link.
+Approval-email delivery failure cancels that pending generation without changing credentials. No separate post-change email is sent. As with any remote write, a lost HTTP response is ambiguous; the UI asks the user to check their profile or request another link.
 
 ## Deployment checklist
 

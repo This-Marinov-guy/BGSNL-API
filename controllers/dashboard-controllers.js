@@ -1,33 +1,35 @@
 import MemberUser from "../models/MemberUser.js";
 import Event from "../models/Event.js";
 import HttpError from "../models/Http-error.js";
-import { extractUserFromRequest } from "../util/functions/security.js";
-import { ALL_MEMBER_REGIONS_ACCESS, ALL_EVENT_REGIONS_ACCESS, SUBSCRIPTIONS } from "../util/config/defines.js";
+import { DEFAULT_REGION, REGIONS, SUBSCRIPTIONS } from "../util/config/defines.js";
 import moment from "moment-timezone";
+import { regionFilter } from "../middleware/authorization.js";
+import { academicYearStart } from "../util/config/academic-year.js";
+import { calculateEventAverages, calculateEventTotals, calculateMemberAverages, memberMonthSnapshots } from "../services/background-services/regional-averages.js";
+import { CURRENT_ACCOUNT_FILTER } from "../util/subscriptions/policy.js";
+
+const dashboardRegionFilter = (req, kind, requestedRegion) => {
+  const filter = regionFilter(req, kind, requestedRegion);
+  if (filter.region === "breda_tilburg") {
+    return { region: { $in: ["breda_tilburg", "breda", "bread"] } };
+  }
+  if (filter.region === "unassigned") {
+    return { region: { $nin: [...REGIONS, DEFAULT_REGION, "breda", "bread"] } };
+  }
+  return filter;
+};
 
 /**
  * GET /api/dashboard/members
  * Returns all members. Admins see all cities, board/committee see only their city.
  */
 export const getMembers = async (req, res, next) => {
-  const { roles, region } = extractUserFromRequest(req);
-  const isAdmin = roles.some((r) => ALL_MEMBER_REGIONS_ACCESS.includes(r));
-
-  const filterRegion = req.query.region;
-
   try {
-    const query = {};
-
-    if (!isAdmin) {
-      // Board/committee can only see their city
-      query.region = region;
-    } else if (filterRegion) {
-      query.region = filterRegion;
-    }
+    const query = dashboardRegionFilter(req, "member", req.query.region);
 
     const users = await MemberUser.find(query)
       .select(
-        "name surname email roles region status purchaseDate expireDate subscription tickets image phone birth university otherUniversityName graduationDate course profession"
+        "name surname email roles region status joinDate purchaseDate expireDate subscription tickets image phone birth university otherUniversityName graduationDate course profession"
       )
       .lean();
 
@@ -43,7 +45,7 @@ export const getMembers = async (req, res, next) => {
     let mmr = 0;
 
     const members = users.map((user) => {
-      const isPaid = user.expireDate > now;
+      const isPaid = user.status === "active" && user.expireDate > now;
       const hasSubscription = !!user.subscription?.id;
 
       // Estimate next billing from expireDate (approximate)
@@ -72,6 +74,7 @@ export const getMembers = async (req, res, next) => {
         role: user.roles[user.roles.length - 1],
         region: user.region,
         status: user.status,
+        joinDate: user.joinDate,
         startDate: user.purchaseDate,
         expireDate: user.expireDate,
         ticketsCount: user.tickets?.length || 0,
@@ -105,6 +108,7 @@ export const getMembers = async (req, res, next) => {
       },
     });
   } catch (err) {
+    if (err instanceof HttpError) return next(err);
     console.error("Error fetching members:", err);
     return next(new HttpError("Failed to fetch members", 500));
   }
@@ -115,45 +119,48 @@ export const getMembers = async (req, res, next) => {
  * Returns all events with analytics data. Admins see all cities, board/committee see only their city.
  */
 export const getEventsAnalytics = async (req, res, next) => {
-  const { roles, region } = extractUserFromRequest(req);
-  const isAdmin = roles.some((r) => ALL_EVENT_REGIONS_ACCESS.includes(r));
-
-  const filterRegion = req.query.region;
   const fromDate = req.query.from;
   const toDate = req.query.to;
 
   try {
-    const query = { status: { $nin: ["archived", "draft"] } };
-
-    if (!isAdmin) {
-      query.region = region;
-    } else if (filterRegion) {
-      query.region = filterRegion;
-    }
+    const query = { status: { $nin: ["draft", "cancelled", "canceled"] },
+      cancellationRequestedAt: null,
+      ...dashboardRegionFilter(req, "event", req.query.region) };
 
     if (fromDate || toDate) {
-      query.date = {};
+      const dateRange = {};
       if (fromDate) {
-        query.date.$gte = moment(fromDate, "YYYY-MM-DD")
-          .startOf("day")
-          .toDate();
+        const start = moment.tz(fromDate, "YYYY-MM-DD", true, "Europe/Amsterdam");
+        if (!start.isValid()) throw new HttpError("Choose a valid start date", 422);
+        dateRange.$gte = start.startOf("day").toDate();
       }
       if (toDate) {
-        query.date.$lte = moment(toDate, "YYYY-MM-DD").endOf("day").toDate();
+        const end = moment.tz(toDate, "YYYY-MM-DD", true, "Europe/Amsterdam");
+        if (!end.isValid()) throw new HttpError("Choose a valid end date", 422);
+        dateRange.$lte = end.endOf("day").toDate();
       }
+      if (dateRange.$gte && dateRange.$lte && dateRange.$gte > dateRange.$lte) {
+        throw new HttpError("Start date must be before end date", 422);
+      }
+      query.$or = [
+        { correctedDate: dateRange },
+        { correctedDate: null, date: dateRange },
+      ];
     }
 
     const events = await Event.find(query)
       .select(
-        "title poster date region location product isFree isMemberFree guestList ticketLimit status extraInputsForm addOns"
+        "title poster date correctedDate createdAt region location product isFree isMemberFree guestList ticketLimit status extraInputsForm addOns cancellationRequestedAt"
       )
       .sort({ date: -1 })
       .lean();
 
     const analytics = events.map((event) => {
       const guestList = event.guestList || [];
+      const totals = calculateEventTotals([event]);
       const attended = guestList.filter((g) => g.status === 1).length;
       const totalGuests = guestList.length;
+      const nonRefundedGuests = guestList.filter((guest) => !guest.refunded).length;
 
       // Calculate revenue from guest list
       let revenue = 0;
@@ -199,11 +206,12 @@ export const getEventsAnalytics = async (req, res, next) => {
         _id: event._id,
         title: event.title,
         poster: event.poster,
-        date: event.date,
+        date: event.correctedDate || event.date,
         region: event.region,
         location: event.location,
         ticketCost,
         totalTickets: totalGuests,
+        totalGuests: nonRefundedGuests,
         ticketLimit: event.ticketLimit,
         attended,
         presence:
@@ -211,6 +219,11 @@ export const getEventsAnalytics = async (req, res, next) => {
             ? Math.round((attended / totalGuests) * 100)
             : 0,
         revenue: Math.round(revenue * 100) / 100,
+        netRevenue: totals.revenue,
+        refunds: totals.refunds,
+        ticketCount: totals.ticketCount,
+        memberTickets: totals.memberTickets,
+        guestTickets: totals.guestTickets,
         status: event.status,
         columns: {
           addOns: Boolean(event.addOns?.isEnabled && event.addOns.items?.length),
@@ -240,6 +253,7 @@ export const getEventsAnalytics = async (req, res, next) => {
       (sum, e) => sum + e.totalTickets,
       0
     );
+    const totalGuests = analytics.reduce((sum, event) => sum + event.totalGuests, 0);
 
     return res.status(200).json({
       events: analytics,
@@ -247,11 +261,119 @@ export const getEventsAnalytics = async (req, res, next) => {
         totalRevenue: Math.round(totalRevenue * 100) / 100,
         totalPresence,
         totalTicketsSold,
+        totalGuests,
         totalEvents: analytics.length,
+        averages: calculateEventAverages(events),
       },
     });
   } catch (err) {
+    if (err instanceof HttpError) return next(err);
     console.error("Error fetching events analytics:", err);
     return next(new HttpError("Failed to fetch events analytics", 500));
   }
+};
+
+const statisticsRange = (query) => {
+  const today = moment().tz("Europe/Amsterdam");
+  const from = moment.tz(query.from || moment(academicYearStart()).tz("Europe/Amsterdam").format("YYYY-MM-DD"),
+    "YYYY-MM-DD", true, "Europe/Amsterdam");
+  const to = moment.tz(query.to || today.format("YYYY-MM-DD"), "YYYY-MM-DD", true, "Europe/Amsterdam");
+  if (!from.isValid() || !to.isValid() || from.isAfter(to, "day")) {
+    throw new HttpError("Choose a valid statistics date range", 422);
+  }
+  return { from: from.startOf("day"), to: to.endOf("day") };
+};
+
+/** Aggregate-only response for every dashboard role. Account identities stay on the management endpoint. */
+export const getMemberStatistics = async (req, res, next) => {
+  let range;
+  try { range = statisticsRange(req.query); }
+  catch (error) { return next(error); }
+  const scopedResponse = {
+    status(code) { res.status(code); return this; },
+    async json(payload) {
+      const monthly = {};
+      let totalActive = 0;
+      let totalInactive = 0;
+      let mmr = 0;
+      for (const member of payload.members || []) {
+        if (CURRENT_ACCOUNT_FILTER.status.$nin.includes(member.status)) continue;
+        if (member.isPaid) totalActive += 1;
+        else totalInactive += 1;
+        mmr += Number(member.monthlyRevenue) || 0;
+
+        const joinedAt = member.joinDate || member.startDate;
+        if (!joinedAt) continue;
+        const joined = moment(joinedAt).tz("Europe/Amsterdam");
+        if (!joined.isValid() || joined.isBefore(range.from) || joined.isAfter(range.to)) continue;
+        const month = joined.format("YYYY-MM");
+        monthly[month] = (monthly[month] || 0) + 1;
+      }
+      const region = regionFilter(req, "member", req.query.region).region || "national";
+      const from = range.from.toDate();
+      const to = range.to.toDate();
+      const now = new Date();
+      const averages = calculateMemberAverages(payload.members || [], from, to, now);
+      const activeMonthly = Object.fromEntries(memberMonthSnapshots(payload.members || [], from, to, now)
+        .map(({ month, active }) => [month, active]));
+      // The benchmark contains aggregates only; identities remain on the scoped management endpoint.
+      const nationalAverages = region === "national" ? averages : calculateMemberAverages(
+        await MemberUser.find(CURRENT_ACCOUNT_FILTER)
+          .select("status joinDate purchaseDate expireDate")
+          .lean(), from, to, now,
+      );
+      return res.json({ region,
+        summary: { totalActive, totalInactive, mmr: Math.round(mmr * 100) / 100 }, monthly, activeMonthly,
+        averages, nationalAverages,
+      });
+    },
+  };
+  return getMembers(req, scopedResponse, next);
+};
+
+/** Aggregate-only response for every dashboard role. Ticket identities stay on the management endpoint. */
+export const getEventStatistics = async (req, res, next) => {
+  let range;
+  try { range = statisticsRange(req.query); }
+  catch (error) { return next(error); }
+  let eventOptions;
+  try {
+    eventOptions = await Event.find({ status: { $nin: ["draft", "cancelled", "canceled"] },
+      cancellationRequestedAt: null,
+      ...dashboardRegionFilter(req, "event", req.query.region) })
+      .select("_id title date correctedDate")
+      .sort({ date: -1 })
+      .lean();
+  } catch (error) {
+    return next(error instanceof HttpError ? error : new HttpError("Failed to fetch event statistics", 500));
+  }
+  const scopedRequest = { ...req, query: { ...req.query,
+    from: range.from.format("YYYY-MM-DD"), to: range.to.format("YYYY-MM-DD") } };
+  const scopedResponse = {
+    status(code) { res.status(code); return this; },
+    async json(payload) {
+      const region = regionFilter(req, "event", req.query.region).region || "national";
+      const averages = payload.summary?.averages;
+      const nationalAverages = region === "national" ? averages : calculateEventAverages(
+        await Event.find({ status: { $nin: ["draft", "cancelled", "canceled"] }, cancellationRequestedAt: null,
+          $or: [
+            { correctedDate: { $gte: range.from.toDate(), $lte: range.to.toDate() } },
+            { correctedDate: null, date: { $gte: range.from.toDate(), $lte: range.to.toDate() } },
+          ] })
+          .select("status date correctedDate createdAt isFree product guestList cancellationRequestedAt")
+          .lean(),
+      );
+      return res.json({ region,
+        eventOptions: eventOptions.map((event) => ({
+        _id: event._id, title: event.title, date: event.correctedDate || event.date,
+      })), events: (payload.events || []).map((event) => ({
+        _id: event._id, title: event.title, date: event.date, region: event.region,
+        revenue: event.netRevenue, refunds: event.refunds, ticketCount: event.ticketCount,
+        memberTickets: event.memberTickets, guestTickets: event.guestTickets,
+        totalGuests: event.totalGuests, ticketLimit: event.ticketLimit,
+      })), averages, nationalAverages });
+    },
+  };
+  try { return await getEventsAnalytics(scopedRequest, scopedResponse, next); }
+  catch (error) { return next(error instanceof HttpError ? error : new HttpError("Failed to fetch event statistics", 500)); }
 };

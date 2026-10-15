@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { monthlyPeriod, nextMonthlySummaryTime, summaryIsDue, isActiveSummaryAlumni, validateNews, safeHttpsUrl } from "../services/monthly-summary/policy.js";
-import { loadMonthlySnapshot, loadMonthlyRecipients, claimMonthlyDelivery, freezeMonthlySnapshot, saveMonthlyNews } from "../services/monthly-summary/data.js";
+import { loadMonthlyArticles, loadMonthlySnapshot, loadMonthlyRecipients } from "../services/monthly-summary/data.js";
 import { buildMonthlySummaryEmail } from "../services/monthly-summary/email.js";
-import { monthlySummaryConfig, processMonthlySummary, startMonthlySummaryWorker } from "../services/monthly-summary/worker.js";
+import { MONTHLY_SUPPORTER_SUMMARY_TEMPLATE, monthlySummaryConfig, processMonthlySummary, startMonthlySummaryWorker } from "../services/monthly-summary/worker.js";
 import { createMonthlySummaryControllers } from "../controllers/monthly-summary-controller.js";
 
 const now = new Date("2026-10-31T22:59:00Z");
-const snapshot = { month: "2026-10", label: "October 2026", members: 12, alumni: 3,
-  cutoff: now.toISOString(), news: [], events: [] };
+const snapshot = { month: "2026-10", label: "October 2026", members: 12, alumni: 3, ticketsSold: 0,
+  cutoff: now.toISOString(), articles: [], news: [], events: [] };
 const active = { email: "alumni@example.com", status: "active", tier: 2, notificationTerms: true,
   notificationTypeTerms: "whatsapp & email", expireDate: new Date("2026-12-01"), roles: ["alumni"],
   subscription: { id: "sub_paid", hasBenefits: true, lockReason: null } };
@@ -56,10 +56,11 @@ test("snapshot includes archived events, uses corrected dates, excludes hidden/c
   let query, countsPeriod;
   const result = await loadMonthlySnapshot("2026-10", { now, draft: { news: [] },
     EventModel: { find: input => { query = input; return queryResult([
-      { _id: "event2", title: "Second", date: "2026-10-02", correctedDate: "2026-10-20", region: "amsterdam", poster: "https://example.com/poster.png" },
-      { _id: "event1", title: "First", date: "2026-10-01", region: "groningen", poster: "javascript:bad" },
+      { _id: "event2", title: "Second", date: "2026-10-02", correctedDate: "2026-10-20", region: "amsterdam", poster: "https://example.com/poster.png", guestList: [{ refunded: false }, { refunded: true }, {}] },
+      { _id: "event1", title: "First", date: "2026-10-01", region: "groningen", poster: "javascript:bad", guestList: [{ refunded: false }] },
     ]); } },
     loadCounts: async input => { countsPeriod = input; return { totals: { members: 4, alumni: 2 } }; },
+    loadArticles: async () => [{ title: "October stories", description: "New voices", url: "https://example.com/article" }],
   });
   assert.deepEqual(query.status.$nin, ["draft", "cancelled", "canceled"]);
   assert.deepEqual(query.hidden, { $ne: true });
@@ -70,11 +71,36 @@ test("snapshot includes archived events, uses corrected dates, excludes hidden/c
   assert.equal(result.events[0].poster, "");
   assert.equal(result.members, 4);
   assert.equal(result.alumni, 2);
+  assert.equal(result.ticketsSold, 3);
+  assert.equal(result.articles[0].title, "October stories");
 });
 
-test("published snapshots are reused without recalculating history", async () => {
-  assert.deepEqual(await loadMonthlySnapshot("2026-10", { now, draft: { snapshot },
-    EventModel: { find: () => assert.fail("Frozen data should be reused") } }), snapshot);
+test("snapshot is calculated live rather than reused from a saved draft", async () => {
+  const result = await loadMonthlySnapshot("2026-10", { now, draft: { snapshot },
+    EventModel: { find: () => queryResult([]) },
+    loadCounts: async () => ({ totals: { members: 7, alumni: 2 } }),
+    loadArticles: async () => [],
+  });
+  assert.equal(result.members, 7);
+  assert.deepEqual(result.news, []);
+});
+
+test("monthly articles use the publication month and omit translated Bulgarian posts", async () => {
+  const period = monthlyPeriod("2026-10", now);
+  const articles = await loadMonthlyArticles(period, {
+    blogId: "example.wordpress.com",
+    fetchPage: async () => [
+      { id: 10, date_gmt: "2026-10-15T12:00:00", title: { rendered: "Autumn &amp; Community" },
+        excerpt: { rendered: "<p>Friends met &amp; shared stories.</p>" },
+        content: { rendered: '<figure><img src="https://example.com/article-photo.jpg?w=600&amp;h=600"></figure>' } },
+      { id: 11, date_gmt: "2026-10-15T12:00:00", title: { rendered: "Bulgarian translation" } },
+      { id: 12, date_gmt: "2026-09-30T21:59:59", title: { rendered: "Too early" } },
+    ],
+    loadTranslations: async () => ["10", "11"],
+  });
+  assert.deepEqual(articles, [{ title: "Autumn & Community", description: "Friends met & shared stories.",
+    image: "https://example.com/article-photo.jpg?w=600&h=600",
+    url: "https://www.bulgariansociety.nl/articles/10/autumn-community" }]);
 });
 
 test("news is optional, bounded, validated and escaped in email HTML", () => {
@@ -83,74 +109,68 @@ test("news is optional, bounded, validated and escaped in email HTML", () => {
   assert.throws(() => validateNews([{ title: "Title", body: "Text", url: "javascript:alert(1)" }]), /HTTPS/);
   assert.throws(() => validateNews(Array.from({ length: 11 }, () => ({ title: "Title", body: "Body" }))), /10/);
   assert.equal(safeHttpsUrl("https://user:password@example.com"), "");
-  const email = buildMonthlySummaryEmail({ ...snapshot,
+  const email = buildMonthlySummaryEmail({ ...snapshot, ticketsSold: 18,
     events: [{ title: '<img src=x onerror="alert(1)">', date: "2026-10-12", poster: "https://example.com/poster.png", url: "https://example.com/event" }],
+    articles: [{ title: "October stories", description: "From our community", image: "https://example.com/article-photo.jpg",
+      url: "https://www.bulgariansociety.nl/articles/10/october-stories" }],
     news: validateNews([{ title: "<script>bad</script>", body: "Line one\nLine two", url: "https://example.com/news" }]),
   });
   assert.match(email.html, /Thank you for supporting Bulgarian Society Netherlands/);
+  assert.match(email.htmlBody, /Thank you for supporting Bulgarian Society Netherlands/);
+  assert.doesNotMatch(email.htmlBody, /<body|<html/i);
   assert.match(email.html, /poster.png/);
-  assert.match(email.html, /12 October 2026/);
+  assert.match(email.htmlBody, /class="monthly-poster-grid"/);
+  assert.doesNotMatch(email.htmlBody, /class="bgsnl-event-preview"/);
+  assert.match(email.htmlBody, /class="monthly-growth"/);
+  assert.match(email.htmlBody, /bgsnl-monthly-member-20261011\.png" width="32" height="32" alt=""/);
+  assert.match(email.htmlBody, /bgsnl-monthly-alumni-20261011\.png" width="32" height="32" alt=""/);
+  assert.match(email.htmlBody, /bgsnl-monthly-ticket-20261011\.png" width="32" height="32" alt=""/);
+  assert.match(email.htmlBody, />18<\/strong>total tickets sold/);
+  assert.match(email.htmlBody, />12<\/strong>new members/);
+  assert.match(email.htmlBody, />3<\/strong>new alumni/);
+  assert.doesNotMatch(email.htmlBody, /12\.10 \| 02:00/);
+  assert.match(email.text, /12\.10 \| 02:00/);
+  assert.match(email.htmlBody, /Articles of the month/);
+  assert.match(email.htmlBody, /class="monthly-article-row"/);
+  assert.match(email.htmlBody, /article-photo\.jpg" width="112" height="112" alt=""/);
+  assert.match(email.htmlBody, /October stories<\/strong><a href="https:\/\/www\.bulgariansociety\.nl\/articles\/10\/october-stories"[^>]*min-height:44px[^>]*>Read more<\/a>/);
+  assert.doesNotMatch(email.htmlBody, /From our community/);
+  assert.match(email.htmlBody, /Community updates/);
   assert.match(email.html, /&lt;script&gt;/);
   assert.doesNotMatch(email.html, /<script>|<img src=x/);
   assert.match(email.html, /Line one<br>Line two/);
-  assert.match(email.text, /12 new members and 3 new alumni/);
-  assert.doesNotMatch(buildMonthlySummaryEmail(snapshot).html, /Society news/);
+  assert.match(email.text, /12 new members/);
+  assert.match(email.text, /3 new alumni/);
+  assert.match(email.text, /Total tickets sold: 18/);
+  assert.doesNotMatch(buildMonthlySummaryEmail(snapshot).html, /Articles of the month|Community updates|Figures as of/);
   assert.match(buildMonthlySummaryEmail(snapshot).html, /No events took place/);
+  const noGrowth = buildMonthlySummaryEmail({ ...snapshot, members: 0, alumni: 0 });
+  assert.doesNotMatch(noGrowth.htmlBody, /Our community grew|monthly-member|monthly-alumni|new members|new alumni/);
+  const oneGrowth = buildMonthlySummaryEmail({ ...snapshot, members: 0, alumni: 2 });
+  assert.doesNotMatch(oneGrowth.htmlBody, /monthly-member|new members/);
+  assert.match(oneGrowth.htmlBody, /monthly-alumni|new alumni/);
 });
 
-test("draft saves use revision checks and reject closed months", async () => {
-  let query, options;
-  const SummaryModel = { findOneAndUpdate: (filter, _update, config) => {
-    query = filter; options = config; return { lean: async () => ({ _id: "2026-10", revision: 2, news: [] }) };
-  } };
-  await saveMonthlyNews({ month: "2026-10", revision: 1, news: [], userId: "admin" }, { now: new Date("2026-10-01"), SummaryModel });
-  assert.deepEqual(query, { _id: "2026-10", revision: 1, publishedAt: null });
-  assert.equal(options.upsert, false);
-  await assert.rejects(saveMonthlyNews({ month: "2026-10", revision: 1, news: [] }, { now, SummaryModel }), /closed/);
-  const conflict = { findOneAndUpdate: () => ({ lean: async () => null }) };
-  await assert.rejects(saveMonthlyNews({ month: "2026-10", revision: 1, news: [] }, { now: new Date("2026-10-01"), SummaryModel: conflict }), /changed/);
-});
-
-test("atomic publication uses latest saved news and reuses another worker's snapshot", async () => {
-  const SummaryModel = { findOneAndUpdate: (_filter, pipeline) => {
-    assert.deepEqual(pipeline[1], { $set: { "snapshot.news": "$news" } });
-    assert.deepEqual(pipeline[0].$set.snapshot, { $literal: snapshot });
-    return { lean: async () => ({ snapshot }) };
-  } };
-  assert.deepEqual(await freezeMonthlySnapshot("2026-10", snapshot, { now, SummaryModel }), snapshot);
-  const concurrent = { findOneAndUpdate: () => ({ lean: async () => { throw { code: 11000 }; } }),
-    findById: () => ({ lean: async () => ({ snapshot }) }) };
-  assert.deepEqual(await freezeMonthlySnapshot("2026-10", snapshot, { now, SummaryModel: concurrent }), snapshot);
-});
-
-test("durable recipient claim prevents repeat attempts across process guards", async () => {
-  const ids = new Set();
-  const DeliveryModel = { create: async document => {
-    assert.equal(document.status, "attempted");
-    assert.doesNotMatch(document._id, /@/);
-    if (ids.has(document._id)) throw { code: 11000 };
-    ids.add(document._id);
-  } };
-  assert.ok(await claimMonthlyDelivery("2026-10", " User@Example.com ", { now, DeliveryModel }));
-  assert.equal(await claimMonthlyDelivery("2026-10", "user@example.com", { now, DeliveryModel }), null);
-  assert.ok(await claimMonthlyDelivery("2026-11", "user@example.com", { now, DeliveryModel }));
-});
-
-test("monthly job combines audiences, isolates provider failure and never blindly retries", async () => {
-  const claimed = new Set(), finishes = [], messages = [];
-  const options = { now, config: { enabled: true, internalEmails: ["internal@example.com"] },
-    loadSnapshot: async () => snapshot, freeze: async (_month, data) => data,
+test("monthly job sends as one Mailer campaign batch and relies on its sheet log", async () => {
+  const messages = [];
+  const result = await processMonthlySummary({ now, config: { enabled: true, internalEmails: [] },
+    loadSnapshot: async () => snapshot,
     loadRecipients: async () => ({ emails: ["alumni@example.com", "internal@example.com"] }),
-    claim: async (month, email) => { const id = `${month}:${email}`; if (claimed.has(id)) return null; claimed.add(id); return id; },
-    finish: async (id, status) => finishes.push({ id, status }),
-    send: async message => { messages.push(message); if (message.receiver === "alumni@example.com") throw new Error("timeout"); },
-  };
-  const first = await processMonthlySummary(options);
-  assert.equal(first.sent, 1); assert.equal(first.failed, 1);
-  assert.deepEqual(finishes.map(entry => entry.status), ["uncertain", "sent"]);
-  const second = await processMonthlySummary(options);
-  assert.equal(second.sent, 0); assert.equal(second.skipped, 2);
+    send: async (template, receiver, variables, options) => {
+      messages.push({ template, receiver, variables, options });
+      if (receiver === "alumni@example.com") throw new Error("timeout");
+    },
+  });
+  assert.equal(result.sent, 1);
+  assert.equal(result.failed, 1);
   assert.equal(messages.length, 2);
+  assert.equal(messages[0].template, MONTHLY_SUPPORTER_SUMMARY_TEMPLATE);
+  assert.match(messages[0].options.operationId, /^[0-9a-f-]{36}$/);
+  assert.match(messages[0].variables.subject, /October 2026/);
+  assert.doesNotMatch(messages[0].variables.html, /<body|<html/i);
+  assert.equal(messages[0].options.bulk.batchType, "monthly_supporter_summary");
+  assert.equal(messages[0].options.bulk.totalRecipients, 2);
+  assert.equal(messages[0].options.bulk.batchId, messages[1].options.bulk.batchId);
 });
 
 test("disabled or off-schedule jobs cannot send or query", async () => {
@@ -180,13 +200,13 @@ test("worker bounds timers below 24h and sends only at month end, never on start
 
 test("preview only exposes counts and email content, never recipient addresses", async () => {
   const controllers = createMonthlySummaryControllers({ now: () => new Date("2026-10-01"),
-    getConfig: () => ({ internalEmails: [] }), loadDraft: async () => ({ news: [], revision: 0 }),
+    getConfig: () => ({ internalEmails: [] }),
     loadSnapshot: async () => snapshot,
     loadRecipients: async () => ({ emails: ["private@example.com"], alumniCount: 1, internalCount: 0 }),
   });
   let response;
   await controllers.get({ params: { month: "2026-10" } }, { json: body => { response = body; } }, error => { throw error; });
-  assert.equal(response.editable, true);
+  assert.equal(response.month, "2026-10");
   assert.equal(response.recipients.total, 1);
   assert.doesNotMatch(JSON.stringify(response), /private@example.com/);
 });

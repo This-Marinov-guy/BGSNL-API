@@ -40,6 +40,11 @@ test("job filters accept only supported statuses and bounded pages", () => {
   assert.equal(normalizeJobFilter("all", 51), null);
 });
 
+test("Mongo history availability is reported when the database is offline", async () => {
+  const result = await jobSummary({ getQueue: () => ({ getJobCounts: async () => ({}) }) });
+  assert.deepEqual(result.sources, { spreadsheetSync: true, history: false, marketingCapture: true });
+});
+
 test("monitoring counts failed, pending and completed durable jobs", async () => {
   assert.deepEqual(await jobSummary({ getQueue, model }), { available: true,
     sources: { spreadsheetSync: true, history: true, marketingCapture: true }, counts: { failed: 3, pending: 2, completed: 2 } });

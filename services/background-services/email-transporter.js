@@ -1,13 +1,14 @@
 import { sendEmail, useDomakinMailer, resolveDomakinResendTemplate } from "./email-provider.js";
 import { queueDomakinTemplateEmail } from "./domakin-mailer.js";
-import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
+import { logIntegrationError, logIntegrationRequest, logOperationalError } from "../../middleware/axiom-logger.js";
 import { jobNameFromKey, observeJob } from "../monitoring/job-history.js";
 import { Resend } from "resend";
 import dotenv from "dotenv";
 import { WHATS_APP } from "../../util/config/LINKS.js";
-import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE, ALUMNI_TEMPLATE, EVENT_DRAFT_REMINDER_TEMPLATE } from "../../util/config/defines.js";
+import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE, ALUMNI_TEMPLATE, EVENT_DRAFT_REMINDER_TEMPLATE, REGIONS } from "../../util/config/defines.js";
+import { createGuestSignupLink } from "../events/guest-signup-prefill.js";
+import { formatRegionBadgeLabel, getRegionBadgeTheme } from "../../util/config/region-badges.js";
 import moment from "moment-timezone";
-import { MOMENT_DATE_TIME } from "../../util/functions/dateConvert.js";
 export { queueDomakinTemplateEmail } from "./domakin-mailer.js";
 dotenv.config();
 
@@ -79,6 +80,37 @@ const sender = {
 
 const resendSender = `${NO_REPLY_EMAIL_NAME} <${NO_REPLY_EMAIL}>`;
 
+const safePosterUrl = value => {
+  if (typeof value !== "string" || value.length > 2048) return "";
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
+  } catch { return ""; }
+};
+
+export const buildGuestTicketSignupUrl = ({ email, name, phone = "", region }, options) => {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!REGIONS.includes(region) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return "";
+  const [firstName = "", ...surname] = String(name || "").trim().split(/\s+/).filter(Boolean);
+  const safePhone = /^\+?[\d\s()-]{8,40}$/.test(String(phone || "")) ? String(phone).trim() : "";
+  return createGuestSignupLink({ email: normalizedEmail, region, name: firstName,
+    surname: surname.join(" "), phone: safePhone }, options);
+};
+
+export const buildTicketTemplateVariables = ({ eventName, eventDate, guestName, tickets,
+  timezone = "Europe/Amsterdam", poster = "", signupUrl = "" }) => {
+  const ticketImages = Array.isArray(tickets) ? tickets : [tickets];
+  return { template_variables: {
+    eventName,
+    eventDate: moment(eventDate).tz(timezone).format("DD.MM | HH:mm"),
+    guestName,
+    tickets: ticketImages,
+    ticketUrl: ticketImages[0] || "",
+    poster: safePosterUrl(poster),
+    signupUrl,
+  } };
+};
+
 const sendTicketEmail = (
   type,
   receiver,
@@ -86,8 +118,19 @@ const sendTicketEmail = (
   eventDate,
   guestName,
   tickets,
-  timezone = "Europe/Amsterdam"
+  timezone = "Europe/Amsterdam",
+  poster = "",
+  guestDetails = {}
 ) => {
+  let signupUrl = "";
+  if (type === "guest" && guestDetails.region) {
+    try {
+      signupUrl = buildGuestTicketSignupUrl({ email: receiver, name: guestName,
+        phone: guestDetails.phone, region: guestDetails.region });
+    } catch (error) {
+      logOperationalError("guest-ticket.signup-prefill", error);
+    }
+  }
   enqueueMail(`ticket:${type}:${receiver}:${eventName}:${eventDate}`, async () => {
     const recipients = [
       { email: receiver },
@@ -98,16 +141,8 @@ const sendTicketEmail = (
       from: sender,
       to: recipients,
       template_uuid,
-      template_variables: {
-        template_variables: {
-          eventName,
-          eventDate: `${moment(eventDate)
-            .tz(timezone)
-            .format(MOMENT_DATE_TIME)} (${timezone} time)`,
-          guestName,
-          tickets: Array.isArray(tickets) ? tickets : [tickets],
-        },
-      },
+      template_variables: buildTicketTemplateVariables({ eventName, eventDate, guestName,
+        tickets, timezone, poster, signupUrl }),
     });
   });
 };
@@ -236,21 +271,26 @@ export const sendResendTemplateEmail = (
       ...templateVariables
     } = variables;
 
-    const response = await resend.emails.send({
-      from: resendSender,
-      to: receiver,
-      subject,
-      template: {
-        id: templateId,
-        variables: {
-          name,
-          ...templateVariables,
+    const started = Date.now();
+    try {
+      const response = await resend.emails.send({
+        from: resendSender,
+        to: receiver,
+        subject,
+        template: {
+          id: templateId,
+          variables: {
+            name,
+            ...templateVariables,
+          },
         },
-      },
-    });
-
-    if (response?.error) {
-      throw new Error(response.error.message || "Resend email failed");
+      });
+      if (response?.error) throw new Error(response.error.message || "Resend email failed");
+      logIntegrationRequest("resend", "send-email", { method: "POST", durationMs: Date.now() - started });
+    } catch (error) {
+      logIntegrationRequest("resend", "send-email", { method: "POST", outcome: "error",
+        status: error?.statusCode || error?.status, durationMs: Date.now() - started });
+      throw error;
     }
   });
 };
@@ -305,14 +345,25 @@ export const sendCustomerSupportEmail = (message) => {
 
 // The branded header/footer shell lives in Domakin Mailer's own
 // "event-draft-reminder" template (templates/bulgariansociety/event-draft-reminder--<uuid>.html).
-export const buildEventDraftReminderEmail = ({ eventTitle, continueUrl }) => {
+export const buildEventDraftReminderEmail = ({ eventTitle, eventDate, poster, region, continueUrl }) => {
   const title =
     String(eventTitle || "Untitled event").replace(/[\r\n]+/g, " ").trim() ||
     "Untitled event";
+  const date = eventDate ? moment(eventDate) : null;
+  const badgeTheme = getRegionBadgeTheme(region);
 
   return {
     templateId: EVENT_DRAFT_REMINDER_TEMPLATE,
-    templateVariables: { eventTitle: title, continueUrl },
+    templateVariables: {
+      eventTitle: title,
+      eventDate: date?.isValid() ? date.tz("Europe/Amsterdam").format("DD.MM | HH:mm") : "",
+      poster: safePosterUrl(poster),
+      regionLabel: formatRegionBadgeLabel(region),
+      regionBadgeBackground: badgeTheme.background,
+      regionBadgeBorder: badgeTheme.border,
+      regionBadgeColor: badgeTheme.color,
+      continueUrl,
+    },
   };
 };
 
@@ -320,9 +371,12 @@ export const sendEventDraftReminderEmail = ({
   receiver,
   eventId,
   eventTitle,
+  eventDate,
+  poster,
+  region,
   continueUrl,
 }) => {
-  const { templateId, templateVariables } = buildEventDraftReminderEmail({ eventTitle, continueUrl });
+  const { templateId, templateVariables } = buildEventDraftReminderEmail({ eventTitle, eventDate, poster, region, continueUrl });
 
   enqueueMail(`event-draft-reminder:${eventId}:${receiver}`, async () => {
     await queueDomakinTemplateEmail(templateId, receiver, templateVariables);

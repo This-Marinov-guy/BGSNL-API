@@ -125,6 +125,7 @@ export const updateEventStatistics = async (event, increment = true, { session }
       console.log("Event statistics document not found. Creating new one...");
       eventStatistics = new Statistics({
         type: "event",
+        calculationType: "on-demand",
         data: {
           count: 0,
           totalTickets: 0,
@@ -132,6 +133,8 @@ export const updateEventStatistics = async (event, increment = true, { session }
         },
       });
     }
+
+    eventStatistics.calculationType = "on-demand";
 
     // Ensure data object exists
     if (!eventStatistics.data) {

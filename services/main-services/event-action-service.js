@@ -529,7 +529,9 @@ export const calculateFinalPrice = (event, userType = 'guest', promocodeString =
  * @param {string[]|null} ids - Optional array of guestList entry IDs to refund; if omitted, all non-refunded guests are processed
  * @returns {{ eventId, summary: { total, refunded, skipped, failed }, results: { success, skipped, failed } }}
  */
-export const refundEventTickets = async (eventId, reason = null, region = null, ids = null) => {
+export const refundEventTickets = async (eventId, reason = null, region = null, ids = null, options = {}) => {
+  const EventModel = options.dependencies?.EventModel || Event;
+  const refundPayment = options.dependencies?.refundPayment || refundStripePayment;
   const stripeRegion = region || DEFAULT_REGION;
   console.log(
     `[refundEventTickets] Start | eventId=${eventId} | reason=${reason ?? "none"} | region=${stripeRegion} | targets=${ids ? `[${ids.join(", ")}]` : "all"}`
@@ -537,7 +539,7 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
 
   let event;
   try {
-    event = await Event.findById(eventId);
+    event = await EventModel.findById(eventId);
   } catch (err) {
     logOperationalError("service.refund-event-lookup", err);
     console.error(`[refundEventTickets] DB error fetching event ${eventId}:`, err.message);
@@ -552,11 +554,19 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
   console.log(`[refundEventTickets] Event found: "${event.title}" | event.region=${event.region} | stripeRegion=${stripeRegion} | guestList size=${event.guestList.length}`);
 
   // Determine which guests to process
-  const candidates = ids
+  const selected = ids
     ? event.guestList.filter((g) => ids.includes(g._id.toString()))
     : event.guestList;
+  // A full charge belongs to every ticket created by that checkout. Selecting
+  // one row must never leave its siblings active after refunding the charge.
+  const groupIds = new Set((options.mode === "partial" && !options.expandGroup ? [] : selected)
+    .map(g => g.transactionId).filter(id => id && id !== "-"));
+  const candidates = ids
+    ? event.guestList.filter(g => ids.includes(g._id.toString()) || groupIds.has(g.transactionId))
+    : event.guestList;
 
-  const guestsToRefund = candidates.filter((g) => !g.refunded);
+  const guestsToRefund = candidates.filter((g) => !g.refunded ||
+    (options.refundRemainingPayments && g.transactionId && g.transactionId !== "-"));
   const alreadyRefunded = candidates.length - guestsToRefund.length;
 
   if (alreadyRefunded > 0) {
@@ -567,30 +577,47 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
 
   const results = { success: [], skipped: [], failed: [] };
 
+  const paymentGroups = new Map();
   for (const guest of guestsToRefund) {
-    const guestId = guest._id.toString();
-
-    if (!guest.transactionId || guest.transactionId === "-") {
-      // Free or manually added ticket — no Stripe charge to reverse
-      console.log(`[refundEventTickets] Guest ${guestId} (${guest.name}) has no transaction — marking refunded without Stripe call`);
+    const transactionId = guest.transactionId;
+    if (!transactionId || transactionId === "-") {
       guest.refunded = true;
       if (reason) guest.refundReason = reason;
-      results.skipped.push({ id: guestId, name: guest.name, email: guest.email, reason: "no_transaction" });
+      results.skipped.push({ id: guest._id.toString(), name: guest.name, email: guest.email, reason: "no_transaction" });
       continue;
     }
+    if (!paymentGroups.has(transactionId)) paymentGroups.set(transactionId, []);
+    paymentGroups.get(transactionId).push(guest);
+  }
 
-    console.log(`[refundEventTickets] Refunding guest ${guestId} (${guest.name}) | transactionId=${guest.transactionId}`);
-
-    const refundResult = await refundStripePayment(stripeRegion, guest.transactionId, reason);
-
-    if (refundResult.success) {
-      console.log(`[refundEventTickets] Stripe refund OK | guest=${guestId} (${guest.name}) | refundId=${refundResult.refundId} | status=${refundResult.status}`);
-      guest.refunded = true;
-      if (reason) guest.refundReason = reason;
-      results.success.push({ id: guestId, name: guest.name, email: guest.email, refundId: refundResult.refundId });
-    } else {
-      console.error(`[refundEventTickets] Stripe refund FAILED | guest=${guestId} (${guest.name}) | error=${refundResult.error}`);
-      results.failed.push({ id: guestId, name: guest.name, email: guest.email, error: refundResult.error });
+  for (const [transactionId, guests] of paymentGroups) {
+    // A checkout with quantity > 1 stores the same payment intent on every
+    // ticket. Refund the charge once and update all its ticket rows together.
+    const mode = options.mode || "full";
+    const key = options.idempotencyKey || (options.idempotencyPrefix
+      ? `${options.idempotencyPrefix}:${transactionId}:${mode}${mode === "partial" ? `:${options.amountCents}` : ""}`
+      : undefined);
+    const refundResult = await refundPayment(stripeRegion, transactionId, reason, {
+      mode, amountCents: options.amountCents, idempotencyKey: key, operationId: options.operationId,
+    });
+    for (const [index, guest] of guests.entries()) {
+      const result = { id: guest._id.toString(), name: guest.name, email: guest.email };
+      if (refundResult.success) {
+        const wasRefunded = Boolean(guest.refunded);
+        guest.refunded = true;
+        if (reason) guest.refundReason = reason;
+        if (refundResult.refundId) {
+          guest.refundId = refundResult.refundId;
+          guest.refundIds = [...new Set([...(guest.refundIds || []), refundResult.refundId])];
+        }
+        if (!wasRefunded) guest.refundedAt = new Date();
+        if (Number.isInteger(refundResult.amountCents)) {
+          guest.refundAmountCents = (guest.refundAmountCents || 0) + Math.floor(refundResult.amountCents / guests.length) +
+            Number(index < refundResult.amountCents % guests.length);
+        }
+        results.success.push({ ...result, refundId: refundResult.refundId,
+          amountCents: refundResult.amountCents, alreadyRefunded: refundResult.alreadyRefunded });
+      } else results.failed.push({ ...result, error: refundResult.error });
     }
   }
 
@@ -605,10 +632,9 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
   }
 
   // Best-effort: remove tickets from MemberUser/AlumniUser.tickets for member-type guests
-  const refundedMemberGuests = [...results.success, ...results.skipped].filter((r) => {
-    const guest = event.guestList.find((g) => g._id.toString() === r.id);
-    return guest && guest.type === "member";
-  });
+  const refundedMemberGuests = candidates.filter(guest => guest.refunded && (guest.type === "member" || guest.userId))
+    .map(guest => ({ id: guest._id.toString(), email: guest.email, userId: guest.userId }));
+  let profileFailures = 0;
 
   if (refundedMemberGuests.length > 0) {
     const eventTicketLabel =
@@ -622,7 +648,10 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
         sess.startTransaction();
 
         // Try regular MemberUser first, then AlumniUser
-        let targetUser = await MemberUser.findOne({ email: r.email }).session(sess);
+        const accountId = /^[a-f\d]{24}$/i.test(String(r.userId || "")) ? r.userId : null;
+        let targetUser = accountId ? await MemberUser.findById(accountId).session(sess) : null;
+        if (!targetUser && accountId) targetUser = await AlumniUser.findById(accountId).session(sess);
+        if (!targetUser) targetUser = await MemberUser.findOne({ email: r.email }).session(sess);
         if (!targetUser) {
           targetUser = await AlumniUser.findOne({ email: r.email }).session(sess);
         }
@@ -643,6 +672,7 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
 
         sess.endSession();
       } catch (err) {
+        profileFailures++;
         logOperationalError("service.refund-profile-update", err);
         console.error(`[refundEventTickets] Failed to remove ticket from user profile | email=${r.email}:`, err.message);
         // Non-fatal — Stripe refund already succeeded
@@ -654,7 +684,7 @@ export const refundEventTickets = async (eventId, reason = null, region = null, 
     total: guestsToRefund.length,
     refunded: results.success.length,
     skipped: results.skipped.length,
-    failed: results.failed.length,
+    failed: results.failed.length + profileFailures,
   };
 
   console.log(

@@ -10,7 +10,7 @@ import { completeMembershipCheckout } from "../../services/subscriptions/checkou
 import { resolveCheckoutAccount } from "../../services/subscriptions/checkout-account.js";
 import { persistSubscriptionAccount } from "../../services/subscriptions/accounts.js";
 import { handleAlumniSignup, handleUserSignup, handleGuestTicketPurchase, handleMemberTicketPurchase } from "../../services/main-services/stripe-webhook-service.js";
-import { logIntegrationError } from "../../middleware/axiom-logger.js";
+import { logIntegrationError, observeIntegrationRequest } from "../../middleware/axiom-logger.js";
 import { flagLateMembershipPayment, recoverCanceledMembershipInvoices } from "../../services/subscriptions/invoice-recovery.js";
 
 async function markCheckoutFulfilled(stripe, sessionId, region) {
@@ -21,7 +21,8 @@ async function markCheckoutFulfilled(stripe, sessionId, region) {
   }
   // The pinned Stripe SDK predates Checkout Session updates. Use the same
   // Stripe API directly until the SDK can be upgraded across the API.
-  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
+  const response = await observeIntegrationRequest("stripe", "checkout-sessions", "POST", () =>
+    fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${getStripeKey("secretKey", region)}`,
@@ -31,7 +32,7 @@ async function markCheckoutFulfilled(stripe, sessionId, region) {
     },
     body: new URLSearchParams({ "metadata[bgsnlFulfilled]": "1" }),
     signal: AbortSignal.timeout(20_000),
-  });
+    }));
   if (!response.ok) throw new Error(`Stripe checkout metadata update failed (${response.status})`);
 }
 

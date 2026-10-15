@@ -5,7 +5,7 @@ import { HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
 import { google } from "googleapis";
 import { redisClient } from "../storage/redis.js";
 import { SPREADSHEETS_ID } from "../../util/config/SPREEDSHEATS.js";
-import { INTEGRATIONS_DATASET, OPERATIONS_DATASET, WEB_DATASET, axiomIngestionEnabled, ingestIntegrationLog, ingestLog, logIntegrationError, logOperationalError, queryAxiom } from "../../middleware/axiom-logger.js";
+import { INTEGRATIONS_DATASET, OPERATIONS_DATASET, WEB_DATASET, axiomIngestionEnabled, axiomQueryConfigured, ingestIntegrationLog, ingestLog, logIntegrationError, logOperationalError, queryAxiom } from "../../middleware/axiom-logger.js";
 import { jobSummary } from "./jobs.js";
 
 const TIMEOUT_MS = 5000;
@@ -15,16 +15,25 @@ const dataset = (name) => {
 };
 
 export const queryRows = async (apl, query = queryAxiom) => {
-  const result = await query(apl, { startTime: new Date(Date.now() - 24 * 3600_000).toISOString() });
-  return result.tables?.flatMap((table) => [...table.events()]) || [];
+  let timer;
+  try {
+    const result = await Promise.race([
+      query(apl, { startTime: new Date(Date.now() - 24 * 3600_000).toISOString() }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Axiom query timed out")), TIMEOUT_MS); }),
+    ]);
+    return result.tables?.flatMap((table) => [...table.events()]) || [];
+  } finally { clearTimeout(timer); }
 };
 
 const countRows = (rows, field) => Object.fromEntries(rows.filter((row) => Number(row.events || 0) > 0).map((row) =>
   [String(row[field] || "other"), Number(row.events || 0)]));
 
-export async function axiomOverview({ query = queryAxiom } = {}) {
+export async function axiomOverview({ query = queryAxiom, queryConfigured = axiomQueryConfigured } = {}) {
+  const withCheck = (result) => ({ ...result, checkedAt: new Date().toISOString() });
   const names = { web: WEB_DATASET, operations: OPERATIONS_DATASET, integrations: INTEGRATIONS_DATASET };
-  if (new Set(Object.values(names)).size !== 3) return { status: "misconfigured", message: "Axiom datasets must have distinct names.", datasets: names };
+  if (new Set(Object.values(names)).size !== 3) return withCheck({ status: "misconfigured", message: "Axiom datasets must have distinct names.", datasets: names });
+  if (query === queryAxiom && !queryConfigured()) return withCheck({ status: "not configured", message: "No Axiom query token is configured in this environment.",
+    ingestionEnabled: axiomIngestionEnabled(), datasets: names, web: null, operations: null, integrations: null });
   const [web, operations, sources, webTraffic, apiTraffic, integrations] = await Promise.allSettled([
     queryRows(`${dataset(names.web)} | extend eventType = column_ifexists('type', '') | summarize events=count() by eventType`, query),
     queryRows(`${dataset(names.operations)} | extend eventLevel = column_ifexists('level', '') | summarize events=count() by eventLevel`, query),
@@ -36,17 +45,23 @@ export async function axiomOverview({ query = queryAxiom } = {}) {
   const success = (result) => result.status === "fulfilled";
   const failed = [web, operations, sources, webTraffic, apiTraffic, integrations].find((result) => !success(result));
   if (failed) logOperationalError("service.axiom-query", failed.reason);
+  const failureStatus = Number(failed?.reason?.response?.status || failed?.reason?.status || failed?.reason?.statusCode);
+  const failureMessage = failureStatus === 401 || failureStatus === 403
+    ? "Axiom query access was denied. Configure AXIOM_QUERY_TOKEN with Query Read access to all three datasets."
+    : failureStatus === 404 ? "An Axiom dataset was not found. Check the dataset names and token organization."
+      : "Axiom queries failed. Check query access, dataset names, and the Axiom connection.";
   const hourly = (result) => success(result) ? result.value.map((row) => ({ hour: row.hour, count: Number(row.events || 0) })) : [];
-  return {
-    status: [web, operations, sources, webTraffic, apiTraffic, integrations].every(success) ? "connected" : "unavailable",
+  return withCheck({
+    status: [web, operations, sources, webTraffic, apiTraffic, integrations].every(success) ? "connected" :
+      [web, operations, sources, webTraffic, apiTraffic, integrations].some(success) ? "degraded" : "unavailable",
     ingestionEnabled: axiomIngestionEnabled(), datasets: names,
     web: success(web) ? { byType: countRows(web.value, "eventType"), hourly: hourly(webTraffic) } : null,
     operations: success(operations) ? { byLevel: countRows(operations.value, "eventLevel"),
       errorSources: success(sources) ? countRows(sources.value, "errorSource") : {}, hourly: hourly(apiTraffic) } : null,
     integrations: success(integrations) ? integrations.value.filter((row) => Number(row.events || 0) > 0).map((row) => ({ provider: String(row.eventProvider || "other"),
       level: String(row.eventLevel || "other"), count: Number(row.events || 0) })) : null,
-    ...(success(web) && success(operations) && success(integrations) ? {} : { message: "Axiom query failed. Check dataset names and query token permissions." }),
-  };
+    ...(failed ? { message: failureMessage } : {}),
+  });
 }
 
 const probe = async (name, check) => {
@@ -56,14 +71,15 @@ const probe = async (name, check) => {
     const detail = await Promise.race([
       check(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Probe timed out")), TIMEOUT_MS); }),
     ]);
-    return { name, status: "healthy", latencyMs: Date.now() - started, ...(detail ? { detail } : {}) };
+    return { name, status: "healthy", latencyMs: Date.now() - started, checkedAt: new Date().toISOString(), ...(detail ? { detail } : {}) };
   } catch (error) {
     if (["API", "Redis"].includes(name)) logOperationalError(`health.${name.toLowerCase()}`, error);
     else logIntegrationError(name.toLowerCase().replaceAll(" ", "-"), error, "healthcheck");
     const code = Number(error?.statusCode || error?.status || error?.$metadata?.httpStatusCode);
-    return { name, status: code === 401 || code === 403 ? "unverified" : "unhealthy",
-      latencyMs: Date.now() - started, detail: code === 401 || code === 403 ? "Credentials lack probe access" :
-        error?.message === "Probe timed out" ? "Timed out" : "Probe failed" };
+    const unverified = code === 401 || code === 403 || error?.monitoringStatus === "unverified";
+    return { name, status: unverified ? "unverified" : "unhealthy",
+      latencyMs: Date.now() - started, checkedAt: new Date().toISOString(), detail: error?.monitoringDetail || (code === 401 || code === 403 ? "Credentials lack probe access" :
+        error?.message === "Probe timed out" ? "Timed out" : "Probe failed") };
   } finally { clearTimeout(timer); }
 };
 
@@ -72,7 +88,27 @@ const fetchHealth = async (url) => {
   if (!response.ok) throw Object.assign(new Error("Probe failed"), { status: response.status });
 };
 
-export async function serviceHealth({ env = process.env, database = mongoose.connection, redis = redisClient } = {}) {
+export const checkMailerHealth = async (url, fetcher = fetch) => {
+  const response = await fetcher(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(TIMEOUT_MS) });
+  let health;
+  try { health = await response.json(); } catch { /* Older Mailer health responses may have no JSON body. */ }
+  if (health?.connections && Object.hasOwn(health.connections, "mailtrapBgsnl")) {
+    const bgsnl = health.connections.mailtrapBgsnl;
+    const templates = health.readiness?.checks?.emailTemplates;
+    if (!bgsnl || bgsnl.status === "pending" || templates?.status === "pending") throw Object.assign(
+      new Error("BGSNL Mailtrap verification is pending"),
+      { monitoringStatus: "unverified", monitoringDetail: "BGSNL Mailtrap verification is pending" });
+    if (bgsnl.status !== "ready" || (templates && templates.status !== "ready")) throw Object.assign(
+      new Error("BGSNL Mailtrap delivery is not ready"),
+      { monitoringDetail: "BGSNL Mailtrap delivery check failed" });
+    return "BGSNL Mailtrap delivery is ready";
+  }
+  if (!response.ok) throw Object.assign(new Error("Probe failed"), { status: response.status });
+  throw Object.assign(new Error("BGSNL transport status missing"), { monitoringStatus: "unverified",
+    monitoringDetail: "Mailer responded without a BGSNL transport status" });
+};
+
+export async function serviceHealth({ env = process.env, database = mongoose.connection, redis = redisClient, fetcher = fetch } = {}) {
   const stripeKey = env.STRIPE_NL_SECRET_KEY || env.STRIPE_SECRET_KEY_TEST;
   const buckets = [...new Set([env.BUCKET_GUEST_TICKETS, env.BUCKET_MEMBER_TICKETS].filter(Boolean))];
   const checks = [
@@ -80,7 +116,8 @@ export async function serviceHealth({ env = process.env, database = mongoose.con
     probe("Redis", async () => { const client = await redis(); if (await client.ping() !== "PONG") throw new Error("Redis unavailable"); }),
     probe("Mailer", async () => {
       const mailer = env.MAILER_HEALTH_URL || (env.MAILER_API_URL ? new URL("/health", env.MAILER_API_URL).href : null);
-      if (!mailer) throw new Error("Mailer not configured"); await fetchHealth(mailer);
+      if (!mailer) throw new Error("Mailer not configured");
+      return checkMailerHealth(mailer, fetcher);
     }),
     probe("Stripe", async () => {
       if (!stripeKey) throw new Error("Stripe not configured");

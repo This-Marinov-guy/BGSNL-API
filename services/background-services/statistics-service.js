@@ -62,6 +62,7 @@ const _recountMemberStatistics = async () => {
     if (!memberStatistics) {
       memberStatistics = await Statistics.create({
         type: "member",
+        calculationType: "on-demand",
         data: {
           total: 0,
         },
@@ -69,6 +70,7 @@ const _recountMemberStatistics = async () => {
     }
 
     memberStatistics.data = memberStatistics.data || {};
+    memberStatistics.calculationType = "on-demand";
     memberStatistics.data.total = memberCount;
     memberStatistics.lastUpdated = new Date();
     memberStatistics.markModified("data");
@@ -95,6 +97,7 @@ const _recountAlumniStatistics = async () => {
     if (!alumniStatistics) {
       alumniStatistics = await Statistics.create({
         type: "alumni",
+        calculationType: "on-demand",
         data: {
           total: 0,
         },
@@ -102,6 +105,7 @@ const _recountAlumniStatistics = async () => {
     }
 
     alumniStatistics.data = alumniStatistics.data || {};
+    alumniStatistics.calculationType = "on-demand";
     alumniStatistics.data.total = alumniCount;
     alumniStatistics.lastUpdated = new Date();
     alumniStatistics.markModified("data");

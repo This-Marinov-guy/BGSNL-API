@@ -35,8 +35,7 @@ delivery provider and HTML template as the existing weekly membership report.
   current Sunday 18:00 exclusive, respecting daylight saving.
 - Counts use `joinDate`, excluding migrated/archived account copies.
 - Send only when a region has at least one new **Member**. An alumni-only week
-  does not trigger an email. When sent, the same table includes that region’s
-  new-member and new-alumni counts, with a region total.
+  does not trigger an email. The table shows that region's new-member count.
 - Each report contains only its own region’s counts, no names or personal
   addresses, no neighbouring regions or national totals.
 - Recipients are loaded fresh from the database each run. National and support

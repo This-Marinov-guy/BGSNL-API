@@ -1,5 +1,5 @@
 import { findPublicEvent } from "../../services/public-content/find-public-event.js";
-import { logIntegrationError } from "../../middleware/axiom-logger.js";
+import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
@@ -8,7 +8,6 @@ import { validationResult } from "express-validator";
 import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
 import HttpError from "../../models/Http-error.js";
 import {
-  sendMailtrapTemplateEmail,
   sendResendTemplateEmail,
   sendTicketEmail,
 } from "../../services/background-services/email-transporter.js";
@@ -21,33 +20,30 @@ import {
   isTicketSaleClosed,
   removeModelProperties,
 } from "../../util/functions/helpers.js";
-import {
-  MOMENT_DATE_TIME_YEAR,
-  MOMENT_DATE_YEAR,
-} from "../../util/functions/dateConvert.js";
+import { MOMENT_DATE_YEAR } from "../../util/functions/dateConvert.js";
 import moment from "moment-timezone";
 import { checkDiscountsOnEvents } from "../../services/main-services/event-action-service.js";
 import { accountEntitlements } from "../../util/subscriptions/policy.js";
 import { reconcileAccount } from "../../services/subscriptions/reconcile.js";
 import { extractUserFromRequest } from "../../util/functions/security.js";
+import { canAccessRegion } from "../../middleware/authorization.js";
 import { findUserById } from "../../services/main-services/user-service.js";
 import {
   ACCESS_4,
-  ALL_EVENT_REGIONS_ACCESS,
   EVENT_MANAGEMENT_ACCESS,
   DEFAULT_REGION,
-  NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID,
-  NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE,
-  NON_SOCIETY_EVENT_FINAL_REMINDER_TEST_EMAILS,
   NON_SOCIETY_EVENT_RESEND_EVENT_ID,
   NON_SOCIETY_EVENT_RESEND_TEST_EMAILS,
   NON_SOCIETY_EVENT_RESEND_TEMPLATE,
 } from "../../util/config/defines.js";
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
+import { publishGuestListChanged } from "../../services/tickets/guest-list-live.js";
+import { guestRefunds } from "../../services/tickets/guest-refunds.js";
 import { mintTicketToken, reserveTicketToken, resolveTicketToken } from "../../services/tickets/qr-link.js";
 import { uploadCustomEventTicket } from "../../services/side-services/ticket-generator.js";
 import { planCheckIn, checkInMutation } from "../../services/tickets/check-in.js";
 import { futureEventDateFilter, publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
+import { recordGuestMarketingEmail } from "../../services/events/guest-marketing-emails.js";
 
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -76,8 +72,7 @@ const guestListColumns = (event) => ({
 });
 
 const canManageEventGuestList = (req, event) => {
-  const { roles, region } = extractUserFromRequest(req);
-  return roles.some((role) => ALL_EVENT_REGIONS_ACCESS.includes(role)) || region === event.region;
+  return canAccessRegion(req, "event", event.region);
 };
 
 const addEmailRecipient = (recipientsByEmail, invalidEmails, email, name = "") => {
@@ -135,17 +130,6 @@ const getNonSocietyEventEmailRecipients = ({
     recipients: [...recipientsByEmail.values()],
     invalidEmails,
   };
-};
-
-const formatNonSocietyEventDate = (
-  date,
-  timezone = "Europe/Amsterdam"
-) => {
-  if (!date) return "";
-
-  return `${moment(date)
-    .tz(timezone)
-    .format(MOMENT_DATE_TIME_YEAR)} (${timezone} time)`;
 };
 
 export const getEventPurchaseAvailability = async (req, res, next) => {
@@ -389,6 +373,7 @@ export const postAddMemberToEvent = async (req, res, next) => {
   if (!societyEvent || societyEvent.status === "draft") {
     return next(new HttpError("Could not find such event", 404));
   }
+  if (!canAccessRegion(req, "event", societyEvent.region)) return next(new HttpError("No access for this region", 403));
 
   if (isTicketSaleClosed(societyEvent)) {
     return next(new HttpError("Ticket sale is closed", 400));
@@ -443,7 +428,9 @@ export const postAddMemberToEvent = async (req, res, next) => {
     societyEvent.title,
     societyEvent.date,
     targetUser.name,
-    ticketLocation
+    ticketLocation,
+    "Europe/Amsterdam",
+    societyEvent.poster
   );
 
   eventToSpreadsheet(societyEvent.id);
@@ -477,6 +464,7 @@ export const postAddGuestToEvent = async (req, res, next) => {
   if (!societyEvent || societyEvent.status === "draft") {
     return next(new HttpError("Could not find such event", 404));
   }
+  if (!canAccessRegion(req, "event", societyEvent.region)) return next(new HttpError("No access for this region", 403));
 
   if (isTicketSaleClosed(societyEvent)) {
     return next(new HttpError("Ticket sale is closed", 400));
@@ -536,6 +524,11 @@ export const postAddGuestToEvent = async (req, res, next) => {
     }
   }
 
+  try {
+    await recordGuestMarketingEmail(societyEvent, guestEmail);
+  }
+  catch (error) { logOperationalError("guest-marketing.ticket-record", error); }
+
   const tickets = Array.from({ length: safeQuantity }, () => ticketLocation);
 
   sendTicketEmail(
@@ -544,7 +537,10 @@ export const postAddGuestToEvent = async (req, res, next) => {
     societyEvent.title,
     societyEvent.date,
     guestName,
-    tickets
+    tickets,
+    "Europe/Amsterdam",
+    societyEvent.poster,
+    { region: societyEvent.region, phone: guestPhone }
   );
 
   eventToSpreadsheet(societyEvent.id);
@@ -755,7 +751,9 @@ export const postNonSocietyEvent = async (req, res, next) => {
     date,
     memberName,
     ticketLocation,
-    timezone
+    timezone,
+    "",
+    { region: req.body.region || nonSocietyEvent.region, phone: memberPhone }
   );
 
   specialEventsToSpreadsheet(nonSocietyEvent.id);
@@ -835,93 +833,6 @@ export const sendNonSocietyEventResendEmail = async ({
   };
 };
 
-export const sendNonSocietyEventFinalReminderEmail = async ({
-  customEmails = [],
-  testOnly = false,
-  templateVariablesOverride = null,
-} = {}) => {
-  if (!NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE) {
-    throw new HttpError("Missing non-society event final reminder template UUID", 500);
-  }
-
-  if (!mongoose.Types.ObjectId.isValid(NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID)) {
-    throw new HttpError("Invalid non-society event final reminder event id", 500);
-  }
-
-  let nonSocietyEvent;
-  try {
-    nonSocietyEvent = await NonSocietyEvent.findById(
-      NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID
-    ).select("event date timezone guestList.email guestList.name");
-  } catch (err) {
-    throw new HttpError(
-      "Could not find the non-society event, please try again",
-      500
-    );
-  }
-
-  if (!nonSocietyEvent) {
-    throw new HttpError("Could not find such non-society event", 404);
-  }
-
-  const { recipients, invalidEmails } = getNonSocietyEventEmailRecipients({
-    nonSocietyEvent,
-    testOnly,
-    testEmails: NON_SOCIETY_EVENT_FINAL_REMINDER_TEST_EMAILS,
-    customEmails,
-  });
-
-  const eventDate = formatNonSocietyEventDate(
-    nonSocietyEvent.date,
-    nonSocietyEvent.timezone
-  );
-
-  console.log(
-    `[nonSocietyEventFinalReminderEmail] Queuing emails for "${nonSocietyEvent.event}" | testOnly=${testOnly}`
-  );
-
-  for (const recipient of recipients) {
-    const templateVariables =
-      templateVariablesOverride || {
-        template_variables: {
-          eventName: nonSocietyEvent.event,
-          guestName: recipient.name,
-          eventDate,
-        },
-      };
-
-    console.log(
-      `[nonSocietyEventFinalReminderEmail] ${recipient.email}${recipient.name ? ` | ${recipient.name}` : ""}`
-    );
-
-    sendMailtrapTemplateEmail(
-      NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE,
-      recipient.email,
-      templateVariables
-    );
-  }
-
-  if (invalidEmails.length > 0) {
-    console.log(
-      `[nonSocietyEventFinalReminderEmail] Skipped invalid emails: ${invalidEmails.join(", ")}`
-    );
-  }
-
-  console.log(
-    `[nonSocietyEventFinalReminderEmail] Total queued: ${recipients.length}`
-  );
-
-  return {
-    status: true,
-    message: "Non-society event final reminder emails queued",
-    eventId: NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID,
-    event: nonSocietyEvent.event,
-    testOnly,
-    queued: recipients.length,
-    invalidEmails,
-  };
-};
-
 export const postSendNonSocietyEventResendEmail = async (req, res, next) => {
   const testOnly = req.body?.testOnly === true || req.query?.testOnly === "true";
   const customEmails = Array.isArray(req.body?.customEmails)
@@ -939,27 +850,6 @@ export const postSendNonSocietyEventResendEmail = async (req, res, next) => {
     return next(err);
   }
 };
-
-export const postSendNonSocietyEventFinalReminderEmail = async (req, res, next) => {
-  const testOnly = req.body?.testOnly === true || req.query?.testOnly === "true";
-  const customEmails = Array.isArray(req.body?.customEmails)
-    ? req.body.customEmails
-    : [];
-  const templateVariablesOverride = req.body?.templateVariables || null;
-
-  try {
-    const result = await sendNonSocietyEventFinalReminderEmail({
-      customEmails,
-      testOnly,
-      templateVariablesOverride,
-    });
-
-    return res.status(200).json(result);
-  } catch (err) {
-    return next(err);
-  }
-};
-
 
 export const getEventGuestList = async (req, res, next) => {
   try {
@@ -993,10 +883,11 @@ export const updateGuestPresence = async (req, res, next) => {
     const event = await Event.findById(eventId);
     if (!event) return next(new HttpError("No event was found", 404));
     if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
+    if (event.cancellationRequestedAt) return next(new HttpError("This event has been cancelled", 422));
     const guest = event.guestList.id(guestId);
     if (!guest) return next(new HttpError("This guest is no longer in the list", 404));
     if (guest.refunded) return next(new HttpError("A refunded ticket cannot be checked in", 422));
-    const result = await Event.updateOne({ _id: event._id, region: event.region,
+    const result = await Event.updateOne({ _id: event._id, region: event.region, cancellationRequestedAt: null,
       guestList: { $elemMatch: { _id: guest._id, refunded: { $ne: true } } } },
     { $set: { "guestList.$.status": present ? 1 : 0, "guestList.$.checkedInAt": present ? new Date() : null } });
     if (result.matchedCount !== 1) return next(new HttpError("This ticket changed. Reload the guest list.", 409));
@@ -1014,6 +905,83 @@ export const updateGuestPresence = async (req, res, next) => {
   }
 };
 
+export const updateGuestDetails = async (req, res, next) => {
+  const { eventId, guestId } = req.params;
+  let event;
+  try { event = await Event.findById(eventId).select("region guestList"); }
+  catch { return next(new HttpError("Could not load this guest", 500)); }
+  if (!event) return next(new HttpError("Event not found", 404));
+  if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
+  const existingGuest = event.guestList.id(guestId);
+  if (!existingGuest) return next(new HttpError("Guest not found", 404));
+  try {
+    const result = await Event.updateOne({ _id: eventId, region: event.region, "guestList._id": guestId },
+      { $set: { "guestList.$.name": req.body.name, "guestList.$.email": req.body.email.toLowerCase(),
+        "guestList.$.phone": req.body.phone } }, { runValidators: true });
+    if (result.matchedCount !== 1) return next(new HttpError("This guest changed. Reload the list and try again.", 409));
+    let guest;
+    try {
+      const updated = await Event.findById(eventId).select("guestList");
+      guest = updated?.guestList.id(guestId);
+    } catch (error) { logOperationalError("service.guest-details-refresh", error); }
+    const responseGuest = guest ? serializeGuestListEntry(guest) : {
+      ...serializeGuestListEntry(existingGuest), name: req.body.name,
+      email: req.body.email.toLowerCase(), phone: req.body.phone,
+    };
+    void publishGuestListChanged(eventId);
+    void Promise.resolve().then(() => eventToSpreadsheet(eventId)).catch(error =>
+      logIntegrationError("google-sheets", error, "guest-details-sync"));
+    return res.status(200).json({ status: true, guest: responseGuest });
+  } catch (error) {
+    logOperationalError("service.guest-details-update", error);
+    return next(new HttpError("Could not save guest details. Please try again.", 500));
+  }
+};
+
+const authorizedGuestRefundRegion = async (req, eventId) => {
+  const event = await Event.findById(eventId).select("region");
+  if (!event) throw new HttpError("Event not found", 404);
+  if (!canManageEventGuestList(req, event)) throw new HttpError("No access to this event guest list", 403);
+  return event.region;
+};
+
+export const previewGuestRefund = async (req, res, next) => {
+  try {
+    const region = await authorizedGuestRefundRegion(req, req.params.eventId);
+    const quote = await guestRefunds.preview(req.params.eventId, req.params.guestId, region);
+    return res.status(200).json({ status: true, quote });
+  } catch (error) {
+    if (error instanceof HttpError) return next(error);
+    logIntegrationError("stripe", error, "guest-refund-preview");
+    return next(new HttpError("Could not load the payment amount. Please try again.", 503));
+  }
+};
+
+export const refundGuestPurchase = async (req, res, next) => {
+  try {
+    const region = await authorizedGuestRefundRegion(req, req.params.eventId);
+    const result = await guestRefunds.submit(req.params.eventId, req.params.guestId, region, req.body);
+    const affected = new Set(result.affectedTicketIds);
+    let guests;
+    try {
+      const updated = await Event.findById(req.params.eventId).select("guestList");
+      guests = updated.guestList.filter(ticket => affected.has(String(ticket._id))).map(serializeGuestListEntry);
+    } catch (error) {
+      logOperationalError("service.guest-refund-refresh", error);
+      guests = result.affectedTicketIds.map(id => ({ id, refunded: true }));
+    }
+    void publishGuestListChanged(req.params.eventId);
+    void Promise.resolve().then(() => eventToSpreadsheet(req.params.eventId)).catch(error =>
+      logIntegrationError("google-sheets", error, "guest-refund-sync"));
+    return res.status(200).json({ status: true, guests, refundAmountCents: result.refundCents,
+      affectedTicketCount: result.affectedTicketCount, profileCleanupPending: result.profileCleanupPending });
+  } catch (error) {
+    if (error instanceof HttpError) return next(error);
+    logIntegrationError("stripe", error, "guest-refund");
+    return next(new HttpError("Could not complete this refund. Check Stripe before trying again.", 503));
+  }
+};
+
 // Legacy numeric statuses remain compatible: 0 duplicate, 1 admitted, 2 choose count.
 export const updatePresence = async (req, res, next) => {
   let { eventId, code } = req.body;
@@ -1026,9 +994,10 @@ export const updatePresence = async (req, res, next) => {
       code = ticket.code;
     }
     if (req.body.expectedEventId && String(eventId) !== req.body.expectedEventId) return next(new HttpError("This ticket is for a different event", 422));
-    const event = await Event.findById(eventId).select("region title guestList");
+    const event = await Event.findById(eventId).select("region title guestList cancellationRequestedAt");
     if (!event) return next(new HttpError("Event not found", 404));
     if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
+    if (event.cancellationRequestedAt) return next(new HttpError("This event has been cancelled", 422));
     const includeDetails = req.body.includeDetails === true;
     const plan = planCheckIn(event.guestList, code, count, { preview: req.body.preview === true || includeDetails });
     const messages = { not_found: "Ticket not found for this event", refunded: "This ticket has been refunded", invalid_quantity: "Choose a count within the remaining tickets" };

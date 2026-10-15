@@ -54,16 +54,23 @@ import { startMarketingCaptureWorker } from "./services/jobs/marketing-capture-w
 import MarketingEmail from "./models/MarketingEmail.js";
 import SupportConversation from "./models/SupportConversation.js";
 import WalletCard from "./models/WalletCard.js";
-import MonitoringJob from "./models/MonitoringJob.js";
 import { startWeeklyMembershipReportWorker } from "./services/background-services/weekly-membership-report.js";
 import { startRegionalMembershipReportWorker } from "./services/background-services/regional-membership-report.js";
-import MonthlySummary, { MonthlySummaryDelivery } from "./models/MonthlySummary.js";
+import { startAcademicYearStatisticsWorker } from "./services/background-services/academic-year-statistics.js";
+import MonitoringJob from "./models/MonitoringJob.js";
 import { startMonthlySummaryWorker } from "./services/monthly-summary/worker.js";
 import { startMemberEventAnnouncementWorker } from "./services/events/member-event-announcements.js";
 import { eventCampaignsEnabled, startEventCampaignWorker } from "./services/events/event-campaign-worker.js";
-import EventEmailCampaign, { EventEmailDelivery } from "./models/EventEmailCampaign.js";
+import { startFirstPaidGuestEventCampaignWorker, startGuestTermCampaignWorker } from "./services/events/guest-lifecycle-campaigns.js";
+import { startEventCancellationWorker } from "./services/events/event-cancellation.js";
+import { startEventFeedbackEmailWorker } from "./services/events/event-feedback-email.js";
+import Event from "./models/Event.js";
 import { startBirthdayEmailWorker } from "./services/background-services/birthday-emails.js";
 import { startEventDraftCleanupWorker } from "./services/background-services/event-draft-cleanup.js";
+import EventDraft from "./models/EventDraft.js";
+import { safeError } from "./services/migrations/runner.js";
+import { startEventMediaCleanupWorker } from "./services/events/event-media-cleanup.js";
+import { startEventSitemapExpiryWorker } from "./services/public-content/sitemap-expiry.js";
 import supportRouter, { supportError, supportPrivacy } from "./routes/support-routes.js";
 import backofficeRouter from "./routes/backoffice-routes.js";
 import monitoringRouter from "./routes/monitoring-routes.js";
@@ -239,11 +246,18 @@ let server;
 let stopBillingWorker;
 let stopWeeklyMembershipReportWorker;
 let stopRegionalMembershipReportWorker;
+let stopAcademicYearStatisticsWorker;
 let stopMonthlySummaryWorker;
 let stopBirthdayEmailWorker;
 let stopMemberEventAnnouncementWorker;
 let stopEventCampaignWorker;
+let stopFirstPaidGuestEventCampaignWorker;
+let stopGuestTermCampaignWorker;
+let stopEventCancellationWorker;
+let stopEventFeedbackEmailWorker;
 let stopEventDraftCleanupWorker;
+let stopEventMediaCleanupWorker;
+let stopEventSitemapExpiryWorker;
 let marketingCaptureWorker;
 
 mongoose
@@ -252,22 +266,28 @@ mongoose
   )
   .then(async () => {
     console.log("Connected to DB");
-    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), WalletCard.init(), MonitoringJob.init(), MarketingEmail.init(), redisClient()]);
+    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), WalletCard.init(), MonitoringJob.init(), MarketingEmail.init(), EventDraft.init(), redisClient()]);
     marketingCaptureWorker = startMarketingCaptureWorker();
     stopBillingWorker = startBillingWorker();
     stopWeeklyMembershipReportWorker = startWeeklyMembershipReportWorker();
     stopRegionalMembershipReportWorker = startRegionalMembershipReportWorker();
-    await Promise.all([MonthlySummary.init(), MonthlySummaryDelivery.init()]);
+    stopAcademicYearStatisticsWorker = startAcademicYearStatisticsWorker();
     stopMonthlySummaryWorker = startMonthlySummaryWorker();
     stopBirthdayEmailWorker = startBirthdayEmailWorker();
-    await Promise.all([EventEmailCampaign.init(), EventEmailDelivery.init()]);
+    await Event.init();
     stopEventCampaignWorker = startEventCampaignWorker();
+    stopFirstPaidGuestEventCampaignWorker = startFirstPaidGuestEventCampaignWorker();
+    stopGuestTermCampaignWorker = startGuestTermCampaignWorker();
+    stopEventCancellationWorker = startEventCancellationWorker();
+    stopEventFeedbackEmailWorker = startEventFeedbackEmailWorker();
     stopMemberEventAnnouncementWorker = startMemberEventAnnouncementWorker(eventCampaignsEnabled() ? { enabled: false } : {});
     stopEventDraftCleanupWorker = startEventDraftCleanupWorker();
+    stopEventMediaCleanupWorker = startEventMediaCleanupWorker();
+    stopEventSitemapExpiryWorker = startEventSitemapExpiryWorker();
     server = app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
   })
-  .catch((err) => { console.error("Failed to connect to database"); logOperationalError("startup.database", err); });
+  .catch((err) => { console.error("Server startup failed", safeError(err, [process.env.DB_USER, process.env.DB_PASS]).message); logOperationalError("startup.database", err); });
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal) => {
@@ -284,11 +304,18 @@ const gracefulShutdown = async (signal) => {
   await stopBillingWorker?.();
   await stopWeeklyMembershipReportWorker?.();
   await stopRegionalMembershipReportWorker?.();
+  await stopAcademicYearStatisticsWorker?.();
   await stopMonthlySummaryWorker?.();
   await stopBirthdayEmailWorker?.();
   await stopMemberEventAnnouncementWorker?.();
   await stopEventCampaignWorker?.();
+  await stopGuestTermCampaignWorker?.();
+  await stopFirstPaidGuestEventCampaignWorker?.();
+  await stopEventCancellationWorker?.();
+  await stopEventFeedbackEmailWorker?.();
   await stopEventDraftCleanupWorker?.();
+  await stopEventMediaCleanupWorker?.();
+  await stopEventSitemapExpiryWorker?.();
   try { await marketingCaptureWorker?.stop(); await closeMarketingCaptureQueue(); }
   catch (error) { logOperationalError("shutdown.marketing-queue", error); }
   try { await closeSpreadsheetSyncQueue(); }

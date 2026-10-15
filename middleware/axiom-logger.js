@@ -10,14 +10,19 @@ import { createInfoEvent, createErrorEvent } from "../util/logging/axiom-log-mod
  */
 let axiom = null;
 
-if (
-  process.env.AXIOM_TOKEN &&
-  process.env.AXIOM_ORG_ID
-) {
+// Axiom API tokens identify their organization. Only legacy personal tokens
+// need a separate organization ID.
+export const axiomCredentialsConfigured = (token, orgId) =>
+  !!token && (token.startsWith("xaat-") || !!orgId);
+export const axiomClientOptions = (token, orgId) => ({
+  token,
+  ...(!token?.startsWith("xaat-") && orgId ? { orgId } : {}),
+});
+
+if (axiomCredentialsConfigured(process.env.AXIOM_TOKEN, process.env.AXIOM_ORG_ID)) {
   try {
     axiom = new Axiom({
-      token: process.env.AXIOM_TOKEN,
-      orgId: process.env.AXIOM_ORG_ID,
+      ...axiomClientOptions(process.env.AXIOM_TOKEN, process.env.AXIOM_ORG_ID),
       onError: reportAxiomFailure,
     });
   } catch {
@@ -36,6 +41,8 @@ export const INTEGRATIONS_DATASET = process.env.AXIOM_INTEGRATIONS_DATASET || "i
 export const axiomIngestionEnabled = () => !!axiom && process.env.APP_ENV !== "dev" &&
   process.env.AXIOM_LOGGING_ENABLED !== "false" &&
   (process.env.NODE_ENV === "production" || process.env.AXIOM_LOGGING_ENABLED === "true");
+export const axiomQueryConfigured = () =>
+  axiomCredentialsConfigured(process.env.AXIOM_QUERY_TOKEN || process.env.AXIOM_TOKEN, process.env.AXIOM_ORG_ID);
 
 /**
  * Graceful shutdown (important for Docker / K8s)
@@ -76,7 +83,7 @@ export const redactSensitive = (value) => {
  * Ingest a log event (info/warning/error model). No-op if Axiom is disabled or in dev.
  */
 export const ingestLog = (log, dataset = OPERATIONS_DATASET) => bestEffortLog(() => {
-  if (!axiomIngestionEnabled()) return;
+  if (!axiomIngestionEnabled()) return undefined;
   return axiom.ingest(dataset, snapshotLog(log));
 });
 
@@ -87,9 +94,9 @@ export const ingestIntegrationLog = (event) => ingestLog(event, INTEGRATIONS_DAT
 
 export const queryAxiom = async (apl, options = {}) => {
   const token = process.env.AXIOM_QUERY_TOKEN || process.env.AXIOM_TOKEN;
-  if (!token || !process.env.AXIOM_ORG_ID) throw new Error("Axiom query credentials are not configured");
+  if (!axiomCredentialsConfigured(token, process.env.AXIOM_ORG_ID)) throw new Error("Axiom query credentials are not configured");
   const client = process.env.AXIOM_QUERY_TOKEN
-    ? new Axiom({ token, orgId: process.env.AXIOM_ORG_ID }) : axiom;
+    ? new Axiom(axiomClientOptions(token, process.env.AXIOM_ORG_ID)) : axiom;
   if (!client) throw new Error("Axiom client is unavailable");
   return client.query(apl, { ...options, format: "tabular" });
 };
@@ -124,6 +131,64 @@ export const logIntegrationError = (provider, error, operation = "request") => b
   });
 });
 
+// Keep request telemetry to fixed diagnostics. Provider URLs, resource IDs,
+// headers, payloads and response bodies can contain personal or secret data.
+export const integrationRequestEvent = (provider, operation, { method, status, durationMs, outcome, direction } = {}) => {
+  const code = Number(status);
+  const elapsed = Number(durationMs);
+  const failed = outcome === "error" || Number.isInteger(code) && code >= 400 && code <= 599;
+  return {
+    level: failed ? "warning" : "info",
+    type: "request",
+    direction: direction === "inbound" ? "inbound" : "outbound",
+    outcome: failed ? "error" : "success",
+    ts: new Date().toISOString(),
+    provider: /^[a-z][a-z0-9-]{0,39}$/.test(provider) ? provider : "other",
+    operation: /^[a-z][a-z0-9-]{0,59}$/.test(operation) ? operation : "request",
+    ...(typeof method === "string" && /^(GET|POST|PUT|PATCH|DELETE|HEAD)$/.test(method) ? { method } : {}),
+    ...(Number.isInteger(code) && code >= 100 && code <= 599 ? { statusCode: code } : {}),
+    ...(Number.isFinite(elapsed) && elapsed >= 0 ? { durationMs: Math.min(Math.round(elapsed), 300_000) } : {}),
+    meta: { service: "bgsnl-api", environment: process.env.APP_ENV || process.env.NODE_ENV },
+  };
+};
+
+export const logIntegrationRequest = (provider, operation, details) => bestEffortLog(() =>
+  ingestIntegrationLog(integrationRequestEvent(provider, operation, details)));
+
+export const observeIntegrationRequest = async (provider, operation, method, request) => {
+  const started = Date.now();
+  try {
+    const response = await request();
+    bestEffortLog(() => logIntegrationRequest(provider, operation,
+      { method, status: response?.status, durationMs: Date.now() - started }));
+    return response;
+  } catch (error) {
+    bestEffortLog(() => logIntegrationRequest(provider, operation, { method, outcome: "error",
+      status: error?.response?.status || error?.statusCode || error?.status || error?.http_code || error?.$metadata?.httpStatusCode,
+      durationMs: Date.now() - started }));
+    throw error;
+  }
+};
+
+// Classify only fixed integration endpoints. Path parameters and query strings
+// never become provider names or operation names in Axiom.
+export const inboundIntegrationRoute = (path) => {
+  if (typeof path !== "string") return null;
+  if (/^\/api\/v\d+\/integrations\/atlas\/member-event-announcement\/?$/.test(path)) {
+    return { provider: "atlas", operation: "member-event-announcement" };
+  }
+  if (/^\/api\/v\d+\/google-scripts\/collections(?:\/|$)/.test(path)) {
+    return { provider: "google-scripts", operation: "collection-read" };
+  }
+  if (/^\/api\/v\d+\/mobile(?:\/|$)/.test(path)) {
+    return { provider: "koko", operation: "city-data" };
+  }
+  if (/^\/api\/v\d+\/wordpress\/posts(?:\/|$)/.test(path)) {
+    return { provider: "wordpress", operation: "posts-proxy" };
+  }
+  return null;
+};
+
 /**
  * Log an error to Axiom. Drop into any catch block.
  *
@@ -155,17 +220,21 @@ export const axiomLogger = (req, res, next) => {
 
     const startTime = Date.now();
     res.once("finish", () => bestEffortLog(() => {
+      const durationMs = Date.now() - startTime;
       const log = createInfoEvent({
         req,
         res: {
           statusCode: res.statusCode,
           statusMessage: res.statusMessage,
-          durationMs: Date.now() - startTime,
+          durationMs,
         },
         meta: {},
         redact: redactSensitive,
       });
       ingestLog(log);
+      const inbound = inboundIntegrationRoute(req.path);
+      if (inbound) logIntegrationRequest(inbound.provider, inbound.operation,
+        { method: req.method, status: res.statusCode, durationMs, direction: "inbound" });
     }));
   });
 

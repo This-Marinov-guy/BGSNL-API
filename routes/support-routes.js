@@ -93,6 +93,8 @@ export function createSupportRouter({ service = createSupportService({ notifyNew
 
   router.use("/inbox", (req, _res, next) => isSupportStaff(req.account) ? next() : next(new HttpError("Support staff access is required.", 403)));
   router.get("/inbox", action(async (req, res) => res.json(await service.list(actor(req, true), req.query))));
+  router.get("/inbox/unanswered", action(async (req, res) => res.json(await service.unanswered(actor(req, true)))));
+  router.get("/inbox/activity", action(async (req, res) => res.json(await service.inboxActivity(actor(req, true)))));
   router.get("/inbox/:id", action(async (req, res) => res.json({ conversation: await service.get(req.params.id, actor(req, true), { before: req.query.before, limit: req.query.limit }) })));
   router.post("/inbox/:id/messages", authorizeMessageUpload(true), supportImageUpload.array("images", 3), reply(true));
   router.post("/inbox/:id/status", action(async (req, res) => res.json({ conversation: await service.changeStatus(req.params.id, req.body || {}, actor(req, true)) })));

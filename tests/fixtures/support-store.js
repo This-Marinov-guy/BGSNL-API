@@ -21,7 +21,13 @@ class Query {
     }
     if (this.fields && !this.fields.startsWith("+")) {
       const fields = this.fields.split(" ");
-      const project = (record) => Object.fromEntries(fields.filter((key) => key in record).map((key) => [key, record[key]]));
+      const project = (record) => {
+        const output = Object.fromEntries(fields.filter((key) => key in record).map((key) => [key, record[key]]));
+        const messageFields = fields.filter((key) => key.startsWith("messages.")).map((key) => key.slice("messages.".length));
+        if (messageFields.length) output.messages = record.messages.map(message =>
+          Object.fromEntries(messageFields.filter(key => key in message).map(key => [key, message[key]])));
+        return output;
+      };
       result = Array.isArray(result) ? result.map(project) : result && project(result);
     }
     return result;

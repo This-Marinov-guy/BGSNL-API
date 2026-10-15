@@ -24,7 +24,9 @@ matches the frontend's server-only `BGSNL_SERVER_KEY` to this API's
 `SSR_SERVER_KEY`. Existing `.env` files are not edited.
 
 Outside the launcher, unset `BGSNL_EMAIL_PROVIDER` (or `legacy`) preserves the
-existing Mailtrap/Resend behavior. Explicit `domakin` routes the common sender
+existing Mailtrap/Resend behavior for ordinary messages. The ten Bulgarian
+Society campaign template UUIDs always route through Domakin Mailer so its
+Emailit and unsubscribe rules apply. Explicit `domakin` routes the common sender
 through `/api/delivery/template`, including internal and billing notifications
 via the mailer's shared BGSNL notification snapshot. The selected provider
 never falls back on an ambiguous failure. Template variables, including nested

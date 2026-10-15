@@ -73,14 +73,44 @@ const ticketBirdStageSchema = new Schema(
   { _id: false, strict: false }
 );
 
+const mailHistorySchema = new Schema({
+  campaignId: { type: String, required: true },
+  kind: { type: String, required: true },
+  audience: { type: String, required: true },
+  status: { type: String, required: true },
+  createdBy: { type: String },
+  total: { type: Number, default: 0 },
+  accepted: { type: Number, default: 0 },
+  skipped: { type: Number, default: 0 },
+  failed: { type: Number, default: 0 },
+  notSent: { type: Number, default: 0 },
+  createdAt: { type: Date, required: true },
+  completedAt: { type: Date, required: true },
+}, { _id: false });
+
 const eventSchema = new Schema({
   memberAnnouncementQueuedAt: Date,
   memberAnnouncementCompletedAt: Date,
+  mailHistory: { type: [mailHistorySchema], default: [] },
+  mailAcceptedTotal: { type: Number, default: 0 },
+  emailCampaigns: { type: [Schema.Types.Mixed], default: [] },
+  feedbacks: { type: [Schema.Types.Mixed], default: [] },
   metadata: { type: eventMetadataSchema, default: undefined },
   createdAt: { type: Date, immutable: true, default: createCurrentDate },
   status: { type: String, required: true, default: EVENT_OPENED },
+  sitemapPastRefreshedFor: { type: Date },
   archiveCleanupPending: { type: Boolean },
   archiveCleanupCompletedAt: { type: Date },
+  cancellationRequestedAt: { type: Date },
+  cancellationCompletedAt: { type: Date },
+  cancellationRetryAt: { type: Date },
+  feedbackEmailDueAt: { type: Date },
+  feedbackEmailCompletedAt: { type: Date },
+  feedbackEmailRetryAt: { type: Date },
+  mediaRetainedAt: { type: Date },
+  mediaCleanupDueAt: { type: Date },
+  mediaCleanupRetryAt: { type: Date },
+  mediaCleanupAt: { type: Date },
   region: { type: String, required: true },
   title: { type: String, required: true },
   // Assigned once at publication. Existing records remain readable without a
@@ -193,6 +223,10 @@ const eventSchema = new Schema({
       ticketToken: { type: String },
       refunded: { type: Boolean, default: false },
       refundReason: { type: String },
+      refundId: { type: String },
+      refundIds: [{ type: String }],
+      refundedAt: { type: Date },
+      refundAmountCents: { type: Number },
     },
   ],
 });
@@ -207,6 +241,13 @@ eventSchema.static(
 );
 
 eventSchema.index({ memberAnnouncementQueuedAt: 1, memberAnnouncementCompletedAt: 1 });
+eventSchema.index({ "emailCampaigns.status": 1, "emailCampaigns.createdAt": 1 });
+eventSchema.index({ "emailCampaigns.key": 1 });
+eventSchema.index({ cancellationRequestedAt: 1, cancellationCompletedAt: 1, cancellationRetryAt: 1 });
+eventSchema.index({ feedbackEmailDueAt: 1, feedbackEmailCompletedAt: 1, feedbackEmailRetryAt: 1 });
+eventSchema.index({ "guestList._id": 1 }, { name: "guestlist_feedback_ticket_id" });
+eventSchema.index({ mediaCleanupDueAt: 1, mediaCleanupAt: 1, mediaCleanupRetryAt: 1 });
+eventSchema.index({ folder: 1, mediaCleanupAt: 1 });
 
 // Resolves a scanned QR to its event and purchase code. Not unique: a group
 // purchase repeats one token across its guests, and a unique multikey index

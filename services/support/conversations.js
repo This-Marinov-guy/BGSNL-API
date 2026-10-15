@@ -149,7 +149,26 @@ export function createSupportService({ records = SupportConversation, now = () =
     return { conversations: items.map(record => ({ id: record._id, revision: record.revision, lastAuthor: record.lastAuthor })) };
   }
 
-  return { create, list, prepareReply, reply, changeStatus, activity,
+  async function unanswered(actor) {
+    if (!isSupportStaff(actor.account)) throw new HttpError("Support staff access is required.", 403);
+    const matches = await records.find({ status: { $in: ["open", "in_progress", "waiting_for_you"] }, lastAuthor: "requester" })
+      .select("_id").limit(1).lean();
+    return { hasUnanswered: matches.length > 0 };
+  }
+
+  async function inboxActivity(actor) {
+    if (!isSupportStaff(actor.account)) throw new HttpError("Support staff access is required.", 403);
+    const items = await records.find({})
+      .select("_id messages.author messages.kind messages.diagnostic")
+      .sort({ lastMessageAt: -1, _id: -1 }).limit(5000).lean();
+    return { conversations: items.map(record => ({
+      id: record._id,
+      requesterMessageRevisions: record.messages.flatMap((message, revision) =>
+        message.author === "requester" && message.kind !== "status" && !message.diagnostic ? [revision] : []),
+    })) };
+  }
+
+  return { create, list, prepareReply, reply, changeStatus, activity, unanswered, inboxActivity,
     get: async (id, actor, options = {}) => publicConversation(await load(id, actor), { ...actor, ...options }),
   };
 }

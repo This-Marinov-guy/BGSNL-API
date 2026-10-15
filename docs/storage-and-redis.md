@@ -16,13 +16,14 @@ profile owns Google identities and passkeys.
 | Current membership entitlement snapshot | Account `subscription` | Refreshed from Stripe |
 | Invoices, charges, refunds, transfers, fees and regional allocation | Stripe | Stripe history; no Mongo billing ledger |
 | A pending transfer/reversal instruction | Stripe invoice metadata | Cleared after reconciliation |
-| Refresh tokens (hashes), session generations/revocation | Redis | Session deadline: 30 days from login, then one hour after recorded activity; reads alone do not extend it |
+| Refresh tokens (hashes), session generations/revocation | Redis | Session deadline: 14 days after recorded activity; reads alone do not extend it |
 | Rate-limit buckets | Redis | Original fixed-window expiry |
 | Public counts/event caches | Redis | 24 hours |
 | Pending checkout registration and coordination state | Redis | 30 days from reservation; completed state expires 30 days after completion |
 | Current payment-reminder job | Redis | 30 days from episode start; resolution shortens this to at most one more day |
 | Payment-return capability | Redis | Seven days |
 | Google/passkey ceremonies, password resets and profile confirmations | `temporarycodes` | 5 minutes / 15 minutes / 1 hour |
+| Event cancellation confirmation codes (HMAC hashes) | `temporaryCodes` | 10 minutes |
 | Transaction fencing markers | `temporarycodes` | One day after use |
 
 Every Redis write has an expiry. The record store rejects missing or invalid
@@ -42,6 +43,16 @@ The few tokens that must be consumed atomically with account writes stay in
 `temporarycodes`, with namespaced IDs and a TTL index. Redis cannot participate
 in a MongoDB transaction. Tiny expiring transaction markers also prevent a
 worker that lost its Redis lease from overwriting a newer account update.
+
+Event cancellation uses a namespaced record in the existing `temporaryCodes`
+collection; it adds no collection. An event manager requests an eight-digit code
+that is delivered to the event region's email from `regionContacts`. In `APP_ENV=dev`,
+delivery is redirected to the developer address while the region contact must
+still be configured. The code is valid for ten minutes, can be attempted five
+times, and can be resent after one minute. Only successful code consumption
+starts archival, refunds, and ticket-holder notifications. The dedicated
+`event-cancellation-confirm` automation must be deployed to Domakin Mailer
+before enabling this API flow.
 
 No birthday, weekly-report or event-announcement delivery collections are used.
 Their scheduler guards are process-local and store no outcomes. As requested,

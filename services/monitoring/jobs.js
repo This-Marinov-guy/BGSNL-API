@@ -80,7 +80,8 @@ const readHistoryCounts = async (model) => {
   return { failed, pending, completed };
 };
 const readQueueCounts = async (getQueue) => summaryFromCounts(await withTimeout(getQueue().getJobCounts(...ALL_STATES)));
-const sourcesFromResults = (queue, history, marketing) => ({ spreadsheetSync: queue.status === "fulfilled", history: history.status === "fulfilled",
+const sourcesFromResults = (queue, history, marketing) => ({ spreadsheetSync: queue.status === "fulfilled",
+  history: history.status === "fulfilled",
   marketingCapture: marketing.status === "fulfilled" });
 const reportFailures = (queue, history, marketing) => {
   if (queue.status === "rejected") logOperationalError("service.monitoring-spreadsheet-jobs", queue.reason);

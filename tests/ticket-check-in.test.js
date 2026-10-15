@@ -35,6 +35,7 @@ test("refunded, duplicate and unknown codes cannot admit guests", () => {
 test("atomic update guards every selected seat against concurrent scans/refunds", () => {
   const mutation = checkInMutation({ _id: "event", region: "groningen" }, { ids: ["a", "b"] });
   assert.equal(mutation.filter.$and.length, 2);
+  assert.equal(mutation.filter.cancellationRequestedAt, null);
   assert.deepEqual(mutation.filter.$and[0].guestList.$elemMatch, { _id: "a", status: { $ne: 1 }, refunded: { $ne: true } });
   assert.deepEqual(mutation.options.arrayFilters, [{ "guest._id": { $in: ["a", "b"] } }]);
   assert.equal(mutation.update.$set["guestList.$[guest].status"], 1);

@@ -1,12 +1,18 @@
 import { isEventDraftReady } from "../../validation/form-validators.js";
 import Event from "../../models/Event.js";
 import EventDraft from "../../models/EventDraft.js";
-import { archiveEvent, expiredEventFilter } from "../../services/events/archive-event.js";
+import { archiveEvent, eventArchiveCutoff, expiredEventFilter } from "../../services/events/archive-event.js";
+import { cancellationCounts } from "../../services/events/event-cancellation.js";
+import { beginEventCancellation, canCancelEventWithoutEmail, eventCancellationConfirmation } from "../../services/events/event-cancellation-confirmation.js";
+import { rememberDeletedDraftMedia } from "../../services/events/event-media-cleanup.js";
+import { copyDraftEventMedia, publishedEventFolder } from "../../services/events/promote-draft-media.js";
+import { eventResponse } from "../../services/events/event-response.js";
 import HttpError from "../../models/Http-error.js";
 import {
-  uploadToCloudinary,
   deleteFolder,
+  uploadToCloudinary,
 } from "../../util/functions/cloudinary.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 import {
   isEventTimerFinished,
   parseStingData,
@@ -43,9 +49,9 @@ import { uniqueEventSlug } from "../../services/public-content/event-slug.js";
 import { publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
 import { dispatchSitemapRefresh } from "../../services/public-content/sitemap-dispatch.js";
 import { trustedWebsiteRequest } from "../../util/auth/request-client.js";
+import { authorizedRegion, canAccessRegion, regionFilter } from "../../middleware/authorization.js";
 import {
-  ALL_EVENT_REGIONS_ACCESS,
-  ACCESS_4,
+  EVENT_MANAGEMENT_ACCESS,
   DEFAULT_REGION,
   REGIONS,
   EVENT_DRAFT,
@@ -70,34 +76,29 @@ const websiteOriginForRequest = (req) => {
 };
 
 const hasAdminRegionAccess = (req) =>
-  ALL_EVENT_REGIONS_ACCESS.some((role) => req.user?.roles?.includes(role));
+  authorizedRegion(req, "event") === null;
 
 const hasEventRegionAccess = (req, region) =>
-  region !== DEFAULT_REGION || hasAdminRegionAccess(req);
+  canAccessRegion(req, "event", region);
 
 const rejectNetherlandsRegionAccess = (req, next) => {
   if (hasEventRegionAccess(req, req.body?.region)) {
     return false;
   }
 
-  next(new HttpError("Only admins can manage Netherlands events", 403));
+  next(new HttpError("No access for this region", 403));
   return true;
 };
 
 const isDraftRequest = (req) => req.body?.status === EVENT_DRAFT;
 
 const hasDraftAccess = (req, event) => {
-  const canManageEvents = ACCESS_4.some((role) =>
+  const canManageEvents = EVENT_MANAGEMENT_ACCESS.some((role) =>
     req.user?.roles?.includes(role)
   );
 
   if (!canManageEvents) return false;
-  if (hasAdminRegionAccess(req)) return true;
-
-  return (
-    event.draftOwner?.userId === req.user?.userId ||
-    (!!event.region && event.region === req.user?.region)
-  );
+  return hasEventRegionAccess(req, event.region);
 };
 
 const parseJsonSafely = (value, fallback) => {
@@ -128,6 +129,7 @@ export const saveEventDraft = async (req, res, next, existingDraft = null) => {
   if (![...REGIONS, DEFAULT_REGION].includes(region)) {
     return next(new HttpError("Choose a region before saving a draft", 422));
   }
+  if (!hasEventRegionAccess(req, region)) return next(new HttpError("No access for this region", 403));
   const draftData = { ...parseJsonSafely(req.body.draftData, {}), region };
   // Old clients or saved drafts may still contain the retired background fields.
   for (const field of ["bgImage", "bgImageExtra", "bgImageSelection"]) delete draftData[field];
@@ -135,12 +137,13 @@ export const saveEventDraft = async (req, res, next, existingDraft = null) => {
   const folder =
     event.folder ||
     `${IS_PROD ? "" : "development/"}drafts/${event._id.toString()}`;
+  const uploadFolder = { folder, asset_folder: folder, public_id_prefix: folder };
   const files = req.files ?? {};
 
   try {
     if (files.poster?.[0]) {
       event.poster = await uploadToCloudinary(files.poster[0], {
-        folder,
+        ...uploadFolder,
         public_id: "poster",
         width: 800,
         height: 800,
@@ -151,7 +154,7 @@ export const saveEventDraft = async (req, res, next, existingDraft = null) => {
 
     if (files.ticketImg?.[0]) {
       event.ticketImg = await uploadToCloudinary(files.ticketImg[0], {
-        folder,
+        ...uploadFolder,
         public_id: "ticket",
         width: 1500,
         height: 485,
@@ -167,7 +170,7 @@ export const saveEventDraft = async (req, res, next, existingDraft = null) => {
     await Promise.all(
       (files.images ?? []).map(async (file, index) => {
         const link = await uploadToCloudinary(file, {
-          folder,
+          ...uploadFolder,
           public_id: `draft_${Date.now()}_${index}`,
           width: 800,
           height: 800,
@@ -254,7 +257,7 @@ export const sendEventDraftReminder = async (req, res, next) => {
     return next(new HttpError("Fetching the event draft failed", 500));
   }
 
-  if (!draft) {
+  if (!draft || draft.deletedAt) {
     return next(new HttpError("No such event draft", 404));
   }
 
@@ -270,6 +273,9 @@ export const sendEventDraftReminder = async (req, res, next) => {
       receiver,
       eventId: draft.id,
       eventTitle: draft.title,
+      eventDate: draft.date,
+      poster: draft.poster,
+      region: draft.region,
       continueUrl,
     });
   } catch {
@@ -293,6 +299,7 @@ export const fetchFullDataEvent = async (req, res, next) => {
     if (!event) {
       event = await EventDraft.findById(eventId);
       isDraft = Boolean(event);
+      if (event?.deletedAt) event = null;
     } else {
       // Keep legacy draft documents private until they are migrated.
       isDraft = event.status === EVENT_DRAFT;
@@ -319,7 +326,7 @@ export const fetchFullDataEvent = async (req, res, next) => {
     return res.status(200).json({ event, status: false });
   }
 
-  if (!hasEventRegionAccess(req, event.region)) {
+  if (event.region === DEFAULT_REGION && !hasAdminRegionAccess(req)) {
     return next(new HttpError("Only admins can access Netherlands events", 403));
   }
 
@@ -351,37 +358,19 @@ export const fetchFullDataEventsList = async (req, res, next) => {
 
   try {
     if (region) {
-      if (region === DEFAULT_REGION && !isAdmin) {
-        return next(new HttpError("Only admins can access Netherlands events", 403));
-      }
-
-      if (!isAdmin && region !== req.user?.region) {
-        return next(new HttpError("No access for this region", 403));
-      }
-
-      eventQuery = { region };
-      draftsQuery = { region };
+      eventQuery = regionFilter(req, "event", region);
+      draftsQuery = regionFilter(req, "event", region);
     } else if (isAdmin) {
       eventQuery = {};
       draftsQuery = {};
     } else {
-      const userRegion =
-        req.user?.region === DEFAULT_REGION ? "" : req.user?.region ?? "";
-
-      eventQuery = { region: userRegion };
-      draftsQuery = {
-        $or: [
-          { region: userRegion },
-          {
-            region: { $in: [null, ""] },
-            "draftOwner.userId": req.user?.userId,
-          },
-        ],
-      };
+      eventQuery = regionFilter(req, "event");
+      draftsQuery = regionFilter(req, "event");
     }
   } catch (err) {
-    return next(new HttpError("Fetching events failed", 500));
+    return next(err instanceof HttpError ? err : new HttpError("Fetching events failed", 500));
   }
+  draftsQuery.deletedAt = null;
 
   const now = new Date();
   eventQuery.status = includeArchived
@@ -399,7 +388,7 @@ export const fetchFullDataEventsList = async (req, res, next) => {
         Event.countDocuments(eventQuery),
       ]);
       return res.status(200).json({
-        events: events.map((event) => removeModelProperties(event, ["guestList"])),
+        events: events.map((event) => eventResponse(removeModelProperties(event, ["guestList"]))),
         page,
         total,
         hasMore: page * pageSize < total,
@@ -422,7 +411,7 @@ export const fetchFullDataEventsList = async (req, res, next) => {
 
   // TODO: remove early, lateBird and add them to a new
   events = [
-    ...events.map((event) => removeModelProperties(event, ["guestList"])),
+    ...events.map((event) => eventResponse(removeModelProperties(event, ["guestList"]))),
     ...await Promise.all(drafts.map(async draft => ({
       ...removeModelProperties(draft, ["draftOwner"]),
       readyToPublish: await isEventDraftReady(draft),
@@ -437,13 +426,13 @@ export const archiveExpiredEvents = async (req, res, next) => {
     return next(new HttpError("Website authentication required", 403));
   }
 
-  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const cutoff = eventArchiveCutoff();
   try {
     let archived = 0, failed = 0;
     for await (const candidate of Event.find(expiredEventFilter(cutoff)).select("_id").cursor()) {
       try {
         const event = await archiveEvent(candidate._id, { cutoff });
-        if (event) { archived++; void dispatchSitemapRefresh("archived", event); }
+        if (event) archived++;
       } catch { failed++; }
     }
     return res.status(failed ? 500 : 200).json({ status: failed === 0, archived, failed });
@@ -454,25 +443,16 @@ export const archiveExpiredEvents = async (req, res, next) => {
 
 export const getEventDraftCount = async (req, res, next) => {
   const region = String(req.query.region || "").trim();
-  const isAdmin = hasAdminRegionAccess(req);
 
   if (!REGIONS.includes(region) && region !== DEFAULT_REGION) {
     return next(new HttpError("A valid region is required", 422));
   }
 
-  if (region === DEFAULT_REGION && !isAdmin) {
-    return next(new HttpError("Only admins can access Netherlands events", 403));
-  }
-
-  if (!isAdmin && region !== req.user?.region) {
-    return next(new HttpError("No access for this region", 403));
-  }
-
   try {
-    const draftCount = await EventDraft.countDocuments({ region });
+    const draftCount = await EventDraft.countDocuments({ ...regionFilter(req, "event", region), deletedAt: null });
     return res.status(200).json({ draftCount });
-  } catch {
-    return next(new HttpError("Draft availability could not be loaded", 500));
+  } catch (error) {
+    return next(error instanceof HttpError ? error : new HttpError("Draft availability could not be loaded", 500));
   }
 };
 
@@ -872,7 +852,7 @@ export const addEvent = async (req, res, next) => {
     console.log(err);
   }
 
-  event = event.toObject({ getters: true });
+  event = eventResponse(event.toObject({ getters: true }));
 
   res.status(201).json({ status: true, event });
 };
@@ -890,6 +870,7 @@ export const editEvent = async (req, res, next) => {
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
+  if (draft?.deletedAt) draft = null;
 
   if (!event && !draft) {
     return next(new HttpError("No such event", 404));
@@ -909,6 +890,8 @@ export const editEvent = async (req, res, next) => {
   }
 
   const wasDraft = Boolean(draft);
+  const ownedDraftFolder = wasDraft &&
+    draft.folder === `${IS_PROD ? "" : "development/"}drafts/${draft._id}`;
 
   if (wasDraft && event) {
     return next(new HttpError("This draft has already been published", 409));
@@ -947,7 +930,12 @@ export const editEvent = async (req, res, next) => {
     });
   }
 
-  const folder = event.folder ?? (IS_PROD ? "spare" : "development/spare");
+  const folder = wasDraft
+    ? publishedEventFolder(draft._id)
+    : event.folder ?? (IS_PROD ? "spare" : "development/spare");
+  const uploadFolder = wasDraft
+    ? { folder, asset_folder: folder, public_id_prefix: folder }
+    : { folder };
 
   const {
     memberOnly,
@@ -1026,7 +1014,7 @@ export const editEvent = async (req, res, next) => {
 
   const poster = req.files["poster"]
     ? await uploadToCloudinary(req.files["poster"][0], {
-        folder,
+        ...uploadFolder,
         public_id: "poster",
         width: 1000,
         height: 1000,
@@ -1037,7 +1025,7 @@ export const editEvent = async (req, res, next) => {
 
   const ticketImg = req.files["ticketImg"]
     ? await uploadToCloudinary(req.files["ticketImg"][0], {
-        folder,
+        ...uploadFolder,
         public_id: "ticket",
         width: 1500,
         height: 485,
@@ -1084,7 +1072,7 @@ export const editEvent = async (req, res, next) => {
     const uploadPromises = Object.values(uploadedFilesMap).map(async (img) => {
       try {
         const link = await uploadToCloudinary(img, {
-          folder,
+          ...uploadFolder,
           public_id: img.originalname,
           width: 800,
           height: 800,
@@ -1147,6 +1135,18 @@ export const editEvent = async (req, res, next) => {
 
   poster && (event.poster = poster);
   ticketImg && (event.ticketImg = ticketImg);
+  if (wasDraft) {
+    try {
+      const media = await copyDraftEventMedia(draft, { poster: event.poster, ticketImg: event.ticketImg, images }, folder);
+      event.poster = media.poster;
+      event.ticketImg = media.ticketImg;
+      images = media.images;
+      event.folder = folder;
+    } catch (error) {
+      logOperationalError("event.publish-draft-media", error);
+      return next(new HttpError("Moving draft images failed. Please try publishing again.", 500));
+    }
+  }
 
   // TODO: move to service
   if (date) {
@@ -1438,12 +1438,15 @@ export const editEvent = async (req, res, next) => {
       try {
         await session.withTransaction(async () => {
           await event.save({ session });
-          const result = await EventDraft.deleteOne(
-            { _id: draft._id },
-            { session }
-          );
+          const result = ownedDraftFolder
+            ? await EventDraft.updateOne(
+              { _id: draft._id, deletedAt: null },
+              { $set: { deletedAt: new Date(), mediaCleanupDueAt: new Date() } },
+              { session }
+            )
+            : await EventDraft.deleteOne({ _id: draft._id }, { session });
 
-          if (result.deletedCount !== 1) {
+          if ((ownedDraftFolder ? result.modifiedCount : result.deletedCount) !== 1) {
             throw new Error("Event draft disappeared while publishing");
           }
         });
@@ -1464,9 +1467,22 @@ export const editEvent = async (req, res, next) => {
   }
 
   if (wasDraft) {
+    // Keep the deleted draft as a retry record if Cloudinary cleanup fails.
+    if (ownedDraftFolder) {
+      try {
+        await deleteFolder(draft.folder);
+        await EventDraft.deleteOne({ _id: draft._id, deletedAt: { $ne: null } });
+      } catch (error) {
+        logOperationalError("event.publish-draft-cleanup", error);
+      }
+    }
     notifyEventCreated(event);
     eventToSpreadsheet(event.id);
     void dispatchSitemapRefresh("published", event);
+  } else {
+    // Published edits can move an event into or out of the public sitemap
+    // through hidden, date, correctedDate, or region changes.
+    void dispatchSitemapRefresh("updated", event);
   }
 
   try {
@@ -1476,7 +1492,7 @@ export const editEvent = async (req, res, next) => {
     console.log(err);
   }
 
-  event = event.toObject({ getters: true });
+  event = eventResponse(event.toObject({ getters: true }));
 
   res.status(200).json({ status: true, event });
 };
@@ -1494,6 +1510,7 @@ export const deleteEvent = async (req, res, next) => {
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
   }
+  if (draft?.deletedAt) draft = null;
 
   // todo: check the error with the no such event
   if (!event && !draft) {
@@ -1510,27 +1527,80 @@ export const deleteEvent = async (req, res, next) => {
 
   if (draft) {
     try {
-      await draft.deleteOne();
+      if (draft.folder) await rememberDeletedDraftMedia(draft);
+      else await draft.deleteOne();
     } catch (err) {
       console.log(err);
       return next(new HttpError("Deleting event draft failed", 500));
     }
 
-    if (draft.folder) await deleteFolder(draft.folder);
     return res.status(200).json({ status: true, eventId });
   }
 
-  try {
-    event = await archiveEvent(eventId, { stamp: value => stampEventMetadata(value, req) });
-  } catch (err) {
-    console.log(err);
-    return next(new HttpError(
-      "Operations failed! Please try again or contact support!",
-      500
-    ));
-  }
+  return next(new HttpError("Use Cancel event to archive a published event and refund its ticket holders.", 409));
+};
 
-  void dispatchSitemapRefresh("archived", event);
-  res.status(200).json({ status: true, eventId });
+const cancelPublishedEvent = async (eventId, req) => {
+  try {
+    await archiveEvent(eventId, { cancel: true, deferCleanup: true,
+      stamp: value => stampEventMetadata(value, req) });
+  } catch (error) {
+    // Archival commits before external cleanup. A cleanup failure must not
+    // hide an accepted cancellation; the worker will retry the cleanup.
+    const committed = await Event.findById(eventId).select("status cancellationRequestedAt");
+    if (committed?.status !== "archived" || !committed.cancellationRequestedAt) throw error;
+  }
+};
+
+export const previewEventCancellation = async (req, res, next) => {
+  let event;
+  try { event = await Event.findById(req.params.eventId).select("region title status guestList cancellationRequestedAt"); }
+  catch { return next(new HttpError("Could not load this event", 500)); }
+  if (!event) return next(new HttpError("Event not found", 404));
+  if (!hasEventRegionAccess(req, event.region)) return next(new HttpError("No access for this region", 403));
+  if (event.status === "archived") return next(new HttpError("This event is already archived", 409));
+  const confirmationRequired = !canCancelEventWithoutEmail(req.user?.roles);
+  let confirmation = null, confirmationEmail = null;
+  if (confirmationRequired) {
+    try {
+      [confirmation, confirmationEmail] = await Promise.all([
+        eventCancellationConfirmation.pending(req.params.eventId), eventCancellationConfirmation.recipient(event),
+      ]);
+    } catch (error) { return next(error instanceof HttpError ? error : new HttpError("Could not load the cancellation confirmation. Please try again.", 503)); }
+  }
+  return res.status(200).json({ status: true, title: event.title, counts: cancellationCounts(event), confirmationRequired,
+    confirmationEmail, confirmation,
+    alreadyRequested: Boolean(event.cancellationRequestedAt) });
+};
+
+export const requestEventCancellation = async (req, res, next) => {
+  let event;
+  try { event = await Event.findById(req.params.eventId).select("region title date correctedDate status guestList cancellationRequestedAt"); }
+  catch { return next(new HttpError("Could not load this event", 500)); }
+  if (!event) return next(new HttpError("Event not found", 404));
+  if (!hasEventRegionAccess(req, event.region)) return next(new HttpError("No access for this region", 403));
+  if (event.status === "draft") return next(new HttpError("Drafts cannot be cancelled", 409));
+  if (event.status === "archived") return next(new HttpError("This event is already archived", 409));
+  try {
+    const result = await beginEventCancellation({ roles: req.user?.roles, event,
+      cancel: () => cancelPublishedEvent(req.params.eventId, req) });
+    return res.status(202).json({ status: true, eventId: req.params.eventId, ...result });
+  } catch (error) { return next(error instanceof HttpError ? error : new HttpError("Could not process event cancellation. Please try again.", 500)); }
+};
+
+export const confirmEventCancellation = async (req, res, next) => {
+  let event;
+  try { event = await Event.findById(req.params.eventId).select("region status cancellationRequestedAt"); }
+  catch { return next(new HttpError("Could not load this event", 500)); }
+  if (!event) return next(new HttpError("Event not found", 404));
+  if (!hasEventRegionAccess(req, event.region)) return next(new HttpError("No access for this region", 403));
+  if (event.status === "draft") return next(new HttpError("Drafts cannot be cancelled", 409));
+  if (event.status === "archived") return next(new HttpError("This event is already archived", 409));
+  try {
+    await eventCancellationConfirmation.confirm(event, req.body.code, () => cancelPublishedEvent(req.params.eventId, req));
+  } catch (error) {
+    return next(error instanceof HttpError ? error : new HttpError("Could not cancel this event. Request a new code and try again.", 500));
+  }
+  return res.status(202).json({ status: true, eventId: req.params.eventId, cancellationQueued: true });
 };
 

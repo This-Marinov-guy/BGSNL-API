@@ -9,7 +9,7 @@ import { encodeTicketImage } from "../tickets/ticket-image.js";
 import sharp from "sharp";
 import { fileURLToPath } from "url";
 import MemberUser from "../../models/MemberUser.js";
-import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
+import { logIntegrationError, logOperationalError, observeIntegrationRequest } from "../../middleware/axiom-logger.js";
 
 const DEFAULT_TICKET_COLOR = "#faf9f6";
 const DEFAULT_TICKET_WIDTH = 1500;
@@ -353,7 +353,8 @@ const uploadBufferToS3 = async ({ buffer, bucketName, key }) => {
 
   let uploadedFile;
   try {
-    uploadedFile = await s3.upload({ Bucket: bucketName, Key: key, Body: buffer, ContentType: "image/webp" }).promise();
+    uploadedFile = await observeIntegrationRequest("aws-s3", "ticket-upload", "PUT", () =>
+      s3.upload({ Bucket: bucketName, Key: key, Body: buffer, ContentType: "image/webp" }).promise());
   } catch (error) { logIntegrationError("aws-s3", error, "ticket-upload"); throw error; }
 
   return uploadedFile.Location;
@@ -388,10 +389,10 @@ export const renderEventTicket = async ({
     throw new Error("Missing event ticket template image");
   }
 
-  const imageResponse = await axios.get(ticketImageUrl, {
+  const imageResponse = await observeIntegrationRequest("ticket-image", "download", "GET", () => axios.get(ticketImageUrl, {
     responseType: "arraybuffer",
     timeout: 15000,
-  });
+  }));
 
   const sourceImageBuffer = Buffer.from(imageResponse.data || []);
   if (!isNonEmptyBuffer(sourceImageBuffer)) {

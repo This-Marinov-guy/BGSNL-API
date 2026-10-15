@@ -34,6 +34,7 @@ for (const [label, args, code] of [
   ["regional accounts cannot edit another region", { data: { region: "amsterdam" } }, 403],
   ["regional accounts cannot edit national events", { data: { region: "netherlands" } }, 403],
   ["ordinary members cannot toggle sales", { user: { userId: "member", roles: ["member"], region: "groningen" } }, 403],
+  ["active members cannot toggle sales", { user: { userId: "member", roles: ["active_member"], region: "groningen" } }, 403],
   ["archived events cannot reopen", { closed: false, data: { status: "archived" } }, 409],
   ["invalid values are rejected", { closed: "false" }, 400],
   ["missing event returns 404", { missing: true }, 404],

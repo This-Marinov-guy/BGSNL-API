@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import dotenv from "dotenv";
 import moment from "moment";
 import { IS_PROD } from "../../util/functions/helpers.js";
-import { logIntegrationError } from "../../middleware/axiom-logger.js";
+import { logIntegrationError, observeIntegrationRequest } from "../../middleware/axiom-logger.js";
 
 dotenv.config();
 
@@ -49,7 +49,7 @@ const formatCalendarEvent = (eventData) => {
 const handleCalendarOperation = async (operation, params) => {
   const calendar = await getCalendarClient();
   try {
-    const response = await operation(calendar, params);
+    const response = await observeIntegrationRequest("google-calendar", "event-operation", undefined, () => operation(calendar, params));
     console.log("Operation successful:", response.data);
     return response.data;
   } catch (error) {

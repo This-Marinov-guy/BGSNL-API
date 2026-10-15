@@ -14,15 +14,25 @@ The site uses three event datasets:
 | --- | --- |
 | `web` | Page views, browser errors, and Next.js server errors |
 | `operations` | API request summaries, endpoint 5xx errors, service and worker exceptions, Stripe webhook deliveries and processing errors, API and Redis checks |
-| `integrations` | Provider exceptions and live checks for Mailer, Stripe, WordPress, Google Sheets, Cloudinary, and AWS S3 |
+| `integrations` | Provider request outcomes, exceptions, and live checks for email delivery, Stripe, WordPress, Google Sheets, Google Calendar, Cloudinary, AWS S3, and GitHub sitemap dispatch |
 
 `AXIOM_WEB_DATASET`, `AXIOM_OPERATIONS_DATASET`, and
 `AXIOM_INTEGRATIONS_DATASET` can override these names. The three names must be
-different. API ingestion requires `AXIOM_TOKEN` and `AXIOM_ORG_ID`. The token
-never reaches the browser. For dashboard reads, set `AXIOM_QUERY_TOKEN` to a
-read-only token with Query Read permission for the three datasets. If omitted,
+different and must exist in Axiom. The legacy `AXIOM_DATASET` setting does not
+configure this three-dataset view. API ingestion requires `AXIOM_TOKEN`. `AXIOM_ORG_ID` is only required
+for a legacy personal token; Axiom API tokens identify their organization and
+the API ignores `AXIOM_ORG_ID` for those tokens. The
+token must be able to ingest into all three datasets in that organization. A
+token for a different organization can appear valid while writes fail with
+`dataset not found`. The token never reaches the browser. For dashboard reads,
+set `AXIOM_QUERY_TOKEN` to a read-only token with Query Read permission for the
+three datasets. If omitted,
 the API tries the ingest token; an ingest-only token will show Axiom as
 unavailable without hiding the service health checks.
+Local dev has no Axiom query token by default, so the card shows `not configured`
+instead of reporting a provider outage. Query failures distinguish denied access,
+missing datasets, and other failures. Individual cards expand to show their
+latest check and details.
 
 Production ingestion is on unless `AXIOM_LOGGING_ENABLED=false`. Local
 development ingestion is off; to test it deliberately, set
@@ -44,22 +54,81 @@ and HTTP status when present; raw exception messages and stacks stay out of
 Axiom. Fatal process exceptions are recorded on a best-effort basis before Node
 terminates. Expected validation and business-rule responses are not exceptions.
 
+Completed provider requests also record `type=request` in `integrations`, with
+provider, fixed operation name, direction, outcome, HTTP method/status when
+available, and duration. This includes successful Stripe SDK calls, email handoffs, WordPress
+and Sheets calls, Calendar operations, Cloudinary media calls, ticket image
+downloads, S3 ticket uploads, and GitHub sitemap dispatches. Wrapped provider calls record network failures
+as failed outcomes even when there is no HTTP status. Request URLs, resource IDs, email
+addresses, headers, payloads, and response bodies are never included. Stripe
+SDK retries may produce more than one request record for one application call.
+Inbound Atlas, Google Scripts, Koko, and WordPress API requests also appear as
+`direction=inbound` with fixed operation names. Their path parameters, query
+strings, credentials, and bodies are omitted. Other API traffic remains in
+`operations`; private payment, wallet, support, and monitoring routes remain
+excluded from general request logging.
+
 ## Health checks
 
 Opening or refreshing the dashboard performs read-only checks. API checks its
-database connection; Redis uses PING; Mailer calls `/health`; Stripe reads its
+database connection; Redis uses PING; Mailer calls `/health` and uses the
+Bulgarian Society Mailtrap transport and template readiness in that response;
+unrelated Mailer email channels do not determine this card's health. Stripe reads its
 balance; WordPress reads a one-post listing; Google Sheets reads spreadsheet
 metadata; Cloudinary uses its ping API; AWS S3 uses HeadBucket on the configured
 ticket buckets. Checks have a five-second display timeout. S3 or provider
 responses that reject the probe's permissions show `unverified`, not healthy.
 The page displays the latest check, not a continuous uptime guarantee.
+Each Axiom and service health panel shows the completion time of its latest
+check. An unavailable Axiom dataset does not hide other service checks.
+
+## Usage
+
+The Usage tab is read-only and restricted by the same monitoring role
+check. It loads independently from service health and caches provider results
+for five minutes; Refresh requests a new reading. A provider failure leaves the
+other quota cards available. Reference limits are labeled and must not be read
+as confirmed account-plan limits.
+
+- Cloudinary uses the [Admin API `usage` response](https://cloudinary.com/documentation/admin_api#usage) for rolling 30-day credits
+  and its reported limit.
+- Mailtrap uses the Bulgarian Society Mailer's scoped, read-only quota endpoint.
+  Configure `MAILER_API_URL` and the shared `MAILER_BULGARIANSOCIETY_SECRET` in
+  the API runtime, and deploy the Mailer monitoring route. The local `dev:all`
+  launcher injects both settings in memory.
+  It reads the Mailtrap account Stats API for the current billing cycle when
+  `MAILTRAP_BGSNL_BILLING_DAY` (1–28) is configured; otherwise the monthly
+  count is labeled a calendar-month estimate. It also reads today's count
+  against the free-plan 150-email daily reference. When
+  Mailtrap does not return a sent count, delivered plus bounced is shown as an
+  estimate. The [4,000-email free-plan allowance](https://mailtrap.io/pricing/) is a reference; set
+  `MAILTRAP_BGSNL_MONTHLY_LIMIT` in the Mailer to record the account's actual
+  monthly limit and `MAILTRAP_BGSNL_DAILY_LIMIT` for its daily limit.
+  `MAILTRAP_BGSNL_STATS_TOKEN` can supply a separate token with
+  Stats API read access; otherwise the Mailer tries its existing BGSNL token.
+- MongoDB uses `dbStats` for the connected database's data plus indexes. It
+  compares with the [Atlas M0 0.5 GB free-plan reference](https://www.mongodb.com/docs/atlas/reference/free-shared-limitations/); other databases and
+  the cluster tier are not observable through this connection. Set
+  `MONGODB_FREE_STORAGE_LIMIT_BYTES` when the account limit is confirmed.
+- AWS S3 uses the account-level [GetFreeTierUsage API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_freetier_GetFreeTierUsage.html), showing every active S3
+  offer returned by AWS. The configured AWS key needs
+  `freetier:GetFreeTierUsage` and billing view access for those allowances. When
+  billing access is missing or no offer is active, the API lists the configured
+  application buckets and shows current-object bytes and count without a
+  limit. That reading needs `s3:ListBucket` on each bucket and does not include
+  older object versions, other buckets, or account-wide request and transfer usage.
+- WordPress.com reads the configured site's [`quota` field](https://developer.wordpress.com/docs/api/1/get/sites/%24site/) from its site API.
+  When total and used or available storage are reported, the page shows used,
+  total, and available media space.
+  If the public response omits it, the card shows the public published-post count
+  from the WordPress REST API. That count is content usage, not media storage.
+  Configure a site-authorized `WORDPRESS_API_TOKEN` to request the storage quota;
+  the provider may still withhold it.
 
 ## Background jobs
 
 The monitoring page shows a failed-jobs banner for retained BGSNL job failures.
-The All jobs tab combines the durable spreadsheet sync and marketing-capture queues in Redis with a
-privacy-minimal MongoDB history of scheduler runs, in-process mail dispatch,
-and in-process Sheets work. It filters records by failed, pending, or completed
+The All jobs tab combines the durable spreadsheet sync and marketing-capture queues in Redis with `monitoringjobs` history in MongoDB. Scheduler runs and in-process mail and Sheets work are recorded there with safe job names, status, attempt count and timestamps. The queue view filters records by failed, pending, or completed
 status. Pending includes waiting, delayed, and active work. Jobs are paged 20
 at a time, up to the latest 1,000 entries; counts cover all retained entries.
 Only job type, state, attempt count, timestamps, and validated error name
@@ -96,8 +165,8 @@ For the opt-in Redis integration test, also set `BGSNL_STORAGE_TEST_REDIS=true`
 and use an isolated local Redis database (for example `BGSNL_REDIS_URL=redis://127.0.0.1:6380/15`).
 The integration test uses synthetic payloads and a random key prefix, not MongoDB.
 
-The separate Domakin Mailer owns its delivery queue. BGSNL records the handoff
-or dispatch result locally; delivery jobs after handoff are inspected in the
+The separate Domakin Mailer owns its delivery queue. BGSNL logs the handoff
+or dispatch result to Axiom; delivery jobs after handoff are inspected in the
 Mailer service. Existing failures also surface in the operations and
 integrations Axiom datasets.
 

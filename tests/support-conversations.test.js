@@ -392,6 +392,39 @@ test("inbox pagination and status filters keep result sizes bounded", async () =
   assert.equal((await service.list(staff, { status: "paused", pageSize: "10" })).total, 1);
 });
 
+test("unanswered staff indicator follows open requester activity, not inbox views", async () => {
+  const { service } = setup();
+  const staff = { account: admin, staff: true };
+  assert.deepEqual(await service.unanswered(staff), { hasUnanswered: false });
+  await assert.rejects(service.unanswered({ account: member }), { statusCode: 403 });
+  const report = await service.create(createInput(), guest);
+  assert.deepEqual(await service.unanswered(staff), { hasUnanswered: true });
+  await service.get(report.id, staff);
+  assert.deepEqual(await service.unanswered(staff), { hasUnanswered: true });
+  const answered = await service.reply(report.id, { id: randomUUID(), text: "We are checking." }, staff);
+  assert.deepEqual(await service.unanswered(staff), { hasUnanswered: false });
+  const followUp = await service.reply(report.id, { id: randomUUID(), text: "More details." }, guest);
+  assert.deepEqual(await service.unanswered(staff), { hasUnanswered: true });
+  await service.changeStatus(report.id, { revision: followUp.revision, status: "paused" }, staff);
+  assert.deepEqual(await service.unanswered(staff), { hasUnanswered: false });
+  assert.ok(answered.revision < followUp.revision);
+});
+
+test("staff activity exposes requester message revisions without message content", async () => {
+  const { service } = setup();
+  const staff = { account: admin, staff: true };
+  const report = await service.create(createInput(), guest);
+  await service.reply(report.id, { id: randomUUID(), text: "Another detail" }, guest);
+  const updated = await service.reply(report.id, { id: randomUUID(), text: "We are checking" }, staff);
+  await service.changeStatus(report.id, { revision: updated.revision, status: "resolved" }, staff);
+  await service.reply(report.id, { id: randomUUID(), text: "Automatic page screenshot", diagnostic: true, attachments: [photo()] }, guest);
+  await service.reply(report.id, { id: randomUUID(), text: "Still broken" }, guest);
+  const activity = await service.inboxActivity(staff);
+  assert.deepEqual(activity, { conversations: [{ id: report.id, requesterMessageRevisions: [0, 1, 5] }] });
+  assert.equal(JSON.stringify(activity).includes("Still broken"), false);
+  await assert.rejects(service.inboxActivity({ account: member }), { statusCode: 403 });
+});
+
 test("malformed content and honeypot submissions are rejected", async () => {
   const { service, records } = setup();
   for (const patch of [{ subject: { $ne: null } }, { text: "a".repeat(4001) }, { text: "\u0000bad" }, { website: "spam" }, { id: "not-a-uuid" }]) await assert.rejects(service.create({ ...createInput(), ...patch }, guest));
@@ -415,6 +448,7 @@ test("Mongo schema provides bounded chat fields and indexed owner/inbox lookups"
   assert.equal(schema.path("guestSecretHash").options.select, false);
   assert.ok(schema.indexes().some(([index]) => index.ownerAccountId === 1 && index.lastMessageAt === -1));
   assert.ok(schema.indexes().some(([index]) => index.status === 1));
+  assert.ok(schema.indexes().some(([index]) => index.status === 1 && index.lastAuthor === 1));
   const invalid = new SupportConversation({ _id: randomUUID(), subject: "a".repeat(141), status: "forged" });
   assert.ok(invalid.validateSync().errors.subject); assert.ok(invalid.validateSync().errors.status);
   const tooManyPhotos = new SupportConversation({ _id: randomUUID(), subject: "Photos", status: "open", messages: [{

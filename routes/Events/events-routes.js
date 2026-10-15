@@ -1,5 +1,6 @@
 import express from "express";
-import { eventCampaignHandlers } from "../../controllers/Events/event-campaign-controller.js";
+import { eventCampaignHandlers, guestSignupPrefill } from "../../controllers/Events/event-campaign-controller.js";
+import { feedbackReport, feedbackState, submitFeedback } from "../../controllers/Events/event-feedback-controller.js";
 import multer from "multer";
 import {
   checkEligibleMemberForPurchase,
@@ -11,21 +12,28 @@ import {
   postAddGuestToEvent,
   postAddMemberToEvent,
   postNonSocietyEvent,
-  postSendNonSocietyEventFinalReminderEmail,
   postSendNonSocietyEventResendEmail,
   postSyncEventsCalendar,
   updatePresence,
   getEventGuestList,
   updateGuestPresence,
+  updateGuestDetails,
+  previewGuestRefund,
+  refundGuestPurchase,
 } from "../../controllers/Events/events-controllers.js";
 import dotenv from "dotenv";
 import { adminMiddleware, authMiddleware, optionalAuthMiddleware, requireBenefits } from "../../middleware/authorization.js";
-import { EVENT_MANAGEMENT_ACCESS, COMMITTEE_MEMBER } from "../../util/config/defines.js";
+import { ACCESS_3, ALL_EVENT_REGIONS_ACCESS, EVENT_MANAGEMENT_ACCESS, COMMITTEE_MEMBER } from "../../util/config/defines.js";
 import { validateRequest } from "../../middleware/validate-request.js";
 import {
   checkTicketEligibilityValidators,
   guestCheckInValidators,
   guestPresenceValidators,
+  guestDetailsValidators,
+  guestRefundPreviewValidators,
+  guestRefundValidators,
+  eventFeedbackTicketValidators,
+  eventFeedbackAnswerValidators,
   guestTicketValidators,
   manualMemberTicketValidators,
   nonSocietyEmailValidators,
@@ -34,8 +42,13 @@ import {
 dotenv.config();
 
 const eventRouter = express.Router();
+eventRouter.get("/feedback/:ticketId", eventFeedbackTicketValidators, validateRequest, feedbackState);
+eventRouter.post("/feedback/:ticketId", eventFeedbackAnswerValidators, validateRequest, submitFeedback);
+eventRouter.get("/:eventId/feedback", adminMiddleware(EVENT_MANAGEMENT_ACCESS), feedbackReport);
+eventRouter.get("/guest-signup-prefill", guestSignupPrefill);
 eventRouter.post("/:eventId/campaigns/preview", adminMiddleware(EVENT_MANAGEMENT_ACCESS), eventCampaignHandlers.preview);
 eventRouter.post("/:eventId/campaigns/confirm", adminMiddleware(EVENT_MANAGEMENT_ACCESS), eventCampaignHandlers.confirm);
+eventRouter.get("/:eventId/campaigns/history", adminMiddleware(EVENT_MANAGEMENT_ACCESS), eventCampaignHandlers.history);
 eventRouter.get("/:eventId/campaigns/:campaignId", adminMiddleware(EVENT_MANAGEMENT_ACCESS), eventCampaignHandlers.status);
 const formDataUpload = multer({ storage: multer.memoryStorage() });
 
@@ -103,23 +116,15 @@ eventRouter.post(
 
 eventRouter.post(
   "/non-society-event/resend-email",
-  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
+  adminMiddleware(ALL_EVENT_REGIONS_ACCESS),
   nonSocietyEmailValidators,
   validateRequest,
   postSendNonSocietyEventResendEmail
 );
 
 eventRouter.post(
-  "/non-society-event/final-reminder-email",
-  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
-  nonSocietyEmailValidators,
-  validateRequest,
-  postSendNonSocietyEventFinalReminderEmail
-);
-
-eventRouter.post(
   "/sync-calendar-events",
-  adminMiddleware(EVENT_MANAGEMENT_ACCESS),
+  adminMiddleware(ALL_EVENT_REGIONS_ACCESS),
   postSyncEventsCalendar
 );
 
@@ -144,5 +149,12 @@ eventRouter.patch(
   validateRequest,
   updateGuestPresence
 );
+
+eventRouter.patch("/guest-list/:eventId/guests/:guestId", adminMiddleware(EVENT_MANAGEMENT_ACCESS),
+  guestDetailsValidators, validateRequest, updateGuestDetails);
+eventRouter.get("/guest-list/:eventId/guests/:guestId/refund", adminMiddleware(ACCESS_3),
+  guestRefundPreviewValidators, validateRequest, previewGuestRefund);
+eventRouter.post("/guest-list/:eventId/guests/:guestId/refund", adminMiddleware(ACCESS_3),
+  guestRefundValidators, validateRequest, refundGuestPurchase);
 
 export default eventRouter;

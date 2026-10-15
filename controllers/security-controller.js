@@ -3,6 +3,8 @@ import { performance } from "node:perf_hooks";
 dotenv.config();
 import { hashPassword, verifyPassword } from "../services/authentication/passwords.js";
 import { validationResult } from "express-validator";
+import { removeGuestMarketingEmail } from "../services/events/guest-marketing-emails.js";
+import { logOperationalError } from "../middleware/axiom-logger.js";
 import HttpError from "../models/Http-error.js";
 import MemberUser from "../models/MemberUser.js";
 import {
@@ -33,6 +35,11 @@ import {
 } from "../services/main-services/user-service.js";
 import AlumniUser from "../models/AlumniUser.js";
 import { buildLoginResponse } from "../services/authentication/login.js";
+
+const clearGuestMarketingEmail = async email => {
+  try { await removeGuestMarketingEmail(email); }
+  catch (error) { logOperationalError("guest-marketing.account-cleanup", error); }
+};
 
 export const postCheckEmail = async (req, res, next) => {
   const errors = validationResult(req);
@@ -148,6 +155,8 @@ export const signup = async (req, res, next, { notify = welcomeEmail, sync = use
     return next(error);
   }
 
+  await clearGuestMarketingEmail(email);
+
   let token;
   try {
     token = await jwtSign(createdUser);
@@ -245,6 +254,8 @@ export const alumniSignup = async (req, res, next, { notify = alumniWelcomeEmail
     const error = new HttpError("Signing up failed", 500);
     return next(error);
   }
+
+  await clearGuestMarketingEmail(email);
 
   let token;
   try {

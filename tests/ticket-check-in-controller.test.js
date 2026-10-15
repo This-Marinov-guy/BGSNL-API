@@ -48,10 +48,15 @@ test("short QR resolves server-side and region, wrong-event, refund and conflict
     assert.equal(writes, 0);
     assert.equal((await run({ token })).code, 409);
     assert.equal(writes, 1);
+    event.cancellationRequestedAt = new Date();
+    assert.equal((await run({ token })).code, 422);
+    assert.equal(writes, 1);
+    delete event.cancellationRequestedAt;
     event.guestList[0].refunded = true;
     assert.equal((await run({ token })).code, 422);
     assert.equal(writes, 1);
-  } finally { Event.findById = originals.find; Event.updateOne = originals.update; Event.findOne = originals.one; delete event.guestList[0].refunded; }
+  } finally { Event.findById = originals.find; Event.updateOne = originals.update; Event.findOne = originals.one;
+    delete event.guestList[0].refunded; delete event.cancellationRequestedAt; }
 });
 
 test("issued links use a short opaque token and duplicate purchase codes fail safely", async () => {

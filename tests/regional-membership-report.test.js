@@ -3,7 +3,7 @@ import test from "node:test";
 import { createEmailRunGuard } from "../services/background-services/email-run-guard.js";
 import { processRegionalMembershipReports, startRegionalMembershipReportWorker } from "../services/background-services/regional-membership-report.js";
 
-const row = (region, city, members, alumni = 0) => ({ region, city, members, alumni, total: members + alumni });
+const row = (region, city, members) => ({ region, city, members });
 const setup = () => {
   const messages = [];
   return { messages, options: {
@@ -12,8 +12,8 @@ const setup = () => {
     runGuard: createEmailRunGuard(),
     loadContacts: async () => ({ groningen: "gro@example.com", amsterdam: "ams@example.com", rotterdam: "rtm@example.com", netherlands: "nl@example.com", support: "help@example.com" }),
     loadSummary: async () => ({ rows: [
-      row("groningen", "Groningen", 2, 1), row("amsterdam", "Amsterdam", 1),
-      row("rotterdam", "Rotterdam", 0, 2), row("maastricht", "Maastricht", 0),
+      row("groningen", "Groningen", 2), row("amsterdam", "Amsterdam", 1),
+      row("rotterdam", "Rotterdam", 0), row("maastricht", "Maastricht", 0),
       row("netherlands", "Netherlands", 4), row("unassigned", "Unassigned", 1),
     ] }),
     send: async (message) => messages.push(message),
@@ -25,9 +25,11 @@ test("sends only to regions with new members, even without national subscribers"
   const result = await processRegionalMembershipReports(options);
   assert.equal(result.sent, 2);
   assert.deepEqual(messages.map(message => message.receiver), ["gro@example.com", "ams@example.com"]);
-  assert.match(messages[0].text, /Groningen: 2 members, 1 alumnus, 3 total/);
+  assert.match(messages[0].text, /Groningen: 2 new members/);
+  assert.doesNotMatch(messages[0].text, /alumni|total/i);
   assert.doesNotMatch(messages[0].html, />Amsterdam<|>Rotterdam<|All cities/);
-  assert.match(messages[0].html, /New members and alumni/);
+  assert.match(messages[0].html, /New members/);
+  assert.doesNotMatch(messages[0].html, /Alumni|>Total<|<tfoot>/);
   assert.match(messages[0].subject, /Groningen/);
   assert.equal(messages[0].type, "regional-weekly-membership-summary");
 });

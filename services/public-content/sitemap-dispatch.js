@@ -1,4 +1,4 @@
-import { logIntegrationError } from "../../middleware/axiom-logger.js";
+import { logIntegrationError, observeIntegrationRequest } from "../../middleware/axiom-logger.js";
 
 const githubRepository = () => process.env.GITHUB_SITEMAP_REPOSITORY?.trim();
 const githubToken = () => process.env.GITHUB_SITEMAP_DISPATCH_TOKEN?.trim();
@@ -11,10 +11,14 @@ const githubToken = () => process.env.GITHUB_SITEMAP_DISPATCH_TOKEN?.trim();
 export async function dispatchSitemapRefresh(change, event) {
   const repository = githubRepository();
   const token = githubToken();
-  if (!repository || !token) return false;
+  if (!repository || !token) {
+    logIntegrationError("github", { name: "SitemapDispatchNotConfigured" }, "sitemap-dispatch");
+    return false;
+  }
 
   try {
-    const response = await fetch(`https://api.github.com/repos/${repository}/dispatches`, {
+    const response = await observeIntegrationRequest("github", "sitemap-dispatch", "POST", () =>
+      fetch(`https://api.github.com/repos/${repository}/dispatches`, {
       method: "POST",
       headers: {
         Accept: "application/vnd.github+json",
@@ -28,7 +32,7 @@ export async function dispatchSitemapRefresh(change, event) {
         client_payload: { change, eventId: String(event.id || event._id), slug: event.slug || null },
       }),
       signal: AbortSignal.timeout(5000),
-    });
+      }));
     if (response.status !== 204) {
       logIntegrationError("github", { name: "SitemapDispatchError", status: response.status }, "sitemap-dispatch");
       return false;

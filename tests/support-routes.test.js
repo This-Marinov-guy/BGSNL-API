@@ -133,6 +133,10 @@ test("an active support-role account can use the staff inbox without broader adm
   const response = await request(router, { url: "/inbox", account });
   assert.equal(response.status, 200);
   assert.deepEqual(response.body.conversations, []);
+  assert.deepEqual((await request(router, { url: "/inbox/unanswered", account })).body, { hasUnanswered: false });
+  assert.equal((await request(router, { url: "/inbox/unanswered" })).status, 403);
+  assert.deepEqual((await request(router, { url: "/inbox/activity", account })).body, { conversations: [] });
+  assert.equal((await request(router, { url: "/inbox/activity" })).status, 403);
 });
 
 test("the real support route accepts recommendations and exposes their type on read", async () => {

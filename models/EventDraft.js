@@ -29,6 +29,9 @@ const eventDraftSchema = new mongoose.Schema({
   ticketImg: { type: String },
   poster: { type: String },
   folder: { type: String },
+  deletedAt: { type: Date },
+  mediaCleanupDueAt: { type: Date },
+  mediaCleanupRetryAt: { type: Date },
   draftData: { type: mongoose.Schema.Types.Mixed, default: {} },
   readyToPublish: { type: Boolean, default: false },
   draftOwner: {
@@ -40,6 +43,7 @@ const eventDraftSchema = new mongoose.Schema({
 eventDraftSchema.index({ createdAt: 1 });
 eventDraftSchema.index({ region: 1, createdAt: -1 });
 eventDraftSchema.index({ "draftOwner.userId": 1, createdAt: -1 });
+eventDraftSchema.index({ deletedAt: 1, mediaCleanupDueAt: 1, mediaCleanupRetryAt: 1 });
 
 // Explicit collection name prevents Mongoose from lowercasing it to
 // "eventdrafts". Event drafts are intentionally separate from "events".

@@ -2,9 +2,10 @@ import "dotenv/config";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "node:crypto";
 
-export const SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
+export const SESSION_LIFETIME_SECONDS = 14 * 24 * 60 * 60;
+// Accept already-issued 30-day access claims during the policy transition.
+export const LEGACY_SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
 export const ACCESS_LIFETIME_SECONDS = 15 * 60;
-export const SESSION_IDLE_SECONDS = 60 * 60;
 export const SESSION_ISSUER = "bgsnl-api";
 export const SESSION_AUDIENCE = "bgsnl-website";
 
@@ -13,7 +14,7 @@ function requireSessionWindow(claims, now) {
       !Number.isSafeInteger(claims.iat) || claims.iat < claims.auth_time || claims.iat > now + 30 ||
       claims.token_use !== "access" || typeof claims.sid !== "string" || !/^[\da-f-]{36}$/.test(claims.sid) ||
       !Number.isSafeInteger(claims.session_exp) || claims.session_exp < claims.auth_time + SESSION_LIFETIME_SECONDS ||
-      claims.session_exp > Math.max(claims.auth_time + SESSION_LIFETIME_SECONDS, claims.iat + SESSION_IDLE_SECONDS) ||
+      claims.session_exp > Math.max(claims.auth_time + LEGACY_SESSION_LIFETIME_SECONDS, claims.iat + SESSION_LIFETIME_SECONDS) ||
       !Number.isSafeInteger(claims.exp) || claims.exp > claims.iat + ACCESS_LIFETIME_SECONDS ||
       claims.exp > claims.session_exp || claims.exp <= claims.iat ||
       claims.auth_time > now) {
@@ -32,6 +33,7 @@ export function signSessionToken(user, { session, sid = session?.sid || randomUU
   if (sessionExpiry <= timestamp) throw new jwt.JsonWebTokenError("Session expired");
   return jwt.sign({
     token_use: "access", sid,
+    session_policy: "idle-14d",
     version: Number(process.env.AUTH_VERSION ?? 1),
     sessionVersion: Number(user.sessionVersion ?? 0),
     userId: user.id,

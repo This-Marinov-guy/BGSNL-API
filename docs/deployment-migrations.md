@@ -72,11 +72,13 @@ migrations cannot enumerate or modify that collection through the supplied
 database facade. Restoration rebuilds each collection in place from the journal
 rather than staging a temporary collection, so an interrupted rollback is simply
 replayed: the journal still holds every document. Successful runs delete their
-snapshot documents; failed runs retain them for investigation. After a resolved
-failed run has been reviewed, an operator may delete that run id's snapshot
-documents. Do not delete snapshots for an unresolved run, or clear a lock to
-bypass a failure. Audit records and VPS logs are retained until
-explicitly removed. Snapshots contain application data and need the same access
+snapshot documents; failed runs retain them for investigation and recovery.
+The daily cleanup deletes completed run records and any remaining snapshots
+after 30 days, measured from success or confirmed rollback (or later recovery).
+Unresolved runs, orphan snapshots and the deployment lock are never pruned
+automatically. Do not delete snapshots for an unresolved run, or clear a lock to
+bypass a failure. VPS logs are retained until explicitly removed. Snapshots
+contain application data and need the same access
 controls as the database; logs on the VPS are private to root.
 
 ## Recover an interrupted or failed rollback
@@ -116,6 +118,8 @@ steps cannot be accidentally omitted. A failed runner always exits nonzero,
 including when its automatic rollback was successful.
 
 ## Migration authoring and limits
+
+Migration 015 moves event campaigns into `events` and pending deleted-draft media cleanup state into `eventDrafts`. Migration 016 moves submitted feedback answers from `eventFeedbacks` into `events.feedbacks`. Migration 017 removes email delivery collections, the embedded delivery arrays created by the earlier dev version of 015, and `monthlySummaries`; it retains or restores `monitoringjobs`. Run pending migrations through the stopped-writer deployment path. Dev has applied 015–017; older migrations including 013–014 remain marked pending in its `_migrations` journal despite previously populated data. Production still needs 013–017. No production migration has been run for this change.
 
 Use only the supplied `db` argument, and await every operation. Do not import
 application models, create separate database clients, or start detached tasks.

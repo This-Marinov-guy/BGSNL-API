@@ -62,6 +62,8 @@ export const buildAccountListFilter = ({ city, search, type, status = "" }) => {
     { name: { $regex: pattern, $options: "i" } },
     { surname: { $regex: pattern, $options: "i" } },
     { phone: { $regex: pattern, $options: "i" } },
+    { "subscription.customerId": { $regex: pattern, $options: "i" } },
+    { "subscription.id": { $regex: pattern, $options: "i" } },
     {
       $expr: {
         $regexMatch: {
@@ -186,7 +188,7 @@ const regionScopeFor = (actor) => {
   const roles = Array.isArray(actor?.roles) ? actor.roles : [];
   if (roles.some((role) => ALL_MEMBER_REGIONS_ACCESS.includes(role))) return null;
   const region = typeof actor?.region === "string" ? actor.region.trim().toLowerCase() : "";
-  return EDITABLE_CITIES.includes(region) ? region : "";
+  return REGIONS.includes(region) ? region : "";
 };
 
 const publicOptions = (type, actorRoles, citiesOverride) => ({

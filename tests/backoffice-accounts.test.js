@@ -82,9 +82,25 @@ test("account search ignores case, spaces and common phone separators", () => {
 test("account list combines city and partial search on the server", () => {
   const filter = buildAccountListFilter({ city: "amsterdam", search: "Ada Lov", type: "member" });
   assert.equal(filter.region, "amsterdam");
-  assert.equal(filter.$or.length, 6);
+  assert.equal(filter.$or.length, 8);
   assert.equal(filter.$or[0].email.$options, "i");
   assert.match("AdaLovelace", new RegExp(filter.$or[0].email.$regex, "i"));
+});
+
+test("member and alumni search matches partial customer and subscription IDs within account filters", () => {
+  for (const type of ["member", "alumni"]) {
+    for (const [search, field, value] of [
+      ["CUS_EXAMPLE", "subscription.customerId", "cus_example_123"],
+      ["SUB_EXAMPLE", "subscription.id", "sub_example_456"],
+    ]) {
+      const filter = buildAccountListFilter({ city: "amsterdam", status: "active", search, type });
+      assert.equal(filter.region, "amsterdam");
+      assert.equal(filter.status, "active");
+      const condition = filter.$or.find((item) => item[field]);
+      assert.ok(condition);
+      assert.match(value, new RegExp(condition[field].$regex, condition[field].$options));
+    }
+  }
 });
 
 test("member role is retained when roles are updated and security sessions are revoked", async () => {
@@ -334,6 +350,17 @@ test("a board member with no region on file lists nothing", async () => {
   const result = await service.list({ type: "member" }, { roles: ["board_member"] });
   assert.equal(memberModel.state.filter._id, null);
   assert.deepEqual(result.options.cities, []);
+});
+
+test("a regional board role on a national account grants no local account scope", async () => {
+  const memberModel = fakeModel(account({ region: "netherlands" }));
+  const service = createAccountsBackofficeService({ memberModel, alumniModel: fakeModel() });
+  const actor = { _id: "board", roles: ["regional_board_member"], region: "netherlands" };
+  const result = await service.list({ type: "member" }, actor);
+  assert.deepEqual(result.options.cities, []);
+  assert.equal(memberModel.state.filter._id, null);
+  await assert.rejects(service.update({ type: "member", id: "member_1",
+    body: updateBody({ region: "netherlands", roles: [] }), actor }), { statusCode: 403 });
 });
 
 test("an admin can list any region and a board member's options are limited to their own", async () => {

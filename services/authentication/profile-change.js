@@ -8,9 +8,10 @@ import AlumniUser from "../../models/AlumniUser.js";
 import HttpError from "../../models/Http-error.js";
 import { findUserById, normalizeEmail } from "../main-services/user-service.js";
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
-import { NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, PROFILE_CHANGE_CONFIRM_TEMPLATE, SIGN_IN_DETAILS_CHANGED_TEMPLATE } from "../../util/config/defines.js";
+import { NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, PROFILE_CHANGE_CONFIRM_TEMPLATE } from "../../util/config/defines.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 import { logIntegrationError } from "../../middleware/axiom-logger.js";
+import { removeGuestMarketingEmail } from "../events/guest-marketing-emails.js";
 
 export const PROFILE_CHANGE_TTL = 60 * 60 * 1000;
 const invalid = () => new HttpError("This confirmation link expired, was already used, or your account changed. Please request the change again from your profile.", 409);
@@ -20,7 +21,7 @@ const digest = (value) => {
 };
 const random = () => randomBytes(32).toString("base64url");
 // The branded header/footer shell lives in Domakin Mailer's own templates
-// (profile-change-confirm, sign-in-details-changed); this only sends the message envelope.
+// (profile-change-confirm); this only sends the message envelope.
 const deliverTemplateMessage = (message) => queueDomakinTemplateEmail(message.templateId, message.to[0].email, message.templateVariables);
 export const validProfileOrigin = (origin) => ["https://www.bulgariansociety.nl", "https://bulgariansociety.nl"].includes(origin) ||
   (process.env.NODE_ENV !== "production" && process.env.APP_ENV !== "prod" && /^http:\/\/(localhost|127\.0\.0\.1):300[0-2]$/.test(origin || ""));
@@ -84,7 +85,8 @@ export async function requestProfileChange(user, { email, password, origin, clai
 
 export async function confirmProfileChange(token, {
   records = ProfileChange, identities = AccountIdentity, startSession = () => mongoose.startSession(),
-  findAccount = findUserById, deliver = deliverTemplateMessage, checkEmail = availableEmail, now = Date.now,
+  findAccount = findUserById, deliver = deliverTemplateMessage, checkEmail = availableEmail,
+  removeGuest = removeGuestMarketingEmail, now = Date.now,
 } = {}) {
   if (typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw invalid();
   const hash = digest(token);
@@ -114,7 +116,10 @@ export async function confirmProfileChange(token, {
         }, { new: true, session });
         if (!updated) throw invalid();
         // An old Google address must not remain a login method for a new email.
-        if (record.newEmail) await identities.deleteMany({ accountId: user.id, provider: "google" }, { session });
+        if (record.newEmail) {
+          await identities.deleteMany({ accountId: user.id, provider: "google" }, { session });
+          await removeGuest(record.newEmail, { session });
+        }
       }
     });
   } finally { await session.endSession(); }
@@ -127,14 +132,6 @@ export async function confirmProfileChange(token, {
     }
     return { state: "awaiting_new_email", message: "Change approved. Please confirm the email sent to your new address to finish. Your sign-in details have not changed yet." };
   }
-  // Notification failures must not claim that an already-committed change failed.
-  const notification = { from: { email: NO_REPLY_EMAIL, name: NO_REPLY_EMAIL_NAME },
-    templateId: SIGN_IN_DETAILS_CHANGED_TEMPLATE, templateVariables: {} };
-  await Promise.all([...new Set([record.oldEmail, record.newEmail].filter(Boolean))].map((email) =>
-    deliver({ ...notification, to: [{ email }] }).catch((error) => {
-      logIntegrationError("mailer", error, "profile-change-notification");
-      console.error("Profile change notification delivery failed");
-    })));
   return { state: "complete", user: updated, authTime: record.authTime, previousVersion: record.sessionVersion,
     message: `Your profile change is confirmed. Other sessions have been signed out.${record.newEmail ? " Reconnect Google in Settings if you want to use your new Google address." : ""}` };
 }

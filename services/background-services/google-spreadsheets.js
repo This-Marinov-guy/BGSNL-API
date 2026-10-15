@@ -28,6 +28,7 @@ import { enqueueSpreadsheetSync } from "../jobs/spreadsheet-sync-queue.js";
 import { publishGuestListChanged } from "../tickets/guest-list-live.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import { jobNameFromKey, observeJob } from "../monitoring/job-history.js";
+import { instrumentSheetsClient } from "../monitoring/instrument-sheets.js";
 import { writeEventGuestSheet } from "./event-guest-sheet.js";
 
 // Lightweight background job queue with concurrency limit and de-duplication
@@ -97,7 +98,7 @@ async function getSheetsClient() {
       scopes: "https://www.googleapis.com/auth/spreadsheets",
     });
     const googleClient = await auth.getClient();
-    const googleSheets = google.sheets({ version: "v4", auth: googleClient });
+    const googleSheets = instrumentSheetsClient(google.sheets({ version: "v4", auth: googleClient }));
     return { auth: googleClient, googleSheets };
   })().catch((error) => {
     sheetsClientPromise = null;
@@ -757,7 +758,7 @@ export const readSpreadsheetRows = async (
       scopes: "https://www.googleapis.com/auth/spreadsheets",
     });
 
-    const sheets = google.sheets({ version: "v4", auth });
+    const sheets = instrumentSheetsClient(google.sheets({ version: "v4", auth }));
 
     if (!startRow) {
       startRow = "A2"; // Default starting row
@@ -803,7 +804,7 @@ export const getPresenceStatsOfCity = async (spreadsheetId) => {
     credentials: credentials,
     scopes: "https://www.googleapis.com/auth/spreadsheets",
   });
-  const sheets = google.sheets({ version: "v4", auth });
+  const sheets = instrumentSheetsClient(google.sheets({ version: "v4", auth }));
 
   // Get all sheets metadata
   const meta = await sheets.spreadsheets.get({ spreadsheetId });

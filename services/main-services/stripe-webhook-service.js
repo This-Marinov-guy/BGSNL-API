@@ -23,6 +23,19 @@ import {
 } from "../tickets/member-ticket-policy.js";
 import { accountEntitlements } from "../../util/subscriptions/policy.js";
 import { refundDuplicateMemberTicket } from "../tickets/member-ticket-refund.js";
+import { recordGuestMarketingEmail, removeGuestMarketingEmail } from "../events/guest-marketing-emails.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
+
+const syncGuestAccount = async email => {
+  try { await removeGuestMarketingEmail(email); }
+  catch (error) { logOperationalError("guest-marketing.account-cleanup", error); }
+};
+const syncGuestTicket = async (event, email) => {
+  try {
+    await recordGuestMarketingEmail(event, email);
+  }
+  catch (error) { logOperationalError("guest-marketing.ticket-record", error); }
+};
 
 const resolveJoinDateFromSubscription = async (
   subscriptionId,
@@ -116,6 +129,8 @@ export const handleAlumniSignup = async (metadata, paymentData, {
   } catch (err) {
     throw new HttpError("Signing up failed", 500);
   }
+
+  await syncGuestAccount(email);
 
   sync();
   notify(email, name);
@@ -216,6 +231,8 @@ export const handleUserSignup = async (metadata, paymentData, {
     throw new HttpError(err.message, 500);
   }
 
+  await syncGuestAccount(email);
+
   notify(email, name, region);
   sync(region);
   sync();
@@ -282,6 +299,10 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
     }
   }
 
+  if (quantity > 0 && (guest.type === "guest" || guest.type === "free guest")) {
+    await syncGuestTicket(societyEvent, guestEmail);
+  }
+
   const tickets = Array.from({ length: quantity }, () => metadata.file);
 
   sendTicketEmail(
@@ -290,7 +311,10 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
     societyEvent.title,
     societyEvent.date,
     guestName,
-    tickets
+    tickets,
+    "Europe/Amsterdam",
+    societyEvent.poster,
+    { region: societyEvent.region, phone: guestPhone }
   );
 
   eventToSpreadsheet(societyEvent.id);
@@ -433,7 +457,9 @@ export const handleMemberTicketPurchase = async (metadata, paymentData, { confir
     societyEvent.title,
     societyEvent.date,
     targetUser.name,
-    metadata.file
+    metadata.file,
+    "Europe/Amsterdam",
+    societyEvent.poster
   );
 
   eventToSpreadsheet(societyEvent.id);

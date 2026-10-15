@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import jwt from "jsonwebtoken";
-import { signSessionToken, verifySessionToken, SESSION_LIFETIME_SECONDS, ACCESS_LIFETIME_SECONDS } from "../util/auth/session-token.js";
+import { signSessionToken, verifySessionToken, SESSION_LIFETIME_SECONDS, LEGACY_SESSION_LIFETIME_SECONDS, ACCESS_LIFETIME_SECONDS } from "../util/auth/session-token.js";
 import { createSessionService, ROTATION_GRACE_MS } from "../services/authentication/sessions.js";
 import { createAuthMiddleware } from "../middleware/authorization.js";
 import HttpError from "../models/Http-error.js";
@@ -19,52 +19,77 @@ function harness() {
   const service = createSessionService({ records, findAccount: async () => user, now: () => time });
   return { records, service, at(value) { time = value; }, user(value) { user = value; }, claims: (packet) => verifySessionToken(packet.token, { now: time }) };
 }
-test("access JWTs last 15 minutes; refresh grants expire at their absolute deadline and store only a hash", async () => {
+test("access JWTs last 15 minutes; new refresh grants start with a 14-day deadline and store only a hash", async () => {
   const h = harness(), packet = await h.service.start(account), claims = h.claims(packet);
   assert.equal(claims.userId, account.id); assert.deepEqual(claims.roles, account.roles);
   assert.equal(claims.auth_time, start / 1000); assert.equal(claims.exp - claims.iat, ACCESS_LIFETIME_SECONDS);
   assert.equal(claims.session_exp - claims.auth_time, SESSION_LIFETIME_SECONDS);
+  assert.equal(claims.session_policy, "idle-14d");
   assert.equal(claims.token_use, "access"); assert.equal(claims.sessionVersion, 2);
   const row = h.records.rows.get(claims.sid);
   assert.equal(row.tokenHash.length, 64); assert.ok(!JSON.stringify(row).includes(packet.refreshToken));
   assert.ok(verifySessionToken(packet.token, { now: start + ACCESS_LIFETIME_SECONDS * 1000 - 1 }));
   assert.throws(() => verifySessionToken(packet.token, { now: start + ACCESS_LIFETIME_SECONDS * 1000 }));
 });
-test("rotation recovers expired access without restarting the original 30-day clock", async () => {
+test("rotation recovers expired access without counting as activity", async () => {
   const h = harness(), initial = await h.service.start(account);
-  h.at(start + 29 * day);
+  h.at(start + 10 * day);
   const rotated = await h.service.refresh(initial.refreshToken);
   assert.notEqual(rotated.refreshToken, initial.refreshToken);
   assert.equal(h.claims(rotated).auth_time, start / 1000);
   assert.equal(h.claims(rotated).session_exp, start / 1000 + SESSION_LIFETIME_SECONDS);
   assert.equal(+h.records.rows.get(h.claims(rotated).sid).lastActivityAt, start);
 });
-test("day 30 does not interrupt use; only one hour of inactivity ends the extended login", async () => {
+test("activity moves the deadline 14 days; silent renewal does not", async () => {
   const h = harness(); let packet = await h.service.start(account);
-  h.at(start + 30 * day - 10 * 60000);
-  packet = await h.service.refresh(packet.refreshToken, { activity: true });
-  h.at(start + 30 * day + 40 * 60000);
+  h.at(start + 13 * day);
   packet = await h.service.refresh(packet.refreshToken, { activity: true });
   assert.equal(h.claims(packet).auth_time, start / 1000);
-  assert.equal(h.claims(packet).session_exp * 1000, start + 30 * day + 100 * 60000);
-  h.at(start + 30 * day + 99 * 60000);
+  assert.equal(h.claims(packet).session_exp * 1000, start + 27 * day);
+  h.at(start + 27 * day - 1000);
   packet = await h.service.refresh(packet.refreshToken); // background renewal does NOT touch activity
-  h.at(start + 30 * day + 100 * 60000);
+  assert.equal(h.claims(packet).session_exp * 1000, start + 27 * day);
+  h.at(start + 27 * day);
   await assert.rejects(h.service.refresh(packet.refreshToken), denied);
   await assert.rejects(h.service.refresh(packet.refreshToken, { activity: true }), denied); // cannot revive
 });
-test("inactivity alone before 30 days does not end a login; idle at day 30 does", async () => {
+test("14 days without activity ends a login even when a refresh is attempted", async () => {
   const h = harness(); let packet = await h.service.start(account);
-  h.at(start + 20 * day); packet = await h.service.refresh(packet.refreshToken);
-  h.at(start + 30 * day - 1); packet = await h.service.refresh(packet.refreshToken);
-  h.at(start + 30 * day); await assert.rejects(h.service.refresh(packet.refreshToken, { activity: true }), denied);
+  h.at(start + 14 * day - 1000); packet = await h.service.refresh(packet.refreshToken);
+  h.at(start + 14 * day); await assert.rejects(h.service.refresh(packet.refreshToken, { activity: true }), denied);
 });
 test("an active login can continue beyond 30 days without rolling auth_time", async () => {
   const h = harness(); let packet = await h.service.start(account);
-  for (let elapsed = 30 * day - hour; elapsed < 33 * day; elapsed += 30 * 60000) {
+  for (let elapsed = 13 * day; elapsed < 35 * day; elapsed += day) {
     h.at(start + elapsed); packet = await h.service.refresh(packet.refreshToken, { activity: true });
     assert.equal(h.claims(packet).auth_time, start / 1000);
   }
+});
+test("existing 30-day grants and access claims renew under the 14-day activity policy", async () => {
+  const h = harness(), old = await h.service.start(account);
+  const sid = h.claims(old).sid, row = h.records.rows.get(sid);
+  row.lastActivityAt = new Date(start + 9 * day);
+  row.expiresAt = new Date(start + LEGACY_SESSION_LIFETIME_SECONDS * 1000);
+  h.at(start + 10 * day);
+  const legacyToken = signSessionToken(account, { sid, now: start + 10 * day,
+    sessionExpiresAt: start / 1000 + LEGACY_SESSION_LIFETIME_SECONDS });
+  assert.equal(verifySessionToken(legacyToken, { now: start + 10 * day }).session_exp,
+    start / 1000 + LEGACY_SESSION_LIFETIME_SECONDS);
+  const renewed = await h.service.refresh(old.refreshToken);
+  assert.equal(h.claims(renewed).session_exp * 1000, start + 23 * day);
+  assert.equal(+row.expiresAt, start + 30 * day); // old Redis TTL is harmless; access uses the new deadline
+  h.at(start + 23 * day);
+  await assert.rejects(h.service.refresh(renewed.refreshToken), denied);
+});
+test("a legacy grant with recent activity extends its stored expiry on renewal", async () => {
+  const h = harness(), old = await h.service.start(account);
+  const sid = h.claims(old).sid, row = h.records.rows.get(sid);
+  row.lastActivityAt = new Date(start + 29 * day);
+  row.expiresAt = new Date(start + 30 * day);
+  h.at(start + 29 * day + hour);
+  const renewed = await h.service.refresh(old.refreshToken);
+  assert.equal(+row.expiresAt, start + 43 * day);
+  assert.equal(h.claims(renewed).session_exp * 1000, start + 43 * day);
 });
 test("concurrent refreshes return one successor; stale genuine replay revokes that login only", async () => {
   const h = harness(), initial = await h.service.start(account), other = await h.service.start(account);
@@ -125,7 +150,8 @@ test("malformed, forged, legacy and invalid-purpose JWTs fail closed", () => {
     assert.throws(() => verifySessionToken(token, { now: start }));
   }
   for (const change of [{ iss: "other" }, { aud: "other" }, { version: 0 }, { sessionVersion: -1 }, { roles: "admin" }, { userId: null },
-    { exp: claims.exp + 1 }, { auth_time: null }, { token_use: "refresh" }, { sid: null }, { session_exp: claims.session_exp + 1 }]) {
+    { exp: claims.exp + 1 }, { auth_time: null }, { token_use: "refresh" }, { sid: null },
+    { session_exp: claims.auth_time + LEGACY_SESSION_LIFETIME_SECONDS + 1 }]) {
     assert.throws(() => verifySessionToken(jwt.sign({ ...claims, ...change }, process.env.JWT_STRING), { now: start }));
   }
 });

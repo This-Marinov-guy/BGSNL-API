@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeWebEvent } from "../routes/monitoring-routes.js";
-import { axiomOverview } from "../services/monitoring/overview.js";
+import { axiomOverview, serviceHealth } from "../services/monitoring/overview.js";
 import { buildError, buildReq } from "../util/logging/axiom-log-models.js";
 import { MONITORING_ACCESS } from "../util/config/defines.js";
-import { describeError } from "../middleware/axiom-logger.js";
+import { axiomClientOptions, describeError } from "../middleware/axiom-logger.js";
 
 test("monitoring is limited to developer and administrative roles", () => {
   assert.deepEqual(MONITORING_ACCESS, ["super_admin", "admin", "developer"]);
@@ -40,6 +40,7 @@ test("Axiom overview separates web, operations and integrations", async () => {
   const result = await axiomOverview({ query });
   assert.deepEqual(result.datasets, { web: "web", operations: "operations", integrations: "integrations" });
   assert.equal(result.status, "connected");
+  assert.ok(!Number.isNaN(Date.parse(result.checkedAt)));
   assert.equal(result.web.byType.page_view, 20);
   assert.equal(result.operations.byLevel.error, 1);
   assert.equal(result.integrations[0].provider, "stripe");
@@ -58,6 +59,50 @@ test("new empty Axiom datasets show zero activity without fake integration event
   assert.deepEqual(result.integrations, []);
   assert.equal(queries.length, 6);
   assert.ok(queries.every((apl) => apl.includes("column_ifexists")));
+});
+
+test("a partial Axiom query failure remains visible in service health", async () => {
+  const result = await axiomOverview({ query: async (apl) => {
+    if (apl.includes("by errorSource")) throw new Error("Query unavailable");
+    return { tables: [{ events: function* () {} }] };
+  } });
+  assert.equal(result.status, "degraded");
+  assert.match(result.message, /Axiom queries failed/);
+  assert.ok(result.operations);
+});
+
+test("missing Axiom query credentials are identified before querying", async () => {
+  const result = await axiomOverview({ queryConfigured: () => false });
+  assert.equal(result.status, "not configured");
+  assert.match(result.message, /No Axiom query token/);
+});
+
+test("Axiom API tokens use their embedded organization instead of a legacy org ID", () => {
+  assert.deepEqual(axiomClientOptions("xaat-example", "old-org"), { token: "xaat-example" });
+  assert.deepEqual(axiomClientOptions("personal", "old-org"), { token: "personal", orgId: "old-org" });
+});
+
+test("service panels receive their own check time", async () => {
+  const checks = await serviceHealth({ env: {}, database: { readyState: 1 }, redis: async () => ({ ping: async () => "PONG" }) });
+  assert.equal(checks.find((check) => check.name === "API").status, "healthy");
+  assert.equal(checks.find((check) => check.name === "Mailer").status, "unhealthy");
+  assert.ok(checks.every((check) => !Number.isNaN(Date.parse(check.checkedAt))));
+});
+
+test("Mailer health follows the BGSNL transport rather than unrelated Mailer channels", async () => {
+  const response = (bgsnlStatus) => ({ ok: false, status: 503, json: async () => ({
+    readiness: { checks: { emailTemplates: { status: "ready" } } },
+    connections: { mailtrapBgsnl: { status: bgsnlStatus }, googleWorkspaceSmtpRelay: { status: "failed" } },
+  }) });
+  const options = { env: { MAILER_API_URL: "https://mailer.example/api" }, database: { readyState: 1 },
+    redis: async () => ({ ping: async () => "PONG" }) };
+  const healthy = await serviceHealth({ ...options, fetcher: async () => response("ready") });
+  assert.deepEqual([healthy.find((check) => check.name === "Mailer").status,
+    healthy.find((check) => check.name === "Mailer").detail], ["healthy", "BGSNL Mailtrap delivery is ready"]);
+  const pending = await serviceHealth({ ...options, fetcher: async () => response("pending") });
+  assert.equal(pending.find((check) => check.name === "Mailer").status, "unverified");
+  const failed = await serviceHealth({ ...options, fetcher: async () => response("failed") });
+  assert.equal(failed.find((check) => check.name === "Mailer").status, "unhealthy");
 });
 
 test("service exception records retain safe diagnostics without messages or credentials", () => {

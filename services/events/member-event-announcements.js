@@ -7,7 +7,9 @@ import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
 import { NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE } from "../../util/config/defines.js";
 import { eventAnnouncementRegions } from "../../util/config/nearby-regions.js";
+import { formatRegionBadgeLabel, getRegionBadgeTheme } from "../../util/config/region-badges.js";
 import { createMemberEventLink, eventPageUrl, isCurrentEventMember, isPublicUpcomingEvent, memberEventPrice } from "./member-event-links.js";
+import { formatEventEmailDate, safeEventPosterUrl } from "./event-email-preview.js";
 
 const plainText = (value) => String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 // The branded header/footer shell lives in Domakin Mailer's own
@@ -26,18 +28,21 @@ export function buildMemberEventEmail({ event, member, ticketUrl }) {
   const amount = Number(price?.price);
   if (!Number.isFinite(amount) || amount < 0) throw new Error("Member ticket price is not configured");
   const priceLabel = amount === 0 ? "Free" : new Intl.NumberFormat("en-NL", { style: "currency", currency: "EUR" }).format(amount);
-  const date = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Amsterdam", dateStyle: "full", timeStyle: "short" }).format(new Date(event.correctedDate || event.date));
+  const date = formatEventEmailDate(event);
   const title = plainText(event.title);
-  const description = plainText(event.description || event.text).slice(0, 1600);
   const viewUrl = eventPageUrl(event);
+  const regionBadgeTheme = getRegionBadgeTheme(event.region);
   return {
     templateId: MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE,
     templateVariables: {
       name: member.name || "there",
       title,
       date,
-      location: event.location,
-      description,
+      poster: safeEventPosterUrl(event.poster),
+      regionLabel: formatRegionBadgeLabel(event.region),
+      regionBadgeBackground: regionBadgeTheme.background,
+      regionBadgeBorder: regionBadgeTheme.border,
+      regionBadgeColor: regionBadgeTheme.color,
       priceLabel,
       viewUrl,
       ticketUrl,

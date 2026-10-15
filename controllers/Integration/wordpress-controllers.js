@@ -1,6 +1,6 @@
 import HttpError from "../../models/Http-error.js";
 import axios from "axios";
-import { logIntegrationError } from "../../middleware/axiom-logger.js";
+import { logIntegrationError, observeIntegrationRequest } from "../../middleware/axiom-logger.js";
 import dotenv from "dotenv";
 import { PROTOCOL } from "../../util/config/access.js";
 import { DEFAULT_WP_TITLES } from "../../util/config/defines.js";
@@ -22,9 +22,9 @@ export const getWordpressPosts = async (req, res, next) => {
 
   try {
     // TODO: paginate
-    response = await axios.get(
+    response = await observeIntegrationRequest("wordpress", "posts-list", "GET", () => axios.get(
       `${PROTOCOL}${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts?page=${page}&per_page=${perPage}`
-    );
+    ));
   } catch (err) {
     logIntegrationError("wordpress", err, "posts-list");
     return next(new HttpError(err, 500));
@@ -84,9 +84,9 @@ export const getWordpressPostDetails = async (req, res, next) => {
   let responseStyles = null;
 
   try {
-    response = await axios.get(
+    response = await observeIntegrationRequest("wordpress", "post-details", "GET", () => axios.get(
       `${PROTOCOL}${ENDPOINT}${process.env.WORDPRESS_BLOG_ID}/posts/${postId}?_embed`
-    );
+    ));
   } catch (err) {
     logIntegrationError("wordpress", err, "post-details");
     console.log(err.message);
@@ -97,9 +97,9 @@ export const getWordpressPostDetails = async (req, res, next) => {
   }
 
   try {
-    responseStyles = await axios.get(
+    responseStyles = await observeIntegrationRequest("wordpress", "post-styles", "GET", () => axios.get(
       `${PROTOCOL}${process.env.WORDPRESS_BLOG_ID}/wp-includes/css/dist/block-library/style.min.css`
-    );
+    ));
   } catch (err) {
     logIntegrationError("wordpress", err, "post-styles");
     console.log(err.message);

@@ -2,7 +2,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
 import RefreshSession from "../../models/RefreshSession.js";
 import HttpError from "../../models/Http-error.js";
 import { findUserById } from "../main-services/user-service.js";
-import { signSessionToken, SESSION_LIFETIME_SECONDS, SESSION_IDLE_SECONDS } from "../../util/auth/session-token.js";
+import { signSessionToken, SESSION_LIFETIME_SECONDS } from "../../util/auth/session-token.js";
 
 // Covers the BFF's 15s renewal + 60s resource response before cookies arrive.
 // Keep this bounded: genuine older replay outside it revokes the login.
@@ -10,7 +10,7 @@ export const ROTATION_GRACE_MS = 120_000;
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const equal = (a, b) => typeof a === "string" && typeof b === "string" && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const denied = () => new HttpError("Session expired or revoked. Please sign in again.", 401);
-export const sessionDeadline = (authTime, lastActivity) => Math.max(authTime * 1000 + SESSION_LIFETIME_SECONDS * 1000, +new Date(lastActivity) + SESSION_IDLE_SECONDS * 1000);
+export const sessionDeadline = (lastActivity) => +new Date(lastActivity) + SESSION_LIFETIME_SECONDS * 1000;
 
 // Domain-separated keyed derivation lets concurrent API instances return the
 // SAME successor without storing plaintext/encrypted refresh tokens in Mongo.
@@ -30,14 +30,19 @@ function parseRefresh(value) {
 export function createSessionService({ records = RefreshSession, findAccount = findUserById, now = Date.now } = {}) {
   const read = (id) => records.findById(id).select("+tokenHash").lean();
   const usable = (record) => record && !record.revokedAt && record.authVersion === Number(process.env.AUTH_VERSION ?? 1) &&
-    +new Date(record.expiresAt) > now() && sessionDeadline(record.authTime, record.lastActivityAt) > now();
-  const packet = (record, user) => ({
-    token: signSessionToken(user, { sid: record._id, session: { token_use: "access", sid: record._id,
-      auth_time: record.authTime, iat: Math.floor(now() / 1000), exp: Math.floor(now() / 1000) + 1,
-      session_exp: Math.floor(+new Date(record.expiresAt) / 1000) },
-      sessionExpiresAt: Math.floor(+new Date(record.expiresAt) / 1000), now: now() }),
-    refreshToken: refreshValue(record._id, record.generation),
-  });
+    +new Date(record.expiresAt) > now() && sessionDeadline(record.lastActivityAt) > now();
+  const packet = (record, user) => {
+    // Legacy Redis grants can retain their old expiry until the next write.
+    // Never issue an access token or cookie beyond the new activity deadline.
+    const sessionExpiresAt = Math.floor(Math.min(+new Date(record.expiresAt), sessionDeadline(record.lastActivityAt)) / 1000);
+    return {
+      token: signSessionToken(user, { sid: record._id, session: { token_use: "access", sid: record._id,
+        auth_time: record.authTime, iat: Math.floor(now() / 1000), exp: Math.floor(now() / 1000) + 1,
+        session_exp: sessionExpiresAt },
+        sessionExpiresAt, now: now() }),
+      refreshToken: refreshValue(record._id, record.generation),
+    };
+  };
   async function start(user) {
     const timestamp = Math.floor(now() / 1000), id = randomUUID();
     const record = { _id: id, accountId: user.id, sessionVersion: Number(user.sessionVersion ?? 0), authVersion: Number(process.env.AUTH_VERSION ?? 1), authTime: timestamp,
@@ -66,7 +71,10 @@ export function createSessionService({ records = RefreshSession, findAccount = f
         expiresAt: { $gt: new Date(now()) } }, {
         $set: { generation: nextGeneration, tokenHash: hash(refreshValue(id, nextGeneration)),
           ...(nextGeneration !== record.generation ? { rotatedAt: new Date(now()) } : {}) },
-        ...(activity ? { $max: { lastActivityAt: new Date(now()), expiresAt: new Date(sessionDeadline(record.authTime, now())) } } : {}),
+        // A pre-policy grant can have an old 30-day Redis expiry earlier than
+        // last activity + 14 days. Extend its storage TTL on the first renewal.
+        $max: { expiresAt: new Date(sessionDeadline(activity ? now() : record.lastActivityAt)),
+          ...(activity ? { lastActivityAt: new Date(now()) } : {}) },
       }, { new: true }).lean();
       if (updated) return packet(updated, user);
     }

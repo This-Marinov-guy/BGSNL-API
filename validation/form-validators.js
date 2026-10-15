@@ -1100,6 +1100,41 @@ export const guestPresenceValidators = [
   body("present").isBoolean().withMessage("Presence must be true or false").toBoolean(),
 ];
 
+export const guestDetailsValidators = [
+  param("eventId").isMongoId().withMessage("Event ID is invalid"),
+  param("guestId").isMongoId().withMessage("Guest ID is invalid"),
+  requiredText("name", "Name", 160),
+  requiredEmail("email"),
+  requiredText("phone", "Phone", 50),
+];
+
+export const guestRefundPreviewValidators = [
+  param("eventId").isMongoId().withMessage("Event ID is invalid"),
+  param("guestId").isMongoId().withMessage("Guest ID is invalid"),
+];
+
+export const guestRefundValidators = [
+  ...guestRefundPreviewValidators,
+  body("amountCents").isInt({ min: 1, max: 100000000 }).withMessage("Refund amount must be a positive number of cents").toInt(),
+  requiredText("reason", "Reason", 500).isLength({ min: 3 }).withMessage("Reason must be at least 3 characters"),
+  body("includeFee").isBoolean({ strict: true }).withMessage("Include fee must be true or false"),
+];
+
+export const eventFeedbackTicketValidators = [
+  param("ticketId").isMongoId().withMessage("Feedback link is invalid"),
+];
+
+export const eventFeedbackAnswerValidators = [
+  ...eventFeedbackTicketValidators,
+  body("answers").isObject({ strict: true }).withMessage("Feedback answers are required"),
+  body("answers.enjoyment").isInt({ min: 1, max: 5 }).withMessage("Choose an enjoyment rating from 1 to 5").toInt(),
+  body("answers.organisation").isInt({ min: 1, max: 5 }).withMessage("Choose an organisation rating from 1 to 5").toInt(),
+  requiredText("answers.favoriteMoment", "Favorite moment", 2000),
+  requiredText("answers.improvements", "Improvements", 2000),
+  requiredText("answers.futureEvents", "Future events", 1000),
+  optionalText("answers.additionalComments", "Additional comments", 2000),
+];
+
 export const nonSocietyEmailValidators = [
   optionalBoolean("testOnly", "Test-only mode"),
   body("customEmails")
@@ -1143,6 +1178,11 @@ export const editEventValidators = [
 
 export const deleteEventValidators = [
   param("eventId").isMongoId().withMessage("Event ID is invalid"),
+];
+
+export const confirmEventCancellationValidators = [
+  ...deleteEventValidators,
+  body("code").matches(/^\d{8}$/).withMessage("Enter the 8-digit code from the confirmation email"),
 ];
 
 export const eventDraftReminderValidators = [

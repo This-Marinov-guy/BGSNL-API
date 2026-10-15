@@ -1,19 +1,16 @@
 import Event from "../../models/Event.js";
 import HttpError from "../../models/Http-error.js";
-import { ACCESS_4, ALL_EVENT_REGIONS_ACCESS, DEFAULT_REGION, EVENT_DRAFT } from "../../util/config/defines.js";
+import { EVENT_MANAGEMENT_ACCESS, EVENT_DRAFT } from "../../util/config/defines.js";
+import { regionFilter } from "../../middleware/authorization.js";
 
 export const createScannerEventsHandler = ({ EventModel = Event } = {}) => async (req, res, next) => {
   const roles = req.user?.roles || [];
-  if (!roles.some(role => ACCESS_4.includes(role))) return next(new HttpError("No access to ticket scanning", 403));
-  const allRegions = roles.some(role => ALL_EVENT_REGIONS_ACCESS.includes(role));
-  if (!allRegions && (!req.user?.region || req.user.region === DEFAULT_REGION)) {
-    return next(new HttpError("No access to a regional event list", 403));
-  }
-  const filter = {
-    status: { $nin: ["archived", EVENT_DRAFT] },
-    ...(!allRegions ? { region: req.user.region } : {}),
-  };
+  if (!roles.some(role => EVENT_MANAGEMENT_ACCESS.includes(role))) return next(new HttpError("No access to ticket scanning", 403));
   try {
+    const filter = {
+      status: { $nin: ["archived", EVENT_DRAFT] },
+      ...regionFilter(req, "event"),
+    };
     // Project at the database: never load guest lists, payment data, or drafts.
     const events = await EventModel.find(filter)
       .select("_id title region date correctedDate poster status")
@@ -25,8 +22,8 @@ export const createScannerEventsHandler = ({ EventModel = Event } = {}) => async
       date: event.date, correctedDate: event.correctedDate,
       poster: event.poster, status: event.status,
     })) });
-  } catch {
-    return next(new HttpError("Scanner events could not be loaded", 500));
+  } catch (error) {
+    return next(error instanceof HttpError ? error : new HttpError("Scanner events could not be loaded", 500));
   }
 };
 

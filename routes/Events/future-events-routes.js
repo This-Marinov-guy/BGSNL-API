@@ -3,13 +3,14 @@ import { getScannerEvents } from "../../controllers/Events/scanner-events-contro
 import { updateEventSales } from "../../controllers/Events/event-sales-controller.js";
 import dotenv from "dotenv";
 import multer from "multer";
-import { addEvent, archiveExpiredEvents, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList, getEventDraftCount, sendEventDraftReminder } from "../../controllers/Events/future-events-action-controller.js";
+import { addEvent, archiveExpiredEvents, confirmEventCancellation, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList, getEventDraftCount, previewEventCancellation, requestEventCancellation, sendEventDraftReminder } from "../../controllers/Events/future-events-action-controller.js";
 import { adminMiddleware, optionalAuthMiddleware } from "../../middleware/authorization.js";
-import { ACCESS_4 } from "../../util/config/defines.js";
+import { ACCESS_3, EVENT_MANAGEMENT_ACCESS } from "../../util/config/defines.js";
 import { validateRequest } from "../../middleware/validate-request.js";
 import { unsupportedUploadError } from "../../middleware/upload-validation-error.js";
 import {
     addEventValidators,
+    confirmEventCancellationValidators,
     deleteEventValidators,
     eventDraftReminderValidators,
     editEventValidators,
@@ -37,7 +38,7 @@ const upload = multer({
 });
 const futureEventRouter = express.Router();
 
-futureEventRouter.get("/scanner-events", adminMiddleware(ACCESS_4), getScannerEvents);
+futureEventRouter.get("/scanner-events", adminMiddleware(EVENT_MANAGEMENT_ACCESS), getScannerEvents);
 
 futureEventRouter.get(
     '/full-event-details/:eventId',
@@ -49,17 +50,17 @@ futureEventRouter.post("/archive-expired", archiveExpiredEvents);
 
 futureEventRouter.get(
     '/full-data-events-list',
-    adminMiddleware(ACCESS_4),
+    adminMiddleware(EVENT_MANAGEMENT_ACCESS),
     fetchFullDataEventsList
 );
 
 futureEventRouter.get(
     '/draft-count',
-    adminMiddleware(ACCESS_4),
+    adminMiddleware(EVENT_MANAGEMENT_ACCESS),
     getEventDraftCount
 );
 
-futureEventRouter.patch("/sales/:eventId", adminMiddleware(ACCESS_4), updateEventSales);
+futureEventRouter.patch("/sales/:eventId", adminMiddleware(EVENT_MANAGEMENT_ACCESS), updateEventSales);
 
 const eventImageUploads = upload.fields([
     { name: 'images', maxCount: 4 },
@@ -69,7 +70,7 @@ const eventImageUploads = upload.fields([
 
 futureEventRouter.post(
     "/add-event",
-    adminMiddleware(ACCESS_4),
+    adminMiddleware(EVENT_MANAGEMENT_ACCESS),
     eventImageUploads,
     addEventValidators,
     validateRequest,
@@ -78,7 +79,7 @@ futureEventRouter.post(
 
 futureEventRouter.patch(
     "/edit-event/:eventId",
-    adminMiddleware(ACCESS_4),
+    adminMiddleware(EVENT_MANAGEMENT_ACCESS),
     eventImageUploads,
     editEventValidators,
     validateRequest,
@@ -87,7 +88,7 @@ futureEventRouter.patch(
 
 futureEventRouter.post(
     "/draft/:eventId/reminder",
-    adminMiddleware(ACCESS_4),
+    adminMiddleware(EVENT_MANAGEMENT_ACCESS),
     eventDraftReminderValidators,
     validateRequest,
     sendEventDraftReminder
@@ -95,10 +96,17 @@ futureEventRouter.post(
 
 futureEventRouter.delete(
     "/delete-event/:eventId",
-    adminMiddleware(ACCESS_4),
+    adminMiddleware(EVENT_MANAGEMENT_ACCESS),
     deleteEventValidators,
     validateRequest,
     deleteEvent
 );
+
+futureEventRouter.get("/cancel-event/:eventId/preview", adminMiddleware(ACCESS_3),
+    deleteEventValidators, validateRequest, previewEventCancellation);
+futureEventRouter.post("/cancel-event/:eventId", adminMiddleware(ACCESS_3),
+    deleteEventValidators, validateRequest, requestEventCancellation);
+futureEventRouter.post("/cancel-event/:eventId/confirm", adminMiddleware(ACCESS_3),
+    confirmEventCancellationValidators, validateRequest, confirmEventCancellation);
 
 export default futureEventRouter;

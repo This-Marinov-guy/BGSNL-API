@@ -87,6 +87,9 @@ test("draft reminder validation requires a draft id and valid email", async () =
 test("draft reminder email targets the Domakin Mailer template with a normalized title and continue link", () => {
   const message = buildEventDraftReminderEmail({
     eventTitle: "Board <planning>\r\nnight",
+    eventDate: new Date("2026-10-17T17:00:00.000Z"),
+    poster: "https://res.cloudinary.com/example/image/upload/poster.jpg",
+    region: "groningen",
     continueUrl:
       "https://bulgariansociety.nl/user/edit-event/507f1f77bcf86cd799439011?from=email&draft=1",
   });
@@ -94,8 +97,33 @@ test("draft reminder email targets the Domakin Mailer template with a normalized
   assert.equal(message.templateId, EVENT_DRAFT_REMINDER_TEMPLATE);
   assert.deepEqual(message.templateVariables, {
     eventTitle: "Board <planning> night",
+    eventDate: "17.10 | 19:00",
+    poster: "https://res.cloudinary.com/example/image/upload/poster.jpg",
+    regionLabel: "Groningen",
+    regionBadgeBackground: "#ffe9e8",
+    regionBadgeBorder: "#ffbbb7",
+    regionBadgeColor: "#b51e18",
     continueUrl:
       "https://bulgariansociety.nl/user/edit-event/507f1f77bcf86cd799439011?from=email&draft=1",
+  });
+});
+
+test("draft reminder leaves unfinished details empty for template placeholders", () => {
+  const message = buildEventDraftReminderEmail({
+    eventTitle: "  ",
+    poster: "http://example.test/insecure-poster.jpg",
+    continueUrl: "https://bulgariansociety.nl/user/edit-event/draft-id",
+  });
+
+  assert.deepEqual(message.templateVariables, {
+    eventTitle: "Untitled event",
+    eventDate: "",
+    poster: "",
+    regionLabel: "Not assigned",
+    regionBadgeBackground: "#f1f3f2",
+    regionBadgeBorder: "#d7ded9",
+    regionBadgeColor: "#59655f",
+    continueUrl: "https://bulgariansociety.nl/user/edit-event/draft-id",
   });
 });
 

@@ -5,7 +5,7 @@ or its dedicated worker service. Update it whenever a recurring worker, queued
 job, cron job, or externally scheduled API task is added, removed, or changes
 frequency.
 
-Last reviewed: 2 October 2026.
+Last reviewed: 8 October 2026.
 
 Database-triggered work is inventoried in [triggers.md](triggers.md).
 
@@ -15,16 +15,46 @@ Database-triggered work is inventoried in [triggers.md](triggers.md).
 | --- | --- | --- | --- | --- |
 | Billing maintenance | Checks at startup and every 60 seconds; shared lease/due time permits one sweep across API processes; errors back off | Not calendar-based | `NODE_ENV=production` or `BILLING_WORKER_ENABLED=true`; `BILLING_WORKER_ENABLED=false` always disables it | Processes payment reminders, recovers membership-only Checkout sessions, and refreshes stale subscription state |
 | Regional Member revenue | Separate coordinated task at startup, then 15 minutes after each successful run; errors back off | UTC for monthly fee reports | Billing worker enabled and `MEMBER_REVENUE_SHARING_ENABLED=true` | Reconciles new Member invoice allocations, actual Stripe fees and regional Connect transfers; cannot block membership recovery; see [member-revenue-sharing.md](member-revenue-sharing.md) |
-| Weekly membership summary | Sunday at 18:00; no startup send or missed-run catch-up | `Europe/Amsterdam` | Internal notifications are enabled and the API is in production, or `WEEKLY_MEMBERSHIP_REPORT_ENABLED=true`; setting the flag to `false` disables it | Emails the preceding Sunday 18:00–Sunday 18:00 member/alumni totals per city to every internal-notification subscriber |
+| Weekly membership summary | Sunday at 18:00; no startup send or missed-run catch-up | `Europe/Amsterdam` | Internal notifications are enabled and the API is in production, or `WEEKLY_MEMBERSHIP_REPORT_ENABLED=true`; setting the flag to `false` disables it | Emails the preceding Sunday 18:00–Sunday 18:00 member counts by region and one national alumni count to every internal-notification subscriber |
 | Regional new-member summary | Sunday at 18:00; no startup send or missed-run catch-up | `Europe/Amsterdam` | Same gates as the weekly membership summary; PM2 worker 0 only | Sends the same internal report template, restricted to one region, to its database contact; skips regions without new members |
-| Monthly alumni supporter summary | Last calendar day at 23:59; no startup send or missed-run catch-up | `Europe/Amsterdam` | Production by default, or `MONTHLY_SUPPORTER_SUMMARY_ENABLED=true`; `false` disables it; PM2 worker 0 only | Thanks eligible active alumni and internal subscribers with hosted events, new-account counts and optional staff news; see [monthly-supporter-summary.md](monthly-supporter-summary.md) |
+| Monthly alumni supporter summary | Last calendar day at 23:59; no startup send or missed-run catch-up | `Europe/Amsterdam` | Production by default, or `MONTHLY_SUPPORTER_SUMMARY_ENABLED=true`; `false` disables it; PM2 worker 0 only | Thanks eligible active alumni and internal subscribers with hosted events, new-account counts, articles published that month, and optional community updates; see [monthly-supporter-summary.md](monthly-supporter-summary.md) |
 | Birthday greetings | First check after API startup, then every minute; a daily greeting becomes due at 10:00 | `Europe/Amsterdam` | `NODE_ENV=production` or `BIRTHDAY_EMAIL_WORKER_ENABLED=true`; setting the flag to `false` disables it | Sends one non-promotional birthday greeting to each current Member or Alumni account with a valid stored date of birth |
 | Member event announcements | Immediately after API startup, then every minute; an authenticated Atlas notification can request an earlier pass | Not calendar-based | `NODE_ENV=production` or `EVENT_ANNOUNCEMENTS_ENABLED=true`; `false` disables it | Delivers pending publication announcements with personal encrypted ticket links; recovers missed trigger notifications |
-| Event draft cleanup | Daily at 03:00; checks every minute and catches up after startup later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_DRAFT_CLEANUP_ENABLED=true`; `false` disables it | Deletes event drafts created more than 30 days ago |
+| Event feedback follow-up | At startup and every minute; email becomes due 24 hours after the effective event date | UTC event instants | Production by default, or `EVENT_FEEDBACK_EMAIL_ENABLED=true`; `false` disables it; PM2 worker 0 only | Sends a ticket-specific Emailit campaign to consenting attendees who have not unsubscribed; stable operation IDs make event-level retries safe |
+| First paid guest event campaign | Checks at startup and hourly; due 24 hours after the first paid guest-ticket event in each region from 25 August, with a 14-day catch-up window | `Europe/Amsterdam` academic year; UTC event instants | Production by default, or `GUEST_CAMPAIGNS_ENABLED=true`; `false` disables it; PM2 worker 0 only | Sends that event's estimated savings and membership benefits to consenting paid-ticket guests through the Emailit campaign template, once per region and academic year |
+| Guest term 2 and term 3 recap | Checks at startup and hourly; due after 23:59:59 on 15 February and 15 May, with a 14-day catch-up window | `Europe/Amsterdam` | Same guest campaign flag; PM2 worker 0 only | Sends current-year guests their event recap and possible savings, once per term and address |
+| Event sitemap expiry | At startup and every minute | UTC event instants | `NODE_ENV=production` or `EVENT_SITEMAP_EXPIRY_ENABLED=true`, with GitHub sitemap dispatch credentials; `false` disables it; PM2 worker 0 only | Requests a sitemap refresh when a public event passes the 48-hour post-start cutoff; retries until GitHub accepts the dispatch |
+| Daily cleanup | Daily at 03:00; checks every minute and catches up after startup later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_DRAFT_CLEANUP_ENABLED=true`; `false` disables it | Deletes event drafts created more than 30 days ago and completed migration journal runs older than 30 days |
+| Event media cleanup | Each 25 August at 03:00; checks every minute and retries failures | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_MEDIA_CLEANUP_ENABLED=true`; `false` disables it; PM2 worker 0 only | Removes Cloudinary images and folders for past events and previously deleted drafts, after a 72-hour post-event window |
 
 All workers start only after MongoDB and Redis are ready and the required
 account/temporary-code indexes exist. In PM2 cluster mode, only worker 0 runs
-birthday, weekly-summary, event-announcement and event-draft cleanup schedules. They stop accepting new work during graceful API shutdown.
+birthday, weekly-summary, event-announcement, event-feedback, guest term recap, event-sitemap expiry, daily cleanup and event-media cleanup schedules. They stop accepting new work during graceful API shutdown.
+
+The guest campaign queue can run on either API process. It removes jobs after
+success or after the final retry, without keeping recipient delivery rows. The
+term worker keeps one Redis completion marker per academic year and term.
+The Mailer routes the existing guest-savings template through Emailit and
+checks its unsubscribe table when accepting each campaign message.
+
+The feedback worker schedules future published events when it first sees them,
+then persists the due time and an event-level retry time. An event that was
+already past before this worker was introduced is not enrolled retroactively.
+Archived events remain eligible; cancelled events and refunded tickets do not.
+One email goes to each normalized address even when that address bought several
+tickets. The link opens the form without a login. Responses live in each event's
+`feedbacks` array; an atomic event update rejects another response for the same
+ticket or normalized recipient address. The feedback email uses the Bulgarian
+Society campaign template, including its unsubscribe button and one-click
+header. The API checks recorded marketing consent and opt-outs across cities
+before sending, and the Mailer checks its campaign suppression table again.
+
+The event sitemap expiry worker checks the same effective date and visibility
+filter as the public event list. It sends one GitHub dispatch for up to 100 newly
+past events, then records each event's effective date. A failed dispatch leaves
+the events eligible for retry; an event rescheduled to a different date can
+trigger the worker again after its new cutoff. Publication, published edits and
+archival request an immediate refresh through their event handlers.
 
 ## Redis spreadsheet worker
 
@@ -54,7 +84,7 @@ the event sheet. Both documents must grant the configured service account access
 The append-only data-pool export remains on its existing in-process path until
 it has an idempotency key; retrying an append without one could duplicate rows.
 
-## Event draft cleanup
+## Daily cleanup
 
 Source:
 [`services/background-services/event-draft-cleanup.js`](../services/background-services/event-draft-cleanup.js)
@@ -69,10 +99,19 @@ than 30 × 24 hours are deleted. The immutable `createdAt` is authoritative;
 `metadata.createdAt` is a fallback when that field is absent or null. Drafts
 exactly 30 days old, newer drafts, undated records and published events are
 retained. Editing a draft does not reset its age. Media files are retained,
-because published events can share the same assets.
+because published events can share the same assets. Before hiding a draft,
+the worker records its Cloudinary folder and annual cleanup due date on that draft. A draft without media is deleted immediately.
+
+The same job prunes `migrationJournal` run records and their snapshot documents
+30 × 24 hours after a successful migration or confirmed rollback. A recovered
+rollback ages from its recovery time. Running and failed rollbacks, runs without
+a completion time, orphan snapshots, and the deployment lock are retained for
+operator recovery or review. Snapshots are deleted before their run record, so
+a failed cleanup can safely retry. The existing `EVENT_DRAFT_CLEANUP_ENABLED`
+flag controls both parts of this daily job.
 
 The last successful day is held only in process memory. A restart or another
-server can repeat the idempotent deletion safely; no database logs, delivery
+server can repeat the idempotent deletion safely; no new database logs, delivery
 records or permanent Redis keys are created. Only PM2 worker 0 runs this job.
 
 ```dotenv
@@ -82,6 +121,28 @@ EVENT_DRAFT_CLEANUP_ENABLED=true
 
 This worker takes effect when the updated API is deployed and started. Adding
 it to the repository does not run a cleanup against the live database.
+
+## Event media cleanup
+
+Source: [`services/events/event-media-cleanup.js`](../services/events/event-media-cleanup.js)
+
+Archiving or manually deleting a published event leaves its Cloudinary assets
+in place. The annual job uses the yearless academic-year boundary from
+`util/config/academic-year.js` and becomes due at 03:00 Amsterdam time on
+25 August.
+Event folders and poster images are removed when the event ended at least 72
+hours before that cutoff. A folder shared with a live draft or a later event
+is deferred until a later August 25. The same job cleans folders on hidden, deleted draft records and removes those records after cleanup. Old archived posters that were copied to the shared
+`archived-event-posters` folder are removed individually. Per-event due dates
+and completion markers persist on the parent event and draft documents, so an interrupted job retries after
+startup. Cloudinary failures retry after one hour. Only PM2 worker 0 runs it.
+
+```dotenv
+EVENT_MEDIA_CLEANUP_ENABLED=true
+```
+
+The flag is enabled by default in production. Adding this job to the repository
+does not run it against the live database.
 
 ## Birthday greetings
 
@@ -184,9 +245,8 @@ scheduled time (or delayed beyond that minute), that occurrence is skipped.
 The message contains:
 
 - new member count per configured city;
-- new alumni count per configured city;
-- combined city totals and an all-city total;
-- an `Unassigned` row when matching records have no usable city.
+- one national new-alumni row, separate from the member regions;
+- an `Unassigned` member row when matching records have no usable region.
 
 Counts use `joinDate`. Migrated and archived account copies are excluded. The
 report intentionally contains counts only, not member names or email addresses.
@@ -215,8 +275,9 @@ multiple independently configured scheduler processes are not globally deduplica
 
 The regional variant uses the same weekly template and schedule, with recipients
 loaded from `regionContacts`. It sends only for regions with new members and
-never includes another region’s counts. See [Regional contact directory and
-weekly report](region-contacts.md) for migration, routing and delivery semantics.
+shows only that region's member count, without the national alumni count. See
+[Regional contact directory and weekly report](region-contacts.md) for migration,
+routing and delivery semantics.
 
 ## Operational timers that are not scheduled jobs
 
@@ -231,8 +292,8 @@ events:
 
 ## Not automatically scheduled
 
-The scripts in `scripts/`, including `send-non-society-final-reminder.js` and
-the marketing/backfill utilities, run only when invoked manually. The GitHub
+The scripts in `scripts/`, including the marketing/backfill utilities, run only
+when invoked manually. The GitHub
 Actions workflow is triggered by pushes and pull requests; it has no cron
 schedule. There is currently no operating-system cron or external scheduler
 defined in this repository.

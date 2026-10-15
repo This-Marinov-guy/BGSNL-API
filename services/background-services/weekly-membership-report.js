@@ -12,6 +12,7 @@ import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 import { deliverInternalNotificationEmail } from "./email-transporter.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
+import { refreshMemberAverages } from "./regional-averages.js";
 
 export const WEEKLY_MEMBERSHIP_REPORT_TIME_ZONE = "Europe/Amsterdam";
 const REPORT_TYPE = "weekly-membership-summary";
@@ -105,48 +106,38 @@ export const loadWeeklyMembershipSummary = async ({
   MemberModel = MemberUser,
   AlumniModel = AlumniUser,
 } = {}) => {
-  const pipeline = [
-    {
-      $match: {
-        ...CURRENT_ACCOUNT_FILTER,
-        joinDate: { $gte: periodStart, $lt: periodEnd },
-      },
-    },
-    { $group: { _id: "$region", count: { $sum: 1 } } },
-  ];
-  const [memberGroups, alumniGroups] = await Promise.all([
-    MemberModel.aggregate(pipeline),
-    AlumniModel.aggregate(pipeline),
+  const accountFilter = {
+    ...CURRENT_ACCOUNT_FILTER,
+    joinDate: { $gte: periodStart, $lt: periodEnd },
+  };
+  const [memberGroups, alumniCount] = await Promise.all([
+    MemberModel.aggregate([
+      { $match: accountFilter },
+      { $group: { _id: "$region", count: { $sum: 1 } } },
+    ]),
+    AlumniModel.countDocuments(accountFilter),
   ]);
   const members = countGroups(memberGroups);
-  const alumni = countGroups(alumniGroups);
   const knownRegions = new Set(REGIONS);
-  const extraRegions = [...new Set([...members.keys(), ...alumni.keys()])]
+  const extraRegions = [...members.keys()]
     .filter((region) => !knownRegions.has(region) && region !== "unassigned")
     .sort((left, right) => regionLabel(left).localeCompare(regionLabel(right)));
   const orderedRegions = [
     ...REGIONS,
     ...extraRegions,
-    ...(members.has("unassigned") || alumni.has("unassigned") ? ["unassigned"] : []),
+    ...(members.has("unassigned") ? ["unassigned"] : []),
   ];
-  const rows = orderedRegions.map((region) => {
-    const memberCount = members.get(region) || 0;
-    const alumniCount = alumni.get(region) || 0;
-    return {
-      region,
-      city: regionLabel(region),
-      members: memberCount,
-      alumni: alumniCount,
-      total: memberCount + alumniCount,
-    };
-  });
+  const rows = orderedRegions.map((region) => ({
+    region,
+    city: regionLabel(region),
+    members: members.get(region) || 0,
+  }));
   return {
     rows,
-    totals: rows.reduce((totals, row) => ({
-      members: totals.members + row.members,
-      alumni: totals.alumni + row.alumni,
-      total: totals.total + row.total,
-    }), { members: 0, alumni: 0, total: 0 }),
+    totals: {
+      members: rows.reduce((total, row) => total + row.members, 0),
+      alumni: alumniCount,
+    },
   };
 };
 
@@ -155,19 +146,21 @@ export const buildWeeklyMembershipSummaryNotification = ({
   label,
   rows,
   totals,
-  totalLabel = "All cities",
   region,
 }) => {
   const textRows = rows.map((row) =>
-    `${row.city}: ${row.members} member${row.members === 1 ? "" : "s"}, ${row.alumni} alumn${row.alumni === 1 ? "us" : "i"}, ${row.total} total`
+    `${row.city}: ${row.members} new member${row.members === 1 ? "" : "s"}`
   );
   const htmlRows = rows.map((row) => `
     <tr>
       <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;color:#0f172a;">${escapeHtml(row.city)}</td>
       <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;text-align:right;color:#0f172a;">${row.members}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;text-align:right;color:#0f172a;">${row.alumni}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:#0f172a;">${row.total}</td>
     </tr>`).join("");
+  const alumniRow = region ? "" : `
+    <tr style="background:#ecfdf5;">
+      <th scope="row" style="padding:12px 8px;text-align:left;">Alumni (national)</th>
+      <td style="padding:12px 8px;text-align:right;font-weight:700;">${totals.alumni}</td>
+    </tr>`;
 
   return {
     subject: `Weekly membership summary${region ? ` — ${regionLabel(region)}` : ""} — ${label}`,
@@ -178,8 +171,7 @@ export const buildWeeklyMembershipSummaryNotification = ({
       label,
       "",
       ...textRows,
-      "",
-      `${totalLabel}: ${totals.members} members, ${totals.alumni} alumni, ${totals.total} total`,
+      ...(!region ? [`Alumni (national): ${totals.alumni} new alumn${totals.alumni === 1 ? "us" : "i"}`] : []),
     ].join("\n"),
     html: `<!doctype html>
       <html lang="en">
@@ -187,28 +179,18 @@ export const buildWeeklyMembershipSummaryNotification = ({
           <div style="max-width:680px;margin:0 auto;overflow:hidden;border-radius:16px;background:#ffffff;">
             <div style="padding:24px;background:#017363;color:#ffffff;">
               <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85;">Internal weekly report</div>
-              <h1 style="margin:8px 0 4px;font-size:24px;line-height:1.3;font-weight:700;">New members and alumni</h1>
+              <h1 style="margin:8px 0 4px;font-size:24px;line-height:1.3;font-weight:700;">${region ? "New members" : "New members and alumni"}</h1>
               <div style="font-size:15px;opacity:.9;">${escapeHtml(label)}</div>
             </div>
             <div style="padding:20px 24px 24px;">
               <table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px;">
                 <thead>
                   <tr style="background:#f8fafc;">
-                    <th style="padding:10px 8px;text-align:left;color:#475569;">City</th>
-                    <th style="padding:10px 8px;text-align:right;color:#475569;">Members</th>
-                    <th style="padding:10px 8px;text-align:right;color:#475569;">Alumni</th>
-                    <th style="padding:10px 8px;text-align:right;color:#475569;">Total</th>
+                    <th style="padding:10px 8px;text-align:left;color:#475569;">${region ? "Region" : "Region or group"}</th>
+                    <th style="padding:10px 8px;text-align:right;color:#475569;">${region ? "New members" : "New registrations"}</th>
                   </tr>
                 </thead>
-                <tbody>${htmlRows}</tbody>
-                <tfoot>
-                  <tr style="background:#ecfdf5;">
-                    <th style="padding:12px 8px;text-align:left;">${escapeHtml(totalLabel)}</th>
-                    <th style="padding:12px 8px;text-align:right;">${totals.members}</th>
-                    <th style="padding:12px 8px;text-align:right;">${totals.alumni}</th>
-                    <th style="padding:12px 8px;text-align:right;">${totals.total}</th>
-                  </tr>
-                </tfoot>
+                <tbody>${htmlRows}${alumniRow}</tbody>
               </table>
               <p style="margin:18px 0 0;color:#64748b;font-size:13px;line-height:1.5;">Counts use each account’s join date. Migrated account copies are excluded.</p>
             </div>
@@ -225,6 +207,7 @@ export const processWeeklyMembershipReport = async ({
   AlumniModel = AlumniUser,
   runGuard = reportRuns,
   send = deliverInternalNotificationEmail,
+  updateAverages = refreshMemberAverages,
 } = {}) => {
   if (!config.enabled || config.subscribers.length === 0) {
     return { status: "disabled", sent: 0 };
@@ -241,6 +224,8 @@ export const processWeeklyMembershipReport = async ({
   if (receivers.every((email) => runGuard.has(period.key, email))) {
     return { status: "already-processed", sent: 0, reportKey: period.key };
   }
+
+  await updateAverages(now);
 
   const summary = await loadWeeklyMembershipSummary({
     periodStart: period.periodStart,

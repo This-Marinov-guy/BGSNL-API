@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import axios from "axios";
+import { observeIntegrationRequest } from "../../middleware/axiom-logger.js";
 
 export const DOMAKIN_MAILER_CHANNEL = "bulgariansociety";
 export const DOMAKIN_MAILER_FROM_ADDRESS = "info@bulgariansociety.nl";
@@ -67,12 +68,15 @@ export const createDomakinMailerClient = ({
       throw new Error("operationId must be a UUID.");
     }
 
-    const response = await httpClient.post(
-      templateEndpoint(baseUrl),
+    const endpoint = templateEndpoint(baseUrl);
+    const recipient = normalizeReceiver(receiver);
+    const variables = normalizeVariables(templateVariables);
+    const response = await observeIntegrationRequest("mailer", "queue-template", "POST", () => httpClient.post(
+      endpoint,
       {
         templateId: normalizedTemplateId,
-        receiver: normalizeReceiver(receiver),
-        variables: normalizeVariables(templateVariables),
+        receiver: recipient,
+        variables,
         // The caller cannot select a sender. Domakin Mailer resolves this
         // channel to its server-configured Bulgarian Society identity.
         channel: DOMAKIN_MAILER_CHANNEL,
@@ -88,7 +92,7 @@ export const createDomakinMailerClient = ({
         },
         timeout: timeoutMs,
       }
-    );
+    ));
 
     return response.data;
   },

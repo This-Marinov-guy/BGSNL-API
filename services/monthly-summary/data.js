@@ -1,29 +1,76 @@
-import { createHash } from "node:crypto";
-import MonthlySummary, { MonthlySummaryDelivery } from "../../models/MonthlySummary.js";
+import axios from "axios";
 import AlumniUser from "../../models/AlumniUser.js";
 import Event from "../../models/Event.js";
+import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { loadWeeklyMembershipSummary } from "../background-services/weekly-membership-report.js";
+import { readSpreadsheetRows } from "../background-services/google-spreadsheets.js";
 import { eventPageUrl } from "../events/member-event-links.js";
-import { isActiveSummaryAlumni, monthlyPeriod, normalizeSummaryEmail, safeHttpsUrl, validateNews } from "./policy.js";
-import HttpError from "../../models/Http-error.js";
+import { removeBgPosts } from "../side-services/integration/wordpress-service.js";
+import { ARTICLES_SHEET } from "../../util/config/SPREEDSHEATS.js";
+import { isActiveSummaryAlumni, monthlyPeriod, normalizeSummaryEmail, safeHttpsUrl } from "./policy.js";
 
-export const loadMonthlyDraft = async (month, { SummaryModel = MonthlySummary } = {}) =>
-  await SummaryModel.findById(month).lean() || { _id: month, news: [], revision: 0 };
+const plainArticleText = value => String(value || "").replace(/<[^>]*>/g, " ")
+  .replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos|nbsp);/gi, (_, entity) => {
+    const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+    if (entity[0] === "#") {
+      const code = entity[1].toLowerCase() === "x" ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
+      return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : "";
+    }
+    return named[entity.toLowerCase()] || "";
+  }).replace(/\s+/g, " ").trim();
 
-export async function loadMonthlySnapshot(month, { now = new Date(), EventModel = Event, loadCounts = loadWeeklyMembershipSummary, draft } = {}) {
+const articleSlug = title => title.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "article";
+
+export async function loadMonthlyArticles(period, {
+  blogId = process.env.WORDPRESS_BLOG_ID,
+  fetchPage = async ({ blogId, after, before, page }) => (await axios.get(
+    `https://public-api.wordpress.com/wp/v2/sites/${encodeURIComponent(blogId)}/posts`,
+    { params: { after, before, page, per_page: 100, _fields: "id,date_gmt,title,excerpt,content" }, timeout: 10000 },
+  )).data,
+  loadTranslations = () => readSpreadsheetRows(ARTICLES_SHEET, "Translations", "B2", "C1000"),
+} = {}) {
+  if (!blogId) return [];
+  const after = new Date(+period.periodStart - 86400000).toISOString();
+  const before = new Date(+period.cutoff + 86400000).toISOString();
+  const posts = [];
+  for (let page = 1; page <= 10; page++) {
+    const batch = await fetchPage({ blogId, after, before, page });
+    if (!Array.isArray(batch)) throw new Error("WordPress did not return an article list.");
+    posts.push(...batch);
+    if (batch.length < 100) break;
+    if (page === 10) throw new Error("WordPress returned more than 1,000 articles for one month.");
+  }
+  if (!posts.length) return [];
+  const translationIds = await loadTranslations();
+  return removeBgPosts(posts, translationIds).filter(post => {
+    const published = new Date(`${post.date_gmt || ""}Z`);
+    return Number.isFinite(+published) && +published >= +period.periodStart && +published < +period.cutoff;
+  }).map(post => {
+    const title = plainArticleText(post.title?.rendered);
+    const description = plainArticleText(post.excerpt?.rendered).slice(0, 240);
+    const image = safeHttpsUrl((/<img\b[^>]*\bsrc=["']([^"']+)["']/i.exec(post.content?.rendered || "")?.[1] || "").replaceAll("&amp;", "&"));
+    return { title, description, image,
+      url: `https://www.bulgariansociety.nl/articles/${encodeURIComponent(post.id)}/${articleSlug(title)}` };
+  }).filter(article => article.title);
+}
+
+export async function loadMonthlySnapshot(month, { now = new Date(), EventModel = Event,
+  loadCounts = loadWeeklyMembershipSummary, loadArticles = loadMonthlyArticles } = {}) {
   const period = monthlyPeriod(month, now);
-  const selectedDraft = draft || await loadMonthlyDraft(month);
-  if (selectedDraft.snapshot) return selectedDraft.snapshot;
   const actualDate = { $ifNull: ["$correctedDate", "$date"] };
-  const [events, counts] = await Promise.all([
+  const [events, counts, articles] = await Promise.all([
     EventModel.find({ hidden: { $ne: true }, status: { $nin: ["draft", "cancelled", "canceled"] },
       $expr: { $and: [{ $gte: [actualDate, period.periodStart] }, { $lt: [actualDate, period.cutoff] }] },
-    }).select("_id title date correctedDate poster region slug").maxTimeMS(15000).lean(),
+    }).select("_id title date correctedDate poster region slug guestList.refunded").maxTimeMS(15000).lean(),
     loadCounts({ periodStart: period.periodStart, periodEnd: period.cutoff }),
+    Promise.resolve().then(() => loadArticles(period))
+      .catch(error => { logOperationalError("monthly-summary.articles", error); return []; }),
   ]);
   return { month, label: period.label, cutoff: period.cutoff.toISOString(),
     members: counts.totals.members, alumni: counts.totals.alumni,
-    news: validateNews(selectedDraft.news || []),
+    ticketsSold: events.reduce((total, event) => total + (event.guestList || []).filter(ticket => ticket.refunded !== true).length, 0),
+    articles, news: [],
     events: events.map(event => ({ id: String(event._id), title: event.title,
       date: new Date(event.correctedDate || event.date).toISOString(), poster: safeHttpsUrl(event.poster), url: eventPageUrl(event),
     })).sort((left, right) => left.date.localeCompare(right.date)),
@@ -39,48 +86,3 @@ export async function loadMonthlyRecipients({ now = new Date(), internalEmails =
   for (const value of internalEmails) { const email = normalizeSummaryEmail(value); if (email) emails.add(email); }
   return { emails: [...emails], alumniCount, internalCount: emails.size - alumniCount };
 }
-
-export async function saveMonthlyNews({ month, revision, news, userId }, { now = new Date(), SummaryModel = MonthlySummary } = {}) {
-  const period = monthlyPeriod(month, now);
-  if (+now >= +period.dueAt) throw new HttpError("This month's news is closed for sending. Choose a future month.", 409);
-  if (!Number.isSafeInteger(revision) || revision < 0) throw new HttpError("Reload this summary before saving.", 422);
-  const cleaned = validateNews(news);
-  try {
-    const saved = await SummaryModel.findOneAndUpdate({ _id: month, revision, publishedAt: null }, {
-      $set: { news: cleaned, updatedBy: userId }, $inc: { revision: 1 },
-    }, { new: true, upsert: revision === 0, runValidators: true, setDefaultsOnInsert: true }).lean();
-    if (!saved) throw new HttpError("This summary changed or is already being sent. Reload it before editing.", 409);
-    return saved;
-  } catch (error) {
-    if (error?.code === 11000) throw new HttpError("Another editor saved this month. Reload before saving your changes.", 409);
-    throw error;
-  }
-}
-
-export async function freezeMonthlySnapshot(month, snapshot, { now = new Date(), SummaryModel = MonthlySummary } = {}) {
-  try {
-    // Take news from the document in the same atomic update. An editor saving
-    // just before the cutoff must not be overwritten by an earlier draft read.
-    const frozen = await SummaryModel.findOneAndUpdate({ _id: month, publishedAt: null }, [
-      { $set: { publishedAt: now, snapshot: { $literal: snapshot },
-        news: { $ifNull: ["$news", []] }, revision: { $ifNull: ["$revision", 0] },
-        createdAt: { $ifNull: ["$createdAt", now] }, updatedAt: now } },
-      { $set: { "snapshot.news": "$news" } },
-    ], { new: true, upsert: true }).lean();
-    return frozen.snapshot;
-  } catch (error) {
-    if (error?.code !== 11000) throw error;
-    const existing = await SummaryModel.findById(month).lean();
-    if (!existing?.snapshot) throw error;
-    return existing.snapshot;
-  }
-}
-
-export const monthlyDeliveryId = (month, email) => `${month}:${createHash("sha256").update(normalizeSummaryEmail(email)).digest("hex")}`;
-export async function claimMonthlyDelivery(month, email, { now = new Date(), DeliveryModel = MonthlySummaryDelivery } = {}) {
-  const _id = monthlyDeliveryId(month, email);
-  try { await DeliveryModel.create({ _id, month, status: "attempted", attemptedAt: now }); return _id; }
-  catch (error) { if (error?.code === 11000) return null; throw error; }
-}
-export const finishMonthlyDelivery = (_id, status, { now = new Date(), DeliveryModel = MonthlySummaryDelivery } = {}) =>
-  DeliveryModel.updateOne({ _id }, { $set: { status, finishedAt: now } });

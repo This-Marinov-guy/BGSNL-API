@@ -1,6 +1,25 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import Stripe from 'stripe';
+import { logIntegrationRequest } from '../../middleware/axiom-logger.js';
+
+const STRIPE_RESOURCES = new Set(['accounts', 'balance', 'balance_transactions', 'billing_portal', 'charges',
+  'checkout', 'coupons', 'customers', 'disputes', 'events', 'invoices', 'payment_intents', 'payment_methods',
+  'prices', 'products', 'promotion_codes', 'refunds', 'subscriptions', 'transfers']);
+
+// Stripe paths contain customer and payment IDs. Only retain the stable API
+// resource so request activity can be debugged without storing those IDs.
+export const stripeRequestOperation = (path) => {
+  const segments = String(path || '').split('?')[0].split('/').filter(Boolean);
+  if (segments[0] !== 'v1') return 'api-request';
+  const resource = segments[1];
+  if (!STRIPE_RESOURCES.has(resource)) return 'api-request';
+  if (resource === 'checkout' && segments[2] === 'sessions') return 'checkout-sessions';
+  if (resource === 'billing_portal' && ['sessions', 'configurations'].includes(segments[2])) {
+    return `billing-portal-${segments[2]}`;
+  }
+  return resource.replaceAll('_', '-');
+};
 
 export const STRIPE_KEYS = {
   groningen: {
@@ -64,11 +83,15 @@ export const createStripeClient = (region = '') => {
     region = 'netherlands';
   }
 
-  return new Stripe(STRIPE_KEYS[region]['secretKey'], {
+  const client = new Stripe(STRIPE_KEYS[region]['secretKey'], {
     apiVersion: '2022-08-01',
     timeout: 20000,
     maxNetworkRetries: 1,
   });
+  client.on('response', ({ method, path, status, elapsed }) => {
+    logIntegrationRequest('stripe', stripeRequestOperation(path), { method, status, durationMs: elapsed });
+  });
+  return client;
 };
 
 export const getStripeKey = (key, region = '') => {

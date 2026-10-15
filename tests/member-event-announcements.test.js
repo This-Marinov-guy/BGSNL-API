@@ -46,7 +46,17 @@ test("email targets the Domakin Mailer template with event details and matching 
   const email = buildMemberEventEmail({ event, member, ticketUrl: makeLink() });
   assert.equal(email.templateId, MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE);
   assert.equal(email.templateVariables.name, "Mila <test>");
-  assert.equal(email.templateVariables.location, "Groningen");
+  assert.equal(email.templateVariables.regionLabel, "Groningen");
+  assert.deepEqual([
+    email.templateVariables.regionBadgeBackground,
+    email.templateVariables.regionBadgeBorder,
+    email.templateVariables.regionBadgeColor,
+  ], ["#ffe9e8", "#ffbbb7", "#b51e18"]);
+  assert.equal("location" in email.templateVariables, false);
+  assert.equal("description" in email.templateVariables, false);
+  assert.equal(email.templateVariables.poster, event.poster || "");
+  assert.equal(buildMemberEventEmail({ event: { ...event, poster: "https://example.org/poster.jpg" }, member,
+    ticketUrl: makeLink() }).templateVariables.poster, "https://example.org/poster.jpg");
   assert.match(email.templateVariables.priceLabel, /8\.00/);
   assert.match(email.templateVariables.viewUrl, /autumn-meetup/);
   assert.match(email.templateVariables.ticketUrl, /^https:\/\//);

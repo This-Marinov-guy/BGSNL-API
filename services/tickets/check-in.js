@@ -20,7 +20,7 @@ export function planCheckIn(guests, code, count, { preview = false } = {}) {
 // same seat twice, and a concurrent refund invalidates the whole selection.
 export function checkInMutation(event, plan, now = new Date()) {
   return {
-    filter: { _id: event._id, region: event.region, $and: plan.ids.map(id => ({
+    filter: { _id: event._id, region: event.region, cancellationRequestedAt: null, $and: plan.ids.map(id => ({
       guestList: { $elemMatch: { _id: id, status: { $ne: 1 }, refunded: { $ne: true } } },
     })) },
     update: { $set: { "guestList.$[guest].status": 1, "guestList.$[guest].checkedInAt": now } },

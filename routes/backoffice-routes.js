@@ -19,6 +19,9 @@ export const createBackofficeRouter = ({
   authorize = adminMiddleware(MEMBER_ADMIN_ACCESS),
 } = {}) => {
   const router = express.Router();
+  const scopedActor = (req) => ({ _id: req.account._id, id: req.account.id,
+    roles: req.user?.roles ?? req.account.roles, status: req.account.status,
+    region: req.authClaims ? req.authClaims.region : req.account.region });
   router.post("/access-requests", authenticate, async (req, res, next) => {
     try {
       res.status(202).json(await requests.request({ account: req.account, body: req.body }));
@@ -30,7 +33,7 @@ export const createBackofficeRouter = ({
 
   router.get("/accounts", async (req, res, next) => {
     try {
-      res.status(200).json(await service.list(req.query, req.account));
+      res.status(200).json(await service.list(req.query, scopedActor(req)));
     } catch (error) {
       next(error instanceof HttpError ? error : new HttpError("Could not load accounts", 500));
     }
@@ -53,7 +56,7 @@ export const createBackofficeRouter = ({
       if (uploadError) { next(new HttpError("Choose an .xlsx file smaller than 1 MB", 422)); return; }
       try {
         res.set("Cache-Control", "private, no-store");
-        res.json(await service.previewRoleImport({ file: req.file, actor: req.account }));
+        res.json(await service.previewRoleImport({ file: req.file, actor: scopedActor(req) }));
       } catch (error) { next(error instanceof HttpError ? error : new HttpError("Could not review the import", 500)); }
     });
   });
@@ -61,25 +64,25 @@ export const createBackofficeRouter = ({
   router.post("/accounts/bulk-roles/apply", async (req, res, next) => {
     try {
       res.set("Cache-Control", "private, no-store");
-      res.json(await service.applyRoleImport({ rows: req.body?.rows, actor: req.account }));
+      res.json(await service.applyRoleImport({ rows: req.body?.rows, actor: scopedActor(req) }));
     } catch (error) { next(error instanceof HttpError ? error : new HttpError("Could not apply role changes", 500)); }
   });
 
   router.get("/accounts/:type/:id/membership", async (req, res, next) => {
     res.set("Cache-Control", "private, no-store");
-    try { res.json(await actions.inspect({ ...req.params, actor: req.account })); }
+    try { res.json(await actions.inspect({ ...req.params, actor: scopedActor(req) })); }
     catch (error) { next(error instanceof HttpError ? error : new HttpError("Could not load membership details. Please try again.", 503)); }
   });
 
   router.post("/accounts/:type/:id/transfer", async (req, res, next) => {
     res.set("Cache-Control", "private, no-store");
-    try { res.status(202).json(await actions.requestTransfer({ ...req.params, actor: req.account, body: req.body })); }
+    try { res.status(202).json(await actions.requestTransfer({ ...req.params, actor: scopedActor(req), body: req.body })); }
     catch (error) { next(error instanceof HttpError ? error : new HttpError("Could not confirm the transfer email. Please check before retrying.", 503)); }
   });
 
   router.post("/accounts/:type/:id/cancel-subscription", async (req, res, next) => {
     res.set("Cache-Control", "private, no-store");
-    try { res.json(await actions.cancel({ ...req.params, actor: req.account, body: req.body })); }
+    try { res.json(await actions.cancel({ ...req.params, actor: scopedActor(req), body: req.body })); }
     catch (error) { next(error instanceof HttpError ? error : new HttpError("Could not confirm cancellation. Refresh membership details before retrying.", 503)); }
   });
 
@@ -89,7 +92,7 @@ export const createBackofficeRouter = ({
         type: req.params.type,
         id: req.params.id,
         body: req.body,
-        actor: req.account,
+        actor: scopedActor(req),
       }));
     } catch (error) {
       next(error instanceof HttpError ? error : new HttpError("Could not update account", 500));

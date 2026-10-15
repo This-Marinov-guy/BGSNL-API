@@ -10,7 +10,7 @@ import { createSubscriptionAccount, persistSubscriptionAccount } from "../servic
 import { withBillingLease } from "../services/subscriptions/lease.js";
 import { findUserById } from "../services/main-services/user-service.js";
 
-test("signed but outdated JWT roles, customer and status are replaced with current account data", async (t) => {
+test("signed but outdated JWT roles cannot grant access; billing and status use current account data", async (t) => {
   const previous = process.env.JWT_STRING;
   process.env.JWT_STRING = "subscription-tests-only-not-a-real-secret";
   t.after(() => { if (previous === undefined) delete process.env.JWT_STRING; else process.env.JWT_STRING = previous; });
@@ -21,7 +21,7 @@ test("signed but outdated JWT roles, customer and status are replaced with curre
   let error;
   await auth(req, { set: () => {} }, (value) => { error = value; });
   assert.equal(error, undefined); // Login and billing are still accessible.
-  assert.deepEqual(req.user.roles, ["alumni"]);
+  assert.deepEqual(req.user.roles, []);
   assert.equal(req.user.userId, "alumni_current");
   assert.equal(req.user.customerId, "cus_current");
   assert.equal(req.user.status, "locked");
@@ -32,7 +32,7 @@ test("signed but outdated JWT roles, customer and status are replaced with curre
 test("forged tokens are rejected before any account lookup", async () => {
   let lookedUp = false, error;
   const auth = createAuthMiddleware({ findAccount: async () => { lookedUp = true; } });
-  await auth({ headers: { authorization: "Bearer forged.payload.signature" } }, {}, (value) => { error = value; });
+  await auth({ headers: { authorization: "Bearer forged.payload.signature" } }, { set() {} }, (value) => { error = value; });
   assert.equal(error.statusCode, 401); assert.equal(lookedUp, false);
 });
 test("legacy account resolution cannot authenticate a different owner of a reused email", async (t) => {

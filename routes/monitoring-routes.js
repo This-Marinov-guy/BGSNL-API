@@ -7,6 +7,7 @@ import { requestClientAddress } from "../util/auth/request-client.js";
 import { MONITORING_ACCESS } from "../util/config/defines.js";
 import { redisRateLimits } from "../services/storage/rate-limits.js";
 import { monitoringOverview } from "../services/monitoring/overview.js";
+import { quotaOverview } from "../services/monitoring/quotas.js";
 import { listJobs, normalizeJobFilter } from "../services/monitoring/jobs.js";
 
 const text = (value, max) => typeof value === "string" ? value.slice(0, max) : "";
@@ -28,7 +29,7 @@ export function normalizeWebEvent(body) {
   return event;
 }
 
-export const createMonitoringRouter = ({ overview = monitoringOverview, ingest = ingestWebLog,
+export const createMonitoringRouter = ({ overview = monitoringOverview, quotas = quotaOverview, ingest = ingestWebLog,
   jobs = listJobs, authorize = adminMiddleware(MONITORING_ACCESS), trusted = isTrustedServerRequest, limits = redisRateLimits } = {}) => {
   const router = express.Router();
   router.post("/web-events", async (req, res) => {
@@ -53,6 +54,11 @@ export const createMonitoringRouter = ({ overview = monitoringOverview, ingest =
     res.set("Cache-Control", "private, no-store");
     try { return res.json(await overview()); }
     catch (error) { logOperationalError("service.monitoring-overview", error); return res.status(503).json({ message: "Monitoring is temporarily unavailable." }); }
+  });
+  router.get("/quotas", authorize, async (req, res) => {
+    res.set("Cache-Control", "private, no-store");
+    try { return res.json(await quotas({ force: req.query.refresh === "1" })); }
+    catch (error) { logOperationalError("service.monitoring-quotas", error); return res.status(503).json({ message: "Quotas are temporarily unavailable." }); }
   });
   router.get("/jobs", authorize, async (req, res) => {
     res.set("Cache-Control", "private, no-store");

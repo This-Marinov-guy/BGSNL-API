@@ -3,6 +3,8 @@ import EventDraft from "../../models/EventDraft.js";
 import { EVENT_DRAFT } from "../../util/config/defines.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
+import { rememberDeletedDraftMedia } from "../events/event-media-cleanup.js";
+import { pruneMigrationJournal } from "../migrations/journal-retention.js";
 
 export const EVENT_DRAFT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const EVENT_DRAFT_CLEANUP_TIME_ZONE = "Europe/Amsterdam";
@@ -16,24 +18,37 @@ export function getEventDraftCleanupConfig(env = process.env) {
   };
 }
 
-export async function deleteExpiredEventDrafts({ now = new Date(), DraftModel = EventDraft } = {}) {
+export async function deleteExpiredEventDrafts({ now = new Date(), DraftModel = EventDraft,
+  rememberMedia = rememberDeletedDraftMedia } = {}) {
   const timestamp = new Date(now).getTime();
   if (!Number.isFinite(timestamp)) throw new Error("Invalid event draft cleanup time");
   const cutoff = new Date(timestamp - EVENT_DRAFT_RETENTION_MS);
   // The age is based on creation, not the last edit. Legacy drafts may only
   // have their creation date in metadata. Undated records are not guessed.
-  const result = await DraftModel.deleteMany({
+  const filter = {
     status: EVENT_DRAFT,
+    deletedAt: null,
     $or: [
       { createdAt: { $type: "date", $lt: cutoff } },
       { createdAt: null, "metadata.createdAt": { $type: "date", $lt: cutoff } },
     ],
-  });
-  return { deletedCount: result.deletedCount, cutoff };
+  };
+  const drafts = await DraftModel.find(filter).select("_id folder").lean();
+  for (const draft of drafts) await rememberMedia(draft, { now, DraftModel });
+  const withoutMedia = drafts.filter(draft => !draft.folder).map(draft => draft._id);
+  if (withoutMedia.length) await DraftModel.deleteMany({ _id: { $in: withoutMedia }, status: EVENT_DRAFT, deletedAt: null });
+  return { deletedCount: drafts.length, cutoff };
+}
+
+export async function runDailyCleanup({ now = new Date(), cleanDrafts = deleteExpiredEventDrafts,
+  cleanJournal = pruneMigrationJournal } = {}) {
+  const drafts = await cleanDrafts({ now });
+  const migrationJournal = await cleanJournal({ now });
+  return { drafts, migrationJournal };
 }
 
 export function createEventDraftCleanupJob({
-  now = () => new Date(), cleanup = deleteExpiredEventDrafts,
+  now = () => new Date(), cleanup = runDailyCleanup,
 } = {}) {
   let completedDay;
   return async () => {
@@ -55,14 +70,14 @@ export function startEventDraftCleanupWorker({
   intervalMs = 60 * 1000,
   schedule = setInterval,
   unschedule = clearInterval,
-  onError = (error) => { logOperationalError("worker.event-draft-cleanup", error); console.error("Event draft cleanup failed; retrying on the next tick"); },
+  onError = (error) => { logOperationalError("worker.daily-cleanup", error); console.error("Daily cleanup failed; retrying on the next tick"); },
 } = {}) {
   if (!config.enabled) return async () => {};
   let stopped = false;
   let running;
   const tick = () => {
     if (stopped || running) return;
-    running = runObservedJob("scheduler", "event-draft-cleanup", run).catch(onError).finally(() => { running = null; });
+    running = runObservedJob("scheduler", "daily-cleanup", run).catch(onError).finally(() => { running = null; });
   };
   const timer = schedule(tick, intervalMs);
   timer.unref?.();

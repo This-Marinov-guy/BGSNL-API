@@ -58,6 +58,7 @@ function harness() {
   };
   const dependencies = { records, now: () => clock, hashPassword: async () => "new-bcrypt-hash", findAccount: async () => user(),
     deliver: async (message) => { emails.push(message); }, checkEmail: async () => {},
+    removeGuest: async () => {},
     identities: { deleteMany: async (query, options) => { assert.ok(options.session); deleted.push(query); } },
     startSession: async () => ({ endSession: async () => {}, withTransaction: (run) => {
       const result = tail.then(async () => {
@@ -90,6 +91,7 @@ test("password confirmation is single-use, revokes sessions and preserves restri
   assert.equal(result.state, "complete"); assert.equal(h.live().password, "new-bcrypt-hash");
   assert.equal(h.live().sessionVersion, 1); assert.equal(h.live().status, "locked");
   assert.equal(h.row(), null); assert.deepEqual(h.deleted(), []);
+  assert.equal(h.emails.length, 1);
   await assert.rejects(confirmProfileChange(token, h.dependencies), invalid);
 });
 test("email changes require the old address then the new address before applying anything", async () => {
@@ -103,7 +105,7 @@ test("email changes require the old address then the new address before applying
   assert.equal(h.live().email, "new@example.test"); assert.equal(h.live().password, "new-bcrypt-hash");
   assert.equal(h.live().sessionVersion, 1);
   assert.deepEqual(h.deleted(), [{ accountId: "member_fixture", provider: "google" }]);
-  assert.equal(h.emails.length, 4); // Final notifications to both addresses.
+  assert.equal(h.emails.length, 2); // Only approval and new-address verification.
 });
 test("email-only changes preserve passwords; unchanged email creates no challenge", async () => {
   const h = harness();

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createEmailSender, DOMAKIN_NOTIFICATION_TEMPLATE, resolveDomakinResendTemplate, useDomakinMailer } from "../services/background-services/email-provider.js";
+import { createEmailSender, DOMAKIN_CAMPAIGN_TEMPLATES, DOMAKIN_NOTIFICATION_TEMPLATE, resolveDomakinResendTemplate, useDomakinMailer } from "../services/background-services/email-provider.js";
 
 test("production and unconfigured environments preserve the legacy delivery path", async () => {
   for (const env of [{}, { APP_ENV: "prod" }, { BGSNL_EMAIL_PROVIDER: "legacy" }]) {
@@ -16,6 +16,19 @@ test("local template delivery preserves nested variables and recipient identity"
   const message = { to: [{ email: "person@example.test", id: "member-1" }], template_uuid: "welcome", template_variables: { template_variables: { name: "Member" } } };
   await createEmailSender({ env: { BGSNL_EMAIL_PROVIDER: "domakin" }, queueTemplate: async (...args) => { sent = args; }, legacySend: () => assert.fail("external provider used") })(message);
   assert.deepEqual(sent, ["welcome", message.to[0], message.template_variables]);
+});
+
+test("all ten catalog campaigns use Domakin Mailer even under the legacy setting", async () => {
+  assert.equal(DOMAKIN_CAMPAIGN_TEMPLATES.size, 10);
+  for (const templateId of DOMAKIN_CAMPAIGN_TEMPLATES) {
+    let queued;
+    const message = { to: [{ email: "person@example.test" }], template_uuid: templateId,
+      template_variables: { template_variables: { eventName: "Event" } } };
+    await createEmailSender({ env: { BGSNL_EMAIL_PROVIDER: "legacy" },
+      queueTemplate: async (...args) => { queued = args; },
+      legacySend: () => assert.fail("Campaign bypassed Domakin Mailer") })(message);
+    assert.deepEqual(queued, [templateId, message.to[0], message.template_variables]);
+  }
 });
 
 test("billing and internal messages use the shared notification snapshot", async () => {

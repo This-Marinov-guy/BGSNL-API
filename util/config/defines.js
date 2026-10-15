@@ -44,6 +44,7 @@ export const ALL_EVENT_REGIONS_ACCESS = [...ACCESS_2, NATIONAL_COMMITTEE_MEMBER]
 export const EVENT_MANAGEMENT_ACCESS = [...ACCESS_3, NATIONAL_COMMITTEE_MEMBER];
 export const ALL_MEMBER_REGIONS_ACCESS = [...ACCESS_2, NATIONAL_COMMITTEE_MEMBER];
 export const MEMBER_ADMIN_ACCESS = [...ACCESS_3, NATIONAL_COMMITTEE_MEMBER];
+export const DASHBOARD_ACCESS = [...new Set([...ACCESS_4, SUPPORT, DEVELOPER])];
 export const MONITORING_ACCESS = [SUPER_ADMIN, ADMIN, DEVELOPER];
 
 
@@ -81,7 +82,7 @@ export const BIRTHDAY_TEMPLATE = "9b3cd024-9282-4c71-b93e-d20be8fee659";
 export const EVENT_DRAFT_REMINDER_TEMPLATE = "8e788a4c-8396-4490-97b8-c5371f829411";
 export const SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE = "19c7266b-ed3c-4b30-af54-e2258f64cd53";
 export const PROFILE_CHANGE_CONFIRM_TEMPLATE = "a4b567c0-40b3-4898-ae1e-98182d7f3189";
-export const SIGN_IN_DETAILS_CHANGED_TEMPLATE = "ade176ca-11ed-414b-8d13-553bf4340e59";
+export const EVENT_CANCELLATION_CONFIRM_TEMPLATE = "a8f079b9-c33d-42f1-996e-267d3c013d93";
 export const MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE = "2cf8d31e-8239-4d5f-9ed3-8288a49b74b8";
 export const NON_SOCIETY_EVENT_RESEND_TEMPLATE = "gala-festival-invitation-1";
 export const NON_SOCIETY_EVENT_RESEND_EVENT_ID = "69e5c915af9057b6bce64686";
@@ -89,14 +90,6 @@ export const NON_SOCIETY_EVENT_RESEND_TEST_EMAILS = [
   "bulgariansociety.netherlands@gmail.com",
   "vladislavmarinov3142@gmail.com",
 ];
-export const NON_SOCIETY_EVENT_FINAL_REMINDER_TEMPLATE =
-  "0c9bca58-82e4-42f2-87b9-a3ad4087e9d6";
-export const NON_SOCIETY_EVENT_FINAL_REMINDER_EVENT_ID =
-  "6a3917abcf9edd30cd1213ce";
-export const NON_SOCIETY_EVENT_FINAL_REMINDER_TEST_EMAILS = [
-  "vladislavmarinov3142@gmail.com",
-];
-
 export const NO_REPLY_EMAIL = "no-reply@bulgariansociety.nl";
 export const NO_REPLY_EMAIL_NAME = "Bulgarian Society Netherlands";
 

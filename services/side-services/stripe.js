@@ -179,27 +179,75 @@ export const addPrice = async (region, productId, amount = 0, nickname = 'price'
     return price['id'];
 };
 
+const loadRefundCharge = async (stripeClient, paymentIntentId) => {
+  const intent = await stripeClient.paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge.balance_transaction"] });
+  const charge = typeof intent.latest_charge === "string"
+    ? await stripeClient.charges.retrieve(intent.latest_charge, { expand: ["balance_transaction"] })
+    : intent.latest_charge;
+  if (!charge) throw new Error("Payment has no completed charge");
+  return charge;
+};
+
+export const getStripeRefundQuote = async (region, paymentIntentId, { stripeClient = createStripeClient(region) } = {}) => {
+  const charge = await loadRefundCharge(stripeClient, paymentIntentId);
+  const transaction = typeof charge.balance_transaction === "string"
+    ? await stripeClient.balanceTransactions.retrieve(charge.balance_transaction)
+    : charge.balance_transaction;
+  if (!transaction || !Number.isInteger(transaction.fee)) throw new Error("Stripe processing fee is unavailable");
+  return { amountCents: charge.amount, refundedCents: charge.amount_refunded,
+    remainingCents: charge.amount - charge.amount_refunded, feeCents: transaction.fee,
+    currency: charge.currency?.toUpperCase() || "EUR" };
+};
+
 /**
  * Issues a Stripe refund for a payment intent
  * @param {string} region - Region for stripe client
  * @param {string} paymentIntentId - Stripe payment intent ID (pi_...)
  * @param {string|null} reason - Human-readable reason (stored in metadata)
+ * @param {{mode?: "full"|"partial"|"less_fees", amountCents?: number, idempotencyKey?: string}} options
  * @returns {{ success: boolean, refundId?: string, status?: string, error?: string }}
  */
-export const refundStripePayment = async (region, paymentIntentId, reason = null) => {
+export const refundStripePayment = async (region, paymentIntentId, reason = null, options = {}) => {
   if (!paymentIntentId || paymentIntentId === "-") {
     return { success: false, error: "No valid payment intent ID" };
   }
 
-  const stripeClient = createStripeClient(region);
+  const stripeClient = options.dependencies?.stripeClient || createStripeClient(region);
 
   try {
+    const mode = options.mode || "full";
+    if (!["full", "partial", "less_fees"].includes(mode)) throw new Error("Invalid refund mode");
+    if (options.operationId) {
+      const refunds = await stripeClient.refunds.list({ payment_intent: paymentIntentId, limit: 100 });
+      const prior = refunds.data.find(item => item.metadata?.operation_id === options.operationId &&
+        !["failed", "canceled"].includes(item.status));
+      if (prior) return { success: true, refundId: prior.id, status: prior.status, amountCents: prior.amount,
+        alreadyRefunded: true };
+    }
+    const charge = await loadRefundCharge(stripeClient, paymentIntentId);
+    const remaining = charge.amount - charge.amount_refunded;
+    if (remaining <= 0) return { success: true, status: "already_refunded" };
+    let amount;
+    if (mode === "partial") {
+      amount = options.amountCents;
+      if (!Number.isInteger(amount) || amount <= 0 || amount > remaining) throw new Error("Partial refund amount is invalid");
+    } else if (mode === "less_fees") {
+      const transaction = typeof charge.balance_transaction === "string"
+        ? await stripeClient.balanceTransactions.retrieve(charge.balance_transaction)
+        : charge.balance_transaction;
+      if (!transaction || !Number.isInteger(transaction.fee)) throw new Error("Stripe fee is unavailable");
+      amount = remaining - transaction.fee;
+      if (amount <= 0) throw new Error("Stripe fee exceeds refundable amount");
+    } else amount = remaining;
     const refundData = { payment_intent: paymentIntentId };
+    refundData.amount = amount;
     if (reason) {
       refundData.metadata = { reason };
     }
-    const refund = await stripeClient.refunds.create(refundData);
-    return { success: true, refundId: refund.id, status: refund.status };
+    if (options.operationId) refundData.metadata = { ...refundData.metadata, operation_id: options.operationId };
+    const refund = await stripeClient.refunds.create(refundData, options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : undefined);
+    if (["failed", "canceled"].includes(refund.status)) return { success: false, error: `Stripe refund ${refund.status}` };
+    return { success: true, refundId: refund.id, status: refund.status, amountCents: refund.amount };
   } catch (err) {
     logIntegrationError("stripe", err, "refund");
     console.error(`[refundStripePayment] Failed to refund payment intent ${paymentIntentId}:`, err.message);

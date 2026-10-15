@@ -31,11 +31,9 @@ export async function processRegionalMembershipReports({
     const receiver = emails[row.region];
     if (!receiver) { missingContacts++; continue; }
     if (!runGuard.claim(period.key, row.region)) { skipped++; continue; }
-    const { members, alumni, total } = row;
     try {
       await send({ receiver, ...buildWeeklyMembershipSummaryNotification({
-        ...period, rows: [row], totals: { members, alumni, total },
-        totalLabel: "Region total", region: row.region,
+        ...period, rows: [row], region: row.region,
       }) });
       sent++;
     } catch (error) {

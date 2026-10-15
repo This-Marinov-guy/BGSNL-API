@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { spawnSync } from "node:child_process";
 import { bestEffortLog, reportAxiomFailure, snapshotLog } from "../middleware/axiom-safety.js";
 
 // No real credentials or network are used. Every attempted event fails before ingest.
@@ -8,8 +9,26 @@ process.env.AXIOM_TOKEN = "test-token";
 process.env.AXIOM_ORG_ID = "test-org";
 process.env.AXIOM_LOGGING_ENABLED = "true";
 process.env.APP_ENV = "test";
-const { axiomLogger, ingestLog, logError, logOperationalError, logIntegrationError } = await import("../middleware/axiom-logger.js");
+const { axiomCredentialsConfigured, axiomLogger, ingestLog, logError, logOperationalError, logIntegrationError } = await import("../middleware/axiom-logger.js");
 const fail = () => { throw new Error("private failure details"); };
+
+test("Axiom API tokens work without an organization ID, while personal tokens require one", () => {
+  assert.equal(axiomCredentialsConfigured("xaat-test-token", undefined), true);
+  assert.equal(axiomCredentialsConfigured("xapt-test-token", undefined), false);
+  assert.equal(axiomCredentialsConfigured("xapt-test-token", "test-org"), true);
+  assert.equal(axiomCredentialsConfigured(undefined, "test-org"), false);
+});
+
+test("production initializes Axiom ingestion with an API token alone", () => {
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e",
+    "import { axiomIngestionEnabled } from './middleware/axiom-logger.js'; console.log(axiomIngestionEnabled())"], {
+    cwd: new URL("..", import.meta.url), encoding: "utf8",
+    env: { ...process.env, NODE_ENV: "production", APP_ENV: "prod", AXIOM_TOKEN: "xaat-test-token",
+      AXIOM_ORG_ID: "", AXIOM_LOGGING_ENABLED: "true" },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "true");
+});
 
 test("both synchronous and asynchronous logging errors are contained", async () => {
   assert.equal(bestEffortLog(fail), undefined);
