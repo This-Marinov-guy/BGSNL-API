@@ -96,6 +96,16 @@ Bank payouts follow each connected account's Stripe payout schedule; this
 integration creates Connect transfers, not bank payouts. The platform must
 retain enough funds for transfers whose source charges have already settled.
 
+When Stripe reports an insufficient platform balance, the worker stores the
+smallest deferred transfer amount as a short-lived Redis wake-up hint. A
+coordinated balance check runs every minute while that hint exists. Once the
+platform's available EUR card balance reaches that amount, it runs the full
+settlement pass again. An unchanged balance does not trigger repeated full
+passes; the normal 15-minute pass remains the fallback and refreshes the hint.
+The retry still uses the invoice's durable operation and checks Stripe
+transfers before sending money. Automatic payouts can drain funds before the
+check, so this does not replace keeping enough platform balance available.
+
 ## Worker and records
 
 The billing worker runs coordinated revenue maintenance every 15 minutes, with
@@ -114,8 +124,10 @@ billing receipts or enrollment ledger are retained.
   responses even after the idempotency retention window. Superseded instructions
   are checked against actual Stripe transfers before submission.
 - Redis leases serialize the coordinator and regional settlement. Redis does
-  not hold a permanent financial ledger. Missing or incomplete Stripe reports
-  postpone settlement instead of treating unknown fees as zero.
+  not hold a permanent financial ledger. The balance wake-up hint is
+  operational and rebuilt from Stripe on each settlement pass. Missing or
+  incomplete Stripe reports postpone settlement instead of treating unknown
+  fees as zero.
 
 The existing signed central webhook registers eligible subscriptions; it never
 moves money directly. `invoice.paid`, `customer.subscription.updated` and

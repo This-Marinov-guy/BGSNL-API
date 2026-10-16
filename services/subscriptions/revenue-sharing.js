@@ -228,6 +228,7 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
     let netDue = 0;
     let changes = 0;
     let deferred = 0;
+    let minimumDeferredAmount;
     const pending = [];
     for (const share of all) {
       const transfers = await listTransfers(stripe, share);
@@ -260,6 +261,7 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
       catch (error) {
         if (error.code !== "balance_insufficient") throw error;
         deferred++;
+        minimumDeferredAmount = Math.min(minimumDeferredAmount ?? amount, amount);
         logOperationalError("service.revenue-transfer-balance", error, { invoiceId: share._id, accountId });
         console.error("Member revenue transfer postponed", { invoiceId: share._id, accountId, code: error.code });
         continue;
@@ -269,7 +271,7 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
       remaining -= amount;
       changes++;
     }
-    return { changes, unrecoveredDebt: Math.max(0, -netDue), unpaidAmount: remaining, deferred };
+    return { changes, unrecoveredDebt: Math.max(0, -netDue), unpaidAmount: remaining, deferred, minimumDeferredAmount };
   });
 }
 
@@ -281,6 +283,7 @@ export async function processMemberRevenueSharing({ stripe = createStripeClient(
   // without a new Checkout allocation are not enrolled by this sweep.
   const blocked = new Set();
   let failed = 0;
+  let minimumDeferredAmount;
   for await (const sub of stripe.subscriptions.list({ status: "all", limit: 100 })) {
     let allocation;
     try { allocation = await registerMemberRevenueSubscription(sub); }
@@ -303,11 +306,12 @@ export async function processMemberRevenueSharing({ stripe = createStripeClient(
     try {
       const result = await settle(accountId, { stripe, shares, coordinatorAssert: assertOwned });
       failed += result.deferred || 0;
+      if (result.minimumDeferredAmount) minimumDeferredAmount = Math.min(minimumDeferredAmount ?? result.minimumDeferredAmount, result.minimumDeferredAmount);
       if (result.unrecoveredDebt) {
         logOperationalError("service.unrecovered-regional-fees", new Error("Unrecovered fees"));
         console.error("Regional fees await recovery", { accountId, amount: result.unrecoveredDebt });
       }
     } catch (error) { failed++; logOperationalError("service.revenue-settlement", error); console.error("Member revenue settlement postponed", { accountId, code: error.code }); }
   }
-  return { failed };
+  return { failed, minimumDeferredAmount };
 }

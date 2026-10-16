@@ -3,6 +3,7 @@ import BillingAttention from "../../models/BillingAttention.js";
 import { USER_URL, SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE } from "../../util/config/defines.js";
 import { reconcileSubscription } from "./reconcile.js";
 import { processMemberRevenueMaintenance } from "./revenue-fees.js";
+import { retryMemberRevenueWhenFunded } from "./revenue-balance-retry.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import { runCoordinatedSchedule } from "../jobs/coordinated-schedule.js";
 import { isBusyLease, recoveryDelay } from "../jobs/recovery-backoff.js";
@@ -85,7 +86,8 @@ export async function processBillingReminders({ send = deliverBillingReminder, a
 
 export function startBillingWorker({ env = process.env, coordinate = runCoordinatedSchedule,
   reminders = processBillingReminders, checkouts = recoverMembershipCheckouts, subscriptions = recoverSubscriptions,
-  revenue = processMemberRevenueMaintenance, now = Date.now, schedule = setInterval, cancel = clearInterval,
+  revenue = processMemberRevenueMaintenance, balanceRetry = retryMemberRevenueWhenFunded,
+  now = Date.now, schedule = setInterval, cancel = clearInterval,
   report = logOperationalError } = {}) {
   if (env.BILLING_WORKER_ENABLED === "false" ||
       (env.BILLING_WORKER_ENABLED !== "true" && env.NODE_ENV !== "production")) return async () => {};
@@ -105,6 +107,10 @@ export function startBillingWorker({ env = process.env, coordinate = runCoordina
     { name: "member-revenue-maintenance", intervalMs: 15 * 60_000, work: async ({ assertOwned }) => {
       await assertOwned();
       return revenue();
+    } },
+    { name: "member-revenue-balance-retry", intervalMs: 60_000, work: async ({ assertOwned }) => {
+      await assertOwned();
+      return balanceRetry({ retry: revenue });
     } },
   ];
   const tick = () => Promise.all(tasks.map(task => {

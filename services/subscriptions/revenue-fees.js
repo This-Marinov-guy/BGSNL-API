@@ -5,6 +5,7 @@ import { stripeId } from "../../util/subscriptions/policy.js";
 import { DEFAULT_REGION } from "../../util/config/defines.js";
 import { MEMBER_REVENUE_ACCOUNTS, memberRevenueEnabled, memberRevenueLiveMode } from "../../util/config/member-revenue.js";
 import { processMemberRevenueSharing, verifyRevenuePlatform } from "./revenue-sharing.js";
+import { recordMemberRevenueBalanceWait } from "./revenue-balance-retry.js";
 import { withBillingLease } from "./lease.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 
@@ -138,7 +139,13 @@ export async function processMemberRevenueFees({ stripe = createStripeClient(DEF
 // One distributed coordinator serializes captures and settlements across API
 // instances. Monthly fee reports do not change regional shares: only the
 // payment's balance-transaction fee is deducted from its 80% allocation.
-export async function processMemberRevenueMaintenance({ enabled = memberRevenueEnabled(), withLease = withBillingLease, ...dependencies } = {}) {
+export async function processMemberRevenueMaintenance({ enabled = memberRevenueEnabled(), withLease = withBillingLease,
+  balanceWait = recordMemberRevenueBalanceWait, ...dependencies } = {}) {
   if (!enabled) return { failed: 0 };
-  return withLease("member-revenue-maintenance", async ({ assertOwned }) => processMemberRevenueSharing({ ...dependencies, enabled, assertOwned }));
+  return withLease("member-revenue-maintenance", async ({ assertOwned }) => {
+    const result = await processMemberRevenueSharing({ ...dependencies, enabled, assertOwned });
+    await assertOwned();
+    await balanceWait(result);
+    return result;
+  });
 }

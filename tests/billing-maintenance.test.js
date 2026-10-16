@@ -198,15 +198,17 @@ test("stopping recovery avoids further provider calls", async () => {
 });
 
 test("revenue errors back off independently and cannot block membership recovery", async () => {
-  let tick, now = NOW, billing = 0, revenue = 0;
+  let tick, now = NOW, billing = 0, revenue = 0, balanceChecks = 0;
   const stop = startBillingWorker({ env: { NODE_ENV: "production" }, now: () => now,
     schedule: callback => { tick = callback; return { unref() {} }; }, cancel: () => {}, report: () => {},
     coordinate: async (name, work) => {
       if (name === "member-revenue-maintenance") { revenue++; throw new Error("reporting outage"); }
+      if (name === "member-revenue-balance-retry") return work({ assertOwned: async () => {} });
       billing++; return work({ assertOwned: async () => {} });
-    }, reminders: async () => ({ failed: 0 }), checkouts: async () => ({ failed: 0 }), subscriptions: async () => ({ failed: 0 }),
+    }, balanceRetry: async () => { balanceChecks++; return { noWork: true }; },
+    reminders: async () => ({ failed: 0 }), checkouts: async () => ({ failed: 0 }), subscriptions: async () => ({ failed: 0 }),
   });
   await tick(); now += 60_000; await tick();
-  assert.equal(billing, 2); assert.equal(revenue, 1);
+  assert.equal(billing, 2); assert.equal(revenue, 1); assert.equal(balanceChecks, 2);
   await stop(); now += 3600_000; await tick(); assert.equal(billing, 2);
 });
