@@ -135,15 +135,10 @@ export async function processMemberRevenueFees({ stripe = createStripeClient(DEF
   }
 }
 
-// One distributed coordinator serializes captures, fee reports and settlements
-// across API instances. Webhooks only enrol subscriptions; they never transfer.
+// One distributed coordinator serializes captures and settlements across API
+// instances. Monthly fee reports do not change regional shares: only the
+// payment's balance-transaction fee is deducted from its 80% allocation.
 export async function processMemberRevenueMaintenance({ enabled = memberRevenueEnabled(), withLease = withBillingLease, ...dependencies } = {}) {
-  if (!enabled) return;
-  await withLease("member-revenue-maintenance", async ({ assertOwned }) => {
-    await processMemberRevenueSharing({ ...dependencies, enabled, assertOwned, beforeSettle: async ({ shares, blocked }) => {
-      await assertOwned();
-      if (blocked.size) throw new Error("Complete invoice data is required before fee allocation");
-      await processMemberRevenueFees({ ...dependencies, shares, enabled, coordinatorAssert: assertOwned });
-    } });
-  });
+  if (!enabled) return { failed: 0 };
+  return withLease("member-revenue-maintenance", async ({ assertOwned }) => processMemberRevenueSharing({ ...dependencies, enabled, assertOwned }));
 }

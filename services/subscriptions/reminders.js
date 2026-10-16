@@ -104,7 +104,7 @@ export function startBillingWorker({ env = process.env, coordinate = runCoordina
     } },
     { name: "member-revenue-maintenance", intervalMs: 15 * 60_000, work: async ({ assertOwned }) => {
       await assertOwned();
-      await revenue();
+      return revenue();
     } },
   ];
   const tick = () => Promise.all(tasks.map(task => {

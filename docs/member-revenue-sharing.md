@@ -56,39 +56,24 @@ payment, with the entire fee charged against the region's share.
 
 Stripe initially charges the **platform**, as required by its
 [separate charges and transfers model](https://docs.stripe.com/connect/separate-charges-and-transfers).
-The application recovers that cost through the reduced transfer; it does not
-change Stripe's fee payer. A payment's expanded balance transaction supplies its
-actual fee. Missing fee data postpones the transfer without delaying membership
-activation. No estimated card fee is used.
+The application recovers that payment processing cost through the reduced
+transfer; it does not change Stripe's fee payer. A payment's expanded balance
+transaction supplies its actual fee. Missing fee data postpones the transfer
+without delaying membership activation. No estimated card fee is used.
 
-Separately reported fees are reconciled from Stripe's
-[monthly itemized Fees report](https://docs.stripe.com/reports/report-types/fees)
-(`all_fees.balance_transaction_created.itemized.2`). The worker waits for a
-complete UTC month plus at least 96 hours and Stripe's data-availability cutoff.
-It also waits for relevant enrolled subscriptions to complete their recovery
-sweep. Report availability was verified with the central account's API.
-
-Invoice/charge fees are matched to enrolled payments. Refund, dispute and
-transfer references are resolved to their original charge. Fees explicitly
-attributed to a configured regional account are regional overhead. Processing
-fees already present in the payment balance transaction are not deducted twice.
-Tax included in the report amount is not added again. Decimal report amounts
-are summed before rounding to cents; each immutable monthly total replaces its
-previous value on retry.
-
-This recovers **attributable** fees. Unattributed overhead, unsupported settlement
-methods (including Stripe fee credits), and unresolved references are flagged
-for review. They are not guessed or split arbitrarily. Consequently, central
-may temporarily bear fees pending reporting/recovery; an unconditional promise
-of zero fees at every instant would be incorrect. Fees that the connected
-account pays directly are not charged again through the central ledger.
+Later or separately reported Stripe fees, including Connect overhead, are borne
+by central BGSNL. They never reduce a regional share or cause a transfer
+reversal. The monthly fee-report utilities remain available for accounting
+review, but the settlement worker does not run them or apply their totals.
 
 ## Refunds, disputes and plan switches
 
 Refunds reduce the amount eligible for regional revenue. Open/lost disputes
-reduce it by the disputed amount; won disputes restore it. Previously issued
-transfers are reversed when the target decreases. Fees retained after a full
-refund are recovered from that same region's other allocations.
+reduce it by the disputed amount; won disputes restore it. If a region already
+received more than its updated entitlement, the excess is carried against that
+region's future eligible payments. The payment's processing fee remains part
+of that adjustment. Other regions' shares are unaffected. If no future payment
+exists, the debt remains visible for manual financial review.
 
 A paid plan-change invoice that references a credit to an earlier Member
 invoice reduces that earlier allocation, including on a Member-to-Alumni
@@ -103,20 +88,22 @@ holds transfer accounting; the existing account/entitlement flow still runs.
 Manual invoice credit notes or customer-balance adjustments outside the normal
 portal invoice flow also require accounting review.
 
-Reversals happen before new transfers for a region. An insufficient regional
-balance leaves a durable retry and stops further transfers for that region.
-Unrecovered debt is logged and remains owed by that region. Another region's
-money is never used to cover it. Bank payouts follow each connected account's
-Stripe payout schedule; this integration creates Connect transfers, not bank
-payouts.
+Old pending reversal instructions are reconciled against Stripe, then cleared
+without submitting a new reversal. Regional debt is offset against new shares
+and never blocks an unrelated paid renewal. An insufficient platform balance
+leaves a durable transfer retry but does not stop newer charge-linked payments.
+Bank payouts follow each connected account's Stripe payout schedule; this
+integration creates Connect transfers, not bank payouts. The platform must
+retain enough funds for transfers whose source charges have already settled.
 
 ## Worker and records
 
 The billing worker runs coordinated revenue maintenance every 15 minutes, with
 independent backoff on failure so it cannot block membership recovery. It paginates
 Stripe subscriptions and paid invoices, reconstructs calculations in memory,
-reuses Stripe's complete monthly fee reports, and settles each region. No Mongo
-invoice statements, billing receipts or enrollment ledger are retained.
+and settles each region. A deferred transfer marks the observed maintenance run
+failed even when other regions have settled. No Mongo invoice statements,
+billing receipts or enrollment ledger are retained.
 
 - The original allocation is stored in the Stripe subscription's
   `bgsnlRevenueAllocation` metadata, including customer, region and operation.
@@ -125,7 +112,7 @@ invoice statements, billing receipts or enrollment ledger are retained.
 - Pending money operations live in `bgsnlPendingRevenueOperation` on the Stripe
   invoice. Stable operation IDs and transfer-group searches recover ambiguous
   responses even after the idempotency retention window. Superseded instructions
-  are checked against the current transferred/reversed amount before submission.
+  are checked against actual Stripe transfers before submission.
 - Redis leases serialize the coordinator and regional settlement. Redis does
   not hold a permanent financial ledger. Missing or incomplete Stripe reports
   postpone settlement instead of treating unknown fees as zero.
@@ -153,8 +140,9 @@ BILLING_WORKER_ENABLED=true
 Before enabling sharing in another environment, exercise the full flow in an isolated
 database with central Stripe test keys, equivalent test prices and connected
 test recipients. Set `MEMBER_REVENUE_SHARING_LIVEMODE=false` for that environment.
-Verify first payment, renewal, Alumni switch, refund, failed reversal and report
-reconciliation. Keep test and production databases separate.
+Verify first payment, renewal, Alumni switch, refund debt, an unavailable
+platform balance and fee-only reports. Keep test and production databases
+separate.
 
 Set `MEMBER_REVENUE_MIGRATED_ENABLED=false` to pause only the version 2 migrated
 cohort while version 1 Checkout sharing continues. Disabling sharing pauses new
@@ -166,13 +154,15 @@ move historical subscriptions between accounts.
 Run deterministic checks without live credentials or payment operations:
 
 ```bash
-STRIPE_NL_SECRET_KEY=sk_test_unit STRIPE_GRO_SECRET_KEY=sk_test_unit \
+STRIPE_NL_SECRET_KEY=sk_test_unit_nl STRIPE_GRO_SECRET_KEY=sk_test_unit_gro \
+STRIPE_AMS_SECRET_KEY=sk_test_unit_ams STRIPE_RTM_SECRET_KEY=sk_test_unit_rtm \
+STRIPE_LWD_SECRET_KEY=sk_test_unit_lwd STRIPE_LDHG_SECRET_KEY=sk_test_unit_ldhg \
   node --test tests/subscription-*.test.js tests/payment-return.test.js
 ```
 
-Monitor `reviewReason`, pending `operation`, monthly `unattributedRows`, and
-logs for postponed settlement or unrecovered fees. Inspect the saved Stripe
-report and invoice before applying any manual accounting correction.
+Monitor `reviewReason`, pending `operation`, deferred transfers, and
+unrecovered regional debt. Compare eligible paid invoices with Connect transfers
+and recipient-side credits before considering a payment settled.
 
 ## `subscription.connected`
 

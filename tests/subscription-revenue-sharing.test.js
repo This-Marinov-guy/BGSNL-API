@@ -57,7 +57,7 @@ const invoiceFor = (id = "in_one", values = {}) => ({ id, subscription: sub.id, 
   lines: { data: [{ amount: 1000, price: { id: member.priceId }, subscription: sub.id }] },
   charge: { id: `ch_${id}`, customer: sub.customer, invoice: id, paid: true, captured: true, livemode: true, amount: 1000, amount_refunded: 0, currency: "eur", balance_transaction: { id: `txn_${id}`, amount: 1000, fee: 40, currency: "eur" } }, ...values });
 function stripeFor(invoices = []) {
-  const transfers = []; const calls = []; let failTransfer = false; let failReversal = false;
+  const transfers = []; const calls = []; let failTransfer = false; let failReversal = false; let insufficientSource;
   const stripe = {
     accounts: { retrieve: async id => ({ id: id || MEMBER_REVENUE_PLATFORM, capabilities: { transfers: "active" }, payouts_enabled: true }) },
     balance: { retrieve: async () => ({ livemode: true }) },
@@ -66,12 +66,12 @@ function stripeFor(invoices = []) {
       list: () => (async function* () { yield* [...invoices].reverse(); })() },
     transfers: {
       list: options => (async function* () { yield* transfers.filter(t => t.transfer_group === options.transfer_group && t.destination === options.destination); })(),
-      create: async (body, options) => { calls.push({ kind: "transfer", body, options }); const t = { id: `tr_${transfers.length}`, ...structuredClone(body), amount_reversed: 0, reversals: [] }; transfers.push(t); if (failTransfer) { failTransfer = false; throw new Error("ambiguous transfer timeout"); } return t; },
+      create: async (body, options) => { calls.push({ kind: "transfer", body, options }); if (body.source_transaction === insufficientSource) { const error = new Error("insufficient platform balance"); error.code = "balance_insufficient"; throw error; } const t = { id: `tr_${transfers.length}`, ...structuredClone(body), metadata: { ...body.metadata }, amount_reversed: 0, reversals: [] }; transfers.push(t); if (failTransfer) { failTransfer = false; throw new Error("ambiguous transfer timeout"); } return t; },
       listReversals: id => (async function* () { yield* transfers.find(t => t.id === id).reversals; })(),
       createReversal: async (id, body) => { if (failReversal) throw new Error("insufficient regional balance"); calls.push({ kind: "reversal", body }); const t = transfers.find(t => t.id === id); t.amount_reversed += body.amount; const r = { id: `trr_${t.reversals.length}`, ...structuredClone(body) }; t.reversals.push(r); return r; },
     },
   };
-  return { stripe, transfers, calls, failNextTransfer: () => { failTransfer = true; }, failReversals: () => { failReversal = true; } };
+  return { stripe, transfers, calls, failNextTransfer: () => { failTransfer = true; }, failTransferFor: source => { insufficientSource = source; }, clearTransferFailure: () => { insufficientSource = undefined; }, failReversals: () => { failReversal = true; } };
 }
 
 test("enrolment is opt-in, Member-only and limited to server-known regions", () => {
@@ -80,11 +80,11 @@ test("enrolment is opt-in, Member-only and limited to server-known regions", () 
   assert.equal(memberRevenueAllocation(member, "invented", { MEMBER_REVENUE_SHARING_ENABLED: "true" }), null);
   assert.equal(allocation.accountId, accountId);
 });
-test("central retains 20% after actual fees, including partial/full refunds and later fees", () => {
+test("regional payout is 80% of collected revenue minus only the payment processing fee", () => {
   assert.equal(revenueTarget(shareFor()), 760);
   assert.equal(revenueTarget(shareFor("x", { refunded: 500 })), 360);
   assert.equal(revenueTarget(shareFor("x", { refunded: 1000 })), -40);
-  assert.equal(revenueTarget(shareFor("x", { extraFees: { "2026-01": 25 } })), 735);
+  assert.equal(revenueTarget(shareFor("x", { extraFees: { "2026-01": 25 } })), 760);
   assert.throws(() => revenueTarget(shareFor("x", { gross: NaN })), /Invalid/);
 });
 test("allocation survives reservation reuse, while old and forged subscriptions cannot enrol", async () => {
@@ -201,23 +201,68 @@ test("ambiguous transfer retry finds the original operation even after Stripe id
   await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
   assert.equal(h.calls.length, 1); assert.equal(shares.docs.get("in_one").operation, undefined);
 });
-test("refunds and unreimbursed fees are recovered within the same region before new transfers", async () => {
+test("a refund is recovered from later revenue in the same region without reversing or blocking it", async () => {
   const h = stripeFor(); const shares = memory([shareFor()]);
   await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
   shares.docs.get("in_one").refunded = 1000;
-  shares.docs.set("in_two", shareFor("in_two", { paidAt: new Date("2026-02-01") }));
+  shares.docs.set("in_two", shareFor("in_two", { paidAt: new Date("2026-02-01"), gross: 1500, chargeAmount: 1500 }));
   shares.docs.set("other", shareFor("other", { accountId: MEMBER_REVENUE_ACCOUNTS.rotterdam }));
   await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
-  assert.deepEqual(h.calls.map(c => [c.kind, c.body.amount]), [["transfer", 760], ["reversal", 760], ["transfer", 720]]);
+  assert.deepEqual(h.calls.map(c => [c.kind, c.body.amount]), [["transfer", 760], ["transfer", 360]]);
   assert.equal(h.transfers[1].destination, accountId);
 });
-test("an unrecoverable regional reversal prevents further payouts and persists its retry", async () => {
-  const h = stripeFor(); const shares = memory([shareFor()]);
+test("refund debt is offset once across later renewals", async () => {
+  const h = stripeFor(); const shares = memory([shareFor("in_original")]);
   await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
-  shares.docs.get("in_one").refunded = 1000;
-  shares.docs.set("in_two", shareFor("in_two")); h.failReversals();
-  await assert.rejects(settleMemberRevenueRegion(accountId, { ...h, shares, withLease }), /insufficient/);
-  assert.equal(h.calls.length, 1); assert.equal(shares.docs.get("in_one").operation.kind, "reversal");
+  shares.docs.get("in_original").refunded = 1000;
+  shares.docs.set("in_recovery", shareFor("in_recovery", { paidAt: new Date("2026-02-01"), gross: 1500, chargeAmount: 1500 }));
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  assert.deepEqual(h.transfers.map(t => t.amount), [760, 360]);
+  shares.docs.set("in_later", shareFor("in_later", { paidAt: new Date("2026-03-01") }));
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  assert.deepEqual(h.transfers.map(t => [t.metadata.bgsnlRevenueInvoice, t.amount]),
+    [["in_original", 760], ["in_recovery", 360], ["in_later", 760]]);
+});
+test("an old fee reversal is cleared without reducing or blocking a new paid renewal", async () => {
+  const h = stripeFor(); const shares = memory([shareFor("in_one", { gross: 600, chargeAmount: 600, processingFee: 34 })]);
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  shares.docs.get("in_one").extraFees = { "2026-09": 4 };
+  shares.docs.get("in_one").operation = { id: "old-reversal", kind: "reversal", amount: 4, transferId: h.transfers[0].id, before: 0 };
+  shares.docs.set("in_two", shareFor("in_two", { gross: 600, chargeAmount: 600, processingFee: 34, paidAt: new Date("2026-02-01") }));
+  h.failReversals();
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  assert.deepEqual(h.calls.map(c => [c.kind, c.body.amount]), [["transfer", 446], ["transfer", 446]]);
+  assert.equal(shares.docs.get("in_one").operation, undefined);
+});
+test("a manually recovered renewal is not paid twice when the old fee reversal clears", async () => {
+  const h = stripeFor(); const shares = memory([shareFor("in_one", { gross: 600, chargeAmount: 600, processingFee: 34 })]);
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  shares.docs.get("in_one").operation = { id: "old-reversal", kind: "reversal", amount: 4, transferId: h.transfers[0].id, before: 0 };
+  shares.docs.set("in_two", shareFor("in_two", { gross: 600, chargeAmount: 600, processingFee: 34, paidAt: new Date("2026-02-01") }));
+  h.transfers.push({ id: "tr_manual", amount: 446, amount_reversed: 0, currency: "eur", destination: accountId,
+    transfer_group: "bgsnl-member:in_two", metadata: { bgsnlRevenueInvoice: "in_two", bgsnlRevenueOperation: "manual" } });
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  assert.equal(shares.docs.get("in_one").operation, undefined);
+  assert.deepEqual(h.calls.map(c => c.kind), ["transfer"]);
+  assert.equal(h.transfers.length, 2);
+});
+test("an older balance failure does not stop a newer charge-linked renewal and retries safely", async () => {
+  const h = stripeFor(); const shares = memory([
+    shareFor("in_old", { paidAt: new Date("2026-01-01") }),
+    shareFor("in_new", { paidAt: new Date("2026-02-01") }),
+  ]);
+  h.failTransferFor("ch_in_old");
+  const first = await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  assert.equal(first.deferred, 1);
+  assert.equal(h.transfers.length, 1);
+  assert.equal(h.transfers[0].metadata.bgsnlRevenueInvoice, "in_new");
+  assert.equal(shares.docs.get("in_old").operation.amount, 760);
+  h.clearTransferFailure();
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  assert.equal(h.transfers.length, 2);
+  assert.equal(shares.docs.get("in_old").operation, undefined);
 });
 test("lost leases and unready connected accounts cannot transfer money", async () => {
   const h = stripeFor(); const shares = memory([shareFor()]);
@@ -235,6 +280,12 @@ test("failed invoice capture blocks that region; other regions still reconcile",
 test("disabled maintenance and connected-account webhooks perform no work", async () => {
   await processMemberRevenueMaintenance({ enabled: false, withLease: () => assert.fail("disabled") });
   await captureMemberRevenueEvent({ account: accountId }, "netherlands", { stripe: {} });
+});
+test("maintenance reports a deferred region as failed without requiring a monthly fee report", async () => {
+  const h = stripeFor([invoiceFor()]);
+  const result = await processMemberRevenueMaintenance({ stripe: h.stripe, shares: memory(), enabled: true, withLease,
+    capture: async () => {}, settle: async id => id === accountId ? { deferred: 1 } : {} });
+  assert.equal(result.failed, 1);
 });
 
 const feeRow = (values = {}) => ({ amount: "0.07", tax: "0.01", currency: "EUR", incurred_by: "in_one", incurred_by_type: "invoice", balance_transaction_id: "txn_fee", fee_transaction_id: "txn_fee", settled_via: "balance", ...values });
@@ -314,17 +365,15 @@ test("zero-cash Member prorations are visible for accounting review", async () =
   assert.match(shares.docs.get(zero.id).reviewReason, /review/);
 });
 
-test("regional fee credits offset regional debt exactly once", async () => {
+test("a refunded share is held as regional debt until that region has enough new revenue", async () => {
   const h = stripeFor();
   const shares = memory([
     shareFor("in_refunded", { refunded: 1000 }),
-    shareFor("fee:debit", { chargeId: undefined, invoiceId: undefined, gross: 0, processingFee: 0, extraFees: { month: 100 } }),
-    shareFor("fee:credit", { chargeId: undefined, invoiceId: undefined, gross: 0, processingFee: 0, extraFees: { month: -50 } }),
     shareFor("in_new"),
   ]);
   await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
   assert.equal(h.calls.length, 1);
-  assert.equal(h.calls[0].body.amount, 670);
+  assert.equal(h.calls[0].body.amount, 720);
 });
 
 
@@ -340,6 +389,24 @@ test("a new process rebuilds invoice state from Stripe and recovers an ambiguous
   await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
   assert.equal(h.calls.length, 1);
   assert.equal((await h.stripe.invoices.retrieve("in_one")).metadata.bgsnlPendingRevenueOperation, "");
+});
+test("a reboot clears an obsolete Stripe invoice reversal instruction before paying a renewal", async () => {
+  const first = invoiceFor();
+  const renewal = invoiceFor("in_renewal", { created: 1768000000 });
+  const h = stripeFor([first, renewal]);
+  let shares = createRevenueSnapshot(h.stripe);
+  await recordMemberRevenueInvoice(first.id, { stripe: h.stripe, shares });
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  first.metadata = { bgsnlPendingRevenueOperation: JSON.stringify({ id: "old-extra-fee", kind: "reversal", amount: 4,
+    transferId: h.transfers[0].id, before: 0 }) };
+  shares = createRevenueSnapshot(h.stripe);
+  await recordMemberRevenueInvoice(first.id, { stripe: h.stripe, shares });
+  await recordMemberRevenueInvoice(renewal.id, { stripe: h.stripe, shares });
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  assert.equal(first.metadata.bgsnlPendingRevenueOperation, "");
+  assert.equal(h.transfers.length, 2);
+  assert.equal(h.transfers[1].amount, 760);
+  assert.equal(h.transfers[0].amount_reversed, 0);
 });
 
 test("superseded pending instructions cannot pay a region twice", async () => {

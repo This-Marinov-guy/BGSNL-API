@@ -9,13 +9,11 @@ import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const cents = (value) => Number.isSafeInteger(value) && value >= 0;
 const creditTotal = (record) => Object.values(record.creditedByInvoice || {}).reduce((sum, value) => sum + value, 0);
-const extraFeeTotal = (record) => Object.values(record.extraFees || {}).reduce((sum, value) => sum + value, 0);
 export function revenueTarget(record) {
-  if (![record.gross, record.refunded, record.processingFee, record.disputedAmount || 0, ...Object.values(record.creditedByInvoice || {})].every(cents) ||
-      !Object.values(record.extraFees || {}).every(Number.isSafeInteger)) throw new Error("Invalid member revenue amounts");
+  if (![record.gross, record.refunded, record.processingFee, record.disputedAmount || 0, ...Object.values(record.creditedByInvoice || {})].every(cents)) throw new Error("Invalid member revenue amounts");
   const retainedGross = Math.max(0, record.gross - record.refunded - (record.disputedAmount || 0) - creditTotal(record));
   // Round the platform share, then assign the remaining cents to the region.
-  return retainedGross - Math.round(retainedGross * 0.2) - record.processingFee - extraFeeTotal(record);
+  return retainedGross - Math.round(retainedGross * 0.2) - record.processingFee;
 }
 
 export async function verifyRevenuePlatform(stripe, livemode = memberRevenueLiveMode()) {
@@ -167,48 +165,54 @@ const listTransfers = async (stripe, share) => {
   return items;
 };
 
-// Persist and replay exact transfer/reversal instructions. Stripe idempotency
-// keys expire; listing the stable transfer group also protects old crash retries.
-async function executeOperation(stripe, share, shares, assertOwned) {
-  const operation = share.operation;
-  if (!operation) return;
-  await assertOwned();
-  if (operation.kind === "transfer") {
-    const currentTransfers = await listTransfers(stripe, share);
-    const existing = currentTransfers.find((item) => item.metadata?.bgsnlRevenueOperation === operation.id);
-    if (existing && existing.amount !== operation.amount) throw new Error("Transfer replay amount mismatch");
-    // A superseded instruction must not re-pay funds already settled by a
-    // newer worker. Stable operation IDs also coalesce concurrent submissions.
-    if (!existing && operation.before !== undefined && transferred(currentTransfers) !== operation.before) {
-      await shares.updateOne({ _id: share._id }, { $unset: { operation: 1 } });
-      share.operation = undefined;
-      return;
-    }
-    if (!existing) await stripe.transfers.create({ amount: operation.amount, currency: "eur", destination: share.accountId,
-      transfer_group: groupFor(share._id), ...(operation.source ? { source_transaction: operation.source } : {}),
-      metadata: { bgsnlRevenueInvoice: share._id, bgsnlRevenueOperation: operation.id, bgsnlRegion: share.region } },
-    { idempotencyKey: `member-revenue:${operation.id}` });
-  } else {
-    let existing;
-    for await (const reversal of stripe.transfers.listReversals(operation.transferId, { limit: 100 })) {
-      if (reversal.metadata?.bgsnlRevenueOperation === operation.id) existing = reversal;
-    }
-    if (existing && existing.amount !== operation.amount) throw new Error("Reversal replay amount mismatch");
-    if (!existing && operation.before !== undefined) {
-      const transfer = (await listTransfers(stripe, share)).find((item) => item.id === operation.transferId);
-      if (!transfer || transfer.amount_reversed !== operation.before) {
-        await shares.updateOne({ _id: share._id }, { $unset: { operation: 1 } });
-        share.operation = undefined;
-        return;
-      }
-    }
-    if (!existing) await stripe.transfers.createReversal(operation.transferId, { amount: operation.amount,
-      metadata: { bgsnlRevenueOperation: operation.id, bgsnlRevenueInvoice: share._id } },
-    { idempotencyKey: `member-revenue:${operation.id}` });
-  }
+const clearOperation = async (share, shares, assertOwned) => {
   await assertOwned();
   await shares.updateOne({ _id: share._id }, { $unset: { operation: 1 } });
   share.operation = undefined;
+};
+
+// A previously submitted operation can have succeeded even when the worker lost
+// its response. Check Stripe before changing the instruction. Old fee and refund
+// reversals are carried as regional debt rather than holding later renewals.
+async function reconcileOperation(stripe, share, transfers, shares, assertOwned) {
+  const operation = share.operation;
+  if (!operation) return;
+  if (operation.kind === "transfer") {
+    const existing = transfers.find((item) => item.metadata?.bgsnlRevenueOperation === operation.id);
+    if (existing && existing.amount !== operation.amount) throw new Error("Transfer replay amount mismatch");
+    if (existing || operation.before !== undefined && transferred(transfers) !== operation.before) {
+      await clearOperation(share, shares, assertOwned);
+    }
+    return;
+  }
+  if (operation.kind !== "reversal") throw new Error("Unknown member revenue operation");
+  for await (const reversal of stripe.transfers.listReversals(operation.transferId, { limit: 100 })) {
+    if (reversal.metadata?.bgsnlRevenueOperation === operation.id && reversal.amount !== operation.amount) throw new Error("Reversal replay amount mismatch");
+  }
+  await clearOperation(share, shares, assertOwned);
+}
+
+// Persist and replay exact transfer instructions. Stripe idempotency keys
+// expire; listing the stable transfer group also protects old crash retries.
+async function executeOperation(stripe, share, shares, assertOwned) {
+  const operation = share.operation;
+  if (!operation) return;
+  if (operation.kind !== "transfer") throw new Error("Only member revenue transfers are submitted automatically");
+  await assertOwned();
+  const currentTransfers = await listTransfers(stripe, share);
+  const existing = currentTransfers.find((item) => item.metadata?.bgsnlRevenueOperation === operation.id);
+  if (existing && existing.amount !== operation.amount) throw new Error("Transfer replay amount mismatch");
+  // A superseded instruction must not re-pay funds already settled by a
+  // newer worker. Stable operation IDs also coalesce concurrent submissions.
+  if (!existing && operation.before !== undefined && transferred(currentTransfers) !== operation.before) {
+    await clearOperation(share, shares, assertOwned);
+    return;
+  }
+  if (!existing) await stripe.transfers.create({ amount: operation.amount, currency: "eur", destination: share.accountId,
+    transfer_group: groupFor(share._id), ...(operation.source ? { source_transaction: operation.source } : {}),
+    metadata: { bgsnlRevenueInvoice: share._id, bgsnlRevenueOperation: operation.id, bgsnlRegion: share.region } },
+  { idempotencyKey: `member-revenue:${operation.id}` });
+  await clearOperation(share, shares, assertOwned);
 }
 
 export async function settleMemberRevenueRegion(accountId, { stripe = createStripeClient(DEFAULT_REGION), shares = createRevenueSnapshot(stripe), withLease = withBillingLease, coordinatorAssert = async () => {} } = {}) {
@@ -218,66 +222,65 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
     const account = await stripe.accounts.retrieve(accountId);
     if (account.capabilities?.transfers !== "active" || !account.payouts_enabled) throw new Error("Regional account cannot receive transfers");
     const all = await shares.find({ accountId, livemode: memberRevenueLiveMode() }).sort({ paidAt: 1, _id: 1 }).lean();
-    // Negative targets (for example fees retained after a full refund) are
-    // recovered from this region's other invoices, never from another region.
-    let debt = all.filter((item) => !item.reviewReason).reduce((sum, item) => sum + Math.max(0, -revenueTarget(item)), 0);
-    const feeCredits = all.filter(item => !item.reviewReason && !item.chargeId)
-      .reduce((sum, item) => sum + Math.max(0, revenueTarget(item)), 0);
-    const remainingCredit = Math.max(0, feeCredits - debt);
-    debt = Math.max(0, debt - feeCredits);
-    let credit = remainingCredit;
+    // Compare the entire region's entitlement with actual Stripe transfers.
+    // Refunds and other reductions are offset against its next paid invoice;
+    // an empty connected balance cannot hold every later renewal hostage.
+    let netDue = 0;
     let changes = 0;
+    let deferred = 0;
     const pending = [];
     for (const share of all) {
-      // A previously submitted operation is resolved before recalculating its
-      // target, including when new invoice data requires manual review.
-      if (share.operation) await executeOperation(stripe, share, shares, assertOwned);
-      if (share.reviewReason || !share.chargeId) continue;
-      let target = Math.max(0, revenueTarget(share));
-      const offset = Math.min(debt, target); debt -= offset; target -= offset;
-      target += credit; credit = 0;
       const transfers = await listTransfers(stripe, share);
-      pending.push({ share, target, transfers, delta: target - transferred(transfers) });
+      await reconcileOperation(stripe, share, transfers, shares, assertOwned);
+      if (share.reviewReason || !share.chargeId) continue;
+      const target = revenueTarget(share);
+      const delta = target - transferred(transfers);
+      netDue += delta;
+      if (delta > 0) pending.push({ share, transfers, capacity: delta });
     }
-    // Recover excess funds before paying any new allocation. A failed reversal
-    // stops this region's settlement and is retried with its persisted operation.
-    pending.sort((a, b) => a.delta - b.delta);
-    for (const { share, target, transfers, delta: initialDelta } of pending) {
+    // The newest invoice is most likely still pending on Stripe and can use its
+    // own charge as the transfer source before an automatic platform payout.
+    pending.sort((a, b) => b.share.paidAt - a.share.paidAt || b.share._id.localeCompare(a.share._id));
+    let remaining = Math.max(0, netDue);
+    for (const { share, transfers, capacity } of pending) {
       if (changes >= 25) break;
-      let delta = initialDelta;
-      if (delta > 0) {
-        share.operation = { id: operationId(share, transfers, "transfer", delta), kind: "transfer", amount: delta, before: transferred(transfers),
-          ...(!transfers.length && delta <= share.chargeAmount ? { source: share.chargeId } : {}) };
+      const amount = Math.min(remaining, capacity);
+      const source = !transfers.length && amount <= share.chargeAmount ? share.chargeId : undefined;
+      if (share.operation && (share.operation.amount !== amount || share.operation.before !== transferred(transfers) || share.operation.source !== source)) {
+        await clearOperation(share, shares, assertOwned);
+      }
+      if (!amount) continue;
+      if (!share.operation) {
+        share.operation = { id: operationId(share, transfers, "transfer", amount), kind: "transfer", amount, before: transferred(transfers),
+          ...(source ? { source } : {}) };
         await assertOwned();
         await shares.updateOne({ _id: share._id }, { $set: { operation: share.operation } });
-        await executeOperation(stripe, share, shares, assertOwned);
-      } else if (delta < 0) {
-        for (const transfer of transfers) {
-          const amount = Math.min(-delta, transfer.amount - transfer.amount_reversed);
-          if (!amount) continue;
-          share.operation = { id: operationId(share, transfers, "reversal", amount, transfer.id), kind: "reversal", amount, transferId: transfer.id, before: transfer.amount_reversed };
-          await assertOwned();
-          await shares.updateOne({ _id: share._id }, { $set: { operation: share.operation } });
-          await executeOperation(stripe, share, shares, assertOwned);
-          delta += amount;
-          if (!delta) break;
-        }
+      }
+      try { await executeOperation(stripe, share, shares, assertOwned); }
+      catch (error) {
+        if (error.code !== "balance_insufficient") throw error;
+        deferred++;
+        logOperationalError("service.revenue-transfer-balance", error, { invoiceId: share._id, accountId });
+        console.error("Member revenue transfer postponed", { invoiceId: share._id, accountId, code: error.code });
+        continue;
       }
       await assertOwned();
-      await shares.updateOne({ _id: share._id }, { $set: { settledTarget: target } });
-      if (initialDelta) changes++;
+      await shares.updateOne({ _id: share._id }, { $set: { settledTarget: transferred(transfers) + amount } });
+      remaining -= amount;
+      changes++;
     }
-    return { changes, unrecoveredDebt: debt, unpaidCredit: credit };
+    return { changes, unrecoveredDebt: Math.max(0, -netDue), unpaidAmount: remaining, deferred };
   });
 }
 
 export async function processMemberRevenueSharing({ stripe = createStripeClient(DEFAULT_REGION), shares = createRevenueSnapshot(stripe), enabled = memberRevenueEnabled(), capture = recordMemberRevenueInvoice, settle = settleMemberRevenueRegion, beforeSettle = async () => {}, assertOwned = async () => {} } = {}) {
-  if (!enabled) return;
+  if (!enabled) return { failed: 0 };
   await verifyRevenuePlatform(stripe);
   // Enrolment lives independently of member/alumni documents and is never
   // removed on profile migration or cancellation. Historical subscriptions
   // without a new Checkout allocation are not enrolled by this sweep.
   const blocked = new Set();
+  let failed = 0;
   for await (const sub of stripe.subscriptions.list({ status: "all", limit: 100 })) {
     let allocation;
     try { allocation = await registerMemberRevenueSubscription(sub); }
@@ -293,15 +296,18 @@ export async function processMemberRevenueSharing({ stripe = createStripeClient(
   }
   await assertOwned();
   await beforeSettle({ shares, blocked });
+  failed += blocked.size;
   for (const accountId of Object.values(MEMBER_REVENUE_ACCOUNTS)) {
     await assertOwned();
     if (blocked.has(accountId)) continue;
     try {
       const result = await settle(accountId, { stripe, shares, coordinatorAssert: assertOwned });
+      failed += result.deferred || 0;
       if (result.unrecoveredDebt) {
         logOperationalError("service.unrecovered-regional-fees", new Error("Unrecovered fees"));
         console.error("Regional fees await recovery", { accountId, amount: result.unrecoveredDebt });
       }
-    } catch (error) { logOperationalError("service.revenue-settlement", error); console.error("Member revenue settlement postponed", { accountId, code: error.code }); }
+    } catch (error) { failed++; logOperationalError("service.revenue-settlement", error); console.error("Member revenue settlement postponed", { accountId, code: error.code }); }
   }
+  return { failed };
 }

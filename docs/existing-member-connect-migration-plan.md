@@ -104,10 +104,10 @@ Retain the current fee allocation unless separately approved:
 
 ```text
 central share = round(collected amount × 20%)
-regional transfer = collected amount − central share − actual processing fees
+regional transfer = collected amount − central share − actual payment processing fee
 ```
 
-Use the existing refund, dispute and fee reconciliation rules for eligible payments.
+Refunds and disputes reduce the region's total entitlement and are offset against its future eligible payments. Separately reported Stripe fees remain with central BGSNL.
 
 ## Phase 4 — Test in an isolated environment
 
