@@ -5,6 +5,7 @@ import { createStripeClient } from "../../util/config/stripe.js";
 import { MEMBER_REVENUE_PLATFORM, MEMBER_REVENUE_ACCOUNTS, memberRevenueEnabled, memberRevenueLiveMode, migratedMemberRevenueEnabled } from "../../util/config/member-revenue.js";
 import { invoiceSubscriptionId, planForPrice, stripeId } from "../../util/subscriptions/policy.js";
 import { withBillingLease } from "./lease.js";
+import { scheduleMemberRevenueOnBalance } from "./revenue-balance-retry.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const cents = (value) => Number.isSafeInteger(value) && value >= 0;
@@ -141,7 +142,12 @@ export async function recordMemberRevenueInvoice(invoiceId, { stripe = createStr
 }
 
 export async function captureMemberRevenueEvent(event, region, dependencies = {}) {
-  if (region !== DEFAULT_REGION || event.account || !memberRevenueEnabled() || event.livemode !== memberRevenueLiveMode()) return;
+  if (region !== DEFAULT_REGION || event.account || !(dependencies.enabled ?? memberRevenueEnabled()) ||
+      event.livemode !== (dependencies.livemode ?? memberRevenueLiveMode())) return;
+  if (event.type === "balance.available") {
+    await (dependencies.scheduleBalance || scheduleMemberRevenueOnBalance)(event);
+    return;
+  }
   const stripe = dependencies.stripe || createStripeClient(DEFAULT_REGION);
   const object = event.data.object;
   if (event.type.startsWith("customer.subscription.")) await registerMemberRevenueSubscription(object);

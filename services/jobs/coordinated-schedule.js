@@ -5,6 +5,12 @@ import { isBusyLease, recoveryDelay } from "./recovery-backoff.js";
 
 const schedules = redisRecordStore("scheduled-job", { ttlMs: 7 * 86400_000 });
 
+// A webhook can request an early pass without running Stripe reconciliation in
+// the HTTP request. The counter also preserves a wake arriving during a pass.
+export async function requestCoordinatedSchedule(name, { records = schedules } = {}) {
+  await records.updateOne({ _id: `scheduler:${name}` }, { $inc: { wakeCount: 1 } }, { upsert: true });
+}
+
 // A lease prevents overlapping work; a persisted due time also prevents the
 // second process from running the same sweep immediately after the first ends.
 export async function runCoordinatedSchedule(name, work, {
@@ -16,7 +22,8 @@ export async function runCoordinatedSchedule(name, work, {
   try {
     return await withLease(key, async ({ record, assertOwned }) => {
       entered = true;
-      if (+new Date(record.nextRunAt) > now()) return { skipped: true };
+      const wakeCount = record.wakeCount || 0;
+      if (+new Date(record.nextRunAt) > now() && wakeCount <= (record.handledWakeCount || 0)) return { skipped: true };
       const save = async patch => {
         await assertOwned();
         await records.updateOne({ _id: key }, { $set: patch }, { upsert: true });
@@ -25,11 +32,11 @@ export async function runCoordinatedSchedule(name, work, {
       return observe("scheduler", name, async () => {
         try {
           const result = await work({ assertOwned });
-          await save({ failures: 0, nextRunAt: new Date(now() + intervalMs) });
+          await save({ failures: 0, handledWakeCount: wakeCount, nextRunAt: new Date(now() + intervalMs) });
           return result;
         } catch (error) {
           const failures = (record.failures || 0) + 1;
-          await save({ failures, nextRunAt: new Date(now() + recoveryDelay(failures, error)) });
+          await save({ failures, handledWakeCount: wakeCount, nextRunAt: new Date(now() + recoveryDelay(failures, error)) });
           throw error;
         }
       });

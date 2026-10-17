@@ -3,7 +3,6 @@ import BillingAttention from "../../models/BillingAttention.js";
 import { USER_URL, SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE } from "../../util/config/defines.js";
 import { reconcileSubscription } from "./reconcile.js";
 import { processMemberRevenueMaintenance } from "./revenue-fees.js";
-import { retryMemberRevenueWhenFunded } from "./revenue-balance-retry.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import { runCoordinatedSchedule } from "../jobs/coordinated-schedule.js";
 import { isBusyLease, recoveryDelay } from "../jobs/recovery-backoff.js";
@@ -86,7 +85,7 @@ export async function processBillingReminders({ send = deliverBillingReminder, a
 
 export function startBillingWorker({ env = process.env, coordinate = runCoordinatedSchedule,
   reminders = processBillingReminders, checkouts = recoverMembershipCheckouts, subscriptions = recoverSubscriptions,
-  revenue = processMemberRevenueMaintenance, balanceRetry = retryMemberRevenueWhenFunded,
+  revenue = processMemberRevenueMaintenance,
   now = Date.now, schedule = setInterval, cancel = clearInterval,
   report = logOperationalError } = {}) {
   if (env.BILLING_WORKER_ENABLED === "false" ||
@@ -104,22 +103,18 @@ export function startBillingWorker({ env = process.env, coordinate = runCoordina
       }
       return { failed };
     } },
-    { name: "member-revenue-maintenance", intervalMs: 15 * 60_000, work: async ({ assertOwned }) => {
+    { name: "member-revenue-maintenance", intervalMs: 15 * 60_000, wakeable: true, work: async ({ assertOwned }) => {
       await assertOwned();
       return revenue();
     } },
-    { name: "member-revenue-balance-retry", intervalMs: 60_000, work: async ({ assertOwned }) => {
-      await assertOwned();
-      return balanceRetry({ retry: revenue });
-    } },
   ];
   const tick = () => Promise.all(tasks.map(task => {
-    if (stopped || task.running || now() < (task.nextLocalAttemptAt || 0)) return task.running;
+    if (stopped || task.running || !task.wakeable && now() < (task.nextLocalAttemptAt || 0)) return task.running;
     task.running = Promise.resolve().then(() => coordinate(task.name, task.work, { intervalMs: task.intervalMs }))
       .then(() => { task.failures = 0; task.nextLocalAttemptAt = 0; })
       .catch(error => {
         task.failures = (task.failures || 0) + 1;
-        task.nextLocalAttemptAt = now() + recoveryDelay(task.failures);
+        if (!task.wakeable) task.nextLocalAttemptAt = now() + recoveryDelay(task.failures);
         report(`worker.${task.name}`, error);
       }).finally(() => { task.running = null; });
     return task.running;

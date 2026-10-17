@@ -98,10 +98,11 @@ retain enough funds for transfers whose source charges have already settled.
 
 When Stripe reports an insufficient platform balance, the worker stores the
 smallest deferred transfer amount as a short-lived Redis wake-up hint. A
-coordinated balance check runs every minute while that hint exists. Once the
-platform's available EUR card balance reaches that amount, it runs the full
-settlement pass again. An unchanged balance does not trigger repeated full
-passes; the normal 15-minute pass remains the fallback and refreshes the hint.
+signed `balance.available` event from the platform wakes the coordinated
+settlement worker when its EUR card balance reaches that amount. The webhook
+does not query Stripe or move money; the worker picks up the wake on its next
+minute tick. The normal 15-minute pass remains the fallback and refreshes the
+hint if a webhook is missed.
 The retry still uses the invoice's durable operation and checks Stripe
 transfers before sending money. Automatic payouts can drain funds before the
 check, so this does not replace keeping enough platform balance available.
@@ -129,9 +130,10 @@ billing receipts or enrollment ledger are retained.
   incomplete Stripe reports postpone settlement instead of treating unknown
   fees as zero.
 
-The existing signed central webhook registers eligible subscriptions; it never
-moves money directly. `invoice.paid`, `customer.subscription.updated` and
-Checkout completion are already enabled on the central BGSNL endpoint. Checkout
+The existing signed central webhook registers eligible subscriptions and queues
+balance-triggered settlement; it never moves money directly. The central BGSNL
+endpoint must subscribe to `balance.available` for early wake-ups. `invoice.paid`,
+`customer.subscription.updated` and Checkout completion are already enabled. Checkout
 completion also registers allocations, and the worker recovers missed invoice
 notifications. Refund/dispute changes are refreshed during the sweep.
 

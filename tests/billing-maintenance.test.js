@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { matchesRecord, recordQuery, updateRecord } from "../services/storage/record-operations.js";
 import { recoverMembershipCheckouts, recoverSubscriptions } from "../services/subscriptions/maintenance.js";
-import { runCoordinatedSchedule } from "../services/jobs/coordinated-schedule.js";
+import { requestCoordinatedSchedule, runCoordinatedSchedule } from "../services/jobs/coordinated-schedule.js";
 import { recoveryDelay } from "../services/jobs/recovery-backoff.js";
 import { BillingLeaseBusyError } from "../services/subscriptions/lease-retry.js";
 import { startBillingWorker } from "../services/subscriptions/reminders.js";
@@ -182,6 +182,31 @@ test("scheduler failures remain errors, persist backoff, and recover when due", 
   assert.equal(h.records.rows[0].failures, 0);
 });
 
+test("a balance webhook wakes a scheduled pass and a wake during work is not lost", async () => {
+  const h = coordinatorFixture(); let runs = 0;
+  await h.run(async () => { runs++; });
+  assert.deepEqual(await h.run(() => assert.fail("No wake")), { skipped: true });
+  await requestCoordinatedSchedule("billing-maintenance", { records: h.records });
+  await h.run(async () => {
+    runs++;
+    await requestCoordinatedSchedule("billing-maintenance", { records: h.records });
+  });
+  await h.run(async () => { runs++; });
+  assert.deepEqual(await h.run(() => assert.fail("Wake consumed")), { skipped: true });
+  assert.equal(runs, 3);
+});
+
+test("a failed webhook-woken pass backs off until a new balance event", async () => {
+  const h = coordinatorFixture();
+  await h.run(async () => {});
+  await requestCoordinatedSchedule("billing-maintenance", { records: h.records });
+  await assert.rejects(h.run(async () => { throw new Error("temporary Stripe error"); }), /temporary Stripe error/);
+  assert.deepEqual(await h.run(() => assert.fail("Backoff applies")), { skipped: true });
+  await requestCoordinatedSchedule("billing-maintenance", { records: h.records });
+  await h.run(async () => {});
+  assert.equal(h.records.rows[0].failures, 0);
+});
+
 test("coordinator does not swallow business errors or lost lease ownership", async () => {
   const h = coordinatorFixture();
   await assert.rejects(h.run(async () => { throw Object.assign(new Error("business"), { code: 409 }); }), /business/);
@@ -197,18 +222,17 @@ test("stopping recovery avoids further provider calls", async () => {
   }), { failed: 0, processed: 0 });
 });
 
-test("revenue errors back off independently and cannot block membership recovery", async () => {
-  let tick, now = NOW, billing = 0, revenue = 0, balanceChecks = 0;
+test("revenue errors cannot block membership recovery or delay a webhook wake", async () => {
+  let tick, now = NOW, billing = 0, revenue = 0;
   const stop = startBillingWorker({ env: { NODE_ENV: "production" }, now: () => now,
     schedule: callback => { tick = callback; return { unref() {} }; }, cancel: () => {}, report: () => {},
     coordinate: async (name, work) => {
       if (name === "member-revenue-maintenance") { revenue++; throw new Error("reporting outage"); }
-      if (name === "member-revenue-balance-retry") return work({ assertOwned: async () => {} });
       billing++; return work({ assertOwned: async () => {} });
-    }, balanceRetry: async () => { balanceChecks++; return { noWork: true }; },
+    },
     reminders: async () => ({ failed: 0 }), checkouts: async () => ({ failed: 0 }), subscriptions: async () => ({ failed: 0 }),
   });
   await tick(); now += 60_000; await tick();
-  assert.equal(billing, 2); assert.equal(revenue, 1); assert.equal(balanceChecks, 2);
+  assert.equal(billing, 2); assert.equal(revenue, 2);
   await stop(); now += 3600_000; await tick(); assert.equal(billing, 2);
 });

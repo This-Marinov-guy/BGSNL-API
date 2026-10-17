@@ -5,7 +5,7 @@ import { MEMBER_REVENUE_ACCOUNTS, MEMBER_REVENUE_PLATFORM, memberRevenueAllocati
 import { MEMBERSHIP_PLANS } from "../util/subscriptions/policy.js";
 import { captureMemberRevenueEvent, recordMemberRevenueInvoice, registerMemberRevenueSubscription, revenueTarget, settleMemberRevenueRegion, processMemberRevenueSharing, migratedInvoiceBoundary } from "../services/subscriptions/revenue-sharing.js";
 import { allocateMemberFees, parseMemberFeeReport, downloadMemberFeeReport, processMemberRevenueFees, processMemberRevenueMaintenance, resolveMemberFeeReferences } from "../services/subscriptions/revenue-fees.js";
-import { recordMemberRevenueBalanceWait, retryMemberRevenueWhenFunded } from "../services/subscriptions/revenue-balance-retry.js";
+import { recordMemberRevenueBalanceWait, scheduleMemberRevenueOnBalance } from "../services/subscriptions/revenue-balance-retry.js";
 
 const member = MEMBERSHIP_PLANS.find(p => p.type === "member");
 const alumni = MEMBERSHIP_PLANS.find(p => p.type === "alumni");
@@ -292,50 +292,35 @@ test("maintenance reports a deferred region as failed without requiring a monthl
   assert.equal(result.failed, 1);
   assert.equal(wait.minimumDeferredAmount, 446);
 });
-test("balance watcher retries a deferred transfer once funds are sufficient", async () => {
-  const records = memory(); let available = -4; let calls = 0;
-  const options = { enabled: true, livemode: true, records,
-    stripeFor: () => ({ balance: { retrieve: async () => ({ livemode: true,
-      available: [{ currency: "eur", amount: available, source_types: { card: available } }] }) } }),
-    retry: async () => { calls++; if (calls === 2) await recordMemberRevenueBalanceWait({ failed: 0 }, { records, livemode: true }); return { failed: calls === 1 ? 1 : 0 }; } };
-  await recordMemberRevenueBalanceWait({ minimumDeferredAmount: 446, failed: 1 }, { records, livemode: true });
-  assert.equal((await retryMemberRevenueWhenFunded(options)).noWork, true);
-  available = 445;
-  assert.equal((await retryMemberRevenueWhenFunded(options)).noWork, true);
-  available = 446;
-  assert.equal((await retryMemberRevenueWhenFunded(options)).retried, true);
-  assert.equal((await retryMemberRevenueWhenFunded(options)).noWork, true);
-  available = 500;
-  assert.equal((await retryMemberRevenueWhenFunded(options)).retried, true);
-  assert.equal(calls, 2);
-  assert.equal((await retryMemberRevenueWhenFunded(options)).noWork, true);
-  assert.equal(records.docs.size, 0);
+const balanceEvent = (card, values = {}) => ({ type: "balance.available", livemode: true,
+  data: { object: { object: "balance", available: [{ currency: "eur", amount: card, source_types: { card } }] } }, ...values });
+test("a sufficient balance event queues the existing worker without querying Stripe", async () => {
+  const records = memory(); const wakes = [];
+  const options = { enabled: true, livemode: true, records, wake: name => { wakes.push(name); } };
+  await recordMemberRevenueBalanceWait({ minimumDeferredAmount: 446 }, { records, livemode: true });
+  assert.equal((await scheduleMemberRevenueOnBalance(balanceEvent(445), options)).noWork, true);
+  assert.equal((await scheduleMemberRevenueOnBalance(balanceEvent(446), options)).scheduled, true);
+  assert.deepEqual(wakes, ["member-revenue-maintenance"]);
+  await recordMemberRevenueBalanceWait({}, { records, livemode: true });
+  assert.equal((await scheduleMemberRevenueOnBalance(balanceEvent(500), options)).noWork, true);
 });
-test("a balance retry can run again after an earlier transfer consumed available funds", async () => {
-  const records = memory(); let available = 760; let calls = 0;
-  await recordMemberRevenueBalanceWait({ minimumDeferredAmount: 446, failed: 1 }, { records, livemode: true });
-  const options = { enabled: true, livemode: true, records,
-    stripeFor: () => ({ balance: { retrieve: async () => ({ livemode: true,
-      available: [{ currency: "eur", amount: available, source_types: { card: available } }] }) } }),
-    retry: async () => { calls++; if (calls === 1) available = 0; return { failed: 1 }; } };
-  assert.equal((await retryMemberRevenueWhenFunded(options)).retried, true);
-  available = 500;
-  assert.equal((await retryMemberRevenueWhenFunded(options)).retried, true);
-  assert.equal(calls, 2);
-  available = 0;
-  assert.equal((await retryMemberRevenueWhenFunded(options)).noWork, true);
-  available = 450;
-  assert.equal((await retryMemberRevenueWhenFunded(options)).retried, true);
-  assert.equal(calls, 3);
-});
-test("a non-card balance cannot trigger the card-funded transfer retry", async () => {
+test("wrong mode, connected events, and non-card funds do not wake settlement", async () => {
   const records = memory();
-  await recordMemberRevenueBalanceWait({ minimumDeferredAmount: 446, failed: 1 }, { records, livemode: true });
-  const result = await retryMemberRevenueWhenFunded({ enabled: true, livemode: true, records,
-    stripeFor: () => ({ balance: { retrieve: async () => ({ livemode: true,
-      available: [{ currency: "eur", amount: 1000, source_types: { bank_account: 1000 } }] }) } }),
-    retry: () => assert.fail("Card funds are unavailable") });
-  assert.equal(result.noWork, true);
+  await recordMemberRevenueBalanceWait({ minimumDeferredAmount: 446 }, { records, livemode: true });
+  const options = { enabled: true, livemode: true, records, wake: () => assert.fail("Must not wake") };
+  assert.equal((await scheduleMemberRevenueOnBalance(balanceEvent(500, { livemode: false }), options)).noWork, true);
+  assert.equal((await scheduleMemberRevenueOnBalance(balanceEvent(500, { account: accountId }), options)).noWork, true);
+  const bankOnly = balanceEvent(500); bankOnly.data.object.available[0].source_types = { bank_account: 500 };
+  assert.equal((await scheduleMemberRevenueOnBalance(bankOnly, options)).noWork, true);
+});
+test("central balance webhook routes to the wake-up path", async () => {
+  const received = [];
+  const options = { enabled: true, livemode: true, stripe: {}, scheduleBalance: async event => { received.push(event); } };
+  const event = balanceEvent(500);
+  await captureMemberRevenueEvent(event, "netherlands", options);
+  await captureMemberRevenueEvent({ ...event, account: accountId }, "netherlands", options);
+  await captureMemberRevenueEvent(event, "amsterdam", options);
+  assert.deepEqual(received, [event]);
 });
 
 const feeRow = (values = {}) => ({ amount: "0.07", tax: "0.01", currency: "EUR", incurred_by: "in_one", incurred_by_type: "invoice", balance_transaction_id: "txn_fee", fee_transaction_id: "txn_fee", settled_via: "balance", ...values });
