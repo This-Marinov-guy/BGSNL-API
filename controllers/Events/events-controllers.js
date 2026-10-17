@@ -40,8 +40,10 @@ import { generateAndUploadEventTicket } from "../../services/side-services/ticke
 import { publishGuestListChanged } from "../../services/tickets/guest-list-live.js";
 import { guestRefunds } from "../../services/tickets/guest-refunds.js";
 import { mintTicketToken, reserveTicketToken, resolveTicketToken } from "../../services/tickets/qr-link.js";
+import { ticketWalletUrl } from "../../services/tickets/wallet-link.js";
 import { uploadCustomEventTicket } from "../../services/side-services/ticket-generator.js";
 import { planCheckIn, checkInMutation } from "../../services/tickets/check-in.js";
+import { isExistingMemberTicket } from "../../services/tickets/member-ticket-policy.js";
 import { futureEventDateFilter, publicEventQuery, serializePublicEvent } from "../../services/public-content/event-publication.js";
 import { recordGuestMarketingEmail } from "../../services/events/guest-marketing-emails.js";
 
@@ -308,9 +310,12 @@ export const checkTicketEligibility = async (req, res, next) => {
       return next(new HttpError("User not found", 404));
     }
 
-    const memberName = `${member.name} ${member.surname}`;
-    const alreadyRegistered = event.guestList.some(
-      (g) => g.name === memberName && g.email === member.email
+    const alreadyRegistered = event.guestList.some((ticket) =>
+      isExistingMemberTicket(ticket, {
+        userId,
+        userIds: member.accountAliases,
+        email: member.email,
+      })
     );
 
     // First-time check: warn the member they already have a ticket
@@ -430,7 +435,9 @@ export const postAddMemberToEvent = async (req, res, next) => {
     targetUser.name,
     ticketLocation,
     "Europe/Amsterdam",
-    societyEvent.poster
+    societyEvent.poster,
+    {},
+    ticketWalletUrl(societyEvent, societyEvent.guestList.at(-1))
   );
 
   eventToSpreadsheet(societyEvent.id);
@@ -540,7 +547,8 @@ export const postAddGuestToEvent = async (req, res, next) => {
     tickets,
     "Europe/Amsterdam",
     societyEvent.poster,
-    { region: societyEvent.region, phone: guestPhone }
+    { region: societyEvent.region, phone: guestPhone },
+    ticketWalletUrl(societyEvent, societyEvent.guestList.at(-1))
   );
 
   eventToSpreadsheet(societyEvent.id);

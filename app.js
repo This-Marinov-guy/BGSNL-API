@@ -83,7 +83,7 @@ app.use(apiVersionMiddleware);
 // Payment return capabilities, Stripe documents and personal checkout details
 // must not be captured by request/response analytics.
 app.use((req, res, next) => {
-  req.walletPrivate = /^\/api\/(?:v\d+\/)?user\/wallet(?:\/|$)/.test(req.url);
+  req.walletPrivate = /^\/api\/(?:v\d+\/)?(?:user\/wallet|event\/wallet)(?:\/|$)/.test(req.url);
   req.paymentPrivate = /^\/api\/v\d+\/payment(?:\/|$)/.test(req.url);
   if (req.paymentPrivate) res.set("Cache-Control", "private, no-store");
   next();

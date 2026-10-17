@@ -10,8 +10,8 @@ const posterGrid = events => {
   const cells = events.map(event => {
     const url = safeHttpsUrl(event.url);
     const poster = safeHttpsUrl(event.poster);
-    const content = poster ? `<img src="${escape(poster)}" width="220" alt="${escape(event.title)}" style="display:block;width:100%;max-width:220px;height:auto;border-radius:8px;">` : `<span style="display:block;padding:24px 12px;border:1px solid #cbd8d0;border-radius:8px;color:#607168;font-size:13px;">Poster unavailable for ${escape(event.title)}</span>`;
-    return `<td width="50%" valign="top" style="width:50%;padding:0 8px 16px;vertical-align:top;">${url ? `<a href="${escape(url)}" style="display:block;text-decoration:none;">${content}</a>` : content}</td>`;
+    const content = poster ? `<img src="${escape(poster)}" width="220" alt="${escape(event.title)}" style="display:block;width:100%;max-width:220px;height:auto;max-height:280px;object-fit:contain;margin:0 auto;border-radius:8px;">` : `<span style="display:block;padding:24px 12px;border:1px solid #cbd8d0;border-radius:8px;color:#607168;font-size:13px;">Poster unavailable for ${escape(event.title)}</span>`;
+    return `<td width="50%" align="center" valign="top" style="width:50%;padding:0 8px 16px;vertical-align:top;text-align:center;">${url ? `<a href="${escape(url)}" style="display:block;text-decoration:none;">${content}</a>` : content}</td>`;
   });
   const rows = [];
   for (let i = 0; i < cells.length; i += 2) rows.push(`<tr>${cells[i]}${cells[i + 1] || '<td width="50%" style="width:50%;"></td>'}</tr>`);

@@ -4,7 +4,7 @@ import { updateEventSales } from "../../controllers/Events/event-sales-controlle
 import dotenv from "dotenv";
 import multer from "multer";
 import { addEvent, archiveExpiredEvents, confirmEventCancellation, deleteEvent, editEvent, fetchFullDataEvent, fetchFullDataEventsList, getEventDraftCount, previewEventCancellation, requestEventCancellation, sendEventDraftReminder } from "../../controllers/Events/future-events-action-controller.js";
-import { adminMiddleware, optionalAuthMiddleware } from "../../middleware/authorization.js";
+import { adminMiddleware, optionalAuthMiddleware, regionFilter } from "../../middleware/authorization.js";
 import { ACCESS_3, EVENT_MANAGEMENT_ACCESS } from "../../util/config/defines.js";
 import { validateRequest } from "../../middleware/validate-request.js";
 import { unsupportedUploadError } from "../../middleware/upload-validation-error.js";
@@ -37,6 +37,18 @@ const upload = multer({
     },
 });
 const futureEventRouter = express.Router();
+
+futureEventRouter.get("/scanner-access", adminMiddleware(EVENT_MANAGEMENT_ACCESS), (req, res, next) => {
+    try { regionFilter(req, "event"); }
+    catch (error) { return next(error); }
+    res.set("Cache-Control", "private, no-store");
+    res.status(200).json({
+        userId: req.user.userId,
+        roles: req.user.roles,
+        status: req.user.status,
+        region: req.user.region,
+    });
+});
 
 futureEventRouter.get("/scanner-events", adminMiddleware(EVENT_MANAGEMENT_ACCESS), getScannerEvents);
 

@@ -120,6 +120,7 @@ test("news is optional, bounded, validated and escaped in email HTML", () => {
   assert.doesNotMatch(email.htmlBody, /<body|<html/i);
   assert.match(email.html, /poster.png/);
   assert.match(email.htmlBody, /class="monthly-poster-grid"/);
+  assert.match(email.htmlBody, /width="220"[^>]*max-width:220px;height:auto;max-height:280px;object-fit:contain/);
   assert.doesNotMatch(email.htmlBody, /class="bgsnl-event-preview"/);
   assert.match(email.htmlBody, /class="monthly-growth"/);
   assert.match(email.htmlBody, /bgsnl-monthly-member-20261011\.png" width="32" height="32" alt=""/);

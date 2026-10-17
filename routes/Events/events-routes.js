@@ -1,4 +1,5 @@
 import express from "express";
+import { ticketWalletDetails } from "../../controllers/Events/ticket-wallet-controller.js";
 import { eventCampaignHandlers, guestSignupPrefill } from "../../controllers/Events/event-campaign-controller.js";
 import { feedbackReport, feedbackState, submitFeedback } from "../../controllers/Events/event-feedback-controller.js";
 import multer from "multer";
@@ -42,6 +43,7 @@ import {
 dotenv.config();
 
 const eventRouter = express.Router();
+eventRouter.post("/wallet/details", ticketWalletDetails);
 eventRouter.get("/feedback/:ticketId", eventFeedbackTicketValidators, validateRequest, feedbackState);
 eventRouter.post("/feedback/:ticketId", eventFeedbackAnswerValidators, validateRequest, submitFeedback);
 eventRouter.get("/:eventId/feedback", adminMiddleware(EVENT_MANAGEMENT_ACCESS), feedbackReport);

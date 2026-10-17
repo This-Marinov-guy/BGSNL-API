@@ -13,8 +13,8 @@ test("event email preview uses the ticket card layout without a ticket", () => {
   assert.doesNotMatch(html, /border-green/);
   assert.match(html, /class="bgsnl-event-details" align="center" valign="middle" height="220"/);
   assert.match(html, /vertical-align:middle;text-align:center/);
-  assert.match(html, /class="bgsnl-event-poster" width="40%" height="220"/);
-  assert.match(html, /width:100%;height:220px;object-fit:cover/);
+  assert.match(html, /class="bgsnl-event-poster" width="32%" height="220"/);
+  assert.match(html, /width="148"[^>]*max-width:148px;height:auto;max-height:208px;object-fit:contain/);
   assert.doesNotMatch(html, /bgsnl-event-tickets|Event ticket/);
   assert.match(html, /poster\.jpg\?x=1&amp;y=2/);
   assert.doesNotMatch(renderEventEmailPreview({ title: "Event", date, poster: "javascript:alert(1)" }), /<img /);

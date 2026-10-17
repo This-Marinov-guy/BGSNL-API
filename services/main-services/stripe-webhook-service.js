@@ -5,6 +5,7 @@ import Event from "../../models/Event.js";
 import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { sendTicketEmail, welcomeEmail, alumniWelcomeEmail } from "../background-services/email-transporter.js";
+import { ticketWalletUrl } from "../tickets/wallet-link.js";
 import { alumniToSpreadsheet, eventToSpreadsheet, usersToSpreadsheet } from "../background-services/google-spreadsheets.js";
 import { findUserById, normalizeEmail } from "./user-service.js";
 import { chooseRandomAvatar, decryptData } from "../../util/functions/helpers.js";
@@ -314,7 +315,8 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
     tickets,
     "Europe/Amsterdam",
     societyEvent.poster,
-    { region: societyEvent.region, phone: guestPhone }
+    { region: societyEvent.region, phone: guestPhone },
+    ticketWalletUrl(societyEvent, societyEvent.guestList.at(-1))
   );
 
   eventToSpreadsheet(societyEvent.id);
@@ -459,7 +461,9 @@ export const handleMemberTicketPurchase = async (metadata, paymentData, { confir
     targetUser.name,
     metadata.file,
     "Europe/Amsterdam",
-    societyEvent.poster
+    societyEvent.poster,
+    {},
+    ticketWalletUrl(societyEvent, societyEvent.guestList.at(-1))
   );
 
   eventToSpreadsheet(societyEvent.id);

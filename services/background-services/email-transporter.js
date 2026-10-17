@@ -5,10 +5,11 @@ import { jobNameFromKey, observeJob } from "../monitoring/job-history.js";
 import { Resend } from "resend";
 import dotenv from "dotenv";
 import { WHATS_APP } from "../../util/config/LINKS.js";
-import { GUEST_TICKET_TEMPLATE, MEMBER_TICKET_TEMPLATE, NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE, ALUMNI_TEMPLATE, EVENT_DRAFT_REMINDER_TEMPLATE, REGIONS } from "../../util/config/defines.js";
+import { NEW_PASS_TEMPLATE, WELCOME_TEMPLATE, CONTEST_MATERIALS_TEMPLATE, NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBERSHIP_EXPIRED_TEMPLATE, ALUMNI_TEMPLATE, EVENT_DRAFT_REMINDER_TEMPLATE, REGIONS } from "../../util/config/defines.js";
 import { createGuestSignupLink } from "../events/guest-signup-prefill.js";
 import { formatRegionBadgeLabel, getRegionBadgeTheme } from "../../util/config/region-badges.js";
 import moment from "moment-timezone";
+import { buildTicketEmailContent } from "../events/ticket-email-content.js";
 export { queueDomakinTemplateEmail } from "./domakin-mailer.js";
 dotenv.config();
 
@@ -98,7 +99,7 @@ export const buildGuestTicketSignupUrl = ({ email, name, phone = "", region }, o
 };
 
 export const buildTicketTemplateVariables = ({ eventName, eventDate, guestName, tickets,
-  timezone = "Europe/Amsterdam", poster = "", signupUrl = "" }) => {
+  timezone = "Europe/Amsterdam", poster = "", signupUrl = "", walletUrl = "" }) => {
   const ticketImages = Array.isArray(tickets) ? tickets : [tickets];
   return { template_variables: {
     eventName,
@@ -108,6 +109,7 @@ export const buildTicketTemplateVariables = ({ eventName, eventDate, guestName, 
     ticketUrl: ticketImages[0] || "",
     poster: safePosterUrl(poster),
     signupUrl,
+    walletUrl,
   } };
 };
 
@@ -120,7 +122,8 @@ const sendTicketEmail = (
   tickets,
   timezone = "Europe/Amsterdam",
   poster = "",
-  guestDetails = {}
+  guestDetails = {},
+  walletUrl = ""
 ) => {
   let signupUrl = "";
   if (type === "guest" && guestDetails.region) {
@@ -135,14 +138,12 @@ const sendTicketEmail = (
     const recipients = [
       { email: receiver },
     ];
-    const template_uuid = type === "member" ? MEMBER_TICKET_TEMPLATE : GUEST_TICKET_TEMPLATE;
-
+    const variables = buildTicketTemplateVariables({ eventName, eventDate, guestName,
+      tickets, timezone, poster, signupUrl, walletUrl }).template_variables;
     await client.send({
       from: sender,
       to: recipients,
-      template_uuid,
-      template_variables: buildTicketTemplateVariables({ eventName, eventDate, guestName,
-        tickets, timezone, poster, signupUrl }),
+      ...buildTicketEmailContent(variables),
     });
   });
 };
