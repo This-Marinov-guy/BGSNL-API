@@ -2,7 +2,9 @@ import { redisRecordStore } from "../storage/redis-records.js";
 import { requestCoordinatedSchedule } from "../jobs/coordinated-schedule.js";
 import { memberRevenueEnabled, memberRevenueLiveMode } from "../../util/config/member-revenue.js";
 
-const waits = redisRecordStore("member-revenue-balance-wait", { ttlMs: 7 * 86400_000 });
+const waits = redisRecordStore("member-revenue-balance-wait", {
+  expiresAtFor: record => +new Date(record.updatedAt || record.createdAt) + 7 * 86400_000,
+});
 const waitId = livemode => `outstanding:${livemode ? "live" : "test"}`;
 const availableCardCents = balance => {
   if (balance?.object !== "balance" || !Array.isArray(balance.available)) throw new Error("Invalid Stripe balance event");
@@ -15,12 +17,12 @@ const availableCardCents = balance => {
 
 // This is a wake-up hint, not a payment ledger. The regular settlement sweep
 // rebuilds every amount from Stripe and refreshes the hint every 15 minutes.
-export async function recordMemberRevenueBalanceWait({ minimumDeferredAmount },
+export async function recordMemberRevenueBalanceWait({ minimumDeferredAmount, failed = 0 },
   { records = waits, livemode = memberRevenueLiveMode() } = {}) {
   if (minimumDeferredAmount !== undefined) {
     if (!Number.isSafeInteger(minimumDeferredAmount) || minimumDeferredAmount <= 0) throw new Error("Invalid deferred transfer amount");
     await records.updateOne({ _id: waitId(livemode) }, { $set: { minimumCents: minimumDeferredAmount } }, { upsert: true });
-  } else {
+  } else if (!failed) {
     await records.deleteOne({ _id: waitId(livemode) });
   }
 }
@@ -32,6 +34,6 @@ export async function scheduleMemberRevenueOnBalance(event, { enabled = memberRe
   if (!pending) return { noWork: true };
   if (!Number.isSafeInteger(pending.minimumCents) || pending.minimumCents <= 0) throw new Error("Invalid deferred transfer wait");
   if (availableCardCents(event.data?.object) < pending.minimumCents) return { noWork: true };
-  await wake("member-revenue-maintenance");
+  await wake("member-revenue-maintenance", { reason: "balance" });
   return { scheduled: true };
 }

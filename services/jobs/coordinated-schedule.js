@@ -7,8 +7,8 @@ const schedules = redisRecordStore("scheduled-job", { ttlMs: 7 * 86400_000 });
 
 // A webhook can request an early pass without running Stripe reconciliation in
 // the HTTP request. The counter also preserves a wake arriving during a pass.
-export async function requestCoordinatedSchedule(name, { records = schedules } = {}) {
-  await records.updateOne({ _id: `scheduler:${name}` }, { $inc: { wakeCount: 1 } }, { upsert: true });
+export async function requestCoordinatedSchedule(name, { records = schedules, reason } = {}) {
+  await records.updateOne({ _id: `scheduler:${name}` }, { $inc: { wakeCount: 1, ...(reason === "balance" ? { balanceWakeCount: 1 } : {}) } }, { upsert: true });
 }
 
 // A lease prevents overlapping work; a persisted due time also prevents the
@@ -23,6 +23,7 @@ export async function runCoordinatedSchedule(name, work, {
     return await withLease(key, async ({ record, assertOwned }) => {
       entered = true;
       const wakeCount = record.wakeCount || 0;
+      const balanceWakeCount = record.balanceWakeCount || 0;
       if (+new Date(record.nextRunAt) > now() && wakeCount <= (record.handledWakeCount || 0)) return { skipped: true };
       const save = async patch => {
         await assertOwned();
@@ -31,12 +32,14 @@ export async function runCoordinatedSchedule(name, work, {
       await save({ nextRunAt: new Date(now() + intervalMs) });
       return observe("scheduler", name, async () => {
         try {
-          const result = await work({ assertOwned });
-          await save({ failures: 0, handledWakeCount: wakeCount, nextRunAt: new Date(now() + intervalMs) });
+          const result = await work({ assertOwned, woken: wakeCount > (record.handledWakeCount || 0),
+            balanceWoken: balanceWakeCount > (record.handledBalanceWakeCount || 0) });
+          await save({ failures: 0, handledWakeCount: wakeCount, handledBalanceWakeCount: balanceWakeCount, nextRunAt: new Date(now() + intervalMs) });
           return result;
         } catch (error) {
           const failures = (record.failures || 0) + 1;
-          await save({ failures, handledWakeCount: wakeCount, nextRunAt: new Date(now() + recoveryDelay(failures, error)) });
+          await save({ failures, handledWakeCount: wakeCount, handledBalanceWakeCount: balanceWakeCount,
+            nextRunAt: new Date(now() + recoveryDelay(failures, error)) });
           throw error;
         }
       });

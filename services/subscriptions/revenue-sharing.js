@@ -134,7 +134,8 @@ export async function recordMemberRevenueInvoice(invoiceId, { stripe = createStr
   if (invoice.metadata?.bgsnlPendingRevenueOperation) {
     const operation = JSON.parse(invoice.metadata.bgsnlPendingRevenueOperation);
     if (!["transfer", "reversal"].includes(operation.kind) || typeof operation.id !== "string" || !cents(operation.amount) || operation.amount === 0 ||
-        operation.kind === "reversal" && !operation.transferId) throw new Error("Invalid pending Stripe revenue operation");
+        operation.kind === "reversal" && !operation.transferId ||
+        operation.balanceDeferred !== undefined && typeof operation.balanceDeferred !== "boolean") throw new Error("Invalid pending Stripe revenue operation");
     fields.operation = operation;
   }
   await shares.updateOne({ _id: invoice.id }, { $set: fields }, { upsert: true });
@@ -221,7 +222,7 @@ async function executeOperation(stripe, share, shares, assertOwned) {
   await clearOperation(share, shares, assertOwned);
 }
 
-export async function settleMemberRevenueRegion(accountId, { stripe = createStripeClient(DEFAULT_REGION), shares = createRevenueSnapshot(stripe), withLease = withBillingLease, coordinatorAssert = async () => {} } = {}) {
+export async function settleMemberRevenueRegion(accountId, { stripe = createStripeClient(DEFAULT_REGION), shares = createRevenueSnapshot(stripe), withLease = withBillingLease, coordinatorAssert = async () => {}, retryDeferred = false } = {}) {
   if (!Object.values(MEMBER_REVENUE_ACCOUNTS).includes(accountId)) throw new Error("Unknown member revenue recipient");
   return withLease(`member-revenue-settlement:${accountId}`, async ({ assertOwned: regionalAssert }) => {
     const assertOwned = async () => { await coordinatorAssert(); await regionalAssert(); };
@@ -234,6 +235,7 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
     let netDue = 0;
     let changes = 0;
     let deferred = 0;
+    let waiting = 0;
     let minimumDeferredAmount;
     const pending = [];
     for (const share of all) {
@@ -253,19 +255,35 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
       if (changes >= 25) break;
       const amount = Math.min(remaining, capacity);
       const source = !transfers.length && amount <= share.chargeAmount ? share.chargeId : undefined;
+      const balanceDeferred = share.operation?.balanceDeferred === true;
+      const priorOperationId = balanceDeferred ? share.operation.id : undefined;
       if (share.operation && (share.operation.amount !== amount || share.operation.before !== transferred(transfers) || share.operation.source !== source)) {
         await clearOperation(share, shares, assertOwned);
       }
       if (!amount) continue;
       if (!share.operation) {
-        share.operation = { id: operationId(share, transfers, "transfer", amount), kind: "transfer", amount, before: transferred(transfers),
-          ...(source ? { source } : {}) };
+        const id = operationId(share, transfers, "transfer", amount);
+        share.operation = { id: priorOperationId ? createHash("sha256").update(`${priorOperationId}:${id}`).digest("hex") : id,
+          kind: "transfer", amount, before: transferred(transfers),
+          ...(source ? { source } : {}), ...(balanceDeferred ? { balanceDeferred: true } : {}) };
         await assertOwned();
         await shares.updateOne({ _id: share._id }, { $set: { operation: share.operation } });
+      }
+      if (share.operation.balanceDeferred && !retryDeferred) {
+        waiting++;
+        minimumDeferredAmount = Math.min(minimumDeferredAmount ?? amount, amount);
+        continue;
       }
       try { await executeOperation(stripe, share, shares, assertOwned); }
       catch (error) {
         if (error.code !== "balance_insufficient") throw error;
+        // Stripe can cache a failed response for an idempotency key. The next
+        // balance event needs a new key after checking the invoice's transfer
+        // group for a prior success.
+        share.operation.id = createHash("sha256").update(`${share.operation.id}:balance-retry`).digest("hex");
+        share.operation.balanceDeferred = true;
+        await assertOwned();
+        await shares.updateOne({ _id: share._id }, { $set: { operation: share.operation } });
         deferred++;
         minimumDeferredAmount = Math.min(minimumDeferredAmount ?? amount, amount);
         logOperationalError("service.revenue-transfer-balance", error, { invoiceId: share._id, accountId });
@@ -277,11 +295,11 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
       remaining -= amount;
       changes++;
     }
-    return { changes, unrecoveredDebt: Math.max(0, -netDue), unpaidAmount: remaining, deferred, minimumDeferredAmount };
+    return { changes, unrecoveredDebt: Math.max(0, -netDue), unpaidAmount: remaining, deferred, waiting, minimumDeferredAmount };
   });
 }
 
-export async function processMemberRevenueSharing({ stripe = createStripeClient(DEFAULT_REGION), shares = createRevenueSnapshot(stripe), enabled = memberRevenueEnabled(), capture = recordMemberRevenueInvoice, settle = settleMemberRevenueRegion, beforeSettle = async () => {}, assertOwned = async () => {} } = {}) {
+export async function processMemberRevenueSharing({ stripe = createStripeClient(DEFAULT_REGION), shares = createRevenueSnapshot(stripe), enabled = memberRevenueEnabled(), capture = recordMemberRevenueInvoice, settle = settleMemberRevenueRegion, beforeSettle = async () => {}, assertOwned = async () => {}, retryDeferred = false } = {}) {
   if (!enabled) return { failed: 0 };
   await verifyRevenuePlatform(stripe);
   // Enrolment lives independently of member/alumni documents and is never
@@ -310,7 +328,7 @@ export async function processMemberRevenueSharing({ stripe = createStripeClient(
     await assertOwned();
     if (blocked.has(accountId)) continue;
     try {
-      const result = await settle(accountId, { stripe, shares, coordinatorAssert: assertOwned });
+      const result = await settle(accountId, { stripe, shares, coordinatorAssert: assertOwned, retryDeferred });
       failed += result.deferred || 0;
       if (result.minimumDeferredAmount) minimumDeferredAmount = Math.min(minimumDeferredAmount ?? result.minimumDeferredAmount, result.minimumDeferredAmount);
       if (result.unrecoveredDebt) {

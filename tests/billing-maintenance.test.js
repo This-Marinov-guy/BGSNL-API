@@ -183,17 +183,28 @@ test("scheduler failures remain errors, persist backoff, and recover when due", 
 });
 
 test("a balance webhook wakes a scheduled pass and a wake during work is not lost", async () => {
-  const h = coordinatorFixture(); let runs = 0;
-  await h.run(async () => { runs++; });
+  const h = coordinatorFixture(); let runs = 0; const wakeStates = [];
+  await h.run(async ({ woken, balanceWoken }) => { runs++; wakeStates.push([woken, balanceWoken]); });
   assert.deepEqual(await h.run(() => assert.fail("No wake")), { skipped: true });
-  await requestCoordinatedSchedule("billing-maintenance", { records: h.records });
-  await h.run(async () => {
+  await requestCoordinatedSchedule("billing-maintenance", { records: h.records, reason: "balance" });
+  await h.run(async ({ woken, balanceWoken }) => {
     runs++;
-    await requestCoordinatedSchedule("billing-maintenance", { records: h.records });
+    wakeStates.push([woken, balanceWoken]);
+    await requestCoordinatedSchedule("billing-maintenance", { records: h.records, reason: "balance" });
   });
-  await h.run(async () => { runs++; });
+  await h.run(async ({ woken, balanceWoken }) => { runs++; wakeStates.push([woken, balanceWoken]); });
   assert.deepEqual(await h.run(() => assert.fail("Wake consumed")), { skipped: true });
   assert.equal(runs, 3);
+  assert.deepEqual(wakeStates, [[false, false], [true, true], [true, true]]);
+});
+test("a generic worker wake does not release balance-deferred transfers", async () => {
+  const h = coordinatorFixture();
+  await h.run(async () => {});
+  await requestCoordinatedSchedule("billing-maintenance", { records: h.records });
+  await h.run(async ({ woken, balanceWoken }) => {
+    assert.equal(woken, true);
+    assert.equal(balanceWoken, false);
+  });
 });
 
 test("a failed webhook-woken pass backs off until a new balance event", async () => {
@@ -235,4 +246,21 @@ test("revenue errors cannot block membership recovery or delay a webhook wake", 
   await tick(); now += 60_000; await tick();
   assert.equal(billing, 2); assert.equal(revenue, 2);
   await stop(); now += 3600_000; await tick(); assert.equal(billing, 2);
+});
+test("billing worker passes only a balance wake to deferred revenue settlement", async () => {
+  let tick, balanceWoken = false;
+  const retries = [];
+  const stop = startBillingWorker({ env: { NODE_ENV: "production" },
+    schedule: callback => { tick = callback; return { unref() {} }; }, cancel: () => {}, report: () => {},
+    coordinate: async (_name, work) => work({ assertOwned: async () => {}, balanceWoken }),
+    revenue: async ({ retryDeferred }) => { retries.push(retryDeferred); return { failed: 0 }; },
+    reminders: async () => ({ failed: 0 }), checkouts: async () => ({ failed: 0 }), subscriptions: async () => ({ failed: 0 }),
+  });
+  await tick();
+  assert.ok(retries.length > 0);
+  assert.ok(retries.every(value => value === false));
+  balanceWoken = true;
+  await tick();
+  assert.equal(retries.at(-1), true);
+  await stop();
 });

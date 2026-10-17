@@ -103,9 +103,9 @@ export function startBillingWorker({ env = process.env, coordinate = runCoordina
       }
       return { failed };
     } },
-    { name: "member-revenue-maintenance", intervalMs: 15 * 60_000, wakeable: true, work: async ({ assertOwned }) => {
+    { name: "member-revenue-maintenance", intervalMs: 15 * 60_000, wakeable: true, work: async ({ assertOwned, balanceWoken }) => {
       await assertOwned();
-      return revenue();
+      return revenue({ retryDeferred: balanceWoken });
     } },
   ];
   const tick = () => Promise.all(tasks.map(task => {

@@ -249,7 +249,7 @@ test("a manually recovered renewal is not paid twice when the old fee reversal c
   assert.deepEqual(h.calls.map(c => c.kind), ["transfer"]);
   assert.equal(h.transfers.length, 2);
 });
-test("an older balance failure does not stop a newer charge-linked renewal and retries safely", async () => {
+test("an older balance failure waits for a balance wake without stopping a new renewal", async () => {
   const h = stripeFor(); const shares = memory([
     shareFor("in_old", { paidAt: new Date("2026-01-01") }),
     shareFor("in_new", { paidAt: new Date("2026-02-01") }),
@@ -261,10 +261,50 @@ test("an older balance failure does not stop a newer charge-linked renewal and r
   assert.equal(h.transfers.length, 1);
   assert.equal(h.transfers[0].metadata.bgsnlRevenueInvoice, "in_new");
   assert.equal(shares.docs.get("in_old").operation.amount, 760);
+  assert.equal(shares.docs.get("in_old").operation.balanceDeferred, true);
+  const failedKey = h.calls.find(call => call.body.metadata.bgsnlRevenueInvoice === "in_old").options.idempotencyKey;
+  const attempts = h.calls.length;
+  h.clearTransferFailure();
+  const scheduled = await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  assert.equal(scheduled.deferred, 0);
+  assert.equal(scheduled.waiting, 1);
+  assert.equal(scheduled.minimumDeferredAmount, 760);
+  assert.equal(h.calls.length, attempts);
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease, retryDeferred: true });
+  assert.equal(h.transfers.length, 2);
+  assert.notEqual(h.calls.at(-1).options.idempotencyKey, failedKey);
+  assert.equal(shares.docs.get("in_old").operation, undefined);
+});
+test("a balance deferral survives a worker restart and only retries on a wake", async () => {
+  const h = stripeFor([invoiceFor()]);
+  let shares = createRevenueSnapshot(h.stripe);
+  await recordMemberRevenueInvoice("in_one", { stripe: h.stripe, shares });
+  h.failTransferFor("ch_in_one");
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  assert.equal(JSON.parse((await h.stripe.invoices.retrieve("in_one")).metadata.bgsnlPendingRevenueOperation).balanceDeferred, true);
+  const attempts = h.calls.length;
+  shares = createRevenueSnapshot(h.stripe);
+  await recordMemberRevenueInvoice("in_one", { stripe: h.stripe, shares });
   h.clearTransferFailure();
   await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
-  assert.equal(h.transfers.length, 2);
-  assert.equal(shares.docs.get("in_old").operation, undefined);
+  assert.equal(h.calls.length, attempts);
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease, retryDeferred: true });
+  assert.equal(h.transfers.length, 1);
+});
+test("changing the amount owed does not release a balance deferral", async () => {
+  const h = stripeFor();
+  const shares = memory([shareFor()]);
+  h.failTransferFor("ch_in_one");
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  const attempts = h.calls.length;
+  await shares.updateOne({ _id: "in_one" }, { $set: { refunded: 100 } });
+  h.clearTransferFailure();
+  const scheduled = await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
+  assert.equal(scheduled.waiting, 1);
+  assert.equal(h.calls.length, attempts);
+  assert.equal(shares.docs.get("in_one").operation.amount, 680);
+  await settleMemberRevenueRegion(accountId, { ...h, shares, withLease, retryDeferred: true });
+  assert.equal(h.transfers[0].amount, 680);
 });
 test("lost leases and unready connected accounts cannot transfer money", async () => {
   const h = stripeFor(); const shares = memory([shareFor()]);
@@ -296,13 +336,22 @@ const balanceEvent = (card, values = {}) => ({ type: "balance.available", livemo
   data: { object: { object: "balance", available: [{ currency: "eur", amount: card, source_types: { card } }] } }, ...values });
 test("a sufficient balance event queues the existing worker without querying Stripe", async () => {
   const records = memory(); const wakes = [];
-  const options = { enabled: true, livemode: true, records, wake: name => { wakes.push(name); } };
+  const options = { enabled: true, livemode: true, records, wake: (name, settings) => { wakes.push({ name, settings }); } };
   await recordMemberRevenueBalanceWait({ minimumDeferredAmount: 446 }, { records, livemode: true });
   assert.equal((await scheduleMemberRevenueOnBalance(balanceEvent(445), options)).noWork, true);
   assert.equal((await scheduleMemberRevenueOnBalance(balanceEvent(446), options)).scheduled, true);
-  assert.deepEqual(wakes, ["member-revenue-maintenance"]);
+  assert.deepEqual(wakes, [{ name: "member-revenue-maintenance", settings: { reason: "balance" } }]);
   await recordMemberRevenueBalanceWait({}, { records, livemode: true });
   assert.equal((await scheduleMemberRevenueOnBalance(balanceEvent(500), options)).noWork, true);
+});
+test("an incomplete sweep retains its balance wake hint", async () => {
+  const records = memory();
+  const options = { records, livemode: true };
+  await recordMemberRevenueBalanceWait({ minimumDeferredAmount: 446 }, options);
+  await recordMemberRevenueBalanceWait({ failed: 1 }, options);
+  assert.equal((await records.findById("outstanding:live")).minimumCents, 446);
+  await recordMemberRevenueBalanceWait({ failed: 0 }, options);
+  assert.equal(await records.findById("outstanding:live"), undefined);
 });
 test("wrong mode, connected events, and non-card funds do not wake settlement", async () => {
   const records = memory();

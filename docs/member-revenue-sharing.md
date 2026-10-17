@@ -112,18 +112,25 @@ check, so this does not replace keeping enough platform balance available.
 The billing worker runs coordinated revenue maintenance every 15 minutes, with
 independent backoff on failure so it cannot block membership recovery. It paginates
 Stripe subscriptions and paid invoices, reconstructs calculations in memory,
-and settles each region. A deferred transfer marks the observed maintenance run
-failed even when other regions have settled. No Mongo invoice statements,
-billing receipts or enrollment ledger are retained.
+and settles each region. A first insufficient-balance transfer attempt marks the
+observed run failed. The worker then records `balanceDeferred` on that invoice's
+pending transfer instruction and skips further transfer attempts during scheduled
+passes. New paid invoices still settle normally. A signed central
+`balance.available` webhook showing enough available EUR card balance wakes the
+worker and allows one retry of deferred transfers. Another insufficient-balance
+response returns them to waiting. No Mongo invoice statements, billing receipts
+or enrollment ledger are retained.
 
 - The original allocation is stored in the Stripe subscription's
   `bgsnlRevenueAllocation` metadata, including customer, region and operation.
   A later Member/Alumni switch does not remove the original allocation history.
 - Refunds, disputes, credits and processing fees are read from Stripe each pass.
 - Pending money operations live in `bgsnlPendingRevenueOperation` on the Stripe
-  invoice. Stable operation IDs and transfer-group searches recover ambiguous
-  responses even after the idempotency retention window. Superseded instructions
-  are checked against actual Stripe transfers before submission.
+  invoice, including any balance deferral. Stable operation IDs and transfer-group
+  searches recover ambiguous responses even after the idempotency retention window.
+  A confirmed insufficient-balance response rotates the next attempt's idempotency
+  key because Stripe can cache failed responses. Superseded instructions are checked
+  against actual Stripe transfers before submission.
 - Redis leases serialize the coordinator and regional settlement. Redis does
   not hold a permanent financial ledger. The balance wake-up hint is
   operational and rebuilt from Stripe on each settlement pass. Missing or
@@ -132,7 +139,9 @@ billing receipts or enrollment ledger are retained.
 
 The existing signed central webhook registers eligible subscriptions and queues
 balance-triggered settlement; it never moves money directly. The central BGSNL
-endpoint must subscribe to `balance.available` for early wake-ups. `invoice.paid`,
+endpoint must subscribe to `balance.available` before balance-only retries are
+deployed. Monitor webhook delivery and manually reconcile a missed event: a deferred
+transfer will not be retried by the scheduled sweep alone. `invoice.paid`,
 `customer.subscription.updated` and Checkout completion are already enabled. Checkout
 completion also registers allocations, and the worker recovers missed invoice
 notifications. Refund/dispute changes are refreshed during the sweep.
