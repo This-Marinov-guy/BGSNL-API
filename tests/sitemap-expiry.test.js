@@ -13,7 +13,7 @@ if (uri && !/^mongodb:\/\/(?:127\.0\.0\.1|localhost):\d+\/?$/.test(uri)) {
   throw new Error("Sitemap integration tests only accept a local MongoDB host without a database");
 }
 
-test("past-event sweep uses the same 48-hour boundary and visibility as the public sitemap", () => {
+test("past-event sweep uses the same 24-hour boundary and visibility as the public sitemap", () => {
   assert.deepEqual(pastSitemapEventFilter(now), {
     hidden: { $ne: true }, status: { $nin: ["archived", "draft"] }, region: { $ne: "netherlands" },
     $expr: { $and: [

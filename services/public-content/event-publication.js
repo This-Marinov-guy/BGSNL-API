@@ -107,10 +107,11 @@ export const publicEventQuery = {
   status: { $nin: ["archived", "draft"] },
 };
 
-export const FUTURE_EVENT_GRACE_MS = 2 * 24 * 60 * 60 * 1000;
+export const FUTURE_EVENT_GRACE_MS = 24 * 60 * 60 * 1000;
 
 // Public listings (future-events pages, home carousels, sitemap) should drop
-// an event once at least two days have passed since it started — not the instant
+// an event once at least 24 hours have passed since its updated date and time
+// (correctedDate), or its original date and time when no update exists — not the instant
 // it starts, since same-day/multi-hour events must stay visible while live.
 // Event detail pages use publicEventQuery alone and are unaffected.
 export const futureEventDateFilter = (now = Date.now()) => ({
