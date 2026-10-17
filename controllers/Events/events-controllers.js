@@ -40,6 +40,7 @@ import { generateAndUploadEventTicket } from "../../services/side-services/ticke
 import { publishGuestListChanged } from "../../services/tickets/guest-list-live.js";
 import { guestRefunds } from "../../services/tickets/guest-refunds.js";
 import { guestDelivery } from "../../services/tickets/guest-delivery.js";
+import { deleteFreeGuestTicket, isFreeGuestTicket } from "../../services/tickets/free-guest-ticket.js";
 import { mintTicketToken, reserveTicketToken, resolveTicketToken } from "../../services/tickets/qr-link.js";
 import { ticketWalletUrl } from "../../services/tickets/wallet-link.js";
 import { uploadCustomEventTicket } from "../../services/side-services/ticket-generator.js";
@@ -62,6 +63,7 @@ const serializeGuestListEntry = (guest) => ({
   status: guest.status,
   timestamp: guest.timestamp,
   refunded: Boolean(guest.refunded),
+  isFree: isFreeGuestTicket(guest),
   preferences: guest.preferences || {},
   addOns: (guest.addOns || []).map((addOn) => ({
     title: addOn.title,
@@ -1012,6 +1014,21 @@ export const refundGuestPurchase = async (req, res, next) => {
     if (error instanceof HttpError) return next(error);
     logIntegrationError("stripe", error, "guest-refund");
     return next(new HttpError("Could not complete this refund. Check Stripe before trying again.", 503));
+  }
+};
+
+export const removeFreeGuestTicket = async (req, res, next) => {
+  try {
+    const guest = await deleteFreeGuestTicket(req.params.eventId, req.params.guestId,
+      event => canManageEventGuestList(req, event));
+    void publishGuestListChanged(req.params.eventId);
+    void Promise.resolve().then(() => eventToSpreadsheet(req.params.eventId)).catch(error =>
+      logIntegrationError("google-sheets", error, "free-ticket-delete-sync"));
+    return res.status(200).json({ status: true, guest });
+  } catch (error) {
+    if (error instanceof HttpError) return next(error);
+    logOperationalError("service.free-ticket-delete", error);
+    return next(new HttpError("Could not delete this free ticket. Please try again.", 500));
   }
 };
 

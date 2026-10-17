@@ -23,6 +23,7 @@ import {
   refundGuestPurchase,
   sendGuestTicketAgain,
   sendGuestStripeReceipt,
+  removeFreeGuestTicket,
 } from "../../controllers/Events/events-controllers.js";
 import dotenv from "dotenv";
 import { adminMiddleware, authMiddleware, optionalAuthMiddleware, requireBenefits } from "../../middleware/authorization.js";
@@ -164,5 +165,7 @@ eventRouter.get("/guest-list/:eventId/guests/:guestId/refund", adminMiddleware(A
   guestRefundPreviewValidators, validateRequest, previewGuestRefund);
 eventRouter.post("/guest-list/:eventId/guests/:guestId/refund", adminMiddleware(ACCESS_3),
   guestRefundValidators, validateRequest, refundGuestPurchase);
+eventRouter.delete("/guest-list/:eventId/guests/:guestId", adminMiddleware(ACCESS_3),
+  guestRefundPreviewValidators, validateRequest, removeFreeGuestTicket);
 
 export default eventRouter;
