@@ -148,6 +148,25 @@ const sendTicketEmail = (
   });
 };
 
+// Manual sends wait for provider acceptance so the guest-list UI can report a
+// real result instead of treating a queued background job as delivered.
+export const sendTicketEmailNow = async ({ type, receiver, eventName, eventDate,
+  guestName, tickets, timezone = "Europe/Amsterdam", poster = "", guestDetails = {}, walletUrl = "" }) => {
+  let signupUrl = "";
+  if (type === "guest" && guestDetails.region) {
+    try {
+      signupUrl = buildGuestTicketSignupUrl({ email: receiver, name: guestName,
+        phone: guestDetails.phone, region: guestDetails.region });
+    } catch (error) {
+      logOperationalError("guest-ticket.signup-prefill", error);
+    }
+  }
+  const variables = buildTicketTemplateVariables({ eventName, eventDate, guestName,
+    tickets, timezone, poster, signupUrl, walletUrl }).template_variables;
+  return client.send({ from: sender, to: [{ email: receiver }],
+    ...buildTicketEmailContent(variables) });
+};
+
 const sendNewPasswordEmail = (receiver, resetToken) => {
   enqueueMail(`newpass:${receiver}`, async () => {
     const recipients = [{ email: receiver }];

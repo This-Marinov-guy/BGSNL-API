@@ -39,6 +39,7 @@ import {
 import { generateAndUploadEventTicket } from "../../services/side-services/ticket-generator.js";
 import { publishGuestListChanged } from "../../services/tickets/guest-list-live.js";
 import { guestRefunds } from "../../services/tickets/guest-refunds.js";
+import { guestDelivery } from "../../services/tickets/guest-delivery.js";
 import { mintTicketToken, reserveTicketToken, resolveTicketToken } from "../../services/tickets/qr-link.js";
 import { ticketWalletUrl } from "../../services/tickets/wallet-link.js";
 import { uploadCustomEventTicket } from "../../services/side-services/ticket-generator.js";
@@ -951,6 +952,30 @@ const authorizedGuestRefundRegion = async (req, eventId) => {
   if (!event) throw new HttpError("Event not found", 404);
   if (!canManageEventGuestList(req, event)) throw new HttpError("No access to this event guest list", 403);
   return event.region;
+};
+
+export const sendGuestTicketAgain = async (req, res, next) => {
+  try {
+    const region = await authorizedGuestRefundRegion(req, req.params.eventId);
+    const result = await guestDelivery.sendTicket(req.params.eventId, req.params.guestId, region);
+    return res.status(200).json({ status: true, ...result });
+  } catch (error) {
+    if (error instanceof HttpError) return next(error);
+    logIntegrationError("email-provider", error, "guest-ticket-resend");
+    return next(new HttpError("Could not confirm the ticket email. Check the guest's inbox before trying again.", 503));
+  }
+};
+
+export const sendGuestStripeReceipt = async (req, res, next) => {
+  try {
+    const region = await authorizedGuestRefundRegion(req, req.params.eventId);
+    const result = await guestDelivery.sendReceipt(req.params.eventId, req.params.guestId, region);
+    return res.status(200).json({ status: true, ...result });
+  } catch (error) {
+    if (error instanceof HttpError) return next(error);
+    logIntegrationError("stripe", error, "guest-receipt-resend");
+    return next(new HttpError("Could not confirm the receipt email. Check the guest's inbox or Stripe before trying again.", 503));
+  }
 };
 
 export const previewGuestRefund = async (req, res, next) => {
