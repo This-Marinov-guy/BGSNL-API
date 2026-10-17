@@ -16,6 +16,7 @@ profile owns Google identities and passkeys.
 | Current membership entitlement snapshot | Account `subscription` | Refreshed from Stripe |
 | Invoices, charges, refunds, transfers, fees and regional allocation | Stripe | Stripe history; no Mongo billing ledger |
 | A pending transfer/reversal instruction | Stripe invoice metadata | Cleared after reconciliation |
+| Transfers waiting for platform Stripe funds | MongoDB `pendingPayments` (derived from Stripe) | Removed after a confirmed transfer or when no longer owed |
 | Refresh tokens (hashes), session generations/revocation | Redis | Session deadline: 14 days after recorded activity; reads alone do not extend it |
 | Rate-limit buckets | Redis | Original fixed-window expiry |
 | Public counts/event caches | Redis | 24 hours |

@@ -6,6 +6,7 @@ import { MEMBER_REVENUE_PLATFORM, MEMBER_REVENUE_ACCOUNTS, memberRevenueEnabled,
 import { invoiceSubscriptionId, planForPrice, stripeId } from "../../util/subscriptions/policy.js";
 import { withBillingLease } from "./lease.js";
 import { scheduleMemberRevenueOnBalance } from "./revenue-balance-retry.js";
+import { pendingMemberPayments } from "./pending-payments.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const cents = (value) => Number.isSafeInteger(value) && value >= 0;
@@ -222,7 +223,7 @@ async function executeOperation(stripe, share, shares, assertOwned) {
   await clearOperation(share, shares, assertOwned);
 }
 
-export async function settleMemberRevenueRegion(accountId, { stripe = createStripeClient(DEFAULT_REGION), shares = createRevenueSnapshot(stripe), withLease = withBillingLease, coordinatorAssert = async () => {}, retryDeferred = false } = {}) {
+export async function settleMemberRevenueRegion(accountId, { stripe = createStripeClient(DEFAULT_REGION), shares = createRevenueSnapshot(stripe), withLease = withBillingLease, coordinatorAssert = async () => {}, retryDeferred = false, pendingPayments = pendingMemberPayments } = {}) {
   if (!Object.values(MEMBER_REVENUE_ACCOUNTS).includes(accountId)) throw new Error("Unknown member revenue recipient");
   return withLease(`member-revenue-settlement:${accountId}`, async ({ assertOwned: regionalAssert }) => {
     const assertOwned = async () => { await coordinatorAssert(); await regionalAssert(); };
@@ -238,14 +239,29 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
     let waiting = 0;
     let minimumDeferredAmount;
     const pending = [];
+    let paymentProjectionAvailable = true;
+    const projectPendingPayment = async (share, waiting) => {
+      if (!paymentProjectionAvailable) return;
+      try {
+        if (waiting) await pendingPayments.upsert(share);
+        else await pendingPayments.clear(share._id);
+      } catch (error) {
+        // Stripe remains the payment source of truth if MongoDB monitoring is unavailable.
+        paymentProjectionAvailable = false;
+        logOperationalError("service.pending-member-payment", error, { invoiceId: share._id });
+      }
+    };
     for (const share of all) {
       const transfers = await listTransfers(stripe, share);
       await reconcileOperation(stripe, share, transfers, shares, assertOwned);
-      if (share.reviewReason || !share.chargeId) continue;
+      if (share.reviewReason || !share.chargeId) { await projectPendingPayment(share, false); continue; }
       const target = revenueTarget(share);
       const delta = target - transferred(transfers);
       netDue += delta;
       if (delta > 0) pending.push({ share, transfers, capacity: delta });
+      else await projectPendingPayment(share, false);
+      if (delta > 0 && share.operation?.balanceDeferred) await projectPendingPayment(share, true);
+      else if (delta > 0 && !share.operation) await projectPendingPayment(share, false);
     }
     // The newest invoice is most likely still pending on Stripe and can use its
     // own charge as the transfer source before an automatic platform payout.
@@ -260,7 +276,7 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
       if (share.operation && (share.operation.amount !== amount || share.operation.before !== transferred(transfers) || share.operation.source !== source)) {
         await clearOperation(share, shares, assertOwned);
       }
-      if (!amount) continue;
+      if (!amount) { await projectPendingPayment(share, false); continue; }
       if (!share.operation) {
         const id = operationId(share, transfers, "transfer", amount);
         share.operation = { id: priorOperationId ? createHash("sha256").update(`${priorOperationId}:${id}`).digest("hex") : id,
@@ -270,6 +286,7 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
         await shares.updateOne({ _id: share._id }, { $set: { operation: share.operation } });
       }
       if (share.operation.balanceDeferred && !retryDeferred) {
+        await projectPendingPayment(share, true);
         waiting++;
         minimumDeferredAmount = Math.min(minimumDeferredAmount ?? amount, amount);
         continue;
@@ -284,6 +301,7 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
         share.operation.balanceDeferred = true;
         await assertOwned();
         await shares.updateOne({ _id: share._id }, { $set: { operation: share.operation } });
+        await projectPendingPayment(share, true);
         deferred++;
         minimumDeferredAmount = Math.min(minimumDeferredAmount ?? amount, amount);
         logOperationalError("service.revenue-transfer-balance", error, { invoiceId: share._id, accountId });
@@ -292,6 +310,7 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
       }
       await assertOwned();
       await shares.updateOne({ _id: share._id }, { $set: { settledTarget: transferred(transfers) + amount } });
+      await projectPendingPayment(share, false);
       remaining -= amount;
       changes++;
     }

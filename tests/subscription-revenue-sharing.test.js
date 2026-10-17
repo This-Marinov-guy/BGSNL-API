@@ -1,4 +1,5 @@
 import { memberRevenueMetadata, createRevenueSnapshot } from "../services/subscriptions/stripe-revenue-state.js";
+import { pendingMemberTransfer } from "../services/subscriptions/pending-payments.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MEMBER_REVENUE_ACCOUNTS, MEMBER_REVENUE_PLATFORM, memberRevenueAllocation } from "../util/config/member-revenue.js";
@@ -59,6 +60,9 @@ const invoiceFor = (id = "in_one", values = {}) => ({ id, subscription: sub.id, 
   charge: { id: `ch_${id}`, customer: sub.customer, invoice: id, paid: true, captured: true, livemode: true, amount: 1000, amount_refunded: 0, currency: "eur", balance_transaction: { id: `txn_${id}`, amount: 1000, fee: 40, currency: "eur" } }, ...values });
 function stripeFor(invoices = []) {
   const transfers = []; const calls = []; let failTransfer = false; let failReversal = false; let insufficientSource;
+  const pendingRows = new Map();
+  const pendingPayments = { upsert: async share => { pendingRows.set(share._id, pendingMemberTransfer(share)); },
+    clear: async invoiceId => { pendingRows.delete(invoiceId); } };
   const stripe = {
     accounts: { retrieve: async id => ({ id: id || MEMBER_REVENUE_PLATFORM, capabilities: { transfers: "active" }, payouts_enabled: true }) },
     balance: { retrieve: async () => ({ livemode: true }) },
@@ -72,7 +76,8 @@ function stripeFor(invoices = []) {
       createReversal: async (id, body) => { if (failReversal) throw new Error("insufficient regional balance"); calls.push({ kind: "reversal", body }); const t = transfers.find(t => t.id === id); t.amount_reversed += body.amount; const r = { id: `trr_${t.reversals.length}`, ...structuredClone(body) }; t.reversals.push(r); return r; },
     },
   };
-  return { stripe, transfers, calls, failNextTransfer: () => { failTransfer = true; }, failTransferFor: source => { insufficientSource = source; }, clearTransferFailure: () => { insufficientSource = undefined; }, failReversals: () => { failReversal = true; } };
+  return { stripe, transfers, calls, pendingPayments, pendingRows,
+    failNextTransfer: () => { failTransfer = true; }, failTransferFor: source => { insufficientSource = source; }, clearTransferFailure: () => { insufficientSource = undefined; }, failReversals: () => { failReversal = true; } };
 }
 
 test("enrolment is opt-in, Member-only and limited to server-known regions", () => {
@@ -262,6 +267,9 @@ test("an older balance failure waits for a balance wake without stopping a new r
   assert.equal(h.transfers[0].metadata.bgsnlRevenueInvoice, "in_new");
   assert.equal(shares.docs.get("in_old").operation.amount, 760);
   assert.equal(shares.docs.get("in_old").operation.balanceDeferred, true);
+  assert.equal(h.pendingRows.get("in_old").reason, "waiting_stripe_funds");
+  assert.equal(h.pendingRows.get("in_old").amountCents, 760);
+  assert.equal(h.pendingRows.has("in_new"), false);
   const failedKey = h.calls.find(call => call.body.metadata.bgsnlRevenueInvoice === "in_old").options.idempotencyKey;
   const attempts = h.calls.length;
   h.clearTransferFailure();
@@ -274,6 +282,7 @@ test("an older balance failure waits for a balance wake without stopping a new r
   assert.equal(h.transfers.length, 2);
   assert.notEqual(h.calls.at(-1).options.idempotencyKey, failedKey);
   assert.equal(shares.docs.get("in_old").operation, undefined);
+  assert.equal(h.pendingRows.has("in_old"), false);
 });
 test("a balance deferral survives a worker restart and only retries on a wake", async () => {
   const h = stripeFor([invoiceFor()]);
@@ -303,8 +312,10 @@ test("changing the amount owed does not release a balance deferral", async () =>
   assert.equal(scheduled.waiting, 1);
   assert.equal(h.calls.length, attempts);
   assert.equal(shares.docs.get("in_one").operation.amount, 680);
+  assert.equal(h.pendingRows.get("in_one").amountCents, 680);
   await settleMemberRevenueRegion(accountId, { ...h, shares, withLease, retryDeferred: true });
   assert.equal(h.transfers[0].amount, 680);
+  assert.equal(h.pendingRows.has("in_one"), false);
 });
 test("lost leases and unready connected accounts cannot transfer money", async () => {
   const h = stripeFor(); const shares = memory([shareFor()]);

@@ -131,6 +131,14 @@ or enrollment ledger are retained.
   A confirmed insufficient-balance response rotates the next attempt's idempotency
   key because Stripe can cache failed responses. Superseded instructions are checked
   against actual Stripe transfers before submission.
+- Confirmed `balance_insufficient` transfers are projected into MongoDB's
+  `pendingPayments` collection with type `member_revenue_transfer` and reason
+  `waiting_stripe_funds`. The invoice ID is the row key. The amount updates when
+  the instruction changes, and the row is removed after Stripe confirms the
+  transfer or the instruction is no longer owed. Stripe invoice metadata and
+  actual transfers remain authoritative; a monitoring database outage does not
+  stop money movement. System Manager's Payments tab reads these rows through
+  the admin-only monitoring API.
 - Redis leases serialize the coordinator and regional settlement. Redis does
   not hold a permanent financial ledger. The balance wake-up hint is
   operational and rebuilt from Stripe on each settlement pass. Missing or
@@ -148,6 +156,15 @@ notifications. Refund/dispute changes are refreshed during the sweep.
 
 This is an API billing worker, not a MongoDB database trigger. The separately
 created Atlas event-announcement trigger remains disabled.
+
+To backfill live balance waits created before the `balanceDeferred` marker was
+deployed, run `node scripts/backfill-pending-stripe-funds.js` in the production
+API environment. It scans live paid invoices and transfers without writing,
+including five invoice IDs confirmed by the 2026-10-17 production worker log.
+After reviewing the dry-run count and database name, run the same script with
+`--apply --expect-db=<database> --expect-count=<pending>`. It rechecks each
+Stripe transfer before an idempotent insert or update. Deploy the worker that
+clears completed rows before applying the backfill.
 
 ## Configuration and rollout
 

@@ -58,6 +58,7 @@ import { startWeeklyMembershipReportWorker } from "./services/background-service
 import { startRegionalMembershipReportWorker } from "./services/background-services/regional-membership-report.js";
 import { startAcademicYearStatisticsWorker } from "./services/background-services/academic-year-statistics.js";
 import MonitoringJob from "./models/MonitoringJob.js";
+import PendingPayment from "./models/PendingPayment.js";
 import { startMonthlySummaryWorker } from "./services/monthly-summary/worker.js";
 import { startMemberEventAnnouncementWorker } from "./services/events/member-event-announcements.js";
 import { eventCampaignsEnabled, startEventCampaignWorker } from "./services/events/event-campaign-worker.js";
@@ -266,7 +267,7 @@ mongoose
   )
   .then(async () => {
     console.log("Connected to DB");
-    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), WalletCard.init(), MonitoringJob.init(), MarketingEmail.init(), EventDraft.init(), redisClient()]);
+    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), WalletCard.init(), MonitoringJob.init(), PendingPayment.init(), MarketingEmail.init(), EventDraft.init(), redisClient()]);
     marketingCaptureWorker = startMarketingCaptureWorker();
     stopBillingWorker = startBillingWorker();
     stopWeeklyMembershipReportWorker = startWeeklyMembershipReportWorker();

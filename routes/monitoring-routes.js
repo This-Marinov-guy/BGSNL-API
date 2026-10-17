@@ -9,6 +9,7 @@ import { redisRateLimits } from "../services/storage/rate-limits.js";
 import { monitoringOverview } from "../services/monitoring/overview.js";
 import { quotaOverview } from "../services/monitoring/quotas.js";
 import { listJobs, normalizeJobFilter } from "../services/monitoring/jobs.js";
+import { listPendingPayments, normalizePaymentPage } from "../services/monitoring/payments.js";
 
 const text = (value, max) => typeof value === "string" ? value.slice(0, max) : "";
 const safePath = (value) => {
@@ -30,7 +31,7 @@ export function normalizeWebEvent(body) {
 }
 
 export const createMonitoringRouter = ({ overview = monitoringOverview, quotas = quotaOverview, ingest = ingestWebLog,
-  jobs = listJobs, authorize = adminMiddleware(MONITORING_ACCESS), trusted = isTrustedServerRequest, limits = redisRateLimits } = {}) => {
+  jobs = listJobs, payments = listPendingPayments, authorize = adminMiddleware(MONITORING_ACCESS), trusted = isTrustedServerRequest, limits = redisRateLimits } = {}) => {
   const router = express.Router();
   router.post("/web-events", async (req, res) => {
     if (!trusted(req) || req.headers["x-bgsnl-browser-proxy"] !== "1") return res.sendStatus(403);
@@ -68,6 +69,16 @@ export const createMonitoringRouter = ({ overview = monitoringOverview, quotas =
     catch (error) {
       logOperationalError("service.monitoring-job-list", error);
       return res.status(503).json({ message: "Jobs are temporarily unavailable." });
+    }
+  });
+  router.get("/payments", authorize, async (req, res) => {
+    res.set("Cache-Control", "private, no-store");
+    const page = normalizePaymentPage(req.query.page);
+    if (!page) return res.status(400).json({ message: "Choose a valid payment page." });
+    try { return res.json(await payments({ page })); }
+    catch (error) {
+      logOperationalError("service.monitoring-pending-payments", error);
+      return res.status(503).json({ message: "Pending payments are temporarily unavailable." });
     }
   });
   return router;
