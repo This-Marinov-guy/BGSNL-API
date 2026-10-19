@@ -74,9 +74,9 @@ test("MongoDB sweep selects only newly past public events and persists idempoten
   const db = client.db(`bgsnl_sitemap_test_${randomUUID().replaceAll("-", "")}`);
   t.after(async () => { await db.dropDatabase(); await client.close(); });
   const events = db.collection("events");
-  const old = new Date("2026-10-06T11:59:59Z");
-  const boundary = new Date("2026-10-06T12:00:00Z");
-  const future = new Date("2026-10-06T12:00:01Z");
+  const boundary = new Date(+now - FUTURE_EVENT_GRACE_MS);
+  const old = new Date(+boundary - 1);
+  const future = new Date(+boundary + 1);
   await events.insertMany([
     { _id: "old", region: "groningen", status: "opened", date: old },
     { _id: "boundary", region: "groningen", status: "closed", date: boundary },
