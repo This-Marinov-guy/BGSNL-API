@@ -2,7 +2,7 @@ import { sendInternalNotificationEmail, sendCustomerSupportEmail } from "./email
 import { buildCustomerSupportReplyEmail } from "../support/reply-email.js";
 import { getDeveloperNotificationConfig, getInternalNotificationConfig } from "../../util/config/internal-notifications.js";
 import { HOME_URL } from "../../util/config/defines.js";
-import { formatRegionBadgeLabel, getRegionBadgeTheme } from "../../util/config/region-badges.js";
+import { BADGE_FONT_FACE_CSS, formatRegionBadgeLabel, getRegionBadgeTheme } from "../../util/config/region-badges.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const DISPLAY_TIME_ZONE = "Europe/Amsterdam";
@@ -37,7 +37,7 @@ const renderRowValue = (value, options) => {
   const content = escapeHtml(present(value));
   if (options?.region !== undefined) {
     const theme = getRegionBadgeTheme(options.region);
-    return `<span style="display:inline-block;padding:5px 10px;border:1px solid ${theme.border};border-radius:999px;background-color:${theme.background};color:${theme.color};font-size:14px;font-weight:700;line-height:1.4;">${content}</span>`;
+    return `<span style="display:inline-block;padding:3px 7px;border:0;border-radius:7px;background-color:${theme.background};color:${theme.color};font-family:'LeagueSpartan',Arial,sans-serif;font-size:14px;font-weight:600;line-height:1.2;">${content}</span>`;
   }
   if (options?.href) {
     return `<a href="${escapeHtml(options.href)}" style="color:#017363;font-weight:700;text-decoration:underline;overflow-wrap:anywhere;">${escapeHtml(options.linkLabel || "View event")}</a>`;
@@ -66,6 +66,7 @@ const renderNotification = ({ title, rows }) => {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>${escapeHtml(title)}</title>
           <style>
+            ${BADGE_FONT_FACE_CSS}
             body, table, td, th { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
             table, td, th { mso-table-lspace:0pt; mso-table-rspace:0pt; }
             @media screen and (max-width:620px) {

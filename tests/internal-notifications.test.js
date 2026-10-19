@@ -187,8 +187,8 @@ test("event notifications include the website region badge, ticket tiers and pub
   assert.match(notification.text, /Region: Groningen/);
   assert.match(notification.text, /Date & time: 10 October 2026 at 19:00/);
   assert.match(notification.text, /Guest: €15\.50\nMember: €12\.00\nActive member: €8\.00/);
-  assert.match(notification.html, /background-color:#ffe9e8;color:#b51e18/);
-  assert.match(notification.html, /border:1px solid #ffbbb7/);
+  assert.match(notification.html, /background-color:#9e0d33;color:#ffffff/);
+  assert.match(notification.html, /border:0/);
   assert.match(notification.html, /href="https:\/\/bulgariansociety.nl\/groningen\/event-details\/autumn-evening"/);
   assert.doesNotMatch(notification.text, /Visibility:|Audience:|Event ID:/);
 });
@@ -210,7 +210,7 @@ test("event links fall back to the ID and unknown regions remain safely escaped"
   assert.match(notification.html, /href="https:\/\/bulgariansociety.nl\/breda_tilburg\/event-details\/event-2"/);
   const unknown = buildEventCreatedNotification({ region: '<img src=x onerror="alert(1)">', slug: '" onclick="alert(1)' });
   assert.doesNotMatch(unknown.html, /<img|href="[^"]*" onclick=/i);
-  assert.match(unknown.html, /background-color:#f1f3f2/);
+  assert.match(unknown.html, /background-color:#59655f/);
   assert.doesNotMatch(buildEventCreatedNotification({}).html, /href=/);
 });
 

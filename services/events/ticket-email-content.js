@@ -4,11 +4,19 @@ const safeUrl = value => {
   try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password ? url.href : ""; }
   catch { return ""; }
 };
+const autoDownloadWalletUrl = value => {
+  const safe = safeUrl(value);
+  if (!safe) return "";
+  const url = new URL(safe);
+  if (url.pathname !== "/wallet/ticket") return safe;
+  url.searchParams.set("autoDownloadPass", "true");
+  return url.href;
+};
 const appleBadge = "https://res.cloudinary.com/dqwcx5zyh/image/upload/v1792221931/emails/add-to-apple-wallet-570x180_tig4rn.png";
 
 export function buildTicketEmailContent({ eventName, eventDate, guestName, ticketUrl, poster, walletUrl, signupUrl }) {
   const name = escape(eventName), date = escape(eventDate), guest = escape(guestName);
-  const ticket = safeUrl(ticketUrl), image = safeUrl(poster), wallet = safeUrl(walletUrl), signup = safeUrl(signupUrl);
+  const ticket = safeUrl(ticketUrl), image = safeUrl(poster), wallet = autoDownloadWalletUrl(walletUrl), signup = safeUrl(signupUrl);
   const action = (href, label) => `<a href="${escape(href)}" style="display:block;box-sizing:border-box;width:190px;height:60px;line-height:60px;border-radius:8px;background:#173f35;color:#ffffff;text-align:center;font:700 16px/60px Arial,sans-serif;text-decoration:none;">${label}</a>`;
   const posterHtml = image ? `<td width="32%" align="center" valign="middle" style="width:32%;max-width:160px;padding:12px 12px 12px 0;vertical-align:middle;text-align:center;"><img src="${escape(image)}" alt="${name} poster" width="148" style="display:block;width:100%;max-width:148px;height:auto;max-height:208px;object-fit:contain;margin:0 auto;border-radius:8px;"></td>` : "";
   const ticketImageHtml = ticket ? `<tr><td style="padding:0 24px 20px;"><img src="${escape(ticket)}" alt="Ticket for ${name}" width="500" style="display:block;width:100%;max-width:500px;height:auto;object-fit:contain;"></td></tr>` : "";

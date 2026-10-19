@@ -100,9 +100,9 @@ test("draft reminder email targets the Domakin Mailer template with a normalized
     eventDate: "17.10 | 19:00",
     poster: "https://res.cloudinary.com/example/image/upload/poster.jpg",
     regionLabel: "Groningen",
-    regionBadgeBackground: "#ffe9e8",
-    regionBadgeBorder: "#ffbbb7",
-    regionBadgeColor: "#b51e18",
+    regionBadgeBackground: "#9e0d33",
+    regionBadgeBorder: "#9e0d33",
+    regionBadgeColor: "#ffffff",
     continueUrl:
       "https://bulgariansociety.nl/user/edit-event/507f1f77bcf86cd799439011?from=email&draft=1",
   });
@@ -120,9 +120,9 @@ test("draft reminder leaves unfinished details empty for template placeholders",
     eventDate: "",
     poster: "",
     regionLabel: "Not assigned",
-    regionBadgeBackground: "#f1f3f2",
-    regionBadgeBorder: "#d7ded9",
-    regionBadgeColor: "#59655f",
+    regionBadgeBackground: "#59655f",
+    regionBadgeBorder: "#59655f",
+    regionBadgeColor: "#ffffff",
     continueUrl: "https://bulgariansociety.nl/user/edit-event/draft-id",
   });
 });

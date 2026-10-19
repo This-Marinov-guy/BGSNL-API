@@ -51,7 +51,7 @@ test("email targets the Domakin Mailer template with event details and matching 
     email.templateVariables.regionBadgeBackground,
     email.templateVariables.regionBadgeBorder,
     email.templateVariables.regionBadgeColor,
-  ], ["#ffe9e8", "#ffbbb7", "#b51e18"]);
+  ], ["#9e0d33", "#9e0d33", "#ffffff"]);
   assert.equal("location" in email.templateVariables, false);
   assert.equal("description" in email.templateVariables, false);
   assert.equal(email.templateVariables.poster, event.poster || "");

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isTicketWalletEligible, ticketWalletUrl, validTicketGuestCode, validTicketWalletIdentity } from "../services/tickets/wallet-link.js";
+import { isTicketWalletEligible, ticketWalletImageUrl, ticketWalletUrl, validTicketGuestCode, validTicketWalletIdentity } from "../services/tickets/wallet-link.js";
 import { buildTicketEmailContent } from "../services/events/ticket-email-content.js";
 
 const eventId = "507f1f77bcf86cd799439011", ticketId = "507f1f77bcf86cd799439012";
@@ -24,6 +24,14 @@ test("ticket wallet link requires an issued guest code and QR identity, regardle
   assert.equal(isTicketWalletEligible({ ...event, status: "draft" }, ticket), false);
 });
 
+test("ticket wallet details expose only a safe ticket image link", () => {
+  assert.equal(ticketWalletImageUrl("https://tickets.example.org/event.webp"), "https://tickets.example.org/event.webp");
+  for (const value of ["", "http://tickets.example.org/event.webp", "javascript:alert(1)",
+    "https://user:password@tickets.example.org/event.webp", "/local-ticket.webp", null]) {
+    assert.equal(ticketWalletImageUrl(value), "");
+  }
+});
+
 test("ticket email fits the poster and offers equal-size actions for code-backed tickets", () => {
   const input = { eventName: "Autumn <Social>", eventDate: "17.10 | 19:00", guestName: "Alex",
     ticketUrl: "https://example.test/ticket", poster: "https://example.test/poster.jpg",
@@ -34,6 +42,8 @@ test("ticket email fits the poster and offers equal-size actions for code-backed
   assert.match(withWallet.html, /width:190px;height:60px/);
   assert.match(withWallet.html, /v1792221931\/emails\/add-to-apple-wallet-570x180_tig4rn\.png/);
   assert.match(withWallet.html, /alt="Add to Apple Wallet" width="190" height="60"/);
+  assert.match(withWallet.html, /href="[^"]*autoDownloadPass=true" aria-label="Add ticket to Wallet"/);
+  assert.match(withWallet.text, /Add to Wallet: https:\/\/bulgariansociety\.nl\/wallet\/ticket\?[^\n]*&autoDownloadPass=true/);
   assert.match(withWallet.html, /Autumn &lt;Social&gt;/);
   const withoutPrintedQr = buildTicketEmailContent({
     ...input,

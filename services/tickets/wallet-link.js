@@ -25,3 +25,11 @@ export function ticketWalletUrl(event, ticket) {
 export function validTicketWalletIdentity({ eventId, ticketId, token }) {
   return objectId(eventId) && objectId(ticketId) && qrToken(token);
 }
+
+export function ticketWalletImageUrl(value) {
+  if (typeof value !== "string") return "";
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
+  } catch { return ""; }
+}

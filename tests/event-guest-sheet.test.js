@@ -112,8 +112,8 @@ test("the queued event handler reads current guests and exports their attendance
     id: "event-123", region: "groningen", title: "Members' dinner", sheetName: "Members' dinner",
     status: "opened", date: new Date("2026-10-01T18:00:00Z"), ticketTimer: new Date("2026-09-30T18:00:00Z"),
     location: "Groningen", ticketLimit: 30, product: { guest: { price: 8 } }, guestList: [
-      { status: 1, type: "member", timestamp: new Date("2026-09-29T12:00:00Z"), name: "Ada", email: "ada@example.com", phone: "+31600000000", ticket: "ticket-a" },
-      { status: 0, type: "guest", timestamp: new Date("2026-09-29T12:00:00Z"), name: "Grace", email: "grace@example.com", phone: "+31600000001", ticket: "ticket-b" },
+      { status: 1, type: "member", timestamp: new Date("2026-09-29T12:00:00Z"), name: "Ada", email: "ada@example.com", phone: "+31600000000", preferences: { Meal: "Vegetarian", Accessibility: ["Sign language"] }, ticket: "ticket-a" },
+      { status: 0, type: "guest", timestamp: new Date("2026-09-29T12:00:00Z"), name: "Grace", email: "grace@example.com", phone: "+31600000001", preferences: '{"Dietary notes":"No nuts"}', ticket: "ticket-b" },
     ],
   };
   await syncEventToSpreadsheet({ id: event.id }, {
@@ -127,5 +127,8 @@ test("the queued event handler reads current guests and exports their attendance
   assert.deepEqual(writes[0].values[4], ["Status", "Type", "Timestamp", "Name", "Email", "Phone", "Preferences", "AddOns", "Ticket", "Transaction Id"]);
   assert.deepEqual(writes[0].values.slice(5).map(row => [row[0], row[3], row[4]]), [
     ["present", "Ada", "ada@example.com"], ["missing", "Grace", "grace@example.com"],
+  ]);
+  assert.deepEqual(writes[0].values.slice(5).map(row => row[6]), [
+    "Meal: Vegetarian\nAccessibility: Sign language", "Dietary notes: No nuts",
   ]);
 });

@@ -37,7 +37,7 @@ export const removeModelProperties = (obj, properties) => {
   const result = obj.toObject(); // Convert Mongoose document to plain JavaScript object
   properties.forEach((prop) => delete result[prop]);
 
-  if (result.hasOwnProperty("_id")) {
+  if (Object.hasOwn(result, "_id")) {
     result["id"] = result["_id"];
 
     delete result["_id"];
@@ -115,7 +115,7 @@ export const processExtraInputsForm = (extraInputsForm) => {
   }
 
   return extraInputsForm.filter((obj) => {
-    if (!obj.hasOwnProperty("placeholder")) {
+    if (!Object.hasOwn(obj, "placeholder")) {
       return false;
     }
 
@@ -147,17 +147,10 @@ export const replaceSpecialSymbolsWithSpaces = (inputString) => {
   return inputString.replace(/[^a-zA-Z0-9\s]/g, " ");
 };
 
-export const refactorToKeyValuePairs = (obj) => {
-  obj = JSON.parse(obj);
-  let result = "";
-
-  for (const key in obj) {
-    if (obj.hasOwnProperty(key)) {
-      result += `${key}: ${obj[key]}\n`;
-    }
-  }
-
-  return result.trim();
+export const refactorToKeyValuePairs = (value) => {
+  const preferences = typeof value === "string" ? JSON.parse(value) : value;
+  if (!preferences || typeof preferences !== "object" || Array.isArray(preferences)) return "";
+  return Object.entries(preferences).map(([key, answer]) => `${key}: ${answer}`).join("\n");
 };
 
 export const parseStingData = (arr, fromJson = true) => {
