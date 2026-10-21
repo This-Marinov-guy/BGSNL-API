@@ -5,6 +5,11 @@ import { resolveSubscriptionRegion } from "../services/subscriptions/reconcile.j
 import { FREE_ALUMNI_PLAN } from "../util/subscriptions/policy.js";
 import { readBillingDetails } from "../services/subscriptions/billing-details.js";
 import { logOperationalError } from "../middleware/axiom-logger.js";
+import { redisCache } from "../services/storage/cache.js";
+import { MEMBERSHIP_PLANS } from "../util/subscriptions/policy.js";
+
+const planCatalogCache = redisCache("membership-plan-catalog:v1", 15 * 60);
+const planCatalogVersion = MEMBERSHIP_PLANS.map((plan) => plan.priceId).join(":");
 
 const billingAction = (handler) => async (req, res, next) => {
   try { return await handler(req, res); }
@@ -18,7 +23,12 @@ const billingAction = (handler) => async (req, res, next) => {
 
 export const getMembershipPlans = billingAction(async (req, res) => {
   const region = req.account.subscription?.id ? await resolveSubscriptionRegion(req.account) : membershipCheckoutRegion(req.account);
-  const plans = await membershipPrices(createStripeClient(region));
+  const cacheKey = `${region}:${planCatalogVersion}`;
+  let plans = process.env.BGSNL_REDIS_URL ? await planCatalogCache.get(cacheKey) : undefined;
+  if (!plans) {
+    plans = await membershipPrices(createStripeClient(region));
+    if (process.env.BGSNL_REDIS_URL) await planCatalogCache.set(cacheKey, plans);
+  }
   res.json({ plans: [...plans.map(({ product, ...plan }) => plan), FREE_ALUMNI_PLAN] });
 });
 export const getBillingDetails = billingAction(async (req, res) => {

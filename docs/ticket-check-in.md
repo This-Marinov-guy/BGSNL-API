@@ -10,12 +10,14 @@ Open an event's guest list and select **Scan tickets**. This locks the scanner t
 
 - Start the camera once, using HTTPS (or localhost). Camera code loads on demand; leaving the page or stopping the camera closes its stream.
 - A single ticket is marked present immediately. Green confirmation is shown only after the API confirms the write.
-- Group tickets show remaining admissions and require an explicit arrival count. Counts embedded in legacy URLs are ignored by the new scanner.
+- Tickets for the same event and email, including separate purchases, show their combined remaining admissions and require an explicit arrival count. Counts embedded in legacy URLs are ignored by the new scanner.
 - Duplicate, wrong-event, invalid, refunded and permission errors cannot admit guests. Error results pause processing until staff resolve them or select **Next ticket**.
 - After success, the camera can process a different QR without navigating away. Repeated frames of the same QR are suppressed.
 - A manual token/link input is available if camera access is denied or unavailable. There is no offline success mode.
 
-Only authenticated event-management staff can call the check-in API; region access is checked before any mutation. Exact purchase codes select guests—names and email addresses are never used as ticket identity. A single atomic conditional update protects all selected seats against simultaneous check-in/refund changes. A conflicting scanner receives HTTP 409, not a success. Manual attendance updates modify only the selected guest, not the entire event document. Spreadsheet sync is queued after the database write.
+Only authenticated event-management staff can call the check-in API; region access is checked before any mutation. The exact purchase code identifies the scanned ticket; once identified, other active tickets for the same event and normalized email join its quantity choice. A refunded scanned purchase cannot unlock other tickets. A single atomic conditional update protects all selected seats against simultaneous check-in/refund changes. A conflicting scanner receives HTTP 409, not a success. Manual attendance updates modify only the selected guest, not the entire event document. Spreadsheet sync is queued after the database write.
+
+The scanner event picker saves only event card metadata in this browser for up to three hours. On a repeat visit, it verifies current scanner access through the API before showing saved cards; the account, login, roles and region must still match. HTTP responses and credentials are not cached. Reopening a previously selected event queries that event live before restoring it, and **Refresh events** fetches a new list. The browser also remembers the selected event ID for up to three hours. Logout clears both browser entries. Ticket details and check-in responses are never cached.
 
 ## Live guest-list UI
 

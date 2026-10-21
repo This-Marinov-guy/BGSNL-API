@@ -151,3 +151,20 @@ export async function reconcileAccount(user) {
     expectedCustomerId: user.subscription.customerId,
   });
 }
+
+// Display-only reads may reuse the last successfully reconciled DB snapshot.
+// Authorization, checkout, plan changes and webhooks continue to call
+// reconcileAccount so a cached positive entitlement never grants access.
+export async function reconcileAccountForDisplay(user, { force = false, now = Date.now(), maxAgeMs = 30_000,
+  reconcile = reconcileAccount } = {}) {
+  const subscription = user?.subscription;
+  const syncedAt = new Date(subscription?.syncedAt || 0).getTime();
+  const periodEnd = new Date(subscription?.currentPeriodEnd || 0).getTime();
+  const cancelAt = new Date(subscription?.cancelAt || 0).getTime();
+  const recent = Number.isFinite(syncedAt) && syncedAt > 0 && syncedAt <= now && now - syncedAt < maxAgeMs;
+  const boundaryPassed = (periodEnd > 0 && periodEnd <= now) || (cancelAt > 0 && cancelAt <= now);
+  if (!force && subscription?.id && recent && !boundaryPassed && !subscription.pendingUpdate) {
+    return { user, cachedDisplay: true };
+  }
+  return reconcile(user);
+}

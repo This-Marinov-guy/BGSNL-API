@@ -55,7 +55,7 @@ export async function archiveEvent(eventId, { cutoff, stamp, cancel = false, def
     // The status is committed before external cleanup. A later storage failure
     // must not leave an archived event in the public sitemap.
     if (becameArchived) {
-      try { void Promise.resolve(refresh("archived", event)).catch(() => {}); } catch { /* Best effort. */ }
+      try { await refresh("archived", event); } catch { /* Best effort after commit. */ }
     }
     // Rebuild the event's region and the pooled national average from archived
     // records. A retry also repairs a previous failed refresh without recounting.

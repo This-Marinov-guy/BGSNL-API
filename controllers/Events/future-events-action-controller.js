@@ -842,7 +842,7 @@ export const addEvent = async (req, res, next) => {
   }
 
   notifyEventCreated(event);
-  void dispatchSitemapRefresh("published", event);
+  await dispatchSitemapRefresh("published", event);
 
   try {
     eventToSpreadsheet(event.id);
@@ -1478,11 +1478,11 @@ export const editEvent = async (req, res, next) => {
     }
     notifyEventCreated(event);
     eventToSpreadsheet(event.id);
-    void dispatchSitemapRefresh("published", event);
+    await dispatchSitemapRefresh("published", event);
   } else {
     // Published edits can move an event into or out of the public sitemap
     // through hidden, date, correctedDate, or region changes.
-    void dispatchSitemapRefresh("updated", event);
+    await dispatchSitemapRefresh("updated", event);
   }
 
   try {

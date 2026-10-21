@@ -29,7 +29,7 @@ export function billingReturnUrl(value) {
   const production = ["https://bulgariansociety.nl", "https://www.bulgariansociety.nl"];
   const local = process.env.NODE_ENV !== "production" && ["localhost", "127.0.0.1"].includes(url.hostname) && url.protocol === "http:";
   if (url.username || url.password || (!production.includes(url.origin) && !local)) throw new HttpError("Invalid return URL", 422);
-  return `${url.origin}/user#settings`;
+  return `${url.origin}/user?billing=return#settings`;
 }
 
 async function membershipPrice(stripe, plan) {

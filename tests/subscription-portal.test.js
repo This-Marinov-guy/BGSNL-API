@@ -62,7 +62,7 @@ test("Switch uses a separate confirmation-only session for the selected plan and
   assert.deepEqual(h.sessions[1].data.flow_data, {
     type: "subscription_update_confirm",
     subscription_update_confirm: { subscription: "sub_test", items: [{ id: "si_test", price: MEMBERSHIP_PLANS[2].priceId, quantity: 1 }] },
-    after_completion: { type: "redirect", redirect: { return_url: "https://bulgariansociety.nl/user#settings" } },
+    after_completion: { type: "redirect", redirect: { return_url: "https://bulgariansociety.nl/user?billing=return#settings" } },
   });
   await h.open();
   assert.equal(h.sessions[2].data.configuration, h.sessions[0].data.configuration);

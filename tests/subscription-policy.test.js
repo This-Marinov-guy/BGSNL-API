@@ -122,7 +122,7 @@ test("frozen and suspended accounts cannot receive benefits from an otherwise pa
   }
 });
 test("billing return URLs cannot redirect to external origins or embedded credentials", () => {
-  assert.equal(billingReturnUrl("https://www.bulgariansociety.nl/user?x=y"), "https://www.bulgariansociety.nl/user#settings");
+  assert.equal(billingReturnUrl("https://www.bulgariansociety.nl/user?x=y"), "https://www.bulgariansociety.nl/user?billing=return#settings");
   for (const url of ["https://evil.example/user", "https://bulgariansociety.nl.evil.example", "https://evil@bulgariansociety.nl", "javascript:alert(1)"]) {
     assert.throws(() => billingReturnUrl(url));
   }

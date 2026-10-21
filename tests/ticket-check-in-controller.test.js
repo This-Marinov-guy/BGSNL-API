@@ -100,6 +100,27 @@ test("manual scan previews never write attendance", async () => {
   } finally { Event.findById = originals.find; Event.updateOne = originals.update; Event.findOne = originals.one; }
 });
 
+test("scanner responses include separate tickets with the scanned email", async () => {
+  const originals = { find: Event.findById, one: Event.findOne };
+  let data, error;
+  try {
+    const scanned = { ...event.guestList[0], email: "guest@example.com" };
+    const second = { _id: "c".repeat(24), code: 456, name: "Test", email: "GUEST@example.com", status: 0 };
+    const unrelated = { _id: "d".repeat(24), code: 789, name: "Other", email: "other@example.com", status: 0 };
+    Event.findOne = () => ({ select: () => ({ lean: async () => ({ _id: eventId, guestList: [{ code: 123, ticketToken: token }] }) }) });
+    Event.findById = () => ({ select: async () => ({ ...event, guestList: [scanned, second, unrelated] }) });
+    const response = { set() {}, status() { return this; }, json(value) { data = value; } };
+    await updatePresence({ body: { token, expectedEventId: eventId, includeDetails: true }, user: { roles: [], region: "groningen" } }, response, value => { error = value; });
+    assert.equal(error, undefined);
+    assert.equal(data.outcome, "choose_quantity");
+    assert.equal(data.total, 2);
+    assert.equal(data.remaining, 2);
+    assert.deepEqual(data.guests.map(guest => guest.id), [scanned._id, second._id]);
+    assert.deepEqual(data.ticketDetails.map(guest => guest.id), [scanned._id, second._id]);
+    assert.equal(data.groupIds, undefined);
+  } finally { Event.findById = originals.find; Event.findOne = originals.one; }
+});
+
 test("events without printed QR tickets still reserve unique tokens", async () => {
   const originalExists = Event.exists;
   let queries = 0;

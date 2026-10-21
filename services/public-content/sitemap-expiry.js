@@ -44,7 +44,8 @@ export async function refreshPastEventSitemap({ now = new Date(), EventModel = E
 export const eventSitemapExpiryEnabled = (env = process.env) =>
   isEmailSchedulerProcess(env) && (env.EVENT_SITEMAP_EXPIRY_ENABLED === undefined
     ? env.NODE_ENV === "production" : env.EVENT_SITEMAP_EXPIRY_ENABLED === "true") &&
-  Boolean(env.GITHUB_SITEMAP_REPOSITORY && env.GITHUB_SITEMAP_DISPATCH_TOKEN);
+  Boolean((env.GITHUB_SITEMAP_REPOSITORY && env.GITHUB_SITEMAP_DISPATCH_TOKEN) ||
+    (env.SITEMAP_REVALIDATE_URL && env.SITEMAP_REVALIDATE_TOKEN));
 
 export function startEventSitemapExpiryWorker({ enabled = eventSitemapExpiryEnabled(),
   run = refreshPastEventSitemap, intervalMs = 60_000, schedule = setInterval,

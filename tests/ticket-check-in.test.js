@@ -16,10 +16,30 @@ test("manual confirmation previews without reserving admission and rechecks on c
   assert.equal(planCheckIn([guest("a"), guest("b")], 123, undefined, { preview: true }).outcome, "choose_quantity");
   assert.equal(planCheckIn([guest("a", { refunded: true })], 123, undefined, { preview: true }).outcome, "refunded");
 });
-test("check-in selects the exact purchase, not matching names", () => {
-  const result = planCheckIn([guest("other", { code: 999 }), guest("target")], "123");
+test("a scanned code is required and matching names alone do not join tickets", () => {
+  const result = planCheckIn([guest("other", { code: 999, email: "other@example.com" }), guest("target")], "123");
   assert.deepEqual(result.ids, ["target"]);
   assert.equal(result.status, 1);
+  assert.equal(planCheckIn([guest("other", { code: 999 })], 123).outcome, "not_found");
+});
+test("separate purchases for the same event and email share a quantity choice", () => {
+  const guests = [
+    guest("other-email", { code: 456, email: "other@example.com" }),
+    guest("second-purchase", { code: 456, email: " TEST@example.com " }),
+    guest("scanned"),
+    guest("already-used", { code: 789, email: "test@example.com", status: 1 }),
+    guest("refunded", { code: 987, email: "test@example.com", refunded: true }),
+  ];
+  const choice = planCheckIn(guests, 123);
+  assert.equal(choice.outcome, "choose_quantity");
+  assert.equal(choice.total, 3);
+  assert.equal(choice.remaining, 2);
+  assert.deepEqual(choice.groupIds, ["scanned", "second-purchase", "already-used"]);
+  assert.deepEqual(planCheckIn(guests, 123, 2).ids, ["scanned", "second-purchase"]);
+  assert.equal(planCheckIn(guests, 123, 3).outcome, "invalid_quantity");
+  guests[2].status = 1;
+  assert.deepEqual(planCheckIn(guests, 123, 1).ids, ["second-purchase"]);
+  assert.equal(planCheckIn(guests, 987).outcome, "refunded");
 });
 test("group check-in requires an explicit quantity", () => {
   assert.equal(planCheckIn([guest("a"), guest("b")], 123).outcome, "choose_quantity");

@@ -297,7 +297,7 @@ test("revoked sessions fail authorization and access-token-only refresh is retir
   const user = { id: "member_owner", sessionVersion: 1, roles: ["member"] };
   const req = { headers: { authorization: `Bearer ${token}` } };
   let error;
-  await createAuthMiddleware({ findAccount: async () => user })(req, {}, (value) => { error = value; });
+  await createAuthMiddleware({ findAccount: async () => user })(req, { set: () => {} }, (value) => { error = value; });
   assert.equal(error.statusCode, 401);
   t.mock.method(MemberUser, "findOne", async () => user);
   t.mock.method(AlumniUser, "findOne", async () => null);

@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { requestProfileChange } from "../services/authentication/profile-change.js";
 import { accountEntitlements } from "../util/subscriptions/policy.js";
-import { reconcileAccount } from "../services/subscriptions/reconcile.js";
+import { reconcileAccountForDisplay } from "../services/subscriptions/reconcile.js";
 dotenv.config();
 import { validationResult } from "express-validator";
 import HttpError from "../models/Http-error.js";
@@ -42,18 +42,9 @@ export const refreshToken = (_req, res) => res.status(410).json({
 });
 
 export const getCurrentUser = async (req, res, next) => {
-  const { userId } = extractUserFromRequest(req);
-
   const withTickets = (req.query.withTickets ?? 'true') === 'true';
   const withChristmas = (req.query.withChristmas ?? 'true') === 'true';
-
-  let user;
-  try {
-    user = await findUserById(userId);
-  } catch (err) {
-    const error = new HttpError("Could not fetch user", 500);
-    return next(error);
-  }
+  let user = req.account;
 
   if (!user) {
     const error = new HttpError("User not found", 404);
@@ -76,7 +67,7 @@ export const getCurrentUser = async (req, res, next) => {
   }
 
   let billingVerificationUnavailable = false;
-  try { user = (await reconcileAccount(user))?.user || user; }
+  try { user = (await reconcileAccountForDisplay(user, { force: req.query.fresh === "1" }))?.user || user; }
   catch { billingVerificationUnavailable = true; }
 
   // Populate documents if user has documents
@@ -108,16 +99,17 @@ export const getCurrentUser = async (req, res, next) => {
 
 export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
   try {
-    const result = await reconcileAccount(req.account);
+    const result = await reconcileAccountForDisplay(req.account, { force: req.query.fresh === "1" });
     const user = result?.user || req.account;
+    const snapshot = user.subscription;
     return res.status(200).json({
       ...accountEntitlements(user), roles: user.roles, region: user.region, image: user.image,
       userId: user.id, name: user.name, surname: user.surname, email: user.email,
       subscription: user.subscription || null,
-      stripeSubscription: result?.sub ? {
-        id: result.sub.id, status: result.sub.status,
-        cancelAtPeriodEnd: !!result.sub.cancel_at_period_end,
-        currentPeriodEnd: result.state.periodEnd,
+      stripeSubscription: result?.sub || snapshot?.id ? {
+        id: result?.sub?.id || snapshot.id, status: result?.sub?.status || snapshot.status,
+        cancelAtPeriodEnd: result?.sub ? !!result.sub.cancel_at_period_end : !!snapshot.cancelAtPeriodEnd,
+        currentPeriodEnd: result?.state?.periodEnd || (snapshot.currentPeriodEnd ? Math.floor(new Date(snapshot.currentPeriodEnd).getTime() / 1000) : null),
       } : null,
     });
   } catch {
@@ -129,15 +121,7 @@ export const getCurrentUserSubscriptionStatus = async (req, res, next) => {
 };
 
 export const getCurrentUserRoles = async (req, res, next) => {
-  const { userId } = extractUserFromRequest(req);
-
-  let user;
-  try {
-    user = await findUserById(userId);
-  } catch (err) {
-    const error = new HttpError("Could not fetch user", 500);
-    return next(error);
-  }
+  let user = req.account;
 
   if (!user) {
     const error = new HttpError("User not found", 404);

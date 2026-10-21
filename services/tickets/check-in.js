@@ -1,11 +1,19 @@
-// Match the exact issued code, never a purchaser's name/email (which can recur).
+const normalizedEmail = email => typeof email === "string" ? email.trim().toLowerCase() : "";
+
+// The issued code identifies the scanned purchase. Once found, other active
+// tickets for that email at this event join its quantity choice.
 export function planCheckIn(guests, code, count, { preview = false } = {}) {
   const matches = guests.filter(guest => guest.code != null && String(guest.code) === String(code));
   if (!matches.length) return { outcome: "not_found", statusCode: 404 };
-  const valid = matches.filter(guest => !guest.refunded);
-  if (!valid.length) return { outcome: "refunded", statusCode: 422 };
+  const scannedTickets = matches.filter(guest => !guest.refunded);
+  if (!scannedTickets.length) return { outcome: "refunded", statusCode: 422 };
+  const email = normalizedEmail(scannedTickets[0].email);
+  const valid = [...scannedTickets, ...guests.filter(guest => !guest.refunded &&
+    guest.code != null && String(guest.code) !== String(code) &&
+    email && normalizedEmail(guest.email) === email)];
   const remaining = valid.filter(guest => Number(guest.status) !== 1);
-  const details = { name: valid[0].name, total: valid.length, remaining: remaining.length };
+  const details = { name: scannedTickets[0].name, total: valid.length,
+    remaining: remaining.length, groupIds: valid.map(guest => guest._id) };
   if (!remaining.length) return { ...details, outcome: "already_present", status: 0 };
   if (count == null && valid.length > 1) return { ...details, outcome: "choose_quantity", status: 2 };
   if (preview) return { ...details, outcome: "confirm_required", status: 2 };

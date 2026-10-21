@@ -152,8 +152,21 @@ export const getEventPurchaseAvailability = async (req, res, next) => {
     }
 
     const status = !isTicketSaleClosed(event);
-
-    res.status(200).json({ status });
+    const publicEvent = serializePublicEvent(event);
+    // These sale-sensitive fields are read live even when the descriptive
+    // event payload is cached by the website.
+    res.set("Cache-Control", "no-store");
+    return res.status(200).json({ status, event: {
+      ticketsRemaining: publicEvent.ticketsRemaining,
+      ticketLimit: publicEvent.ticketLimit,
+      ticketTimer: publicEvent.ticketTimer,
+      isSaleClosed: !status,
+      isFree: publicEvent.isFree,
+      isMemberFree: publicEvent.isMemberFree,
+      memberOnly: publicEvent.memberOnly,
+      ticketLink: publicEvent.ticketLink,
+      product: publicEvent.product ?? null,
+    } });
   } catch (error) {
     return next(
       new HttpError("Something got wrong, please contact support", 500)
@@ -1063,11 +1076,14 @@ export const updatePresence = async (req, res, next) => {
     }
     const details = { ...plan };
     delete details.ids;
+    delete details.groupIds;
     delete details.statusCode;
+    const groupIds = new Set(plan.groupIds.map(String));
+    const groupGuests = event.guestList.filter(guest => groupIds.has(String(guest._id)));
     res.set("Cache-Control", "private, no-store");
     return res.status(200).json({ ...details, event: event.title, eventId: event.id,
-      ...(includeDetails ? { ticketDetails: event.guestList.filter(guest => guest.code != null && String(guest.code) === String(code)).map(serializeGuestListEntry) } : {}),
-      guests: event.guestList.filter(guest => guest.code != null && String(guest.code) === String(code) && !guest.refunded).map(guest => ({
+      ...(includeDetails ? { ticketDetails: groupGuests.map(serializeGuestListEntry) } : {}),
+      guests: groupGuests.map(guest => ({
         id: String(guest._id), name: guest.name,
         present: Number(guest.status) === 1 || Boolean(plan.ids?.some(id => String(id) === String(guest._id))),
       })),

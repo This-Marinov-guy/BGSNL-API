@@ -47,6 +47,7 @@ test("a changed account region invalidates the old token before a handler runs",
   const { req, error, headers } = await authenticate({ ...board, region: "rotterdam" });
   assert.equal(error?.statusCode, 401);
   assert.equal(headers.get("X-BGSNL-Session-Invalid"), "1");
+  assert.equal(headers.get("X-BGSNL-Region-Changed"), "1");
   assert.equal(req.user, undefined);
 });
 

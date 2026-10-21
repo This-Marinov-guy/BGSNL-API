@@ -51,7 +51,12 @@ export const createAuthMiddleware = ({ findAccount = findUserById, validateSessi
     if (!account) return invalidSession("Account no longer available. Please login again.");
     if (Number(claims.sessionVersion ?? 0) !== Number(account.sessionVersion ?? 0)) return invalidSession("Session revoked. Please login again.");
     await validateSession(claims, account);
-    if (claims.region !== account.region) return invalidSession("Your region changed. Please sign in again.");
+    if (claims.region !== account.region) {
+      // The session itself was verified above. A server-side refresh can issue
+      // claims for the new region before any protected handler runs.
+      res.set("X-BGSNL-Region-Changed", "1");
+      return invalidSession("Your region changed. Please refresh your session.");
+    }
     req.account = account;
     req.authClaims = claims;
     const effectiveRoles = account.roles.filter((role) => claims.roles.includes(role));

@@ -29,7 +29,7 @@ export const createEventSalesHandler = ({ EventModel = Event, refresh = dispatch
     event.isSaleClosed = req.body.isSaleClosed;
     stampEventMetadata(event, req, { now });
     await event.save({ validateModifiedOnly: true });
-    void refresh("sales-updated", event);
+    await refresh("sales-updated", event);
     return res.status(200).json({ status: true, event: eventResponse(event.toObject({ getters: true })) });
   } catch (error) {
     return next(error instanceof HttpError ? error : new HttpError("Updating event sales failed", 500));
