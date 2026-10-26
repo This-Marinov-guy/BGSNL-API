@@ -4,7 +4,8 @@ import { startSpreadsheetSyncWorker } from "./services/jobs/spreadsheet-sync-wor
 import { closeSpreadsheetSyncQueue } from "./services/jobs/spreadsheet-sync-queue.js";
 import { scheduleGuestListReconciliation } from "./services/jobs/guest-list-reconciliation.js";
 import { startMemberRevenueWorker } from "./services/subscriptions/member-revenue-worker.js";
-import { closeMemberRevenueQueue } from "./services/subscriptions/member-revenue-queue.js";
+import { closeMemberRevenueQueue, scheduleMemberRevenueSweep } from "./services/subscriptions/member-revenue-queue.js";
+import { memberRevenueEnabled } from "./util/config/member-revenue.js";
 import JobFailureState from "./models/JobFailureState.js";
 import { jobFailurePolicy } from "./services/monitoring/job-failure-policy.js";
 import { startBusinessHourlyCheck } from "./services/jobs/calendar-check.js";
@@ -52,6 +53,7 @@ async function main() {
   if ((process.env.GUEST_LIST_RECONCILIATION_ENABLED ?? (process.env.APP_ENV === "prod" ? "true" : "false")) === "true") {
     await scheduleGuestListReconciliation();
   }
+  if (memberRevenueEnabled()) await scheduleMemberRevenueSweep();
   worker = startSpreadsheetSyncWorker();
   revenueWorker = startMemberRevenueWorker();
   stopAlertSchedule = startBusinessHourlyCheck(() => { void retryAlerts(); });

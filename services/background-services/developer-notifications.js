@@ -72,3 +72,27 @@ export async function sendDeveloperJobAlert({ source, name, attempts, stoppedAt 
   }
   return sent;
 }
+
+export async function sendDeveloperMemberRevenueAlert(issue, {
+  config = getDeveloperNotificationConfig(), sendEmail = deliverInternalNotificationEmail,
+  env = process.env } = {}) {
+  if (!config.enabled || !config.subscribers.length) return 0;
+  const environment = ["dev", "prod", "test"].includes(env.APP_ENV) ? env.APP_ENV : "unknown";
+  const kind = safeLabel(issue?.kind, /^(insufficient-balance|capture|settlement|allocation|review)$/, "settlement");
+  const invoiceId = safeLabel(issue?.invoiceId, /^in_[a-zA-Z0-9]{1,100}$/, "unavailable");
+  const subscriptionId = safeLabel(issue?.subscriptionId, /^sub_[a-zA-Z0-9]{1,100}$/, "unavailable");
+  const accountId = safeLabel(issue?.accountId, /^acct_[a-zA-Z0-9]{1,100}$/, "unavailable");
+  const amount = Number.isSafeInteger(issue?.amount) && issue.amount > 0 ? issue.amount : null;
+  const subject = `[BGSNL ${environment}] Member revenue transfer needs attention: ${kind}`;
+  const text = [subject, `Reason: ${kind}`, `Invoice: ${invoiceId}`, `Subscription: ${subscriptionId}`,
+    `Connected account: ${accountId}`, ...(amount === null ? [] : [`Amount: EUR ${(amount / 100).toFixed(2)}`]),
+    `Detected: ${new Date().toISOString()}`,
+    "Inspect the paid invoice, its pending revenue operation, the connected account and Stripe balance. The worker will retry on the next balance event or scheduled sweep.",
+    "No payment payloads, exception messages, credentials or recipient data are included."].join("\n");
+  let sent = 0;
+  for (const receiver of config.subscribers) {
+    try { await sendEmail({ receiver, subject, text, type: "developer-member-revenue", entityId: `${kind}:${invoiceId}:${accountId}` }); sent++; }
+    catch (error) { logOperationalError("service.member-revenue-alert", error); }
+  }
+  return sent;
+}

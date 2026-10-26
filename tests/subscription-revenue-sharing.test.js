@@ -256,6 +256,7 @@ test("an older balance failure does not stop a newer charge-linked renewal and r
   h.failTransferFor("ch_in_old");
   const first = await settleMemberRevenueRegion(accountId, { ...h, shares, withLease });
   assert.equal(first.deferred, 1);
+  assert.deepEqual(first.issues, [{ kind: "insufficient-balance", invoiceId: "in_old", accountId, amount: 760 }]);
   assert.equal(h.transfers.length, 1);
   assert.equal(h.transfers[0].metadata.bgsnlRevenueInvoice, "in_new");
   assert.equal(shares.docs.get("in_old").operation.amount, 760);
@@ -274,8 +275,9 @@ test("lost leases and unready connected accounts cannot transfer money", async (
 test("failed invoice capture blocks that region; other regions still reconcile", async () => {
   const records = memory([{ _id: "member-revenue-subscription:sub_one", data: { ...allocation, subscriptionId: sub.id } }]);
   const h = stripeFor([invoiceFor()]); const settled = [];
-  await processMemberRevenueSharing({ ...h, records, shares: memory(), enabled: true, capture: async () => { throw new Error("fees missing"); }, settle: async id => { settled.push(id); return {}; } });
+  const result = await processMemberRevenueSharing({ ...h, records, shares: memory(), enabled: true, capture: async () => { throw new Error("fees missing"); }, settle: async id => { settled.push(id); return {}; } });
   assert.ok(!settled.includes(accountId)); assert.equal(settled.length, 4);
+  assert.deepEqual(result.issues, [{ kind: "capture", invoiceId: "in_one", accountId }]);
 });
 test("disabled maintenance and connected-account webhooks perform no work", async () => {
   await processMemberRevenueMaintenance({ enabled: false, withLease: () => assert.fail("disabled") });

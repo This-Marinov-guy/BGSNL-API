@@ -238,9 +238,12 @@ BIRTHDAY_EMAIL_WORKER_ENABLED=true
 The signed national Stripe webhook enqueues a deduplicated Redis job for paid
 invoices, subscription changes, refunds, disputes and balance availability.
 The dedicated worker rebuilds Stripe invoice state and settles regional shares.
-It makes five attempts with exponential backoff starting at 15 minutes. A final
-failure stops that job and emails the developer group. A later relevant webhook
-can start a new job after the cause is corrected. The webhook returns an error
+Blocked or deferred transfers email the developer group with safe invoice and
+connected-account references, with daily reminders while unresolved. They do
+not fail or delay the shared queue job. An hourly recovery sweep retries them
+even if no new webhook arrives. Unexpected job errors fail after one attempt
+and email the developer group; later webhook and hourly jobs remain available.
+The webhook returns an error
 if it cannot persist the job, allowing Stripe to retry delivery.
 
 ## Failure alerts
@@ -349,10 +352,10 @@ events:
 
 ## Event-driven work and manual utilities
 
-Member revenue maintenance is queued by the signed national Stripe webhook,
-not a timer. Spreadsheet synchronization and marketing capture also consume
-jobs after API actions; only their six-hour guest-list reconciliation is a
-recurring queue schedule. Member and alumni statistics recounts are requested
+Member revenue maintenance is queued by the signed national Stripe webhook
+and an hourly recovery schedule. Spreadsheet synchronization and marketing
+capture also consume jobs after API actions; guest-list reconciliation runs
+every six hours. Member and alumni statistics recounts are requested
 by subscription actions, not a calendar timer. The API's Docker CI/CD workflow
 is triggered by pushes and pull requests; the website's separate sitemap
 workflow has the daily cron listed above. Vercel has no configured cron in

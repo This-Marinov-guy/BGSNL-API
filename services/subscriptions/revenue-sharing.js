@@ -228,11 +228,16 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
     let netDue = 0;
     let changes = 0;
     let deferred = 0;
+    const issues = [];
     const pending = [];
     for (const share of all) {
       const transfers = await listTransfers(stripe, share);
       await reconcileOperation(stripe, share, transfers, shares, assertOwned);
-      if (share.reviewReason || !share.chargeId) continue;
+      if (share.reviewReason) {
+        issues.push({ kind: "review", invoiceId: share._id, accountId });
+        continue;
+      }
+      if (!share.chargeId) continue;
       const target = revenueTarget(share);
       const delta = target - transferred(transfers);
       netDue += delta;
@@ -260,6 +265,7 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
       catch (error) {
         if (error.code !== "balance_insufficient") throw error;
         deferred++;
+        issues.push({ kind: "insufficient-balance", invoiceId: share._id, accountId, amount });
         logOperationalError("service.revenue-transfer-balance", error, { invoiceId: share._id, accountId });
         console.error("Member revenue transfer postponed", { invoiceId: share._id, accountId, code: error.code });
         continue;
@@ -269,30 +275,50 @@ export async function settleMemberRevenueRegion(accountId, { stripe = createStri
       remaining -= amount;
       changes++;
     }
-    return { changes, unrecoveredDebt: Math.max(0, -netDue), unpaidAmount: remaining, deferred };
+    return { changes, unrecoveredDebt: Math.max(0, -netDue), unpaidAmount: remaining, deferred, issues };
   });
 }
 
 export async function processMemberRevenueSharing({ stripe = createStripeClient(DEFAULT_REGION), shares = createRevenueSnapshot(stripe), enabled = memberRevenueEnabled(), capture = recordMemberRevenueInvoice, settle = settleMemberRevenueRegion, beforeSettle = async () => {}, assertOwned = async () => {} } = {}) {
-  if (!enabled) return { failed: 0 };
+  if (!enabled) return { failed: 0, issues: [] };
   await verifyRevenuePlatform(stripe);
   // Enrolment lives independently of member/alumni documents and is never
   // removed on profile migration or cancellation. Historical subscriptions
   // without a new Checkout allocation are not enrolled by this sweep.
   const blocked = new Set();
   let failed = 0;
+  const issues = [];
   for await (const sub of stripe.subscriptions.list({ status: "all", limit: 100 })) {
     let allocation;
     try { allocation = await registerMemberRevenueSubscription(sub); }
-    catch { throw new Error("A Stripe allocation needs review before regional settlement"); }
+    catch (error) {
+      failed++;
+      issues.push({ kind: "allocation", subscriptionId: sub.id });
+      logOperationalError("service.revenue-allocation", error);
+      continue;
+    }
     if (!allocation || allocation.livemode !== memberRevenueLiveMode()) continue;
     if (allocation.version === 2 && !migratedMemberRevenueEnabled()) continue;
     try {
       await assertOwned();
       const invoices = [];
       for await (const invoice of stripe.invoices.list({ subscription: sub.id, status: "paid", limit: 100 })) invoices.push(invoice);
-      for (const invoice of invoices.sort((a, b) => a.created - b.created)) await capture(invoice.id, { stripe, shares, assertOwned });
-    } catch (error) { blocked.add(allocation.accountId); logOperationalError("service.revenue-capture", error); console.error("Member revenue capture postponed", { subscriptionId: sub.id, code: error.code }); }
+      for (const invoice of invoices.sort((a, b) => a.created - b.created)) {
+        try {
+          await capture(invoice.id, { stripe, shares, assertOwned });
+        } catch (error) {
+          blocked.add(allocation.accountId);
+          issues.push({ kind: "capture", invoiceId: invoice.id, accountId: allocation.accountId });
+          logOperationalError("service.revenue-capture", error);
+          console.error("Member revenue capture postponed", { invoiceId: invoice.id, code: error.code });
+        }
+      }
+    } catch (error) {
+      blocked.add(allocation.accountId);
+      issues.push({ kind: "capture", subscriptionId: sub.id, accountId: allocation.accountId });
+      logOperationalError("service.revenue-capture", error);
+      console.error("Member revenue capture postponed", { subscriptionId: sub.id, code: error.code });
+    }
   }
   await assertOwned();
   await beforeSettle({ shares, blocked });
@@ -303,11 +329,17 @@ export async function processMemberRevenueSharing({ stripe = createStripeClient(
     try {
       const result = await settle(accountId, { stripe, shares, coordinatorAssert: assertOwned });
       failed += result.deferred || 0;
+      issues.push(...(result.issues || []));
       if (result.unrecoveredDebt) {
         logOperationalError("service.unrecovered-regional-fees", new Error("Unrecovered fees"));
         console.error("Regional fees await recovery", { accountId, amount: result.unrecoveredDebt });
       }
-    } catch (error) { failed++; logOperationalError("service.revenue-settlement", error); console.error("Member revenue settlement postponed", { accountId, code: error.code }); }
+    } catch (error) {
+      failed++;
+      issues.push({ kind: "settlement", accountId });
+      logOperationalError("service.revenue-settlement", error);
+      console.error("Member revenue settlement postponed", { accountId, code: error.code });
+    }
   }
-  return { failed };
+  return { failed, issues };
 }

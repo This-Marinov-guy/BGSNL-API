@@ -9,6 +9,12 @@ import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 export const MEMBER_REVENUE_QUEUE = "member-revenue";
 export const MEMBER_REVENUE_JOB = "member-revenue";
+export const MEMBER_REVENUE_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+export const MEMBER_REVENUE_JOB_OPTIONS = {
+  attempts: 1,
+  removeOnComplete: { age: 30 * 86400 },
+  removeOnFail: { age: 30 * 86400 },
+};
 export const MEMBER_REVENUE_WEBHOOK_TYPES = new Set([
   "invoice.paid", "invoice.payment_succeeded", "invoice.updated",
   "charge.refunded", "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed",
@@ -44,13 +50,16 @@ export async function enqueueMemberRevenueFromWebhook(event, region, {
   getQueue = getMemberRevenueQueue, env = process.env } = {}) {
   if (!shouldQueueMemberRevenue(event, region, env)) return false;
   await withJobTimeout(() => getQueue().add(MEMBER_REVENUE_JOB, {}, {
-    attempts: 5,
-    backoff: { type: "exponential", delay: 15 * 60_000 },
+    ...MEMBER_REVENUE_JOB_OPTIONS,
     deduplication: { id: MEMBER_REVENUE_JOB, keepLastIfActive: true },
-    removeOnComplete: { age: 30 * 86400 },
-    removeOnFail: { age: 30 * 86400 },
   }), 5000);
   return true;
+}
+
+export async function scheduleMemberRevenueSweep(getQueue = getMemberRevenueQueue) {
+  return getQueue().upsertJobScheduler("member-revenue-recovery",
+    { every: MEMBER_REVENUE_SWEEP_INTERVAL_MS },
+    { name: MEMBER_REVENUE_JOB, data: {}, opts: MEMBER_REVENUE_JOB_OPTIONS });
 }
 
 export async function closeMemberRevenueQueue() {

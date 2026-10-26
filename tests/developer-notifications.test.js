@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { getDeveloperNotificationConfig } from "../util/config/internal-notifications.js";
-import { buildWebhookErrorNotification, createDeveloperNotifier, sendDeveloperJobAlert } from "../services/background-services/developer-notifications.js";
+import { buildWebhookErrorNotification, createDeveloperNotifier, sendDeveloperJobAlert, sendDeveloperMemberRevenueAlert } from "../services/background-services/developer-notifications.js";
 import { createWebhookErrorObserver } from "../middleware/webhook-error-notification.js";
 
 test("developer group is independent and defaults to the requested recipient", () => {
@@ -30,6 +30,17 @@ test("final campaign failures tell developers to requeue instead of resetting a 
   assert.match(emails[0].subject, /Background job failed/);
   assert.match(emails[0].text, /requeue if needed/);
   assert.doesNotMatch(emails[0].text, /reset its job failure state/);
+});
+
+test("blocked Member transfer alerts identify the invoice without leaking exception details", async () => {
+  const emails = [];
+  await sendDeveloperMemberRevenueAlert({ kind: "insufficient-balance", invoiceId: "in_one", accountId: "acct_one", amount: 760,
+    error: new Error("secret_value") }, { config: { enabled: true, subscribers: ["dev@example.test"] },
+    env: { APP_ENV: "test" }, sendEmail: async message => emails.push(message) });
+  assert.match(emails[0].subject, /Member revenue transfer needs attention/);
+  assert.match(emails[0].text, /in_one/);
+  assert.match(emails[0].text, /EUR 7.60/);
+  assert.doesNotMatch(JSON.stringify(emails), /secret_value/);
 });
 
 test("errors are throttled, successful responses never alert, and notifier failures cannot change responses", async () => {

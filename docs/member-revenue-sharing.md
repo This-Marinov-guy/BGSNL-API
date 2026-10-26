@@ -5,9 +5,8 @@ payment methods stay on central BGSNL Stripe account `acct_1QLOPaAShinXgMFZ`.
 Regions receive separate Connect transfers. The existing central billing portal
 continues to handle Member/Alumni switches, renewals and cancellation.
 
-Status: deployed and enabled for new Member Checkouts in production. Five
-existing Member subscriptions were enrolled in a prospective pilot on
-2026-10-08; see [the migration plan](existing-member-connect-migration-plan.md).
+Status: enabled for new Member Checkouts and the enrolled existing-Member
+cohort in production; see [the migration plan](existing-member-connect-migration-plan.md).
 
 ## Allocation
 
@@ -100,11 +99,14 @@ retain enough funds for transfers whose source charges have already settled.
 
 The signed national Stripe webhook enqueues revenue work in Redis when a paid
 invoice, subscription change, refund, dispute or balance availability event
-arrives. The separate `bgsnl-worker` service processes it without a Member
-revenue timer. The worker paginates
+arrives. The separate `bgsnl-worker` service also schedules an hourly recovery
+sweep so an unresolved transfer is retried even without a new webhook. The worker paginates
 Stripe subscriptions and paid invoices, reconstructs calculations in memory,
-and settles each region. A deferred transfer marks the observed maintenance run
-failed even when other regions have settled. No Mongo invoice statements,
+and settles each region. A deferred or blocked transfer emails developers with
+the invoice, connected account and reason, at most once per issue per day.
+The sweep completes so a later paid invoice can run immediately. Unexpected
+worker failures have one attempt and alert developers; the hourly sweep recovers
+the work. No Mongo invoice statements,
 billing receipts or enrollment ledger are retained.
 
 - The original allocation is stored in the Stripe subscription's
@@ -123,9 +125,8 @@ The webhook registers eligible subscriptions and enqueues work before returning
 success; it never moves money directly. The central Stripe endpoint must send
 `invoice.paid`, `invoice.payment_succeeded`, `invoice.updated`,
 `customer.subscription.*`, `charge.refunded`, `charge.dispute.*`, and
-`balance.available` events. The job is deduplicated while pending or active,
-makes five attempts with exponential backoff, and emails developers after a
-final failure. A later matching webhook can trigger another sweep. Verify
+`balance.available` events. Webhook jobs are deduplicated while pending or active.
+A later matching webhook can trigger another sweep. Verify
 those subscriptions in the Stripe Dashboard during rollout.
 
 This is a dedicated queue worker, not a MongoDB database trigger. The separately
