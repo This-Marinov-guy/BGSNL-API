@@ -1,5 +1,6 @@
 import { getSpreadsheetSyncQueue, SPREADSHEET_SYNC_QUEUE } from "../jobs/spreadsheet-sync-queue.js";
 import { getMarketingCaptureQueue, MARKETING_CAPTURE_QUEUE } from "../jobs/marketing-capture-queue.js";
+import { getMemberRevenueQueue, MEMBER_REVENUE_QUEUE } from "../subscriptions/member-revenue-queue.js";
 import MonitoringJob from "../../models/MonitoringJob.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 
@@ -7,7 +8,7 @@ import { logOperationalError } from "../../middleware/axiom-logger.js";
 // "wait" state here so paused jobs are counted and listed exactly once.
 const PENDING_STATES = ["active", "wait", "delayed", "paused", "prioritized", "waiting-children"];
 const ALL_STATES = ["failed", ...PENDING_STATES, "completed"];
-const JOB_NAMES = new Set(["event", "special-event", "members", "alumni", "internships", "reconcile-guest-lists", MARKETING_CAPTURE_QUEUE]);
+const JOB_NAMES = new Set(["event", "special-event", "members", "alumni", "internships", "reconcile-guest-lists", MARKETING_CAPTURE_QUEUE, MEMBER_REVENUE_QUEUE]);
 const PAGE_SIZE = 20;
 const MAX_PAGE = 50;
 const READ_TIMEOUT_MS = 3000;
@@ -80,18 +81,20 @@ const readHistoryCounts = async (model) => {
   return { failed, pending, completed };
 };
 const readQueueCounts = async (getQueue) => summaryFromCounts(await withTimeout(getQueue().getJobCounts(...ALL_STATES)));
-const sourcesFromResults = (queue, history, marketing) => ({ spreadsheetSync: queue.status === "fulfilled",
+const sourcesFromResults = (queue, history, marketing, revenue) => ({ spreadsheetSync: queue.status === "fulfilled",
   history: history.status === "fulfilled",
-  marketingCapture: marketing.status === "fulfilled" });
-const reportFailures = (queue, history, marketing) => {
+  marketingCapture: marketing.status === "fulfilled", memberRevenue: revenue.status === "fulfilled" });
+const reportFailures = (queue, history, marketing, revenue) => {
   if (queue.status === "rejected") logOperationalError("service.monitoring-spreadsheet-jobs", queue.reason);
   if (history.status === "rejected") logOperationalError("service.monitoring-job-history", history.reason);
   if (marketing.status === "rejected") logOperationalError("service.monitoring-marketing-jobs", marketing.reason);
+  if (revenue.status === "rejected") logOperationalError("service.monitoring-member-revenue-jobs", revenue.reason);
 };
 
 export async function jobSummary({ getQueue = getSpreadsheetSyncQueue, model = MonitoringJob,
-  getMarketingQueue = getMarketingCaptureQueue } = {}) {
-  const results = await Promise.allSettled([readQueueCounts(getQueue), readHistoryCounts(model), readQueueCounts(getMarketingQueue)]);
+  getMarketingQueue = getMarketingCaptureQueue, getRevenueQueue = getMemberRevenueQueue } = {}) {
+  const results = await Promise.allSettled([readQueueCounts(getQueue), readHistoryCounts(model),
+    readQueueCounts(getMarketingQueue), readQueueCounts(getRevenueQueue)]);
   reportFailures(...results);
   if (results.every((result) => result.status === "rejected")) throw new Error("Job sources unavailable");
   return { available: true, sources: sourcesFromResults(...results),
@@ -115,13 +118,14 @@ const readHistoryPage = async (model, status, limit) => {
 };
 
 export async function listJobs({ status = "all", page = 1, getQueue = getSpreadsheetSyncQueue, model = MonitoringJob,
-  getMarketingQueue = getMarketingCaptureQueue } = {}) {
+  getMarketingQueue = getMarketingCaptureQueue, getRevenueQueue = getMemberRevenueQueue } = {}) {
   const filter = normalizeJobFilter(status, page);
   if (!filter) throw new RangeError("Invalid job filter");
   const offset = (page - 1) * PAGE_SIZE;
   const results = await Promise.allSettled([readQueuePage(getQueue, status, offset + PAGE_SIZE),
     readHistoryPage(model, status, offset + PAGE_SIZE),
-    readQueuePage(getMarketingQueue, status, offset + PAGE_SIZE, MARKETING_CAPTURE_QUEUE)]);
+    readQueuePage(getMarketingQueue, status, offset + PAGE_SIZE, MARKETING_CAPTURE_QUEUE),
+    readQueuePage(getRevenueQueue, status, offset + PAGE_SIZE, MEMBER_REVENUE_QUEUE)]);
   reportFailures(...results);
   if (results.every((result) => result.status === "rejected")) throw new Error("Job sources unavailable");
   const summary = results.reduce((counts, result) => addCounts(counts,

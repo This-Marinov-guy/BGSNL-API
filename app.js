@@ -58,6 +58,7 @@ import { startWeeklyMembershipReportWorker } from "./services/background-service
 import { startRegionalMembershipReportWorker } from "./services/background-services/regional-membership-report.js";
 import { startAcademicYearStatisticsWorker } from "./services/background-services/academic-year-statistics.js";
 import MonitoringJob from "./models/MonitoringJob.js";
+import JobFailureState from "./models/JobFailureState.js";
 import { startMonthlySummaryWorker } from "./services/monthly-summary/worker.js";
 import { startMemberEventAnnouncementWorker } from "./services/events/member-event-announcements.js";
 import { eventCampaignsEnabled, startEventCampaignWorker } from "./services/events/event-campaign-worker.js";
@@ -67,9 +68,12 @@ import { startEventFeedbackEmailWorker } from "./services/events/event-feedback-
 import Event from "./models/Event.js";
 import { startBirthdayEmailWorker } from "./services/background-services/birthday-emails.js";
 import { startEventDraftCleanupWorker } from "./services/background-services/event-draft-cleanup.js";
+import { startLogRetentionWorker } from "./services/background-services/log-retention.js";
+import { closeMemberRevenueQueue } from "./services/subscriptions/member-revenue-queue.js";
 import EventDraft from "./models/EventDraft.js";
 import { safeError } from "./services/migrations/runner.js";
 import { startEventMediaCleanupWorker } from "./services/events/event-media-cleanup.js";
+import { startEventArchiveWorker } from "./services/events/event-archive-worker.js";
 import { startEventSitemapExpiryWorker } from "./services/public-content/sitemap-expiry.js";
 import supportRouter, { supportError, supportPrivacy } from "./routes/support-routes.js";
 import backofficeRouter from "./routes/backoffice-routes.js";
@@ -256,7 +260,9 @@ let stopGuestTermCampaignWorker;
 let stopEventCancellationWorker;
 let stopEventFeedbackEmailWorker;
 let stopEventDraftCleanupWorker;
+let stopLogRetentionWorker;
 let stopEventMediaCleanupWorker;
+let stopEventArchiveWorker;
 let stopEventSitemapExpiryWorker;
 let marketingCaptureWorker;
 
@@ -266,7 +272,7 @@ mongoose
   )
   .then(async () => {
     console.log("Connected to DB");
-    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), WalletCard.init(), MonitoringJob.init(), MarketingEmail.init(), EventDraft.init(), redisClient()]);
+    await Promise.all([TemporaryCode.init(), AuthChallenge.init(), PasswordResetChallenge.init(), ProfileChange.init(), SupportConversation.init(), WalletCard.init(), MonitoringJob.init(), JobFailureState.init(), MarketingEmail.init(), EventDraft.init(), redisClient()]);
     marketingCaptureWorker = startMarketingCaptureWorker();
     stopBillingWorker = startBillingWorker();
     stopWeeklyMembershipReportWorker = startWeeklyMembershipReportWorker();
@@ -282,7 +288,9 @@ mongoose
     stopEventFeedbackEmailWorker = startEventFeedbackEmailWorker();
     stopMemberEventAnnouncementWorker = startMemberEventAnnouncementWorker(eventCampaignsEnabled() ? { enabled: false } : {});
     stopEventDraftCleanupWorker = startEventDraftCleanupWorker();
+    stopLogRetentionWorker = startLogRetentionWorker();
     stopEventMediaCleanupWorker = startEventMediaCleanupWorker();
+    stopEventArchiveWorker = startEventArchiveWorker();
     stopEventSitemapExpiryWorker = startEventSitemapExpiryWorker();
     server = app.listen(process.env.PORT || 80);
     console.log(`Server running on port ${process.env.PORT || 80}`);
@@ -314,12 +322,16 @@ const gracefulShutdown = async (signal) => {
   await stopEventCancellationWorker?.();
   await stopEventFeedbackEmailWorker?.();
   await stopEventDraftCleanupWorker?.();
+  await stopLogRetentionWorker?.();
   await stopEventMediaCleanupWorker?.();
+  await stopEventArchiveWorker?.();
   await stopEventSitemapExpiryWorker?.();
   try { await marketingCaptureWorker?.stop(); await closeMarketingCaptureQueue(); }
   catch (error) { logOperationalError("shutdown.marketing-queue", error); }
   try { await closeSpreadsheetSyncQueue(); }
   catch (error) { logOperationalError("shutdown.spreadsheet-queue", error); }
+  try { await closeMemberRevenueQueue(); }
+  catch (error) { logOperationalError("shutdown.member-revenue-queue", error); }
   try { await closeRedis(); }
   catch (error) { logOperationalError("shutdown.redis", error); }
   await flushAxiom();

@@ -3,6 +3,7 @@ import { redisPrefix } from "../storage/redis.js";
 import { SPREADSHEET_SYNC_QUEUE, createWorkerRedisConnection } from "./spreadsheet-sync-queue.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import { GUEST_LIST_RECONCILIATION_JOB, reconcileGuestLists } from "./guest-list-reconciliation.js";
+import { notifyFinalQueueFailure } from "../monitoring/queue-failure-alert.js";
 import {
   syncAlumniToSpreadsheet,
   syncEventToSpreadsheet,
@@ -45,6 +46,7 @@ export const startSpreadsheetSyncWorker = ({
       attempts: job?.attemptsMade,
       code: error?.code,
     });
+    void notifyFinalQueueFailure(job, SPREADSHEET_SYNC_QUEUE);
   });
   worker.on("error", (error) => {
     logOperationalError("worker.spreadsheet-connection", error);

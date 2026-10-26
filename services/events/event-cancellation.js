@@ -7,6 +7,7 @@ import { archiveEvent } from "./archive-event.js";
 import { withBillingLease } from "../subscriptions/lease.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
+import { startDailyCheck } from "../jobs/calendar-check.js";
 import { isEmailSchedulerProcess } from "../background-services/email-run-guard.js";
 import { loadRegionEmails } from "../region-contacts.js";
 import { eventEmailPreviewMobileCss, formatEventEmailDate, renderEventEmailPreview } from "./event-email-preview.js";
@@ -147,7 +148,7 @@ export function createEventCancellationService({ EventModel = Event,
 }
 
 export function startEventCancellationWorker({ enabled = isEmailSchedulerProcess(), service = createEventCancellationService(),
-  intervalMs = 60_000 } = {}) {
+  intervalMs } = {}) {
   if (!enabled) return async () => {};
   let running;
   const tick = () => {
@@ -155,8 +156,6 @@ export function startEventCancellationWorker({ enabled = isEmailSchedulerProcess
     running = runObservedJob("scheduler", "event-cancellation", () => service.tick())
       .catch(error => logOperationalError("worker.event-cancellation", error)).finally(() => { running = null; });
   };
-  const timer = setInterval(tick, intervalMs);
-  timer.unref?.();
-  tick();
-  return async () => { clearInterval(timer); await running; };
+  const stopSchedule = startDailyCheck(tick, { intervalMs });
+  return async () => { stopSchedule(); await running; };
 }

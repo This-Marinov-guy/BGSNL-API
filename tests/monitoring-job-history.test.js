@@ -45,9 +45,22 @@ test("observed work marks result failures and preserves thrown errors", async ()
   const states = [];
   const observe = () => ({ start: () => states.push("start"), complete: () => states.push("completed"),
     fail: () => states.push("failed"), discard: () => states.push("discarded") });
-  await runObservedJob("scheduler", "birthday-emails", async () => ({ status: "delivery-failed", failed: 1 }), { observe });
-  await runObservedJob("scheduler", "member-event-announcements", async () => ({ failed: 1, skipped: 2 }), { observe });
-  await runObservedJob("scheduler", "birthday-emails", async () => ({ status: "not-due" }), { observe });
-  await assert.rejects(runObservedJob("scheduler", "birthday-emails", async () => { throw new Error("failed"); }, { observe }));
+  const failurePolicy = { canRun: async () => true, success: async () => {}, failure: async () => {} };
+  await runObservedJob("scheduler", "birthday-emails", async () => ({ status: "delivery-failed", failed: 1 }), { observe, failurePolicy });
+  await runObservedJob("scheduler", "member-event-announcements", async () => ({ failed: 1, skipped: 2 }), { observe, failurePolicy });
+  await runObservedJob("scheduler", "birthday-emails", async () => ({ status: "not-due" }), { observe, failurePolicy });
+  await assert.rejects(runObservedJob("scheduler", "birthday-emails", async () => { throw new Error("failed"); }, { observe, failurePolicy }));
   assert.deepEqual(states, ["start", "failed", "start", "failed", "start", "discarded", "start", "failed"]);
+});
+
+test("skipped scheduler checks preserve the failure streak until work succeeds", async () => {
+  let failures = 0;
+  const policy = { canRun: async () => true, failure: async () => { failures++; },
+    success: async () => { failures = 0; } };
+  const observe = () => ({ start() {}, complete: async () => {}, fail: async () => {}, discard: async () => {} });
+  await runObservedJob("scheduler", "event-media-cleanup", async () => ({ failed: 1 }), { observe, failurePolicy: policy });
+  await runObservedJob("scheduler", "event-media-cleanup", async () => ({ skipped: true }), { observe, failurePolicy: policy });
+  assert.equal(failures, 1);
+  await runObservedJob("scheduler", "event-media-cleanup", async () => ({ cleared: 1 }), { observe, failurePolicy: policy });
+  assert.equal(failures, 0);
 });

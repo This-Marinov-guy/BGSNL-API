@@ -65,7 +65,9 @@ Both direct publication and publication of an EventDraft save
 saves and later event edits do not queue announcements. Existing events have no
 marker and are never mailed retrospectively. Hidden events wait until public.
 
-The background worker starts after MongoDB is ready and checks every minute.
+The background worker starts after MongoDB is ready and checks daily at 10:00
+`Europe/Amsterdam`. It is started only when the newer event campaign worker is
+disabled.
 The Atlas database trigger can request an immediate pass through a protected
 API endpoint. It is created disabled; see the [trigger registry](triggers.md)
 for deployment status, configuration and activation prerequisites.

@@ -116,6 +116,7 @@ test("worker prevents overlaps and shutdown waits for the active deletion", asyn
   let tick, finish, runs = 0, cleared = false, stopped = false;
   const pending = new Promise(resolve => { finish = resolve; });
   const stop = startEventDraftCleanupWorker({ config: { enabled: true },
+    observe: (_source, _name, run) => run(),
     schedule: (callback, interval) => { tick = callback; assert.equal(interval, 60000); return { unref() {} }; },
     unschedule: () => { cleared = true; },
     run: async () => { runs++; await pending; },
@@ -131,6 +132,7 @@ test("worker prevents overlaps and shutdown waits for the active deletion", asyn
 test("worker catches a synchronous failure and retries on the next tick", async () => {
   let tick, runs = 0, errors = 0;
   const stop = startEventDraftCleanupWorker({ config: { enabled: true },
+    observe: (_source, _name, run) => Promise.resolve().then(run),
     schedule: callback => { tick = callback; return { unref() {} }; }, unschedule() {},
     run: () => { if (++runs === 1) throw new Error("failure"); },
     onError: () => { errors++; },

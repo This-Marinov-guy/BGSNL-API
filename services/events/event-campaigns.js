@@ -8,6 +8,7 @@ import Campaign from "../../models/EventEmailCampaign.js";
 import HttpError from "../../models/Http-error.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
+import { jobFailurePolicy } from "../monitoring/job-failure-policy.js";
 import { createMemberEventLink, isCurrentEventMember } from "./member-event-links.js";
 import { createGuestSignupLink } from "./guest-signup-prefill.js";
 import { buildEventCampaignEmail, EVENT_CAMPAIGN_TEMPLATE } from "./event-campaign-email.js";
@@ -24,9 +25,10 @@ export function createEventCampaignService({ EventModel = Event, MemberModel = M
   GuestModel = GuestMarketingEmail,
   CampaignModel = Campaign, now = () => new Date(),
   secret = () => process.env.EVENT_CAMPAIGN_REVIEW_SECRET || process.env.JWT_STRING,
-  makeLink = createMemberEventLink, makeSignupLink = createGuestSignupLink, makeSavingsLink, send = queueDomakinTemplateEmail } = {}) {
+  makeLink = createMemberEventLink, makeSignupLink = createGuestSignupLink, makeSavingsLink, send = queueDomakinTemplateEmail,
+  notifyFailure = (campaign, attempts) => jobFailurePolicy.queueFailure("event-campaign", `${campaign.kind}-delivery`, campaign._id, attempts) } = {}) {
   const savings = createGuestSavingsCampaignService({ EventModel, MemberModel, AlumniModel, MarketingModel, CampaignModel, now, secret,
-    ...(makeSavingsLink ? { makeLink: makeSavingsLink } : {}), send });
+    ...(makeSavingsLink ? { makeLink: makeSavingsLink } : {}), send, notifyFailure });
   const sign = data => {
     const key = secret();
     if (!key || key.length < 32) throw new HttpError("Campaign review is not configured. Contact an administrator.", 503);
@@ -195,10 +197,11 @@ export function createEventCampaignService({ EventModel = Event, MemberModel = M
       } catch (error) {
         attempts++;
         logOperationalError("worker.event-campaign-delivery", error);
-        if (attempts < 4) {
+        if (attempts < 5) {
           await CampaignModel.updateOne({ _id: campaign._id }, { $set: { attempts, retryAt: new Date(+now() + attempts * 60_000) } });
           return;
         }
+        await notifyFailure(campaign, attempts);
         outcome = "failed";
       }
       cursor++;
@@ -213,12 +216,16 @@ export function createEventCampaignService({ EventModel = Event, MemberModel = M
   }
   async function tick() {
     const date = now();
-    const lower = new Date(date.getTime() + 23 * 3600000), upper = new Date(date.getTime() + 24 * 3600000);
+    let failed = 0;
+    const upper = new Date(date.getTime() + 24 * 3600000);
     const due = await EventModel.find({ status: "opened", hidden: { $ne: true }, isSaleClosed: { $ne: true },
-      $or: [{ correctedDate: { $gt: lower, $lte: upper } }, { correctedDate: null, date: { $gt: lower, $lte: upper } }] }).lean();
+      $or: [{ correctedDate: { $gt: date, $lte: upper } }, { correctedDate: null, date: { $gt: date, $lte: upper } }] }).lean();
     const safeRun = async action => {
       try { await action(); }
-      catch { logOperationalError("worker.event-campaign", new Error("An event campaign could not be processed; it remains available for retry.")); }
+      catch {
+        failed++;
+        logOperationalError("worker.event-campaign", new Error("An event campaign could not be processed; it remains available for retry."));
+      }
     };
     for (const event of due) await safeRun(() => queueAutomatic(event));
     // Replace the old publication worker while campaigns are enabled, so both
@@ -236,6 +243,7 @@ export function createEventCampaignService({ EventModel = Event, MemberModel = M
     }
     const campaigns = await CampaignModel.find({ status: { $in: ["queued", "sending"] } }).sort({ createdAt: 1 }).limit(10).lean();
     for (const campaign of campaigns.filter(item => !item.retryAt || new Date(item.retryAt) <= date)) await safeRun(() => processCampaign(campaign));
+    return { failed, noWork: !due.length && !published.length && !campaigns.length };
   }
   return { preview, confirm, inspect, eligible, queueAutomatic, processCampaign, tick };
 }

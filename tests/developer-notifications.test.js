@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { getDeveloperNotificationConfig } from "../util/config/internal-notifications.js";
-import { buildWebhookErrorNotification, createDeveloperNotifier } from "../services/background-services/developer-notifications.js";
+import { buildWebhookErrorNotification, createDeveloperNotifier, sendDeveloperJobAlert } from "../services/background-services/developer-notifications.js";
 import { createWebhookErrorObserver } from "../middleware/webhook-error-notification.js";
 
 test("developer group is independent and defaults to the requested recipient", () => {
@@ -20,6 +20,16 @@ test("alerts contain safe diagnostics only", () => {
   assert.match(notification.text, /evt_abc/);
   assert.match(notification.subject, /dev.*503/);
   assert.doesNotMatch(JSON.stringify(notification), /secret_value/);
+});
+
+test("final campaign failures tell developers to requeue instead of resetting a scheduler", async () => {
+  const emails = [];
+  await sendDeveloperJobAlert({ source: "event-campaign", name: "guest-savings-delivery", attempts: 5,
+    stoppedAt: new Date("2026-10-24T10:00:00Z") }, { config: { enabled: true, subscribers: ["dev@example.test"] },
+    env: { APP_ENV: "test" }, sendEmail: async message => emails.push(message) });
+  assert.match(emails[0].subject, /Background job failed/);
+  assert.match(emails[0].text, /requeue if needed/);
+  assert.doesNotMatch(emails[0].text, /reset its job failure state/);
 });
 
 test("errors are throttled, successful responses never alert, and notifier failures cannot change responses", async () => {

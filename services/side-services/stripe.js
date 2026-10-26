@@ -131,25 +131,30 @@ export const editProduct = async (region, productId, data) => {
     return true;
 };
 
-export const deleteProduct = async (region, productId) => {
+export const archiveProduct = async (region, productId, { stripeClient } = {}) => {
     if (!productId) {
         return false;
     }
 
-    const stripeClient = createStripeClient(region);
-
     try {
-        const prices = await stripeClient.prices.list({ product: productId });
+        const client = stripeClient || createStripeClient(region);
+        const priceIds = [];
+        let startingAfter;
+        do {
+            const page = await client.prices.list({ product: productId, active: true, limit: 100,
+                ...(startingAfter ? { starting_after: startingAfter } : {}) });
+            priceIds.push(...page.data.map(price => price.id));
+            if (page.has_more && !page.data.length) throw new Error("Stripe price pagination did not advance");
+            const next = page.has_more ? page.data.at(-1).id : null;
+            if (next && next === startingAfter) throw new Error("Stripe price pagination did not advance");
+            startingAfter = next;
+        } while (startingAfter);
 
-        for (const price of prices.data) {
-          await stripeClient.prices.update(price.id, { active: false });
-          console.log(`Archived price: ${price.id}`);
-        }
-
-        await stripeClient.products.del(productId);
+        for (const priceId of priceIds) await client.prices.update(priceId, { active: false });
+        await client.products.update(productId, { active: false });
     } catch (err) {
-        logIntegrationError("stripe", err, "product-delete");
-        return false;
+        logIntegrationError("stripe", err, "product-archive");
+        throw err;
     }
 
     return true;

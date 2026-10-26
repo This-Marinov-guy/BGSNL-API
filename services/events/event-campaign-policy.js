@@ -52,7 +52,6 @@ export const campaignDeliveryKey = (eventId, kind, version, email) => campaignHa
 
 export function lastChanceDue(event, now = new Date()) {
   const remaining = new Date(event.correctedDate || event.date).getTime() - now.getTime();
-  // Poll each minute; allow one hour of downtime recovery, never send a late
-  // catch-up blast just before doors open.
-  return remaining <= 24 * 3600000 && remaining > 23 * 3600000 && !campaignAvailability(event, now).blocked;
+  // A daily check can encounter an event at any point in its final day.
+  return remaining <= 24 * 3600000 && remaining > 0 && !campaignAvailability(event, now).blocked;
 }

@@ -1,7 +1,8 @@
 import { isEventDraftReady } from "../../validation/form-validators.js";
 import Event from "../../models/Event.js";
 import EventDraft from "../../models/EventDraft.js";
-import { archiveEvent, eventArchiveCutoff, expiredEventFilter } from "../../services/events/archive-event.js";
+import { archiveEvent } from "../../services/events/archive-event.js";
+import { archiveExpiredEventsSweep } from "../../services/events/event-archive-worker.js";
 import { cancellationCounts } from "../../services/events/event-cancellation.js";
 import { beginEventCancellation, canCancelEventWithoutEmail, eventCancellationConfirmation } from "../../services/events/event-cancellation-confirmation.js";
 import { rememberDeletedDraftMedia } from "../../services/events/event-media-cleanup.js";
@@ -426,15 +427,8 @@ export const archiveExpiredEvents = async (req, res, next) => {
     return next(new HttpError("Website authentication required", 403));
   }
 
-  const cutoff = eventArchiveCutoff();
   try {
-    let archived = 0, failed = 0;
-    for await (const candidate of Event.find(expiredEventFilter(cutoff)).select("_id").cursor()) {
-      try {
-        const event = await archiveEvent(candidate._id, { cutoff });
-        if (event) archived++;
-      } catch { failed++; }
-    }
+    const { archived, failed } = await archiveExpiredEventsSweep();
     return res.status(failed ? 500 : 200).json({ status: failed === 0, archived, failed });
   } catch {
     return next(new HttpError("Archiving expired events failed", 500));

@@ -2,7 +2,7 @@ import Event from "../../models/Event.js";
 import mongoose from "mongoose";
 import { withBillingLease } from "../subscriptions/lease.js";
 import { updateEventStatistics, addEventToDataPool } from "../background-services/data-pool.js";
-import { deleteProduct } from "../side-services/stripe.js";
+import { archiveProduct } from "../side-services/stripe.js";
 import { deleteEventGuestTickets } from "../tickets/ticket-storage.js";
 import { dispatchSitemapRefresh } from "../public-content/sitemap-dispatch.js";
 import { academicYearLabel } from "../../util/config/academic-year.js";
@@ -25,7 +25,7 @@ export const expiredEventFilter = cutoff => ({
 export async function archiveEvent(eventId, { cutoff, stamp, cancel = false, deferCleanup = false, dependencies = {} } = {}) {
   const { lease = withBillingLease, load = (id, session) => Event.findById(id).session(session || null), statistics = updateEventStatistics,
     transaction = run => mongoose.connection.transaction(run),
-    averages = refreshEventAverages, dataPool = addEventToDataPool, removeProduct = deleteProduct,
+    averages = refreshEventAverages, dataPool = addEventToDataPool, archiveStripeProduct = archiveProduct,
     removeGuestTickets = deleteEventGuestTickets, refresh = dispatchSitemapRefresh } = dependencies;
   return lease(`event-archive:${eventId}`, async ({ assertOwned }) => {
     let event, skip, becameArchived;
@@ -63,9 +63,11 @@ export async function archiveEvent(eventId, { cutoff, stamp, cancel = false, def
     // External side effects must not run inside a retried Mongo transaction.
     event.$session?.(null);
     if (deferCleanup) return event;
-    dataPool(String(event._id || event.id), academicYearLabel(event.correctedDate || event.date), false);
+    if (event.product?.id && !await archiveStripeProduct(event.region || "", event.product.id)) {
+      throw new Error("Stripe product archival did not complete");
+    }
     await removeGuestTickets(String(event._id || event.id));
-    if (event.product?.id) await removeProduct(event.region || "", event.product.id);
+    dataPool(String(event._id || event.id), academicYearLabel(event.correctedDate || event.date), false);
     await assertOwned();
     event.archiveCleanupPending = false;
     event.archiveCleanupCompletedAt = new Date();

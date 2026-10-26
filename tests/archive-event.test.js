@@ -10,7 +10,7 @@ function harness() {
   const dependencies = { load: async () => event, lease: async (_key, run) => run({ assertOwned: async () => {} }),
     transaction: run => run({ mockSession: true }), statistics: async () => { calls.push("statistics"); },
     averages: async () => { calls.push("averages"); },
-    dataPool: () => { calls.push("dataPool"); }, removeProduct: async () => { calls.push("product"); },
+    dataPool: () => { calls.push("dataPool"); }, archiveStripeProduct: async () => { calls.push("product"); return true; },
     removeGuestTickets: async () => { calls.push("guestTickets"); }, refresh: () => { calls.push("refresh"); } };
   return { event, calls, dependencies, run: () => archiveEvent(event._id, { dependencies }) };
 }
@@ -23,7 +23,7 @@ test("archive and delete retain media and guest-list history", async () => {
   assert.ok(h.event.archiveCleanupCompletedAt);
   assert.ok(h.event.mediaRetainedAt);
   assert.equal(h.event.guestList.length, 1);
-  assert.deepEqual(h.calls, ["statistics", "save", "refresh", "averages", "dataPool", "guestTickets", "product", "save"]);
+  assert.deepEqual(h.calls, ["statistics", "save", "refresh", "averages", "product", "guestTickets", "dataPool", "save"]);
   await h.run();
   assert.equal(h.calls.filter(call => call === "statistics").length, 1);
   assert.equal(h.calls.filter(call => call === "averages").length, 1);
@@ -42,6 +42,25 @@ test("failed bucket cleanup stays pending and retry does not recount statistics"
   assert.equal(h.calls.filter(call => call === "statistics").length, 1);
   assert.equal(h.calls.filter(call => call === "averages").length, 2);
   assert.equal(h.calls.filter(call => call === "refresh").length, 1);
+});
+test("failed Stripe archival stays pending and retries without recounting statistics", async () => {
+  const h = harness();
+  h.dependencies.archiveStripeProduct = async () => { throw new Error("Stripe unavailable"); };
+  await assert.rejects(h.run(), /Stripe unavailable/);
+  assert.equal(h.event.status, "archived");
+  assert.equal(h.event.archiveCleanupPending, true);
+  assert.equal(h.calls.filter(call => call === "statistics").length, 1);
+  h.dependencies.archiveStripeProduct = async () => { h.calls.push("product"); return true; };
+  await h.run();
+  assert.equal(h.event.archiveCleanupPending, false);
+  assert.equal(h.calls.filter(call => call === "statistics").length, 1);
+  assert.equal(h.calls.filter(call => call === "product").length, 1);
+});
+test("a false Stripe archival result cannot mark cleanup complete", async () => {
+  const h = harness();
+  h.dependencies.archiveStripeProduct = async () => false;
+  await assert.rejects(h.run(), /Stripe product archival did not complete/);
+  assert.equal(h.event.archiveCleanupPending, true);
 });
 test("failed average refresh remains retryable after archival commits", async () => {
   const h = harness();
@@ -96,4 +115,8 @@ test("automatic archive becomes eligible three days after the effective event da
   due.event.date = cutoff;
   await archiveEvent(due.event._id, { cutoff, dependencies: due.dependencies });
   assert.equal(due.event.status, "archived");
+  assert.equal(due.event.isSaleClosed, true);
+  assert.equal(due.calls.filter(call => call === "statistics").length, 1);
+  assert.equal(due.calls.filter(call => call === "averages").length, 1);
+  assert.equal(due.calls.filter(call => call === "product").length, 1);
 });

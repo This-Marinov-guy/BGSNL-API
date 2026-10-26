@@ -98,8 +98,10 @@ retain enough funds for transfers whose source charges have already settled.
 
 ## Worker and records
 
-The billing worker runs coordinated revenue maintenance every 15 minutes, with
-independent backoff on failure so it cannot block membership recovery. It paginates
+The signed national Stripe webhook enqueues revenue work in Redis when a paid
+invoice, subscription change, refund, dispute or balance availability event
+arrives. The separate `bgsnl-worker` service processes it without a Member
+revenue timer. The worker paginates
 Stripe subscriptions and paid invoices, reconstructs calculations in memory,
 and settles each region. A deferred transfer marks the observed maintenance run
 failed even when other regions have settled. No Mongo invoice statements,
@@ -117,13 +119,16 @@ billing receipts or enrollment ledger are retained.
   not hold a permanent financial ledger. Missing or incomplete Stripe reports
   postpone settlement instead of treating unknown fees as zero.
 
-The existing signed central webhook registers eligible subscriptions; it never
-moves money directly. `invoice.paid`, `customer.subscription.updated` and
-Checkout completion are already enabled on the central BGSNL endpoint. Checkout
-completion also registers allocations, and the worker recovers missed invoice
-notifications. Refund/dispute changes are refreshed during the sweep.
+The webhook registers eligible subscriptions and enqueues work before returning
+success; it never moves money directly. The central Stripe endpoint must send
+`invoice.paid`, `invoice.payment_succeeded`, `invoice.updated`,
+`customer.subscription.*`, `charge.refunded`, `charge.dispute.*`, and
+`balance.available` events. The job is deduplicated while pending or active,
+makes five attempts with exponential backoff, and emails developers after a
+final failure. A later matching webhook can trigger another sweep. Verify
+those subscriptions in the Stripe Dashboard during rollout.
 
-This is an API billing worker, not a MongoDB database trigger. The separately
+This is a dedicated queue worker, not a MongoDB database trigger. The separately
 created Atlas event-announcement trigger remains disabled.
 
 ## Configuration and rollout
@@ -133,8 +138,8 @@ created Atlas event-announcement trigger remains disabled.
 MEMBER_REVENUE_SHARING_ENABLED=true
 # Live is the default; the worker verifies the actual Stripe balance mode.
 MEMBER_REVENUE_SHARING_LIVEMODE=true
-# Already on by default in production; explicitly false stops the worker.
-BILLING_WORKER_ENABLED=true
+# The API and dedicated worker need persistent Redis.
+BGSNL_REDIS_URL=redis://...
 ```
 
 Before enabling sharing in another environment, exercise the full flow in an isolated

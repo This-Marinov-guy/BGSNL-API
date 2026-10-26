@@ -12,7 +12,7 @@ import { createMarketingCaptureProcessor, startMarketingCaptureWorker,
 const entry = { email: " Person@Example.test ", city: "  The   Hague ",
   consent: { granted: true, recordedAt: new Date("2026-09-27T10:00:00Z"), textVersion: "test-v1" } };
 
-test("producer persists only normalized consent fields and configures three retries", async () => {
+test("producer persists only normalized consent fields and configures five attempts", async () => {
   let received;
   const producer = createMarketingCaptureProducer({ getQueue: () => ({ waitUntilReady: async () => {},
     add: async (...args) => { received = args; return { id: "1" }; } }) });
@@ -23,7 +23,7 @@ test("producer persists only normalized consent fields and configures three retr
   assert.equal(received[1].consent.source, "POST /form");
   assert.equal(received[1].consent.recordedAt, entry.consent.recordedAt.toISOString());
   assert.equal(JSON.stringify(received).includes("secret"), false);
-  assert.equal(received[2].attempts, 4);
+  assert.equal(received[2].attempts, 5);
   assert.deepEqual(received[2].backoff, { type: "exponential", delay: 1000 });
 });
 
@@ -105,7 +105,7 @@ test("worker lifecycle registers errors and disconnects on shutdown", async () =
   assert.equal(service.worker.name, MARKETING_CAPTURE_QUEUE);
   assert.equal(service.worker.listenerCount("failed"), 1);
   assert.equal(service.worker.listenerCount("error"), 1);
-  assert.equal(MARKETING_JOB_OPTIONS.attempts, 4);
+  assert.equal(MARKETING_JOB_OPTIONS.attempts, 5);
   await service.stop();
   assert.ok(stopped && disconnected);
 });

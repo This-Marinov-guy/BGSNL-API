@@ -4,7 +4,7 @@
 
 - `announcement`: invitation, with member and guest variants.
 - `last-chance`: final booking reminder, manually selectable and automatically
-  scheduled at 24 hours before `correctedDate || date`.
+  checked daily during the final 24 hours before `correctedDate || date`.
 - `limited-offer`: current prices, applicable early bird, automatic discount,
   and optionally one explicitly selected promo code. Codes are only advertised
   to eligible ticket tiers. Checkout revalidates price and code eligibility.
@@ -107,14 +107,15 @@ capacity and sales before each send; changed content or offer stops the campaign
 A purchase racing with provider acceptance may still receive that email.
 
 A failed handoff pauses the campaign cursor and retries with the same operation
-ID up to four attempts. The Mailer owns delivery idempotency and the exact
+ID up to five attempts. The Mailer owns delivery idempotency and the exact
 accepted payload. After the last failure, the cursor advances with an aggregate
-failure count. A crash after provider acceptance can reissue the same operation
+failure count and the developer group receives one alert for that campaign.
+A crash after provider acceptance can reissue the same operation
 ID; there is no per-address delivery log in BGSNL.
 
-The minute scheduler follows Amsterdam-independent UTC instants, with a one-hour
-catch-up window after the 24-hour mark; it never sends catch-up blasts in the
-last 23 hours. If sales are closed/full throughout that window, no reminder is
+The daily scheduler checks at 10:00 `Europe/Amsterdam`. An automatic reminder
+is eligible during the event's final 24 hours, using the event's UTC instant.
+If sales are closed or the event is full at the daily check, no reminder is
 sent. Manual and scheduled `last-chance` runs share duplicate protection.
 
 The Mailer receives bulk metadata and handles its own channel-specific

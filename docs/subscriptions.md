@@ -25,7 +25,7 @@
 3. Keep the existing `STRIPE_NL_SECRET_KEY` and `STRIPE_NL_WEBHOOK_CH_KEY` configured. Membership prices must exist in that Stripe account. Historical regional subscriptions are resolved by a successful subscription retrieval **and matching customer**, then their Stripe account is persisted.
 4. Configure the signed endpoint `POST /api/v1/webhooks/stripe-payments?region=netherlands`. Existing unversioned `/api/webhooks/stripe-payments` requests still resolve to v1. Each distinct regional Stripe account needs its matching region and signing secret.
 5. Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `invoice.paid`, `invoice.payment_failed`, `invoice.payment_action_required`, `invoice.voided`, `invoice.marked_uncollectible`, and subscription `created`, `updated`, `deleted`, `paused`, `resumed`, `pending_update_applied`, `pending_update_expired`. The handler also safely reconciles other subscription/invoice events.
-6. Set `BILLING_WORKER_ENABLED=true` on the API process. The worker also defaults on when `NODE_ENV=production`, but is off in development unless explicitly enabled. Do not enable it against production data from a local development process. Central billing failure emails are sent by Stripe; regional reminder delivery retains its existing provider configuration.
+6. Billing maintenance runs daily at 10:00 `Europe/Amsterdam` when `NODE_ENV=production` or `BILLING_WORKER_ENABLED=true`; `BILLING_WORKER_ENABLED=false` disables it. Central billing failure emails are sent by Stripe; regional reminder delivery retains its existing provider configuration.
 7. On first billing use, the application creates **dedicated v2** Stripe portal configurations: Payments, recovery, and switch-confirmation. Payments/recovery/cancellation sessions disable `subscription_update`; only the authenticated plan-change endpoint creates a `subscription_update_confirm` deep link with the selected price and existing subscription item. Stripe hides general navigation during this focused flow and returns to Settings afterward. Existing v1/legacy configurations are not modified or reused by new sessions. Previously issued portal links retain their old configuration until expiry. The Stripe key must permit prices, customers, subscriptions, invoices, Checkout and Billing Portal reads/required writes. Portal sessions use API version `2024-06-20` for deep links; other Stripe operations retain the existing `2022-08-01` pin.
 
 Settings → Membership → Billing shows **Cancel**, **Switch**, and **Payments**
@@ -51,9 +51,13 @@ The plan catalog uses the same account. The requested price must be available
 there; failures do not silently create a replacement customer or move billing
 to another account. Only genuinely new customers default to central billing.
 
-The worker runs once per minute, sweeps a bounded batch of stale subscriptions and recovers completed Checkout sessions if their initial webhook was missed. Benefit requests also reconcile independently; webhooks are the immediate path. Multiple API processes can run the worker: leases and atomic delivery claims prevent duplicate processing.
-
-Failed records rotate behind other accounts; reminder retries back off for five minutes and orphaned jobs are retired. A failed verification updates only the attempt timestamp, never the trusted `syncedAt` timestamp. Thus an invalid historical record cannot monopolize a batch or refresh cached benefits without verification.
+Billing maintenance runs daily at 10:00 Amsterdam time, with a shared lease
+and persisted due time across API processes. It recovers paid membership
+Checkout sessions if a webhook was missed, reconciles stale subscriptions, and
+sends eligible regional application payment reminders. Signed Stripe webhooks
+remain the immediate update path, and benefit requests independently reconcile
+the account being used. Central payment-failure emails remain configured in
+Stripe.
 
 ### Concurrent webhook deliveries
 

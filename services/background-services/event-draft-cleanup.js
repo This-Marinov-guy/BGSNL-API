@@ -4,7 +4,6 @@ import { EVENT_DRAFT } from "../../util/config/defines.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
 import { rememberDeletedDraftMedia } from "../events/event-media-cleanup.js";
-import { pruneMigrationJournal } from "../migrations/journal-retention.js";
 
 export const EVENT_DRAFT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const EVENT_DRAFT_CLEANUP_TIME_ZONE = "Europe/Amsterdam";
@@ -40,15 +39,8 @@ export async function deleteExpiredEventDrafts({ now = new Date(), DraftModel = 
   return { deletedCount: drafts.length, cutoff };
 }
 
-export async function runDailyCleanup({ now = new Date(), cleanDrafts = deleteExpiredEventDrafts,
-  cleanJournal = pruneMigrationJournal } = {}) {
-  const drafts = await cleanDrafts({ now });
-  const migrationJournal = await cleanJournal({ now });
-  return { drafts, migrationJournal };
-}
-
 export function createEventDraftCleanupJob({
-  now = () => new Date(), cleanup = runDailyCleanup,
+  now = () => new Date(), cleanup = deleteExpiredEventDrafts,
 } = {}) {
   let completedDay;
   return async () => {
@@ -70,14 +62,15 @@ export function startEventDraftCleanupWorker({
   intervalMs = 60 * 1000,
   schedule = setInterval,
   unschedule = clearInterval,
-  onError = (error) => { logOperationalError("worker.daily-cleanup", error); console.error("Daily cleanup failed; retrying on the next tick"); },
+  observe = runObservedJob,
+  onError = (error) => { logOperationalError("worker.event-draft-cleanup", error); console.error("Event draft cleanup failed; retrying on the next tick"); },
 } = {}) {
   if (!config.enabled) return async () => {};
   let stopped = false;
   let running;
   const tick = () => {
     if (stopped || running) return;
-    running = runObservedJob("scheduler", "daily-cleanup", run).catch(onError).finally(() => { running = null; });
+    running = observe("scheduler", "event-draft-cleanup", run).catch(onError).finally(() => { running = null; });
   };
   const timer = schedule(tick, intervalMs);
   timer.unref?.();

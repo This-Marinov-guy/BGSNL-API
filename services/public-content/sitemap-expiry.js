@@ -2,6 +2,7 @@ import Event from "../../models/Event.js";
 import { DEFAULT_REGION } from "../../util/config/defines.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
+import { startDailyCheck } from "../jobs/calendar-check.js";
 import { isEmailSchedulerProcess } from "../background-services/email-run-guard.js";
 import { FUTURE_EVENT_GRACE_MS, publicEventQuery } from "./event-publication.js";
 import { dispatchSitemapRefresh } from "./sitemap-dispatch.js";
@@ -48,7 +49,7 @@ export const eventSitemapExpiryEnabled = (env = process.env) =>
     (env.SITEMAP_REVALIDATE_URL && env.SITEMAP_REVALIDATE_TOKEN));
 
 export function startEventSitemapExpiryWorker({ enabled = eventSitemapExpiryEnabled(),
-  run = refreshPastEventSitemap, intervalMs = 60_000, schedule = setInterval,
+  run = refreshPastEventSitemap, intervalMs, schedule = setInterval,
   unschedule = clearInterval, onError = error => logOperationalError("worker.event-sitemap-expiry", error),
 } = {}) {
   if (!enabled) return async () => {};
@@ -58,8 +59,6 @@ export function startEventSitemapExpiryWorker({ enabled = eventSitemapExpiryEnab
     running = runObservedJob("scheduler", "event-sitemap-expiry", run)
       .catch(onError).finally(() => { running = null; });
   };
-  const timer = schedule(tick, intervalMs);
-  timer.unref?.();
-  tick();
-  return async () => { stopped = true; unschedule(timer); await running; };
+  const stopSchedule = startDailyCheck(tick, { intervalMs, scheduleInterval: schedule, cancelInterval: unschedule });
+  return async () => { stopped = true; stopSchedule(); await running; };
 }

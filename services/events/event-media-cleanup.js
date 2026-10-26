@@ -7,6 +7,7 @@ import { withBillingLease } from "../subscriptions/lease.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
 import { ACADEMIC_YEAR_DATES, ACADEMIC_YEAR_TIME_ZONE } from "../../util/config/academic-year.js";
+import { redisClient, redisPrefix } from "../storage/redis.js";
 
 export const EVENT_MEDIA_TIME_ZONE = ACADEMIC_YEAR_TIME_ZONE;
 export const POST_EVENT_MEDIA_GRACE_MS = 72 * 60 * 60 * 1000;
@@ -53,18 +54,19 @@ export function getEventMediaCleanupConfig(env = process.env) {
     (env.EVENT_MEDIA_CLEANUP_ENABLED === undefined ? env.NODE_ENV === "production" : env.EVENT_MEDIA_CLEANUP_ENABLED === "true") };
 }
 
-export async function runEventMediaCleanup({ now = new Date(), EventModel = Event, DraftModel = EventDraft,
+export async function runEventMediaCleanup({ now = new Date(), cutoff = now, EventModel = Event, DraftModel = EventDraft,
   removeFolder = deleteFolder, removeArchivedPoster = deleteArchivedEventPoster,
   lease = withBillingLease } = {}) {
   const time = validDate(now);
+  const annualCutoff = validDate(cutoff);
   const unscheduled = await EventModel.find({ folder: { $type: "string", $ne: "" }, mediaCleanupAt: null, mediaCleanupDueAt: null })
     .select("_id date correctedDate folder").limit(BATCH_SIZE).lean();
   for (const event of unscheduled) {
-    const dueAt = eventMediaCleanupDueAt(event, time);
+    const dueAt = eventMediaCleanupDueAt(event, annualCutoff);
     await EventModel.updateOne({ _id: event._id, mediaCleanupDueAt: null }, { $set: { mediaCleanupDueAt: dueAt } });
   }
 
-  const ready = { $lte: time };
+  const ready = { $lte: annualCutoff };
   const [events, deletedDrafts] = await Promise.all([
     EventModel.find({ folder: { $type: "string", $ne: "" }, mediaCleanupDueAt: ready, mediaCleanupAt: null,
       $or: [{ mediaCleanupRetryAt: null }, { mediaCleanupRetryAt: ready }] })
@@ -127,8 +129,46 @@ export async function runEventMediaCleanup({ now = new Date(), EventModel = Even
   return { scheduled: unscheduled.length, cleared, deferred, failed };
 }
 
+export async function runAnnualEventMediaCleanup({ now = new Date(), cutoff, run = runEventMediaCleanup,
+  EventModel = Event, DraftModel = EventDraft } = {}) {
+  let scheduled = 0, cleared = 0, deferred = 0;
+  for (let batch = 0; batch < 1000; batch++) {
+    const result = await run({ now, cutoff, EventModel, DraftModel });
+    scheduled += result.scheduled || 0;
+    cleared += result.cleared || 0;
+    deferred += result.deferred || 0;
+    if (result.failed) return { scheduled, cleared, deferred, failed: result.failed };
+    if (!result.scheduled && !result.cleared && !result.deferred) {
+      const ready = { $lte: cutoff };
+      const [events, drafts] = await Promise.all([
+        EventModel.countDocuments({ folder: { $type: "string", $ne: "" }, mediaCleanupDueAt: ready, mediaCleanupAt: null }),
+        DraftModel.countDocuments({ deletedAt: { $ne: null }, folder: { $type: "string", $ne: "" }, mediaCleanupDueAt: ready }),
+      ]);
+      return { scheduled, cleared, deferred, failed: 0, pendingRetry: events + drafts };
+    }
+  }
+  throw new Error("Annual event media cleanup exceeded its batch limit");
+}
+
+export function createAnnualEventMediaCleanupJob({ now = () => new Date(), sweep = runAnnualEventMediaCleanup,
+  getMarker = async key => (await redisClient()).get(key),
+  setMarker = async key => (await redisClient()).set(key, "complete", { EX: 400 * 86400 }) } = {}) {
+  return async () => {
+    const time = validDate(now());
+    const local = moment(time).tz(EVENT_MEDIA_TIME_ZONE);
+    const cutoff = moment.tz({ year: local.year(), month: ACADEMIC_YEAR_DATES.resetDate.month - 1,
+      day: ACADEMIC_YEAR_DATES.resetDate.day, hour: 3, minute: 0, second: 0 }, EVENT_MEDIA_TIME_ZONE).toDate();
+    if (time < cutoff) return { skipped: true };
+    const key = `${redisPrefix()}annual-event-media-cleanup:${local.year()}`;
+    if (await getMarker(key)) return { skipped: true };
+    const result = await sweep({ now: time, cutoff });
+    if (!result.failed && !result.pendingRetry) await setMarker(key);
+    return result.pendingRetry ? { ...result, skipped: true } : result;
+  };
+}
+
 export function startEventMediaCleanupWorker({ config = getEventMediaCleanupConfig(),
-  run = runEventMediaCleanup, intervalMs = 60 * 1000, schedule = setInterval, unschedule = clearInterval,
+  run = createAnnualEventMediaCleanupJob(), intervalMs = 60 * 1000, schedule = setInterval, unschedule = clearInterval,
   onError = error => { logOperationalError("worker.event-media-cleanup", error); console.error("Event media cleanup failed; retrying on the next tick"); },
 } = {}) {
   if (!config.enabled) return async () => {};

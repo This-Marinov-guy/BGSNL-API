@@ -49,5 +49,5 @@ test("the worker registers one recurring reconciliation job with retries", async
   assert.equal(scheduled[0], "reconcile-guest-lists");
   assert.equal(scheduled[1].every, GUEST_LIST_RECONCILIATION_INTERVAL_MS);
   assert.equal(scheduled[2].name, "reconcile-guest-lists");
-  assert.equal(scheduled[2].opts.attempts, 3);
+  assert.equal(scheduled[2].opts.attempts, 5);
 });

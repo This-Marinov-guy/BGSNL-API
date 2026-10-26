@@ -82,6 +82,17 @@ test("folder cleanup follows Cloudinary cursors and rejects unsafe folders", asy
   await assert.rejects(deleteFolder("spare"), /Invalid Cloudinary event folder/);
 });
 
+test("folder cleanup accepts Cloudinary's wrapped 404 for a missing folder", async (t) => {
+  t.mock.method(cloudinary.api, "resources_by_asset_folder", async () => {
+    throw { error: { http_code: 404, message: "Not found" } };
+  });
+  t.mock.method(cloudinary.api, "delete_resources_by_prefix", async () => ({ partial: false }));
+  t.mock.method(cloudinary.api, "delete_folder", async () => {
+    throw { error: { http_code: 404, message: "Not found" } };
+  });
+  await deleteFolder("missing-event-folder");
+});
+
 test("dynamic Cloudinary folders are emptied by asset ID before folder removal", async (t) => {
   const previousEnvironment = process.env.APP_ENV;
   t.after(() => { if (previousEnvironment === undefined) delete process.env.APP_ENV; else process.env.APP_ENV = previousEnvironment; });

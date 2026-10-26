@@ -332,12 +332,19 @@ test("closed, full, external, past and unknown-region events block; 90% capacity
   const nearlyFull = campaignAvailability({ ...eventFixture(), guestList: Array(90).fill({}) }, time);
   assert.equal(nearlyFull.blocked, false); assert.match(nearlyFull.warnings[0], /nearly sold out/);
 });
-test("last chance runs at 24h, follows corrected date, and catches up for one hour only", () => {
+test("last chance runs during the final 24 hours and follows the corrected date", () => {
   assert.equal(lastChanceDue(eventFixture(), time), true);
   assert.equal(lastChanceDue(eventFixture(), new Date(time.getTime() - 1)), false);
-  assert.equal(lastChanceDue(eventFixture(), new Date(time.getTime() + 3600000)), false);
+  assert.equal(lastChanceDue(eventFixture(), new Date(time.getTime() + 3600000)), true);
+  assert.equal(lastChanceDue(eventFixture(), new Date(time.getTime() + 24 * 3600000)), false);
   assert.equal(lastChanceDue({ ...eventFixture(), correctedDate: new Date("2026-10-04") }, time), false);
   assert.equal(lastChanceDue({ ...eventFixture(), isSaleClosed: true }, time), false);
+});
+test("a failed automatic campaign counts as a failed scheduled pass", async () => {
+  const state = setup();
+  state.CampaignModel.findOneAndUpdate = () => { throw new Error("Campaign storage unavailable"); };
+  const result = await state.service.tick();
+  assert.equal(result.failed, 1);
 });
 test("confirmation is bound to actor, live audience, event contents and review expiry", async () => {
   const { service, options, event, setTime } = setup();
@@ -413,14 +420,17 @@ test("sales closing or event content changing after review stops a queued campai
     assert.equal(state.event.mailHistory[0].notSent, 2);
   }
 });
-test("delivery retries keep the exact payload and operation ID and stop after three retries", async () => {
-  const state = setup(), campaign = await state.confirm({ audience: "members" }), calls = [];
-  const service = createEventCampaignService({ ...state, send: async (...args) => { calls.push(args); throw new Error("Timeout"); } });
-  for (let attempt = 0; attempt < 5; attempt++) { state.setTime(new Date(time.getTime() + attempt * 4 * 60000)); await service.processCampaign(campaign); }
-  assert.equal(calls.length, 4);
+test("delivery stops after five attempts and alerts once without recipient details", async () => {
+  const state = setup(), campaign = await state.confirm({ audience: "members" }), calls = [], alerts = [];
+  const service = createEventCampaignService({ ...state,
+    send: async (...args) => { calls.push(args); throw new Error("Timeout"); },
+    notifyFailure: async (item, attempts) => alerts.push({ id: item._id, attempts }) });
+  for (let attempt = 0; attempt < 6; attempt++) { state.setTime(new Date(time.getTime() + attempt * 5 * 60000)); await service.processCampaign(campaign); }
+  assert.equal(calls.length, 5);
   assert.equal(calls.every(call => JSON.stringify(call) === JSON.stringify(calls[0])), true);
   assert.equal(state.CampaignModel.rows[0].status, "completed-with-errors");
   assert.equal(state.CampaignModel.rows[0].failed, 1);
+  assert.deepEqual(alerts, [{ id: campaign._id, attempts: 5 }]);
 });
 test("manual and automatic last-chance mail share deduplication keys", async () => {
   const state = setup(); const manual = await state.confirm({ kind: "last-chance" });

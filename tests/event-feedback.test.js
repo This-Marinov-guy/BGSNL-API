@@ -156,6 +156,31 @@ test("future events are scheduled and a completed email is not sent again", asyn
   assert.equal(sent.length, 1);
 });
 
+test("daily feedback check catches a recent event that passed between checks", async () => {
+  const event = sampleEvent();
+  const current = new Date("2026-10-11T19:00:00Z");
+  const sent = [];
+  const EventModel = {
+    find: query => {
+      const rows = query.feedbackEmailDueAt
+        ? event.feedbackEmailDueAt && !event.feedbackEmailCompletedAt ? [{ _id: eventId }] : []
+        : [event];
+      if (!query.feedbackEmailDueAt) assert(query.$or.some(item => item.date?.$gte && item.date?.$lte));
+      const cursor = { lean: async () => rows, limit: () => cursor };
+      return { select: () => cursor };
+    },
+    findById: async () => event,
+    updateOne: async (_query, update) => Object.assign(event, update.$set),
+  };
+  const service = createEventFeedbackEmailService({ EventModel, MarketingModel: marketingModel(),
+    send: async (...args) => sent.push(args), now: () => current });
+  const result = await service.tick();
+  assert.equal(result.scheduled, 1);
+  assert.equal(result.accepted, 1);
+  assert.equal(sent.length, 1);
+  assert.ok(event.feedbackEmailCompletedAt);
+});
+
 test("feedback provider retry keeps the same operation ID without delivery rows", async () => {
   const event = { ...sampleEvent(), feedbackEmailDueAt: dueDate };
   let current = dueDate, attempts = 0;

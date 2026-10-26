@@ -3,24 +3,12 @@ import test from "node:test";
 import { randomUUID } from "node:crypto";
 import { MongoClient } from "mongodb";
 import { pruneMigrationJournal } from "../services/migrations/journal-retention.js";
-import { runDailyCleanup } from "../services/background-services/event-draft-cleanup.js";
 
 // eslint-disable-next-line no-process-env
 const uri = process.env.BGSNL_MIGRATION_TEST_URL;
 if (uri && !/^mongodb:\/\/(?:127\.0\.0\.1|localhost):\d+\/?$/.test(uri)) {
   throw new Error("Migration integration tests only accept a local MongoDB host without a database");
 }
-
-test("daily cleanup runs drafts and migration journal with the same clock", async () => {
-  const now = new Date("2026-10-07T01:00:00Z");
-  const calls = [];
-  const result = await runDailyCleanup({ now,
-    cleanDrafts: async args => { calls.push(["drafts", args.now]); return { deletedCount: 2 }; },
-    cleanJournal: async args => { calls.push(["journal", args.now]); return { runsDeleted: 1 }; },
-  });
-  assert.deepEqual(calls, [["drafts", now], ["journal", now]]);
-  assert.deepEqual(result, { drafts: { deletedCount: 2 }, migrationJournal: { runsDeleted: 1 } });
-});
 
 test("journal cleanup deletes only eligible completed runs and their snapshots", async () => {
   const now = new Date("2026-10-07T12:00:00Z");

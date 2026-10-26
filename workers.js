@@ -3,6 +3,11 @@ import mongoose from "mongoose";
 import { startSpreadsheetSyncWorker } from "./services/jobs/spreadsheet-sync-worker.js";
 import { closeSpreadsheetSyncQueue } from "./services/jobs/spreadsheet-sync-queue.js";
 import { scheduleGuestListReconciliation } from "./services/jobs/guest-list-reconciliation.js";
+import { startMemberRevenueWorker } from "./services/subscriptions/member-revenue-worker.js";
+import { closeMemberRevenueQueue } from "./services/subscriptions/member-revenue-queue.js";
+import JobFailureState from "./models/JobFailureState.js";
+import { jobFailurePolicy } from "./services/monitoring/job-failure-policy.js";
+import { startBusinessHourlyCheck } from "./services/jobs/calendar-check.js";
 
 dotenv.config();
 
@@ -13,14 +18,27 @@ const mongoUri = () => {
 };
 
 let worker;
+let revenueWorker;
+let stopAlertSchedule;
+let alertRun;
 let stopping;
+
+const retryAlerts = () => {
+  if (alertRun) return alertRun;
+  alertRun = jobFailurePolicy.retryAlerts().finally(() => { alertRun = null; });
+  return alertRun;
+};
 
 async function stop(signal) {
   if (stopping) return stopping;
   stopping = (async () => {
     console.log(`${signal} received. Stopping BGSNL background worker...`);
     await worker?.stop();
+    await revenueWorker?.stop();
+    stopAlertSchedule?.();
+    await alertRun;
     await closeSpreadsheetSyncQueue();
+    await closeMemberRevenueQueue();
     await mongoose.connection.close();
     console.log("BGSNL background worker stopped.");
   })();
@@ -30,10 +48,13 @@ async function stop(signal) {
 async function main() {
   mongoose.set("strictQuery", true);
   await mongoose.connect(mongoUri());
+  await JobFailureState.init();
   if ((process.env.GUEST_LIST_RECONCILIATION_ENABLED ?? (process.env.APP_ENV === "prod" ? "true" : "false")) === "true") {
     await scheduleGuestListReconciliation();
   }
   worker = startSpreadsheetSyncWorker();
+  revenueWorker = startMemberRevenueWorker();
+  stopAlertSchedule = startBusinessHourlyCheck(() => { void retryAlerts(); });
   console.log("BGSNL spreadsheet synchronization worker is running.");
 }
 
@@ -43,7 +64,11 @@ process.once("SIGINT", () => stop("SIGINT").then(() => process.exit(0)).catch((e
 main().catch(async (error) => {
   console.error("BGSNL background worker failed to start", error);
   await worker?.stop();
+  await revenueWorker?.stop();
+  stopAlertSchedule?.();
+  await alertRun;
   await closeSpreadsheetSyncQueue();
+  await closeMemberRevenueQueue();
   if (mongoose.connection.readyState !== 0) await mongoose.connection.close();
   process.exitCode = 1;
 });

@@ -8,6 +8,7 @@ import HttpError from "../../models/Http-error.js";
 import { REGIONS } from "../../util/config/defines.js";
 import { academicYearStart } from "../../util/config/academic-year.js";
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
+import { jobFailurePolicy } from "../monitoring/job-failure-policy.js";
 import { campaignHash, campaignDeliveryKey, normalizeCampaignEmail } from "./event-campaign-policy.js";
 import { createGuestSignupLink } from "./guest-signup-prefill.js";
 import { recordEventMailHistory } from "./event-mail-history.js";
@@ -54,7 +55,8 @@ const regionFromCity = city => {
 export function createGuestSavingsCampaignService({ EventModel = Event, MemberModel = MemberUser, AlumniModel = AlumniUser, MarketingModel = MarketingEmail,
   CampaignModel = Campaign, now = () => new Date(),
   secret = () => process.env.EVENT_CAMPAIGN_REVIEW_SECRET || process.env.JWT_STRING,
-  makeLink = createGuestSignupLink, send = queueDomakinTemplateEmail } = {}) {
+  makeLink = createGuestSignupLink, send = queueDomakinTemplateEmail,
+  notifyFailure = (campaign, attempts) => jobFailurePolicy.queueFailure("event-campaign", `${campaign.kind}-delivery`, campaign._id, attempts) } = {}) {
   const sign = data => {
     const key = secret();
     if (!key || key.length < 32) throw new HttpError("Campaign review is not configured. Contact an administrator.", 503);
@@ -201,10 +203,11 @@ export function createGuestSavingsCampaignService({ EventModel = Event, MemberMo
         }
       } catch {
         attempts++;
-        if (attempts < 4) {
+        if (attempts < 5) {
           await CampaignModel.updateOne({ _id: campaign._id }, { $set: { attempts, retryAt: new Date(+now() + attempts * 60_000) } });
           return;
         }
+        await notifyFailure(campaign, attempts);
         outcome = "failed";
       }
       cursor++;

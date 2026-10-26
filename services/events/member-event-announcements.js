@@ -5,6 +5,7 @@ const announcementRuns = createEmailRunGuard();
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
+import { startDailyCheck } from "../jobs/calendar-check.js";
 import { NO_REPLY_EMAIL, NO_REPLY_EMAIL_NAME, MEMBER_EVENT_ANNOUNCEMENT_TEMPLATE } from "../../util/config/defines.js";
 import { eventAnnouncementRegions } from "../../util/config/nearby-regions.js";
 import { formatRegionBadgeLabel, getRegionBadgeTheme } from "../../util/config/region-badges.js";
@@ -95,7 +96,8 @@ export async function processMemberEventAnnouncements({ now = new Date(), enable
   return totals;
 }
 
-export function startMemberEventAnnouncementWorker({ enabled = announcementWorkerEnabled(), process = processMemberEventAnnouncements, intervalMs = 60000 } = {}) {
+export function startMemberEventAnnouncementWorker({ enabled = announcementWorkerEnabled(), process = processMemberEventAnnouncements,
+  observe = runObservedJob, intervalMs } = {}) {
   if (!enabled) return async () => {};
   let running;
   let requested = false;
@@ -105,7 +107,7 @@ export function startMemberEventAnnouncementWorker({ enabled = announcementWorke
     requested = true;
     if (running) return true;
     requested = false;
-    running = runObservedJob("scheduler", "member-event-announcements", async () => {
+    running = observe("scheduler", "member-event-announcements", async () => {
       const result = await process({ enabled });
       return result && !result.sent && !result.failed && !result.skipped ? { ...result, noWork: true } : result;
     }).then((result) => {
@@ -118,13 +120,11 @@ export function startMemberEventAnnouncementWorker({ enabled = announcementWorke
     return true;
   };
   wakeWorker = tick;
-  const timer = setInterval(tick, intervalMs);
-  timer.unref();
-  tick();
+  const stopSchedule = startDailyCheck(tick, { intervalMs });
   return async () => {
     stopped = true;
     if (wakeWorker === tick) wakeWorker = undefined;
-    clearInterval(timer);
+    stopSchedule();
     await running;
   };
 }

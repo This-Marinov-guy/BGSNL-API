@@ -7,10 +7,10 @@ import { withJobTimeout } from "./job-timeout.js";
 
 export const MARKETING_CAPTURE_QUEUE = "marketing-capture";
 export const MARKETING_JOB_OPTIONS = Object.freeze({
-  attempts: 4, // Initial attempt plus at most three retries.
+  attempts: 5, // Initial attempt plus at most four retries.
   backoff: { type: "exponential", delay: 1000 },
-  removeOnComplete: { age: 24 * 60 * 60, count: 1000 },
-  removeOnFail: { age: 7 * 24 * 60 * 60, count: 1000 },
+  removeOnComplete: { age: 30 * 24 * 60 * 60 },
+  removeOnFail: { age: 30 * 24 * 60 * 60 },
 });
 export const MARKETING_ENQUEUE_TIMEOUT_MS = 5000;
 

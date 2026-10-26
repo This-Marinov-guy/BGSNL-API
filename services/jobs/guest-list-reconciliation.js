@@ -33,9 +33,9 @@ export async function scheduleGuestListReconciliation(getQueue = getSpreadsheetS
   return getQueue().upsertJobScheduler(GUEST_LIST_RECONCILIATION_JOB,
     { every: GUEST_LIST_RECONCILIATION_INTERVAL_MS },
     { name: GUEST_LIST_RECONCILIATION_JOB, data: {}, opts: {
-      attempts: 3,
+      attempts: 5,
       backoff: { type: "exponential", delay: 5000 },
-      removeOnComplete: { age: 24 * 60 * 60, count: 100 },
-      removeOnFail: { age: 7 * 24 * 60 * 60, count: 100 },
+      removeOnComplete: { age: 30 * 24 * 60 * 60 },
+      removeOnFail: { age: 30 * 24 * 60 * 60 },
     } });
 }

@@ -128,20 +128,20 @@ as confirmed account-plan limits.
 ## Background jobs
 
 The monitoring page shows a failed-jobs banner for retained BGSNL job failures.
-The All jobs tab combines the durable spreadsheet sync and marketing-capture queues in Redis with `monitoringjobs` history in MongoDB. Scheduler runs and in-process mail and Sheets work are recorded there with safe job names, status, attempt count and timestamps. The queue view filters records by failed, pending, or completed
+The All jobs tab combines the durable spreadsheet sync, marketing-capture and Member revenue queues in Redis with `monitoringjobs` history in MongoDB. Scheduler runs and in-process mail and Sheets work are recorded there with safe job names, status, attempt count and timestamps. The queue view filters records by failed, pending, or completed
 status. Pending includes waiting, delayed, and active work. Jobs are paged 20
 at a time, up to the latest 1,000 entries; counts cover all retained entries.
 Only job type, state, attempt count, timestamps, and validated error name
 are returned; job payloads, failure messages, and stack traces stay on the
-server. Failed jobs remain for
-seven days and completed jobs for one day. If one source is unavailable, the
+server. Failed and completed jobs remain for 30 days. A separate daily
+retention job removes older entries. If one source is unavailable, the
 page shows the other source with an incomplete-data notice. A job source outage
 does not hide the rest of System Monitoring.
 
 Marketing capture runs in the API process as a BullMQ consumer (started after
 MongoDB/Redis initialization). Once enqueued, jobs survive API restarts using
 the existing Redis persistence configuration. Each capture gets an initial
-attempt plus three retries, with exponential delays of 1, 2, and 4 seconds.
+attempt plus four retries, with exponential delays of 1, 2, 4, and 8 seconds.
 Each attempt has a 10-second deadline and MongoDB queries have a 5-second
 server execution limit. Enqueueing has a 5-second deadline as well. Redis must
 use persistence and `noeviction`, as for the existing spreadsheet queue.
@@ -150,8 +150,8 @@ An attempt timeout cannot retract a database command already sent; normalized
 email/city uniqueness and the original consent timestamp make retries safe.
 The same or older opt-in does not replace newer consent or re-enable an
 unsubscribe on that recorded consent. Payloads contain only the email, city,
-and consent evidence; monitoring never returns them. Retention is capped at
-1,000 completed and 1,000 failed jobs as well as the age limits above.
+and consent evidence; monitoring never returns them. Completed and failed
+records are retained for 30 days.
 
 Automatic capture still happens after successful opted-in form responses. If
 Redis is unavailable before it accepts a job, enqueue failure is logged but the

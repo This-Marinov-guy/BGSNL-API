@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { jobSummary as readSummary, listJobs as readJobs, normalizeJobFilter, serializeJob } from "../services/monitoring/jobs.js";
 
 const emptyMarketingQueue = () => ({ getJobCounts: async () => ({}), getJobs: async () => [] });
-const jobSummary = (options) => readSummary({ getMarketingQueue: emptyMarketingQueue, ...options });
-const listJobs = (options) => readJobs({ getMarketingQueue: emptyMarketingQueue, ...options });
+const jobSummary = (options) => readSummary({ getMarketingQueue: emptyMarketingQueue, getRevenueQueue: emptyMarketingQueue, ...options });
+const listJobs = (options) => readJobs({ getMarketingQueue: emptyMarketingQueue, getRevenueQueue: emptyMarketingQueue, ...options });
 
 const counts = { failed: 2, completed: 1, wait: 1, delayed: 1, active: 0, paused: 0, prioritized: 0, "waiting-children": 0 };
 const jobs = {
@@ -42,12 +42,12 @@ test("job filters accept only supported statuses and bounded pages", () => {
 
 test("Mongo history availability is reported when the database is offline", async () => {
   const result = await jobSummary({ getQueue: () => ({ getJobCounts: async () => ({}) }) });
-  assert.deepEqual(result.sources, { spreadsheetSync: true, history: false, marketingCapture: true });
+  assert.deepEqual(result.sources, { spreadsheetSync: true, history: false, marketingCapture: true, memberRevenue: true });
 });
 
 test("monitoring counts failed, pending and completed durable jobs", async () => {
   assert.deepEqual(await jobSummary({ getQueue, model }), { available: true,
-    sources: { spreadsheetSync: true, history: true, marketingCapture: true }, counts: { failed: 3, pending: 2, completed: 2 } });
+    sources: { spreadsheetSync: true, history: true, marketingCapture: true, memberRevenue: true }, counts: { failed: 3, pending: 2, completed: 2 } });
   const result = await listJobs({ getQueue, model });
   assert.deepEqual(result.counts, { failed: 3, pending: 2, completed: 2 });
   assert.equal(result.total, 7);
@@ -70,7 +70,7 @@ test("job listing never exposes payloads, failure text or arbitrary names", asyn
 test("history remains visible when the spreadsheet queue is unavailable", async () => {
   const unavailableQueue = () => { throw new Error("Redis unavailable"); };
   const result = await listJobs({ status: "failed", getQueue: unavailableQueue, model });
-  assert.deepEqual(result.sources, { spreadsheetSync: false, history: true, marketingCapture: true });
+  assert.deepEqual(result.sources, { spreadsheetSync: false, history: true, marketingCapture: true, memberRevenue: true });
   assert.equal(result.counts.failed, 1);
   assert.equal(result.items[0].name, "billing-maintenance");
 });

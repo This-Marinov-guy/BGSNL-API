@@ -1,5 +1,5 @@
 import { getDeveloperNotificationConfig } from "../../util/config/internal-notifications.js";
-import { sendInternalNotificationEmail } from "./email-transporter.js";
+import { deliverInternalNotificationEmail, sendInternalNotificationEmail } from "./email-transporter.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 const WINDOW_MS = 15 * 60 * 1000;
@@ -49,3 +49,26 @@ export function createDeveloperNotifier({ config = getDeveloperNotificationConfi
 }
 
 export const notifyWebhookError = createDeveloperNotifier();
+
+export async function sendDeveloperJobAlert({ source, name, attempts, stoppedAt }, {
+  config = getDeveloperNotificationConfig(), sendEmail = deliverInternalNotificationEmail,
+  env = process.env } = {}) {
+  if (!config.enabled || !config.subscribers.length) return 0;
+  const environment = ["dev", "prod", "test"].includes(env.APP_ENV) ? env.APP_ENV : "unknown";
+  const safeSource = safeLabel(source, /^[a-z][a-z0-9-]{0,49}$/, "unknown");
+  const safeName = safeLabel(name, /^[a-z][a-z0-9-]{0,49}$/, "unknown");
+  const schedulerHalted = safeSource === "scheduler";
+  const subject = `[BGSNL ${environment}] Background job ${schedulerHalted ? "stopped" : "failed"}: ${safeName}`;
+  const text = [subject, `Job: ${safeSource}/${safeName}`, `Failed attempts: ${Number.isSafeInteger(attempts) ? attempts : 5}`,
+    `${schedulerHalted ? "Stopped" : "Failed"} at: ${new Date(stoppedAt).toISOString()}`,
+    schedulerHalted
+      ? "The job is paused after repeated failures. Inspect job monitoring and server logs, fix the cause, then reset its job failure state."
+      : "The job exhausted its attempts. Inspect job monitoring and server logs, fix the cause, then requeue if needed.",
+    "No job payloads, exception messages, credentials or recipient data are included."].join("\n");
+  let sent = 0;
+  for (const receiver of config.subscribers) {
+    try { await sendEmail({ receiver, subject, text, type: "developer-job-failure", entityId: `${safeSource}:${safeName}` }); sent++; }
+    catch (error) { logOperationalError("service.job-failure-alert", error); }
+  }
+  return sent;
+}

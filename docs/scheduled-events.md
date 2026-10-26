@@ -1,45 +1,98 @@
 # Scheduled background jobs
 
-This file is the inventory of recurring work started by the BGSNL API process
-or its dedicated worker service. Update it whenever a recurring worker, queued
-job, cron job, or externally scheduled API task is added, removed, or changes
-frequency.
+This file inventories recurring work configured in the API, its dedicated worker,
+the website's GitHub Actions workflow, and the VPS systemd timer. A configured
+schedule is not proof that its production process, feature flag, or external
+workflow is currently enabled. Update this inventory whenever a schedule is
+added, removed, or changes frequency.
 
-Last reviewed: 8 October 2026.
+Last reviewed: 26 October 2026.
 
 Database-triggered work is inventoried in [triggers.md](triggers.md).
 
-## Active schedule
+## API schedules
+
+These start from `app.js` after API storage initialization. PM2 API worker 0
+owns them except Billing maintenance, which uses a shared lease and due time
+across API processes. Daily checks run at 10:00 `Europe/Amsterdam`, including
+daylight saving changes. A startup after 10:00 runs that day's check immediately.
 
 | Job | Schedule | Time zone | Enabled when | Main effect |
 | --- | --- | --- | --- | --- |
-| Billing maintenance | Checks at startup and every 60 seconds; shared lease/due time permits one sweep across API processes; errors back off | Not calendar-based | `NODE_ENV=production` or `BILLING_WORKER_ENABLED=true`; `BILLING_WORKER_ENABLED=false` always disables it | Processes payment reminders, recovers membership-only Checkout sessions, and refreshes stale subscription state |
-| Regional Member revenue | Separate coordinated task at startup, then 15 minutes after each successful run; errors back off | UTC for monthly fee reports | Billing worker enabled and `MEMBER_REVENUE_SHARING_ENABLED=true` | Reconciles new Member invoice allocations, actual Stripe fees and regional Connect transfers; cannot block membership recovery; see [member-revenue-sharing.md](member-revenue-sharing.md) |
 | Weekly membership summary | Sunday at 18:00; no startup send or missed-run catch-up | `Europe/Amsterdam` | Internal notifications are enabled and the API is in production, or `WEEKLY_MEMBERSHIP_REPORT_ENABLED=true`; setting the flag to `false` disables it | Emails the preceding Sunday 18:00–Sunday 18:00 member counts by region and one national alumni count to every internal-notification subscriber |
 | Regional new-member summary | Sunday at 18:00; no startup send or missed-run catch-up | `Europe/Amsterdam` | Same gates as the weekly membership summary; PM2 worker 0 only | Sends the same internal report template, restricted to one region, to its database contact; skips regions without new members |
 | Monthly alumni supporter summary | Last calendar day at 23:59; no startup send or missed-run catch-up | `Europe/Amsterdam` | Production by default, or `MONTHLY_SUPPORTER_SUMMARY_ENABLED=true`; `false` disables it; PM2 worker 0 only | Thanks eligible active alumni and internal subscribers with hosted events, new-account counts, articles published that month, and optional community updates; see [monthly-supporter-summary.md](monthly-supporter-summary.md) |
-| Birthday greetings | First check after API startup, then every minute; a daily greeting becomes due at 10:00 | `Europe/Amsterdam` | `NODE_ENV=production` or `BIRTHDAY_EMAIL_WORKER_ENABLED=true`; setting the flag to `false` disables it | Sends one non-promotional birthday greeting to each current Member or Alumni account with a valid stored date of birth |
-| Member event announcements | Immediately after API startup, then every minute; an authenticated Atlas notification can request an earlier pass | Not calendar-based | `NODE_ENV=production` or `EVENT_ANNOUNCEMENTS_ENABLED=true`; `false` disables it | Delivers pending publication announcements with personal encrypted ticket links; recovers missed trigger notifications |
-| Event feedback follow-up | At startup and every minute; email becomes due 24 hours after the effective event date | UTC event instants | Production by default, or `EVENT_FEEDBACK_EMAIL_ENABLED=true`; `false` disables it; PM2 worker 0 only | Sends a ticket-specific Emailit campaign to consenting attendees who have not unsubscribed; stable operation IDs make event-level retries safe |
-| First paid guest event campaign | Checks at startup and hourly; due 24 hours after the first paid guest-ticket event in each region from 25 August, with a 14-day catch-up window | `Europe/Amsterdam` academic year; UTC event instants | Production by default, or `GUEST_CAMPAIGNS_ENABLED=true`; `false` disables it; PM2 worker 0 only | Sends that event's estimated savings and membership benefits to consenting paid-ticket guests through the Emailit campaign template, once per region and academic year |
-| Guest term 2 and term 3 recap | Checks at startup and hourly; due after 23:59:59 on 15 February and 15 May, with a 14-day catch-up window | `Europe/Amsterdam` | Same guest campaign flag; PM2 worker 0 only | Sends current-year guests their event recap and possible savings, once per term and address |
-| Event sitemap expiry | At startup and every minute | UTC event instants | `NODE_ENV=production` or `EVENT_SITEMAP_EXPIRY_ENABLED=true`, with GitHub sitemap dispatch credentials; `false` disables it; PM2 worker 0 only | Requests a sitemap refresh when a public event passes the 48-hour post-start cutoff; retries until GitHub accepts the dispatch |
-| Daily cleanup | Daily at 03:00; checks every minute and catches up after startup later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_DRAFT_CLEANUP_ENABLED=true`; `false` disables it | Deletes event drafts created more than 30 days ago and completed migration journal runs older than 30 days |
-| Event media cleanup | Each 25 August at 03:00; checks every minute and retries failures | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_MEDIA_CLEANUP_ENABLED=true`; `false` disables it; PM2 worker 0 only | Removes Cloudinary images and folders for past events and previously deleted drafts, after a 72-hour post-event window |
+| Academic-year statistics seed | On API startup and at 00:00 on 25 August; failed seed retries after one hour until halted | `Europe/Amsterdam` | PM2 worker 0 | Inserts missing event and member averages for the current academic year without overwriting existing values |
+| Billing maintenance | Daily check at 10:00; catches up after a late startup; shared lease and persisted due time prevent duplicate sweeps | `Europe/Amsterdam` | `NODE_ENV=production` or `BILLING_WORKER_ENABLED=true`; `false` disables it | Recovers paid membership Checkout sessions, reconciles stale subscriptions, and sends eligible regional application payment reminders |
+| Birthday greetings | Daily check at 10:00; catches up after a late startup | `Europe/Amsterdam` | `NODE_ENV=production` or `BIRTHDAY_EMAIL_WORKER_ENABLED=true`; setting the flag to `false` disables it | Sends one non-promotional birthday greeting to each current Member or Alumni account with a valid stored date of birth |
+| Event email campaigns | Daily check at 10:00; automatic last-chance offer is eligible during an event's final 24 hours | `Europe/Amsterdam` check; UTC event instants | `EVENT_CAMPAIGNS_ENABLED=true` or production default; PM2 worker 0 | Queues and delivers publication announcements, last-chance offers, and queued manual campaigns; replaces the legacy announcement worker when enabled |
+| Member event announcements, legacy | Daily check at 10:00; an authenticated Atlas notification can request an earlier pass | `Europe/Amsterdam` | `EVENT_ANNOUNCEMENTS_ENABLED=true` or production default, **and** event campaigns disabled | Delivers pending publication announcements with personal encrypted ticket links; recovers missed trigger notifications |
+| Event cancellation recovery | Daily check at 10:00; failed event work stays eligible for a later check | `Europe/Amsterdam` check; UTC event instants | PM2 worker 0 | Finishes pending event refunds, archive cleanup, and cancellation emails |
+| Event feedback follow-up | Daily check at 10:00; email becomes due 24 hours after the effective event date | `Europe/Amsterdam` check; UTC event instants | Production by default, or `EVENT_FEEDBACK_EMAIL_ENABLED=true`; `false` disables it; PM2 worker 0 only | Sends a ticket-specific Emailit campaign to consenting attendees who have not unsubscribed; stable operation IDs make event-level retries safe |
+| First paid guest event campaign | Daily check at 10:00; due 24 hours after the first paid guest-ticket event in each region from 25 August, with a 14-day catch-up window | `Europe/Amsterdam` academic year; UTC event instants | Production by default, or `GUEST_CAMPAIGNS_ENABLED=true`; `false` disables it; PM2 worker 0 only | Sends that event's estimated savings and membership benefits to consenting paid-ticket guests through the Emailit campaign template, once per region and academic year |
+| Guest term 2 recap | Daily check at 10:00; due after 23:59:59 on 15 February, with a 14-day catch-up window | `Europe/Amsterdam` | Same guest campaign flag; PM2 worker 0 | Sends current-year guests their event recap and possible savings, once per term and address |
+| Guest term 3 recap | Daily check at 10:00; due after 23:59:59 on 15 May, with a 14-day catch-up window | `Europe/Amsterdam` | Same guest campaign flag; PM2 worker 0 | Sends current-year guests their event recap and possible savings, once per term and address |
+| Event sitemap expiry | Daily check at 10:00 | `Europe/Amsterdam` check; UTC event instants | `NODE_ENV=production` or `EVENT_SITEMAP_EXPIRY_ENABLED=true`, with GitHub sitemap dispatch credentials; `false` disables it; PM2 worker 0 only | Requests a sitemap refresh when a public event passes the 48-hour post-start cutoff; retries until GitHub accepts the dispatch |
+| Event archive | Daily at 03:15 UTC; checks every minute and catches up after startup | UTC event instants | `NODE_ENV=production` or `EVENT_ARCHIVE_ENABLED=true`; `false` disables it; PM2 worker 0 only | Archives published events at least 72 hours after their effective start time, deactivates Stripe prices and product, updates statistics, and retries incomplete archive cleanup |
+| Event draft cleanup | Daily at 03:00; catches up later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_DRAFT_CLEANUP_ENABLED=true`; `false` disables it | Removes drafts created more than 30 days ago; drafts with media remain hidden until their annual media cleanup |
+| Log and table retention | Daily at 03:05; catches up later that day | `Europe/Amsterdam` | `NODE_ENV=production` or `LOG_RETENTION_ENABLED=true`; `false` disables it | Removes completed migration journals and job records older than 30 days |
+| Event media cleanup | Once per academic year after 25 August at 03:00; catches up after downtime and retries failed folders | `Europe/Amsterdam` | `NODE_ENV=production` or `EVENT_MEDIA_CLEANUP_ENABLED=true`; `false` disables it; PM2 worker 0 only | Removes Cloudinary assets of events from the past academic year, after a 72-hour post-event window |
 
-All workers start only after MongoDB and Redis are ready and the required
-account/temporary-code indexes exist. In PM2 cluster mode, only worker 0 runs
-birthday, weekly-summary, event-announcement, event-feedback, guest term recap, event-sitemap expiry, daily cleanup and event-media cleanup schedules. They stop accepting new work during graceful API shutdown.
+They stop accepting new work during graceful API shutdown. The monthly and
+weekly reports schedule the next future occurrence without a missed-run replay;
+the billing, draft, log, archive, media, birthday, and academic-year jobs can catch up
+after an API restart as described below.
 
-The guest campaign queue can run on either API process. It removes jobs after
-success or after the final retry, without keeping recipient delivery rows. The
-term worker keeps one Redis completion marker per academic year and term.
+Billing maintenance runs from
+[`services/subscriptions/reminders.js`](../services/subscriptions/reminders.js).
+It checks for missed paid membership Checkout completion, reconciles stale
+subscription state with Stripe, and sends eligible regional application payment
+reminders. Each phase observes a 50-second work budget. The shared Redis lease and
+persisted next daily due time allow one sweep across API processes, including
+after restarts. Signed webhooks remain the immediate update path, and Stripe
+sends central payment-failure emails. Member revenue maintenance is queued by
+the signed national Stripe webhook separately.
+
+The academic-year seed runs from
+[`services/background-services/academic-year-statistics.js`](../services/background-services/academic-year-statistics.js).
+It inserts missing current-year event and member averages on startup and after
+the 25 August boundary. The Sunday membership report separately refreshes
+current-year member averages before emailing its counts; see
+[regional statistics averages](regional-averages.md).
+
+[`services/events/event-campaign-worker.js`](../services/events/event-campaign-worker.js)
+polls for automatic last-chance campaigns, publication announcements, and queued
+manual campaigns. When it is enabled, `app.js` does not start the separate
+[`member-event-announcements.js`](../services/events/member-event-announcements.js)
+poller. The event cancellation worker in
+[`services/events/event-cancellation.js`](../services/events/event-cancellation.js)
+checks pending cancellation requests daily at 10:00. A failed event becomes
+eligible after five minutes and is attempted on the next daily check. Both use
+PM2 worker 0.
+
+The event archive worker uses `correctedDate` when present, otherwise `date`.
+It checks every minute and runs once the daily 03:15 UTC time has passed,
+including after an API restart. An event that fails archival remains eligible
+for the next check; pending cleanup on an already archived event is retried.
+Each event holds its own lease. The website's protected endpoint remains
+available for manual recovery, but Vercel no longer schedules it.
+
+The guest campaign workers in
+[`services/events/guest-lifecycle-campaigns.js`](../services/events/guest-lifecycle-campaigns.js)
+run on PM2 worker 0 and keep Redis completion markers for each region's first
+paid event and for each academic-year term recap. Their five-failure halt state
+persists in MongoDB. Queued event email campaigns are processed by PM2 worker 0.
+The campaign worker records failed campaign processing passes in the shared
+five-failure policy. Individual recipient delivery uses five attempts in the
+persisted campaign record; final failure creates one developer alert receipt
+per campaign.
 The Mailer routes the existing guest-savings template through Emailit and
 checks its unsubscribe table when accepting each campaign message.
 
 The feedback worker schedules future published events when it first sees them,
-then persists the due time and an event-level retry time. An event that was
-already past before this worker was introduced is not enrolled retroactively.
+then persists the due time and an event-level retry time. It also enrolls an
+event from the preceding 48 hours if it passed between daily checks; older
+unscheduled events are not enrolled retroactively.
 Archived events remain eligible; cancelled events and refunded tickets do not.
 One email goes to each normalized address even when that address bought several
 tickets. The link opens the form without a login. Responses live in each event's
@@ -67,8 +120,8 @@ after the database write succeeds. The `bgsnl-worker` Compose service consumes
 it independently of the two API processes. Event, special-event, member,
 alumni and internship exports are deduplicated by their affected record or
 region, delayed briefly to coalesce rapid updates, and retried up to five times
-with exponential backoff. Completed jobs remain available for one day and
-failed jobs for seven days for operational inspection.
+with exponential backoff. Completed and failed jobs remain available for 30
+days for operational inspection. A final failure emails the developer group.
 
 The worker also schedules a guest-list reconciliation every six hours. Its first
 run starts when the production worker boots. It requeues society and special
@@ -84,12 +137,12 @@ the event sheet. Both documents must grant the configured service account access
 The append-only data-pool export remains on its existing in-process path until
 it has an idempotency key; retrying an append without one could duplicate rows.
 
-## Daily cleanup
+## Event draft cleanup
 
 Source:
 [`services/background-services/event-draft-cleanup.js`](../services/background-services/event-draft-cleanup.js)
 
-The daily cleanup becomes due at 03:00 in `Europe/Amsterdam`, including daylight
+The draft cleanup becomes due at 03:00 in `Europe/Amsterdam`, including daylight
 saving time. It checks on startup and every minute, catching up if the API starts
 later that day. It starts after database/storage initialization and finishes any
 in-flight deletion before shutdown. Failed attempts retry on the next tick.
@@ -102,13 +155,24 @@ retained. Editing a draft does not reset its age. Media files are retained,
 because published events can share the same assets. Before hiding a draft,
 the worker records its Cloudinary folder and annual cleanup due date on that draft. A draft without media is deleted immediately.
 
-The same job prunes `migrationJournal` run records and their snapshot documents
-30 × 24 hours after a successful migration or confirmed rollback. A recovered
-rollback ages from its recovery time. Running and failed rollbacks, runs without
+## Log and table retention
+
+Source: [`services/background-services/log-retention.js`](../services/background-services/log-retention.js)
+
+A separate daily job starts at 03:05 Amsterdam time. Scheduler and in-process
+job history, completed and failed Redis queue records, completed migration
+journals, and delivered queue-alert receipts are retained for up to 30 days.
+The job explicitly removes old queue records because BullMQ's age limit is
+applied lazily when new jobs finish.
+The `LOG_RETENTION_ENABLED` flag controls only this job.
+
+The migration journal cleanup removes `migrationJournal` run records and their
+snapshot documents 30 × 24 hours after a successful migration or confirmed
+rollback. A recovered rollback ages from its recovery time. Running and failed
+rollbacks, runs without
 a completion time, orphan snapshots, and the deployment lock are retained for
 operator recovery or review. Snapshots are deleted before their run record, so
-a failed cleanup can safely retry. The existing `EVENT_DRAFT_CLEANUP_ENABLED`
-flag controls both parts of this daily job.
+a failed cleanup can safely retry.
 
 The last successful day is held only in process memory. A restart or another
 server can repeat the idempotent deletion safely; no new database logs, delivery
@@ -116,7 +180,7 @@ records or permanent Redis keys are created. Only PM2 worker 0 runs this job.
 
 ```dotenv
 # Enabled by default in production; disabled by default in local development.
-EVENT_DRAFT_CLEANUP_ENABLED=true
+LOG_RETENTION_ENABLED=true
 ```
 
 This worker takes effect when the updated API is deployed and started. Adding
@@ -135,7 +199,9 @@ hours before that cutoff. A folder shared with a live draft or a later event
 is deferred until a later August 25. The same job cleans folders on hidden, deleted draft records and removes those records after cleanup. Old archived posters that were copied to the shared
 `archived-event-posters` folder are removed individually. Per-event due dates
 and completion markers persist on the parent event and draft documents, so an interrupted job retries after
-startup. Cloudinary failures retry after one hour. Only PM2 worker 0 runs it.
+startup. Cloudinary failures retry after one hour. A Redis year marker prevents
+another completed sweep for the same annual cutoff, and each sweep drains all
+eligible batches. Only PM2 worker 0 runs it.
 
 ```dotenv
 EVENT_MEDIA_CLEANUP_ENABLED=true
@@ -167,65 +233,32 @@ Configuration:
 BIRTHDAY_EMAIL_WORKER_ENABLED=true
 ```
 
-## Billing maintenance
+## Member revenue webhook work
 
-Source: [`services/subscriptions/reminders.js`](../services/subscriptions/reminders.js)
+The signed national Stripe webhook enqueues a deduplicated Redis job for paid
+invoices, subscription changes, refunds, disputes and balance availability.
+The dedicated worker rebuilds Stripe invoice state and settles regional shares.
+It makes five attempts with exponential backoff starting at 15 minutes. A final
+failure stops that job and emails the developer group. A later relevant webhook
+can start a new job after the cause is corrected. The webhook returns an error
+if it cannot persist the job, allowing Stripe to retry delivery.
 
-Each process checks once per minute, but a renewable distributed lease and a
-persisted next-run time allow only one billing sweep. A second process skips
-without creating a monitoring failure, even when the first has already finished.
-The worker performs three bounded tasks (checkout recovery, subscriptions, then
-reminders). Each phase stops starting new operations after 50 seconds; in-flight
-operations are awaited, never abandoned with a timeout while still writing.
+## Failure alerts
 
-1. **Payment-failure reminders**
-   - Reads up to 50 due `BillingAttention` records.
-   - Reconciles the current Stripe state before sending anything.
-   - Sends the first reminder when the failure becomes due and, if still
-     unresolved, a second reminder no earlier than 48 hours later.
-   - Atomic claims ensure concurrent API instances do not send the same
-     reminder slot twice.
-2. **Checkout recovery**
-   - Checks up to 25 due, incomplete membership Checkout records, oldest first
-     (`account-checkout:` and `signup:` records). Event-ticket claims are excluded.
-   - Requires the recorded billing region and verifies subscription mode and
-     membership metadata before calling fulfillment. There is no account fallback.
-   - Completes paid membership checkouts whose initial webhook was missed.
-   - Closes expired sessions and removes their stored registration payload.
-3. **Subscription reconciliation**
-   - Checks up to 25 stale member records and 25 stale alumni records.
-   - Refreshes subscription state from Stripe without granting benefits from
-     unverified or stale local data.
-
-Configuration:
-
-```dotenv
-# Production default: enabled
-BILLING_WORKER_ENABLED=true
-```
-
-Recovery lookup failures back off for 5, 10, 20, 40 minutes, etc., capped at six
-hours. A missing provider resource is checked again after 24 hours, not every
-minute. Expected `BillingLeaseBusyError` contention defers for one minute without
-incrementing the failure count; other HTTP 409 errors remain genuine failures.
-Open checkouts are polled after five minutes. No records are silently marked
-paid, completed, or deleted just because lookup failed. Existing checkout-state
-expiry remains unchanged. These intervals do not change customer charge retries.
-
-Successful subscription reconciliation (including webhooks and account requests)
-clears recovery backoff. Failure updates cannot overwrite a newer webhook
-snapshot or a replacement checkout. Whole-task errors also back off, including
-a process-local fallback when Redis cannot persist the schedule. Revenue work
-has an independent timer/backoff and does not delay membership recovery.
-
-Related persistence:
-
-- Redis reminder state stores reminder timing, attempts, and resolution state.
-- Redis `checkout-state` stores bounded checkout recovery state; Redis leases
-  coordinate work and expiring MongoDB fence markers protect billing writes.
-- Redis `scheduled-job` stores shared due times/backoff with a seven-day TTL.
-- Member/alumni subscriptions store `recoveryAttempts` and `nextRecoveryAt`.
-  No data migration is required: absent fields are immediately eligible.
+API schedules that use `runObservedJob` stop after five consecutive failed runs.
+Their failure count and halted state persist in MongoDB across restarts. A
+developer email is sent when the fifth failure halts the job; failed alert
+delivery is retried while the job is halted. The email omits exception messages
+and payloads. After fixing the cause, an operator clears the corresponding
+`JobFailureState`
+record to resume the job. The academic-year seed also needs an API worker
+restart after that reset because it schedules its next run in process memory.
+Redis queue jobs and individual event campaign recipient deliveries also make
+at most five attempts and email the developer group after final failure. Failed
+email delivery is retried from a durable alert receipt during the hourly
+weekday business-hour checks until accepted. Individual event campaign
+recipient failures follow their separate persisted retry cursor. The GitHub
+and systemd schedules use their own platform failure reporting.
 
 Existing failed monitoring records are preserved and age out normally; deploying
 this change does not retry the historical spreadsheet queue or clear failures.
@@ -279,6 +312,30 @@ shows only that region's member count, without the national alumni count. See
 [Regional contact directory and weekly report](region-contacts.md) for migration,
 routing and delivery semantics.
 
+## Dedicated worker and external schedules
+
+| Job | Owner and timing | Enabled when | Main effect |
+| --- | --- | --- | --- |
+| Guest-list reconciliation | `bgsnl-worker` BullMQ scheduler, every six hours | `APP_ENV=prod` by default, or `GUEST_LIST_RECONCILIATION_ENABLED=true`; `false` disables it | Requeues recent society and special-event guest lists for Google Sheets sync |
+| Developer failure-alert retry | `bgsnl-worker`, on each hour from 09:00 through 16:00, Monday–Friday | Dedicated worker running | Retries unsent developer emails for halted scheduled jobs and exhausted queue jobs from Mongo alert receipts |
+| Public sitemap fallback | Website GitHub Actions at 06:17 UTC daily; also accepts dispatch and manual runs | `SITEMAP_REFRESH_ENABLED=true` repository variable for automatic runs | Revalidates the website's sitemap and checks the public sitemap and `llms.txt` |
+| API memory sample | VPS systemd timer every five minutes, with persistent catch-up after downtime | `bgsnl-api-memory.timer` installed and enabled on the VPS | Writes PM2 worker RSS measurements to the system journal; see [API worker memory](api-memory-monitoring.md) |
+
+Guest-list reconciliation is configured by [`workers.js`](../workers.js) and
+[`services/jobs/guest-list-reconciliation.js`](../services/jobs/guest-list-reconciliation.js).
+The alert retry timer is also in `workers.js`; it scans unsent receipts in
+`JobFailureState` and calls the developer email provider directly. Its business
+hours are `Europe/Amsterdam`, with an immediate catch-up check when the worker
+starts during that window. Initial fifth-failure alerts are attempted at the
+time of failure, including outside business hours.
+
+The sitemap cron is defined in the sibling website repository at
+`BGSNL/.github/workflows/refresh-sitemap.yml`; the API's sitemap expiry worker
+can request an immediate workflow dispatch. The memory timer is defined in
+[`ops/systemd/bgsnl-api-memory.timer`](../ops/systemd/bgsnl-api-memory.timer).
+Neither repository configuration alone confirms the current GitHub variable or
+VPS timer state.
+
 ## Operational timers that are not scheduled jobs
 
 These timers support in-flight work and do not initiate periodic business
@@ -290,13 +347,19 @@ events:
 | General email queue timeout | 60 seconds for the legacy provider; 100 seconds for Domakin Mailer | Prevents one delivery from blocking the in-memory mail queue indefinitely |
 | Redis spreadsheet-job retry | Five attempts with exponential backoff, beginning at one second | Recovers transient Google Sheets or network failures without blocking API requests |
 
-## Not automatically scheduled
+## Event-driven work and manual utilities
 
-The scripts in `scripts/`, including the marketing/backfill utilities, run only
-when invoked manually. The GitHub
-Actions workflow is triggered by pushes and pull requests; it has no cron
-schedule. There is currently no operating-system cron or external scheduler
-defined in this repository.
+Member revenue maintenance is queued by the signed national Stripe webhook,
+not a timer. Spreadsheet synchronization and marketing capture also consume
+jobs after API actions; only their six-hour guest-list reconciliation is a
+recurring queue schedule. Member and alumni statistics recounts are requested
+by subscription actions, not a calendar timer. The API's Docker CI/CD workflow
+is triggered by pushes and pull requests; the website's separate sitemap
+workflow has the daily cron listed above. Vercel has no configured cron in
+`BGSNL/vercel.json`.
+
+Marketing and backfill scripts in `scripts/` run manually. The exception is
+`scripts/sample-api-memory.py`, invoked by the VPS timer listed above.
 
 ## Verification
 
@@ -305,6 +368,7 @@ Run the scheduler-specific tests without sending real email:
 ```bash
 npm run test:weekly-membership-report
 npm run test:birthday-emails
-node --test tests/event-draft-cleanup.test.js
-npm run test:subscriptions
+node --test tests/calendar-check.test.js tests/job-failure-policy.test.js tests/academic-year-statistics.test.js tests/event-campaigns.test.js tests/event-cancellation.test.js tests/event-feedback.test.js tests/guest-lifecycle-campaigns.test.js tests/guest-list-reconciliation.test.js
+node --test tests/event-archive-worker.test.js tests/event-draft-cleanup.test.js tests/log-retention.test.js tests/event-media-cleanup.test.js tests/sitemap-expiry.test.js
+node --test tests/billing-maintenance.test.js
 ```

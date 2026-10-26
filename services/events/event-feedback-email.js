@@ -3,6 +3,7 @@ import MarketingEmail from "../../models/MarketingEmail.js";
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
 import { isEmailSchedulerProcess } from "../background-services/email-run-guard.js";
 import { runObservedJob } from "../monitoring/job-history.js";
+import { startDailyCheck } from "../jobs/calendar-check.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { HOME_URL } from "../../util/config/defines.js";
 import { feedbackDueAt, feedbackRecipientHash } from "./event-feedback.js";
@@ -10,6 +11,7 @@ import { EVENT_CAMPAIGN_TEMPLATE } from "./event-campaign-email.js";
 import { formatEventEmailDate, renderEventEmailPreview, safeEventPosterUrl } from "./event-email-preview.js";
 
 const RETRY_MS = 5 * 60 * 1000;
+const UNSCHEDULED_CATCHUP_MS = 2 * 24 * 60 * 60 * 1000;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const escapeHtml = value => String(value || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
   .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -56,10 +58,13 @@ export function createEventFeedbackEmailService({ EventModel = Event, MarketingM
   };
   const schedule = async () => {
     const time = now();
+    const recent = new Date(+time - UNSCHEDULED_CATCHUP_MS);
     const events = await EventModel.find({ cancellationRequestedAt: null, status: { $nin: ["draft", "cancelled"] },
       $or: [
         { correctedDate: { $gt: time } },
         { correctedDate: null, date: { $gt: time } },
+        { correctedDate: { $gte: recent, $lte: time } },
+        { correctedDate: null, date: { $gte: recent, $lte: time } },
         { feedbackEmailDueAt: { $ne: null }, feedbackEmailCompletedAt: null },
       ],
     }).select("_id date correctedDate feedbackEmailDueAt feedbackEmailCompletedAt").lean();
@@ -68,7 +73,6 @@ export function createEventFeedbackEmailService({ EventModel = Event, MarketingM
       if (event.feedbackEmailCompletedAt) continue;
       const dueAt = feedbackDueAt(event);
       if (!Number.isFinite(dueAt.getTime())) continue;
-      if (!event.feedbackEmailDueAt && dueAt <= time) continue;
       if (+new Date(event.feedbackEmailDueAt || 0) === +dueAt) continue;
       await EventModel.updateOne({ _id: event._id, feedbackEmailCompletedAt: null },
         { $set: { feedbackEmailDueAt: dueAt } });
@@ -151,7 +155,7 @@ export const eventFeedbackEmailsEnabled = (env = process.env) => env.EVENT_FEEDB
   (env.EVENT_FEEDBACK_EMAIL_ENABLED === undefined && env.NODE_ENV === "production");
 
 export function startEventFeedbackEmailWorker({ enabled = eventFeedbackEmailsEnabled() && isEmailSchedulerProcess(),
-  service = createEventFeedbackEmailService(), intervalMs = 60_000 } = {}) {
+  service = createEventFeedbackEmailService(), intervalMs } = {}) {
   if (!enabled) return async () => {};
   let running;
   const tick = () => {
@@ -160,8 +164,6 @@ export function startEventFeedbackEmailWorker({ enabled = eventFeedbackEmailsEna
       .catch(error => logOperationalError("worker.event-feedback-email", error))
       .finally(() => { running = null; });
   };
-  const timer = setInterval(tick, intervalMs);
-  timer.unref();
-  tick();
-  return async () => { clearInterval(timer); await running; };
+  const stopSchedule = startDailyCheck(tick, { intervalMs });
+  return async () => { stopSchedule(); await running; };
 }

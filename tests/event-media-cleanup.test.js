@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  eventMediaCleanupDueAt, getEventMediaCleanupConfig, nextEventMediaCleanupAt,
-  rememberDeletedDraftMedia, runEventMediaCleanup,
+  createAnnualEventMediaCleanupJob, eventMediaCleanupDueAt, getEventMediaCleanupConfig,
+  nextEventMediaCleanupAt, rememberDeletedDraftMedia, runAnnualEventMediaCleanup, runEventMediaCleanup,
 } from "../services/events/event-media-cleanup.js";
 
 const chain = value => ({ select: () => ({ limit: () => ({ lean: async () => value }), lean: async () => value }) });
@@ -91,4 +91,37 @@ test("annual worker is enabled on production PM2 worker zero", () => {
   assert.equal(getEventMediaCleanupConfig({ NODE_ENV: "production", NODE_APP_INSTANCE: "0" }).enabled, true);
   assert.equal(getEventMediaCleanupConfig({ NODE_ENV: "production", NODE_APP_INSTANCE: "1" }).enabled, false);
   assert.equal(getEventMediaCleanupConfig({ NODE_ENV: "development" }).enabled, false);
+});
+
+test("annual cleanup runs once for the academic-year cutoff and persists completion", async () => {
+  let now = new Date("2026-08-25T00:59:59Z"), marker = false, runs = 0;
+  const job = createAnnualEventMediaCleanupJob({ now: () => now,
+    getMarker: async () => marker, setMarker: async () => { marker = true; },
+    sweep: async ({ cutoff }) => {
+      runs++;
+      assert.equal(cutoff.toISOString(), "2026-08-25T01:00:00.000Z");
+      return { cleared: 2, failed: 0, pendingRetry: 0 };
+    } });
+  assert.deepEqual(await job(), { skipped: true });
+  now = new Date("2026-08-25T01:00:00Z");
+  assert.equal((await job()).cleared, 2);
+  assert.deepEqual(await job(), { skipped: true });
+  assert.equal(runs, 1);
+});
+
+test("annual sweep drains all batches and leaves failed folders for bounded retries", async () => {
+  let calls = 0;
+  const model = { countDocuments: async () => 0 };
+  const result = await runAnnualEventMediaCleanup({ cutoff: new Date("2026-08-25T01:00:00Z"),
+    EventModel: model, DraftModel: model, run: async () => ++calls < 3
+      ? { scheduled: 25, cleared: 25, deferred: 0, failed: 0 }
+      : { scheduled: 0, cleared: 0, deferred: 0, failed: 0 } });
+  assert.equal(calls, 3);
+  assert.equal(result.cleared, 50);
+  let marker = false;
+  const job = createAnnualEventMediaCleanupJob({ now: () => new Date("2026-08-26T12:00:00Z"),
+    getMarker: async () => marker, setMarker: async () => { marker = true; },
+    sweep: async () => ({ failed: 1 }) });
+  assert.equal((await job()).failed, 1);
+  assert.equal(marker, false);
 });

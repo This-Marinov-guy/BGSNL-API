@@ -2,9 +2,9 @@ import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer
 import BillingAttention from "../../models/BillingAttention.js";
 import { USER_URL, SUBSCRIPTION_PAYMENT_ATTENTION_TEMPLATE } from "../../util/config/defines.js";
 import { reconcileSubscription } from "./reconcile.js";
-import { processMemberRevenueMaintenance } from "./revenue-fees.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import { runCoordinatedSchedule } from "../jobs/coordinated-schedule.js";
+import { nextDailyCheckAt, startDailyCheck } from "../jobs/calendar-check.js";
 import { isBusyLease, recoveryDelay } from "../jobs/recovery-backoff.js";
 import { recoverMembershipCheckouts, recoverSubscriptions } from "./maintenance.js";
 import { stripeOwnsBillingEmails } from "../../util/subscriptions/recovery-policy.js";
@@ -85,7 +85,8 @@ export async function processBillingReminders({ send = deliverBillingReminder, a
 
 export function startBillingWorker({ env = process.env, coordinate = runCoordinatedSchedule,
   reminders = processBillingReminders, checkouts = recoverMembershipCheckouts, subscriptions = recoverSubscriptions,
-  revenue = processMemberRevenueMaintenance, now = Date.now, schedule = setInterval, cancel = clearInterval,
+  now = Date.now, intervalMs, schedule = setInterval, cancel = clearInterval,
+  scheduleDaily = setTimeout, cancelDaily = clearTimeout,
   report = logOperationalError } = {}) {
   if (env.BILLING_WORKER_ENABLED === "false" ||
       (env.BILLING_WORKER_ENABLED !== "true" && env.NODE_ENV !== "production")) return async () => {};
@@ -102,14 +103,10 @@ export function startBillingWorker({ env = process.env, coordinate = runCoordina
       }
       return { failed };
     } },
-    { name: "member-revenue-maintenance", intervalMs: 15 * 60_000, work: async ({ assertOwned }) => {
-      await assertOwned();
-      return revenue();
-    } },
   ];
   const tick = () => Promise.all(tasks.map(task => {
     if (stopped || task.running || now() < (task.nextLocalAttemptAt || 0)) return task.running;
-    task.running = Promise.resolve().then(() => coordinate(task.name, task.work, { intervalMs: task.intervalMs }))
+    task.running = Promise.resolve().then(() => coordinate(task.name, task.work, { nextRunAt: nextDailyCheckAt }))
       .then(() => { task.failures = 0; task.nextLocalAttemptAt = 0; })
       .catch(error => {
         task.failures = (task.failures || 0) + 1;
@@ -118,8 +115,7 @@ export function startBillingWorker({ env = process.env, coordinate = runCoordina
       }).finally(() => { task.running = null; });
     return task.running;
   }));
-  const timer = schedule(tick, 60000);
-  timer.unref();
-  tick();
-  return async () => { stopped = true; cancel(timer); await Promise.all(tasks.map(task => task.running)); };
+  const stopSchedule = startDailyCheck(tick, { now: () => new Date(now()), intervalMs,
+    schedule: scheduleDaily, cancel: cancelDaily, scheduleInterval: schedule, cancelInterval: cancel });
+  return async () => { stopped = true; stopSchedule(); await Promise.all(tasks.map(task => task.running)); };
 }

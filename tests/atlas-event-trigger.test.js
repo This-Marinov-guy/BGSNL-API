@@ -121,7 +121,7 @@ test("worker coalesces trigger deliveries and immediately rechecks after an in-f
     count++;
     if (count === 1) await new Promise((resolve) => { release = resolve; });
     return { failed: 0 };
-  } });
+  }, observe: (_source, _name, run) => run() });
   try {
     await flush();
     for (let i = 0; i < 20; i++) assert.equal(wakeMemberEventAnnouncementWorker(), true);
@@ -142,7 +142,7 @@ test("shutdown discards pending wakeups and waits for active delivery", async ()
     count++;
     await new Promise((resolve) => { release = resolve; });
     return { failed: 0 };
-  } });
+  }, observe: (_source, _name, run) => run() });
   await flush();
   wakeMemberEventAnnouncementWorker();
   const stopped = stop();

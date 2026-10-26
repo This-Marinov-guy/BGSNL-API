@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { dueGuestTermCampaigns, firstPaidGuestEvents, guestSavingsByEmail,
-  runDueFirstPaidGuestEventCampaigns, runDueGuestTermCampaigns, sendFirstPaidGuestEvent, sendGuestTermRecap } from "../services/events/guest-lifecycle-campaigns.js";
+  runDueFirstPaidGuestEventCampaigns, runDueGuestTermCampaigns, sendFirstPaidGuestEvent, sendGuestTermRecap,
+  startFirstPaidGuestEventCampaignWorker, startGuestTermCampaignWorker } from "../services/events/guest-lifecycle-campaigns.js";
 import { isGuestMarketingRecipient } from "../services/events/guest-marketing-emails.js";
 import { GUEST_SAVINGS_TEMPLATE } from "../services/events/guest-savings-email.js";
 
@@ -144,4 +145,15 @@ test("term campaign marker is saved only after every recipient succeeds", async 
   await runDueGuestTermCampaigns({ now, clientFor: async () => client,
     sendRecap: async () => { attempts.push("duplicate"); } });
   assert.deepEqual(attempts, ["fail", "success"]);
+});
+
+test("daily guest campaign workers pass through the five-failure scheduler policy", async () => {
+  const observed = [];
+  const observe = async (source, name, work) => { observed.push([source, name]); return work(); };
+  const options = { enabled: true, intervalMs: 600_000, process: async () => ({ status: "not-due" }), observe };
+  const stopFirst = startFirstPaidGuestEventCampaignWorker(options);
+  const stopTerms = startGuestTermCampaignWorker(options);
+  await stopFirst();
+  await stopTerms();
+  assert.deepEqual(observed, [["scheduler", "guest-first-paid-event"], ["scheduler", "guest-term-recap"]]);
 });

@@ -27,16 +27,18 @@ profile owns Google identities and passkeys.
 | Transaction fencing markers | `temporarycodes` | One day after use |
 
 Every Redis write has an expiry. The record store rejects missing or invalid
-deadlines and cannot create a permanent key. Checkout polling and reminder retries
-do not renew retention. A new checkout gets a new reservation deadline. Billing
+deadlines and cannot create a permanent key. The daily Billing maintenance
+sweep recovers eligible paid membership Checkouts and retries regional payment
+reminders. A new checkout gets a new reservation deadline. Billing
 leases expire after two minutes without their owner's heartbeat; caches and
 active sessions can be renewed only through their existing write/activity flows.
 Expired reminder jobs are not recreated for the same failure episode: the current
 episode ID remains part of the account's subscription until recovery or cancellation.
 
-The checkout recovery window is 30 days. If a paid registration is still unfulfilled
-when that window ends, its temporary registration data is deleted and recovery
-requires manual assistance. Stripe payment history remains available. Legacy pending
+Pending Checkout registration data expires after 30 days. If a paid webhook
+is missed, the daily Billing maintenance sweep can recover it during that
+window. Once the window ends, recovery requires manual assistance. Stripe
+payment history remains available. Legacy pending
 registrations receive one 30-day grace period when migrated, preserved on reruns.
 
 The few tokens that must be consumed atomically with account writes stay in

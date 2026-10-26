@@ -7,6 +7,8 @@ import { academicYearRange, academicYearSchedule, ACADEMIC_YEAR_TIME_ZONE } from
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
 import { isEmailSchedulerProcess } from "../background-services/email-run-guard.js";
+import { startDailyCheck } from "../jobs/calendar-check.js";
+import { runObservedJob } from "../monitoring/job-history.js";
 import { redisClient, redisPrefix } from "../storage/redis.js";
 import { createGuestSignupLink } from "./guest-signup-prefill.js";
 import { findGuestMarketingAudience, isGuestMarketingRecipient } from "./guest-marketing-emails.js";
@@ -131,18 +133,17 @@ export async function runDueFirstPaidGuestEventCampaigns({ now = new Date(), Eve
 }
 
 export function startFirstPaidGuestEventCampaignWorker({ enabled = guestCampaignsEnabled() && isEmailSchedulerProcess(),
-  intervalMs = 3600_000, process = runDueFirstPaidGuestEventCampaigns } = {}) {
+  intervalMs, process = runDueFirstPaidGuestEventCampaigns, observe = runObservedJob } = {}) {
   if (!enabled) return async () => {};
   let running;
   const tick = () => {
     if (running) return;
-    running = process().catch(error => logOperationalError("guest-campaign.first-paid-event-worker", error))
+    running = observe("scheduler", "guest-first-paid-event", process)
+      .catch(error => logOperationalError("guest-campaign.first-paid-event-worker", error))
       .finally(() => { running = null; });
   };
-  const timer = setInterval(tick, intervalMs);
-  timer.unref();
-  tick();
-  return async () => { clearInterval(timer); await running; };
+  const stopSchedule = startDailyCheck(tick, { intervalMs });
+  return async () => { stopSchedule(); await running; };
 }
 
 export function dueGuestTermCampaigns(now = new Date()) {
@@ -261,16 +262,15 @@ export async function runDueGuestTermCampaigns({ now = new Date(), clientFor = r
 }
 
 export function startGuestTermCampaignWorker({ enabled = guestCampaignsEnabled() && isEmailSchedulerProcess(),
-  intervalMs = 3600_000, process = runDueGuestTermCampaigns } = {}) {
+  intervalMs, process = runDueGuestTermCampaigns, observe = runObservedJob } = {}) {
   if (!enabled) return async () => {};
   let running;
   const tick = () => {
     if (running) return;
-    running = process().catch(error => logOperationalError("guest-campaign.term-worker", error))
+    running = observe("scheduler", "guest-term-recap", process)
+      .catch(error => logOperationalError("guest-campaign.term-worker", error))
       .finally(() => { running = null; });
   };
-  const timer = setInterval(tick, intervalMs);
-  timer.unref();
-  tick();
-  return async () => { clearInterval(timer); await running; };
+  const stopSchedule = startDailyCheck(tick, { intervalMs });
+  return async () => { stopSchedule(); await running; };
 }

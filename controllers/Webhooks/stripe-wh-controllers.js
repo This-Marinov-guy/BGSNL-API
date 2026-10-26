@@ -1,5 +1,6 @@
 import HttpError from "../../models/Http-error.js";
 import { captureMemberRevenueEvent } from "../../services/subscriptions/revenue-sharing.js";
+import { enqueueMemberRevenueFromWebhook } from "../../services/subscriptions/member-revenue-queue.js";
 import BillingRecord from "../../models/BillingRecord.js";
 import { createStripeClient, getStripeKey, STRIPE_KEYS } from "../../util/config/stripe.js";
 import { stripeId, invoiceSubscriptionId } from "../../util/subscriptions/policy.js";
@@ -127,6 +128,7 @@ export const postWebhookCheckout = async (req, res, next) => {
         }
         if (subscriptionId) await reconcileSubscription(subscriptionId, region, { expectedCustomerId: stripeId(object.customer) });
       }
+      await enqueueMemberRevenueFromWebhook(event, region);
       // Never log or reflect checkout metadata (legacy sessions may contain PII).
       return res.status(200).json({ received: true });
     });

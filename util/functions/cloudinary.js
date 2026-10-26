@@ -53,7 +53,7 @@ export const deleteFolder = async (folderName = "") => {
       page = await observeIntegrationRequest("cloudinary", "list-folder-assets", "GET", () =>
         cloudinary.api.resources_by_asset_folder(scopedFolder, { max_results: 500 }));
     } catch (error) {
-      if (error?.http_code !== 404) throw error;
+      if ((error?.http_code ?? error?.error?.http_code) !== 404) throw error;
     }
     if (page) {
       let previousIds;
@@ -83,12 +83,12 @@ export const deleteFolder = async (folderName = "") => {
       } while (nextCursor);
     }
   } catch (error) {
-    if (error?.http_code !== 404) { logIntegrationError("cloudinary", error, "delete-folder-assets"); throw error; }
+    if ((error?.http_code ?? error?.error?.http_code) !== 404) { logIntegrationError("cloudinary", error, "delete-folder-assets"); throw error; }
   }
   try {
     await observeIntegrationRequest("cloudinary", "delete-folder", "DELETE", () => cloudinary.api.delete_folder(scopedFolder));
   } catch (error) {
-    if (error?.http_code !== 404) { logIntegrationError("cloudinary", error, "delete-folder"); throw error; }
+    if ((error?.http_code ?? error?.error?.http_code) !== 404) { logIntegrationError("cloudinary", error, "delete-folder"); throw error; }
   }
 };
 

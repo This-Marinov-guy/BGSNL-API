@@ -5,6 +5,7 @@ import { redisPrefix } from "../storage/redis.js";
 import { createWorkerRedisConnection } from "./spreadsheet-sync-queue.js";
 import { MARKETING_CAPTURE_QUEUE, marketingCaptureData } from "./marketing-capture-queue.js";
 import { withJobTimeout } from "./job-timeout.js";
+import { notifyFinalQueueFailure } from "../monitoring/queue-failure-alert.js";
 
 export const MARKETING_ATTEMPT_TIMEOUT_MS = 10_000;
 export const MARKETING_DATABASE_TIMEOUT_MS = 5000;
@@ -26,7 +27,10 @@ export function startMarketingCaptureWorker({ connection = createWorkerRedisConn
   const worker = new WorkerClass(MARKETING_CAPTURE_QUEUE, processor, {
     connection, prefix: `${redisPrefix()}jobs`, concurrency: 2,
   });
-  worker.on("failed", (_job, error) => logOperationalError("worker.marketing-capture", error));
+  worker.on("failed", (job, error) => {
+    logOperationalError("worker.marketing-capture", error);
+    void notifyFinalQueueFailure(job, MARKETING_CAPTURE_QUEUE);
+  });
   worker.on("error", (error) => logOperationalError("worker.marketing-capture-connection", error));
   return {
     worker,

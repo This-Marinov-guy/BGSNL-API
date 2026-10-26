@@ -8,10 +8,10 @@ import { BIRTHDAY_TEMPLATE } from "../../util/config/defines.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
+import { startDailyCheck } from "../jobs/calendar-check.js";
 
 export const BIRTHDAY_EMAIL_TIME_ZONE = "Europe/Amsterdam";
 export const BIRTHDAY_EMAIL_HOUR = 10;
-export const BIRTHDAY_EMAIL_INTERVAL_MS = 60 * 1000;
 
 export const getBirthdayWorkerConfig = (env = process.env) => {
   const explicitlyConfigured = env.BIRTHDAY_EMAIL_WORKER_ENABLED !== undefined;
@@ -135,7 +135,7 @@ export const processBirthdayEmails = async ({
 };
 
 export const startBirthdayEmailWorker = ({
-  intervalMs = BIRTHDAY_EMAIL_INTERVAL_MS,
+  intervalMs,
   process = processBirthdayEmails,
   config = getBirthdayWorkerConfig(),
 } = {}) => {
@@ -148,12 +148,10 @@ export const startBirthdayEmailWorker = ({
       .catch((error) => { logOperationalError("worker.birthday-email", error); console.error("Birthday email worker failed; retrying on the next tick", { code: error?.code }); })
       .finally(() => { running = null; });
   };
-  const timer = setInterval(tick, intervalMs);
-  timer.unref();
-  tick();
+  const stopSchedule = startDailyCheck(tick, { intervalMs });
   return async () => {
     stopped = true;
-    clearInterval(timer);
+    stopSchedule();
     await running;
   };
 };

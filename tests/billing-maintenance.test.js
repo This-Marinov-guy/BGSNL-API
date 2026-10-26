@@ -6,6 +6,7 @@ import { runCoordinatedSchedule } from "../services/jobs/coordinated-schedule.js
 import { recoveryDelay } from "../services/jobs/recovery-backoff.js";
 import { BillingLeaseBusyError } from "../services/subscriptions/lease-retry.js";
 import { startBillingWorker } from "../services/subscriptions/reminders.js";
+import { nextDailyCheckAt } from "../services/jobs/calendar-check.js";
 
 const NOW = Date.parse("2026-10-02T12:00:00Z");
 function memory(initial = []) {
@@ -173,6 +174,19 @@ test("two processes execute one sweep per interval, including fast and overlappi
   h.advance(60_000); await h.run(async () => { runs++; }); assert.equal(runs, 2);
 });
 
+test("daily billing due time prevents another sweep after an API restart", async () => {
+  const h = coordinatorFixture(); let runs = 0;
+  const run = () => runCoordinatedSchedule("billing-maintenance", async () => { runs++; },
+    { ...h.options, nextRunAt: nextDailyCheckAt });
+  await run();
+  h.advance(3600_000);
+  assert.deepEqual(await run(), { skipped: true });
+  assert.equal(runs, 1);
+  h.advance(+nextDailyCheckAt(new Date(NOW)) - NOW - 3600_000);
+  await run();
+  assert.equal(runs, 2);
+});
+
 test("scheduler failures remain errors, persist backoff, and recover when due", async () => {
   const h = coordinatorFixture();
   await assert.rejects(h.run(async () => { throw new Error("outage"); }), /outage/);
@@ -197,16 +211,36 @@ test("stopping recovery avoids further provider calls", async () => {
   }), { failed: 0, processed: 0 });
 });
 
-test("revenue errors back off independently and cannot block membership recovery", async () => {
-  let tick, now = NOW, billing = 0, revenue = 0;
-  const stop = startBillingWorker({ env: { NODE_ENV: "production" }, now: () => now,
+test("billing worker does not schedule Member revenue processing", async () => {
+  let tick, now = NOW, billing = 0;
+  const stop = startBillingWorker({ env: { NODE_ENV: "production" }, now: () => now, intervalMs: 60_000,
     schedule: callback => { tick = callback; return { unref() {} }; }, cancel: () => {}, report: () => {},
     coordinate: async (name, work) => {
-      if (name === "member-revenue-maintenance") { revenue++; throw new Error("reporting outage"); }
+      assert.equal(name, "billing-maintenance");
       billing++; return work({ assertOwned: async () => {} });
     }, reminders: async () => ({ failed: 0 }), checkouts: async () => ({ failed: 0 }), subscriptions: async () => ({ failed: 0 }),
   });
   await tick(); now += 60_000; await tick();
-  assert.equal(billing, 2); assert.equal(revenue, 1);
+  assert.equal(billing, 2);
   await stop(); now += 3600_000; await tick(); assert.equal(billing, 2);
+});
+
+test("billing worker checks daily at 10:00 Amsterdam", async () => {
+  let now = Date.parse("2026-10-26T08:30:00Z"), billing = 0;
+  const timers = [];
+  const stop = startBillingWorker({ env: { NODE_ENV: "production" }, now: () => now,
+    scheduleDaily: (callback, delay) => { const timer = { callback, delay }; timers.push(timer); return timer; },
+    cancelDaily: () => {}, coordinate: async (_name, work, options) => {
+      assert.equal(options.nextRunAt, nextDailyCheckAt);
+      billing++;
+      return work({ assertOwned: async () => {} });
+    }, reminders: async () => ({ failed: 0 }), checkouts: async () => ({ failed: 0 }),
+    subscriptions: async () => ({ failed: 0 }), report: () => {} });
+  assert.equal(billing, 0);
+  assert.equal(timers[0].delay, 30 * 60_000);
+  now += 30 * 60_000;
+  timers[0].callback();
+  await stop();
+  assert.equal(billing, 1);
+  assert.equal(timers[1].delay, 24 * 3600_000);
 });
