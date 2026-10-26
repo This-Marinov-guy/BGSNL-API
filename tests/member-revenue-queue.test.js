@@ -33,10 +33,11 @@ test("a deferred transfer alerts without failing or delaying the next job", asyn
   await assert.rejects(process({ name: "other" }), /Unknown/);
 });
 
-test("revenue recovery is scheduled hourly and unexpected failures alert after one attempt", async () => {
+test("revenue recovery is scheduled daily and unexpected failures alert after one attempt", async () => {
   const calls = [];
   await scheduleMemberRevenueSweep(() => ({ upsertJobScheduler: async (...args) => calls.push(args) }));
-  assert.equal(calls[0][1].every, MEMBER_REVENUE_SWEEP_INTERVAL_MS);
+  assert.equal(MEMBER_REVENUE_SWEEP_INTERVAL_MS, 24 * 60 * 60 * 1000);
+  assert.equal(calls[0][1].every, 24 * 60 * 60 * 1000);
   assert.equal(calls[0][2].opts.attempts, 1);
   const alerts = [];
   const job = { id: "42", name: "member-revenue", attemptsMade: 1, opts: { attempts: 1 }, finishedOn: Date.now() };

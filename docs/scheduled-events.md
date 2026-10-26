@@ -240,9 +240,9 @@ invoices, subscription changes, refunds, disputes and balance availability.
 The dedicated worker rebuilds Stripe invoice state and settles regional shares.
 Blocked or deferred transfers email the developer group with safe invoice and
 connected-account references, with daily reminders while unresolved. They do
-not fail or delay the shared queue job. An hourly recovery sweep retries them
+not fail or delay the shared queue job. A daily recovery sweep retries them
 even if no new webhook arrives. Unexpected job errors fail after one attempt
-and email the developer group; later webhook and hourly jobs remain available.
+and email the developer group; later webhook and daily jobs remain available.
 The webhook returns an error
 if it cannot persist the job, allowing Stripe to retry delivery.
 
@@ -353,7 +353,7 @@ events:
 ## Event-driven work and manual utilities
 
 Member revenue maintenance is queued by the signed national Stripe webhook
-and an hourly recovery schedule. Spreadsheet synchronization and marketing
+and a daily recovery schedule. Spreadsheet synchronization and marketing
 capture also consume jobs after API actions; guest-list reconciliation runs
 every six hours. Member and alumni statistics recounts are requested
 by subscription actions, not a calendar timer. The API's Docker CI/CD workflow

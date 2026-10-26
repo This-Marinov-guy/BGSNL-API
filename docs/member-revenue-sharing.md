@@ -99,13 +99,13 @@ retain enough funds for transfers whose source charges have already settled.
 
 The signed national Stripe webhook enqueues revenue work in Redis when a paid
 invoice, subscription change, refund, dispute or balance availability event
-arrives. The separate `bgsnl-worker` service also schedules an hourly recovery
+arrives. The separate `bgsnl-worker` service also schedules a daily recovery
 sweep so an unresolved transfer is retried even without a new webhook. The worker paginates
 Stripe subscriptions and paid invoices, reconstructs calculations in memory,
 and settles each region. A deferred or blocked transfer emails developers with
 the invoice, connected account and reason, at most once per issue per day.
 The sweep completes so a later paid invoice can run immediately. Unexpected
-worker failures have one attempt and alert developers; the hourly sweep recovers
+worker failures have one attempt and alert developers; the daily sweep recovers
 the work. No Mongo invoice statements,
 billing receipts or enrollment ledger are retained.
 

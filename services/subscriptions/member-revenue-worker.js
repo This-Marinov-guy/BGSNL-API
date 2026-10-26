@@ -14,7 +14,7 @@ export const createMemberRevenueProcessor = ({ process = processMemberRevenueMai
   const issues = result?.issues?.length ? result.issues : result?.failed > 0 ? [{ kind: "settlement" }] : [];
   if (issues.length) {
     // Email delivery is independent of the queue slot and never delays the
-    // next paid invoice. An hourly sweep retries unresolved issues.
+    // next paid invoice. A daily sweep retries unresolved issues.
     void Promise.resolve().then(() => notifyIssues(issues))
       .catch(error => logOperationalError("worker.member-revenue-alert", error));
   }

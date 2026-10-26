@@ -9,7 +9,7 @@ import { logOperationalError } from "../../middleware/axiom-logger.js";
 
 export const MEMBER_REVENUE_QUEUE = "member-revenue";
 export const MEMBER_REVENUE_JOB = "member-revenue";
-export const MEMBER_REVENUE_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+export const MEMBER_REVENUE_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const MEMBER_REVENUE_JOB_OPTIONS = {
   attempts: 1,
   removeOnComplete: { age: 30 * 86400 },
