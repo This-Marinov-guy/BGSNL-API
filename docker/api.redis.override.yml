@@ -3,6 +3,7 @@ services:
   bgsnl-api:
     env_file:
       - /root/bgsnl-redis/bgsnl-api.env
+      - /root/bgsnl-api/.env
     networks:
       - bgsnl-storage
   bgsnl-worker:
@@ -11,6 +12,7 @@ services:
     restart: unless-stopped
     env_file:
       - /root/bgsnl-redis/bgsnl-api.env
+      - /root/bgsnl-api/.env
     networks:
       - bgsnl-storage
 networks:

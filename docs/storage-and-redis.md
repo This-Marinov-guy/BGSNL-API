@@ -117,6 +117,12 @@ Dedicated configuration directory: `/root/bgsnl-redis`.
 - `docker/api.redis.override.yml`: API environment/network integration. Applying
   this override requires the migrated API; it is not automatically activated.
 
+The API image excludes `.env*` files. Both `bgsnl-api` and `bgsnl-worker` must
+receive `/root/bgsnl-api/.env` through Compose `env_file` at runtime; the override
+above includes it. Keep that file private (mode `0600`) and keep it out of the
+Docker build context. The production `/root/docker-compose.yaml` uses the same
+runtime environment file for both services.
+
 Redis's host port is bound to **127.0.0.1:6380**, not the public interface. The API
 uses `redis://default:<password>@bgsnl-redis:6379/0` over the private Docker network.
 The existing `/root/docker-compose.yaml` remains the base configuration.
