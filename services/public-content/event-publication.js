@@ -1,4 +1,5 @@
 import { checkDiscountsOnEvents } from "../main-services/event-action-service.js";
+import { publicEventRegion } from "../events/managed-event-store.js";
 
 const price = (item) => {
   if (!item || typeof item !== "object") return undefined;
@@ -66,7 +67,8 @@ export const serializePublicEvent = (record, { checkout = false } = {}) => {
     ...(source.slug ? { slug: source.slug } : {}),
     ...(source.createdAt ? { createdAt: source.createdAt } : {}),
     ...(source.metadata?.updatedAt ? { metadata: { updatedAt: source.metadata.updatedAt } } : {}),
-    region: source.region,
+    region: record?.constructor?.modelName === "ManagedNationalEvent"
+      ? publicEventRegion(source.region) : source.region,
     title: source.title,
     ...(source.newTitle ? { newTitle: source.newTitle } : {}),
     description: source.description || "",

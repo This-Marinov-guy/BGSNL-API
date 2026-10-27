@@ -2,6 +2,7 @@ import { createHash, createCipheriv, createDecipheriv, hkdfSync, randomBytes } f
 import HttpError from "../../models/Http-error.js";
 import { ACCESS_4, HOME_URL } from "../../util/config/defines.js";
 import { checkDiscountsOnEvents } from "../main-services/event-action-service.js";
+import { publicEventRegion } from "./managed-event-store.js";
 
 const invalid = () => new HttpError("This ticket link is invalid or has expired. Please open the event on the website.", 410);
 const emailHash = (email) => createHash("sha256").update(String(email).trim().toLowerCase()).digest("hex");
@@ -12,8 +13,8 @@ const encryptionKey = (env) => {
   return hkdfSync("sha256", Buffer.from(key), Buffer.from("bgsnl:event-ticket"), TOKEN_CONTEXT, 32);
 };
 
-export const eventPageUrl = (event) => `${HOME_URL}/${encodeURIComponent(event.region)}/event-details/${encodeURIComponent(event.slug || event.id || event._id)}`;
-export const eventPurchaseUrl = (event) => `${HOME_URL}/${encodeURIComponent(event.region)}/purchase-ticket/${encodeURIComponent(event.id || event._id)}`;
+export const eventPageUrl = (event) => `${HOME_URL}/${encodeURIComponent(publicEventRegion(event.region))}/event-details/${encodeURIComponent(event.slug || event.id || event._id)}`;
+export const eventPurchaseUrl = (event) => `${HOME_URL}/${encodeURIComponent(publicEventRegion(event.region))}/purchase-ticket/${encodeURIComponent(event.id || event._id)}`;
 
 export function createMemberEventToken(event, member, { env = process.env, ttlMs = Infinity, now = Date.now() } = {}) {
   const expiresAt = Math.min(new Date(event.correctedDate || event.date).getTime(), new Date(event.ticketTimer).getTime(), now + ttlMs);

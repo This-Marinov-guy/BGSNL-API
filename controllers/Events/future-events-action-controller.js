@@ -1,6 +1,8 @@
 import { isEventDraftReady } from "../../validation/form-validators.js";
 import Event from "../../models/Event.js";
 import EventDraft from "../../models/EventDraft.js";
+import ManagedNationalEvent from "../../models/ManagedNationalEvent.js";
+import { eventModelForId, eventModelForRegion, isNationalEventManager, managedNationalEventQuery } from "../../services/events/managed-event-store.js";
 import { archiveEvent } from "../../services/events/archive-event.js";
 import { archiveExpiredEventsSweep } from "../../services/events/event-archive-worker.js";
 import { cancellationCounts } from "../../services/events/event-cancellation.js";
@@ -77,10 +79,12 @@ const websiteOriginForRequest = (req) => {
 };
 
 const hasAdminRegionAccess = (req) =>
-  authorizedRegion(req, "event") === null;
+  authorizedRegion(req, "event") === null && isNationalEventManager(req.user?.roles);
 
 const hasEventRegionAccess = (req, region) =>
-  canAccessRegion(req, "event", region);
+  region === DEFAULT_REGION
+    ? hasAdminRegionAccess(req)
+    : canAccessRegion(req, "event", region);
 
 const rejectNetherlandsRegionAccess = (req, next) => {
   if (hasEventRegionAccess(req, req.body?.region)) {
@@ -295,7 +299,8 @@ export const fetchFullDataEvent = async (req, res, next) => {
   let event;
   let isDraft = false;
   try {
-    event = await Event.findOne({ _id: eventId, ...publicEventQuery });
+    const EventModel = await eventModelForId(eventId);
+    event = await EventModel.findOne({ _id: eventId, ...publicEventQuery });
 
     if (!event) {
       event = await EventDraft.findById(eventId);
@@ -325,10 +330,6 @@ export const fetchFullDataEvent = async (req, res, next) => {
     const readyToPublish = await isEventDraftReady(event);
     event = { ...removeModelProperties(event, ["guestList", "draftOwner"]), readyToPublish };
     return res.status(200).json({ event, status: false });
-  }
-
-  if (event.region === DEFAULT_REGION && !hasAdminRegionAccess(req)) {
-    return next(new HttpError("Only admins can access Netherlands events", 403));
   }
 
   let status = true;
@@ -377,17 +378,28 @@ export const fetchFullDataEventsList = async (req, res, next) => {
   eventQuery.status = includeArchived
     ? { $ne: EVENT_DRAFT }
     : { $nin: ["archived", EVENT_DRAFT] };
+  const regionalQuery = isAdmin && !region
+    ? { ...eventQuery, region: { $ne: DEFAULT_REGION } }
+    : eventQuery;
   if (pastView) {
     eventQuery.$or = [
       { status: { $in: ["archived", "cancelled"] } },
       { date: { $lt: now } },
       { correctedDate: { $lt: now } },
     ];
+    regionalQuery.$or = eventQuery.$or;
     try {
-      const [events, total] = await Promise.all([
-        Event.find(eventQuery).sort({ correctedDate: -1, date: -1 }).skip((page - 1) * pageSize).limit(pageSize),
-        Event.countDocuments(eventQuery),
+      const includeNational = isAdmin && (!region || region === DEFAULT_REGION);
+      const [regional, national] = await Promise.all([
+        region === DEFAULT_REGION ? [] : Event.find(regionalQuery).sort({ correctedDate: -1, date: -1 }).limit(page * pageSize),
+        includeNational ? ManagedNationalEvent.find({ ...eventQuery, region: DEFAULT_REGION, ...managedNationalEventQuery }).sort({ correctedDate: -1, date: -1 }).limit(page * pageSize) : [],
       ]);
+      const all = [...regional, ...national].sort((a, b) => new Date(b.correctedDate || b.date) - new Date(a.correctedDate || a.date));
+      const events = all.slice((page - 1) * pageSize, page * pageSize);
+      const total = await Promise.all([
+        region === DEFAULT_REGION ? 0 : Event.countDocuments(regionalQuery),
+        includeNational ? ManagedNationalEvent.countDocuments({ ...eventQuery, region: DEFAULT_REGION, ...managedNationalEventQuery }) : 0,
+      ]).then(counts => counts[0] + counts[1]);
       return res.status(200).json({
         events: events.map((event) => eventResponse(removeModelProperties(event, ["guestList"]))),
         page,
@@ -402,10 +414,14 @@ export const fetchFullDataEventsList = async (req, res, next) => {
   let events;
   let drafts;
   try {
-    [events, drafts] = await Promise.all([
-      Event.find(eventQuery),
+    const includeNational = isAdmin && (!region || region === DEFAULT_REGION);
+    const [regional, national, foundDrafts] = await Promise.all([
+      region === DEFAULT_REGION ? [] : Event.find(regionalQuery),
+      includeNational ? ManagedNationalEvent.find({ ...eventQuery, region: DEFAULT_REGION, ...managedNationalEventQuery }) : [],
       EventDraft.find(draftsQuery),
     ]);
+    events = [...regional, ...national];
+    drafts = foundDrafts;
   } catch {
     return next(new HttpError("Fetching events failed", 500));
   }
@@ -487,6 +503,8 @@ export const addEvent = async (req, res, next) => {
     return;
   }
 
+  const EventModel = eventModelForRegion(region);
+
   const extraInputsForm = processExtraInputsForm(
     parseStingData(req.body.extraInputsForm)
   );
@@ -504,7 +522,7 @@ export const addEvent = async (req, res, next) => {
 
   //upload images
   if (
-    await Event.findOne({
+    await EventModel.findOne({
       title,
       region,
       date,
@@ -775,14 +793,14 @@ export const addEvent = async (req, res, next) => {
   try {
     // A caller may choose a clean slug while the event is still being created;
     // after this save the model and edit handler make it permanent.
-    eventSlug = await uniqueEventSlug(Event, slug || title, { region, date });
+    eventSlug = await uniqueEventSlug(EventModel, slug || title, { region, date });
   } catch {
     return next(new HttpError("Could not reserve the event URL. Please try again.", 503));
   }
 
   //create event
-  event = new Event({
-    memberAnnouncementQueuedAt: new Date(),
+  event = new EventModel({
+    ...(region !== DEFAULT_REGION ? { memberAnnouncementQueuedAt: new Date() } : {}),
     memberOnly,
     hidden,
     extraInputsForm,
@@ -835,12 +853,12 @@ export const addEvent = async (req, res, next) => {
     );
   }
 
-  notifyEventCreated(event);
+  if (region !== DEFAULT_REGION) notifyEventCreated(event);
   await dispatchSitemapRefresh("published", event);
 
   try {
-    eventToSpreadsheet(event.id);
-    await addOrUpdateEvent(await Event.findById(event._id));
+    if (region !== DEFAULT_REGION) eventToSpreadsheet(event.id);
+    await addOrUpdateEvent(await EventModel.findById(event._id));
   } catch (err) {
     // TODO: email or notify error
     console.log(err);
@@ -853,12 +871,13 @@ export const addEvent = async (req, res, next) => {
 
 export const editEvent = async (req, res, next) => {
   const eventId = req.params.eventId;
+  const ExistingEventModel = await eventModelForId(eventId);
 
   let event;
   let draft;
   try {
     [event, draft] = await Promise.all([
-      Event.findById(eventId),
+      ExistingEventModel.findById(eventId),
       EventDraft.findById(eventId),
     ]);
   } catch (err) {
@@ -900,8 +919,9 @@ export const editEvent = async (req, res, next) => {
   }
 
   if (wasDraft) {
-    event = new Event({
-      memberAnnouncementQueuedAt: new Date(),
+    const DraftEventModel = eventModelForRegion(draft.region);
+    event = new DraftEventModel({
+      ...(draft.region !== DEFAULT_REGION ? { memberAnnouncementQueuedAt: new Date() } : {}),
       _id: draft._id,
       createdAt: draft.createdAt,
       region: draft.region,
@@ -958,13 +978,21 @@ export const editEvent = async (req, res, next) => {
     ticketColor,
   } = req.body;
 
+  if (wasDraft && region !== draft.region) {
+    return next(new HttpError("Publish the draft in its saved region", 422));
+  }
+  if (!wasDraft && region !== event.region) {
+    return next(new HttpError("A published event cannot change region", 422));
+  }
+  const EventModel = wasDraft ? eventModelForRegion(region) : ExistingEventModel;
+
   if (!wasDraft && slug && slug !== event.slug) {
     return next(new HttpError("An event URL cannot be changed after publication", 422));
   }
 
   if (wasDraft) {
     try {
-      event.slug = await uniqueEventSlug(Event, slug || title, { excludeId: event._id, region: region || event.region, date });
+      event.slug = await uniqueEventSlug(EventModel, slug || title, { excludeId: event._id, region: region || event.region, date });
     } catch {
       return next(new HttpError("Could not reserve the event URL. Please try again.", 503));
     }
@@ -990,7 +1018,7 @@ export const editEvent = async (req, res, next) => {
 
   if (
     wasDraft &&
-    (await Event.exists({
+    (await EventModel.exists({
       _id: { $ne: event._id },
       title,
       region,
@@ -1428,7 +1456,7 @@ export const editEvent = async (req, res, next) => {
 
   try {
     if (wasDraft) {
-      const session = await Event.startSession();
+      const session = await EventModel.startSession();
       try {
         await session.withTransaction(async () => {
           await event.save({ session });
@@ -1470,8 +1498,10 @@ export const editEvent = async (req, res, next) => {
         logOperationalError("event.publish-draft-cleanup", error);
       }
     }
-    notifyEventCreated(event);
-    eventToSpreadsheet(event.id);
+    if (region !== DEFAULT_REGION) {
+      notifyEventCreated(event);
+      eventToSpreadsheet(event.id);
+    }
     await dispatchSitemapRefresh("published", event);
   } else {
     // Published edits can move an event into or out of the public sitemap
@@ -1480,7 +1510,7 @@ export const editEvent = async (req, res, next) => {
   }
 
   try {
-    await addOrUpdateEvent(await Event.findById(event._id));
+    await addOrUpdateEvent(await EventModel.findById(event._id));
   } catch (err) {
     // TODO: email or notify error
     console.log(err);

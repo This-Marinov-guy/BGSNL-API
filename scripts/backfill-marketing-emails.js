@@ -151,9 +151,9 @@ const collectAlumni = async (collector, summary) => {
   }
 };
 
-const collectEventModel = async (model, collector, summary, dateFields) => {
+const collectEventModel = async (model, collector, summary, dateFields, filter = {}) => {
   const cursor = model
-    .find({})
+    .find(filter)
     .select("region createdAt guestList.email guestList.timestamp")
     .lean()
     .cursor();
@@ -177,7 +177,7 @@ const collectEvents = async (collector, summary) => {
   ]);
   await collectEventModel(NonSocietyEvent, collector, summary, (guest) => [
     guest.timestamp,
-  ]);
+  ], { event: { $type: "string" }, title: { $exists: false } });
 };
 
 const findExistingCandidateKeys = async (candidates) => {

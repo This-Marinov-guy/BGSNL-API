@@ -88,7 +88,7 @@ const mailHistorySchema = new Schema({
   completedAt: { type: Date, required: true },
 }, { _id: false });
 
-const eventSchema = new Schema({
+export const eventSchema = new Schema({
   memberAnnouncementQueuedAt: Date,
   memberAnnouncementCompletedAt: Date,
   mailHistory: { type: [mailHistorySchema], default: [] },

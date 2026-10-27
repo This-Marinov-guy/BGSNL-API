@@ -1,7 +1,7 @@
 import { hashPassword } from "../authentication/passwords.js";
 import HttpError from "../../models/Http-error.js";
 import mongoose from "mongoose";
-import Event from "../../models/Event.js";
+import { eventModelForId, findManagedEventById } from "../events/managed-event-store.js";
 import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { sendTicketEmail, welcomeEmail, alumniWelcomeEmail } from "../background-services/email-transporter.js";
@@ -266,7 +266,7 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
 
   let societyEvent;
   try {
-    societyEvent = await Event.findById(eventId);
+    societyEvent = await findManagedEventById(eventId);
   } catch (err) {
     throw new HttpError(err.message, 500);
   }
@@ -319,7 +319,7 @@ export const handleGuestTicketPurchase = async (metadata, paymentData) => {
     ticketWalletUrl(societyEvent, societyEvent.guestList.at(-1))
   );
 
-  eventToSpreadsheet(societyEvent.id);
+  if (societyEvent.region !== "netherlands") eventToSpreadsheet(societyEvent.id);
 
   return { success: true };
 };
@@ -332,7 +332,7 @@ export const handleMemberTicketPurchase = async (metadata, paymentData, { confir
   const { eventId, userId, code, preferences } = metadata;
   let societyEvent;
   try {
-    societyEvent = await Event.findById(eventId);
+    societyEvent = await findManagedEventById(eventId);
   } catch (err) {
     throw new HttpError(err.message, 500);
   }
@@ -415,7 +415,8 @@ export const handleMemberTicketPurchase = async (metadata, paymentData, { confir
   const databaseSession = await mongoose.startSession();
   try {
     await databaseSession.withTransaction(async () => {
-      updatedEvent = await Event.findOneAndUpdate(
+      const EventModel = await eventModelForId(eventId);
+      updatedEvent = await EventModel.findOneAndUpdate(
         eventQuery,
         { $push: { guestList: guest } },
         { new: true, session: databaseSession }
@@ -466,7 +467,7 @@ export const handleMemberTicketPurchase = async (metadata, paymentData, { confir
     ticketWalletUrl(societyEvent, societyEvent.guestList.at(-1))
   );
 
-  eventToSpreadsheet(societyEvent.id);
+  if (societyEvent.region !== "netherlands") eventToSpreadsheet(societyEvent.id);
 
   return { success: true };
 };

@@ -96,11 +96,14 @@ test('saving recalculates the stored flag and clears it when required data is re
 test('dashboard reads calculate readiness for existing drafts without writing back', async () => {
   const { fetchFullDataEventsList } = await import('../controllers/Events/future-events-action-controller.js');
   const { default: Event } = await import('../models/Event.js');
+  const { default: ManagedNationalEvent } = await import('../models/ManagedNationalEvent.js');
   const { ADMIN } = await import('../util/config/defines.js');
   const originalEventFind = Event.find;
+  const originalNationalFind = ManagedNationalEvent.find;
   const originalDraftFind = EventDraft.find;
   const draft = completeDraft();
   Event.find = async () => [];
+  ManagedNationalEvent.find = async () => [];
   EventDraft.find = async () => [draft];
   let payload;
   try {
@@ -109,6 +112,7 @@ test('dashboard reads calculate readiness for existing drafts without writing ba
     assert.equal(draft.readyToPublish, false);
   } finally {
     Event.find = originalEventFind;
+    ManagedNationalEvent.find = originalNationalFind;
     EventDraft.find = originalDraftFind;
   }
 });

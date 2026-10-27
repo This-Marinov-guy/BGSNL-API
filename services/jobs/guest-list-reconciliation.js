@@ -19,7 +19,7 @@ export async function reconcileGuestLists({
     eventModel.find({ ...filter, sheetName: { $type: "string", $ne: "" },
       $or: [{ date: { $gte: cutoff } }, { correctedDate: { $gte: cutoff } }] })
       .select("_id").limit(MAX_EVENTS_PER_RUN + 1).lean(),
-    specialEventModel.find({ ...filter, date: { $gte: cutoff } }).select("_id").limit(MAX_EVENTS_PER_RUN + 1).lean(),
+    specialEventModel.find({ ...filter, event: { $type: "string" }, title: { $exists: false }, date: { $gte: cutoff } }).select("_id").limit(MAX_EVENTS_PER_RUN + 1).lean(),
   ]);
   if (events.length + specialEvents.length > MAX_EVENTS_PER_RUN) {
     throw new Error("Too many recent guest lists to reconcile in one run");

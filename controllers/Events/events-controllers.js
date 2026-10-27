@@ -3,6 +3,8 @@ import { logIntegrationError, logOperationalError } from "../../middleware/axiom
 import mongoose from "mongoose";
 import Event from "../../models/Event.js";
 import NonSocietyEvent from "../../models/NonSocietyEvent.js";
+import ManagedNationalEvent from "../../models/ManagedNationalEvent.js";
+import { eventModelForId, eventModelForRegion, findManagedEventById, managedNationalEventQuery, NATIONAL_URL_REGION } from "../../services/events/managed-event-store.js";
 import MemberUser from "../../models/MemberUser.js";
 import { validationResult } from "express-validator";
 import { syncEvents } from "../../services/side-services/calendar-integration/sync.js";
@@ -51,6 +53,15 @@ import { recordGuestMarketingEmail } from "../../services/events/guest-marketing
 
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const findRequestedPublicEvent = async (req) => {
+  const region = req.query?.region;
+  const identifier = req.params.eventId;
+  const Model = !region && mongoose.isValidObjectId(identifier)
+    ? await eventModelForId(identifier)
+    : eventModelForRegion(region);
+  return findPublicEvent(Model, identifier, region === NATIONAL_URL_REGION ? DEFAULT_REGION : region);
+};
 
 const serializeGuestListEntry = (guest) => ({
   id: String(guest._id),
@@ -145,7 +156,7 @@ export const getEventPurchaseAvailability = async (req, res, next) => {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    const event = await findPublicEvent(Event, eventId, req.query?.region);
+    const event = await findRequestedPublicEvent(req);
 
     if (!event) {
       return next(new HttpError("No event was found", 404));
@@ -182,13 +193,9 @@ export const getEventById = async (req, res, next) => {
   }
 
   try {
-    const event = await findPublicEvent(Event, eventId, req.query?.region);
+    const event = await findRequestedPublicEvent(req);
 
     if (!event) {
-      return next(new HttpError("No event was found", 404));
-    }
-
-    if (event.region === DEFAULT_REGION) {
       return next(new HttpError("No event was found", 404));
     }
 
@@ -208,21 +215,19 @@ export const getEvents = async (req, res, next) => {
 
   try {
     if (region) {
-      if (region === DEFAULT_REGION) {
-        return res.status(200).json({ events: [] });
-      }
-
-      events = await Event.find({
-        region,
+      const Model = eventModelForRegion(region);
+      events = await Model.find({
+        region: region === NATIONAL_URL_REGION ? DEFAULT_REGION : region,
+        ...(Model === ManagedNationalEvent ? managedNationalEventQuery : {}),
         ...publicEventQuery,
         ...futureEventDateFilter(),
       });
     } else {
-      events = await Event.find({
-        region: { $ne: DEFAULT_REGION },
-        ...publicEventQuery,
-        ...futureEventDateFilter(),
-      });
+      const [regional, national] = await Promise.all([
+        Event.find({ region: { $ne: DEFAULT_REGION }, ...publicEventQuery, ...futureEventDateFilter() }),
+        ManagedNationalEvent.find({ region: DEFAULT_REGION, ...managedNationalEventQuery, ...publicEventQuery, ...futureEventDateFilter() }),
+      ]);
+      events = [...regional, ...national];
     }
   } catch (err) {
     return next(new HttpError("Fetching events failed", 500));
@@ -241,7 +246,7 @@ export const getSoldTicketQuantity = async (req, res, next) => {
       return next(new HttpError("Invalid inputs passed", 422));
     }
 
-    const event = await findPublicEvent(Event, eventId, req.query?.region);
+    const event = await findRequestedPublicEvent(req);
     if (!event) {
       return next(new HttpError("No event was found", 404));
     }
@@ -263,7 +268,7 @@ export const checkEligibleMemberForPurchase = async (req, res, next) => {
     return next(new HttpError("Invalid inputs passed", 422));
   }
 
-  let event = await Event.findById(eventId);
+  let event = await findManagedEventById(eventId);
 
   if (!event || event.status === "draft") {
     return next(new HttpError("No event was found", 404));
@@ -300,7 +305,7 @@ export const checkTicketEligibility = async (req, res, next) => {
 
   let event;
   try {
-    event = await Event.findById(eventId);
+    event = await findManagedEventById(eventId);
   } catch (err) {
     return next(new HttpError("Could not find event", 500));
   }

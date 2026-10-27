@@ -11,6 +11,7 @@ import {
 import { decryptData } from "../util/functions/helpers.js";
 import { validNewPassword, PASSWORD_MESSAGE } from "../services/authentication/passwords.js";
 import Event from "../models/Event.js";
+import ManagedNationalEvent from "../models/ManagedNationalEvent.js";
 
 const EMAIL_MAX_LENGTH = 320;
 const NAME_MAX_LENGTH = 120;
@@ -390,6 +391,8 @@ const eventPreferencesValidator = body("preferences").custom(
     try {
       event = await Event.findById(eventId)
         .select("extraInputsForm")
+        .lean() || await ManagedNationalEvent.findById(eventId)
+        .select("extraInputsForm")
         .lean();
     } catch {
       // The route's controller owns not-found/database failure responses. Do
@@ -583,6 +586,8 @@ const commonEventAdminValidators = [
     .custom((value) => validateJsonValue(value, eventJsonObject))
     .withMessage("Draft data has an invalid format"),
   requiredText("region", "Region", 80),
+  body("region").if(isPublishedEvent)
+    .isIn([...REGIONS, DEFAULT_REGION]).withMessage("Choose a valid event region"),
   body("region").if(body("status").equals(EVENT_DRAFT))
     .isIn([...REGIONS, DEFAULT_REGION]).withMessage("Choose a valid region before saving a draft"),
   requiredText("title", "Title", 200, isPublishedEvent),

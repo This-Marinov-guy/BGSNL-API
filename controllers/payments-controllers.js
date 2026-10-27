@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 dotenv.config();
 import HttpError from "../models/Http-error.js";
 import Event from "../models/Event.js";
+import { findManagedEventById, publicEventRegion } from "../services/events/managed-event-store.js";
 import { ACCESS_4, DEFAULT_REGION } from "../util/config/defines.js";
 import { extractUserFromRequest } from "../util/functions/security.js";
 import { createStripeClient, getStripeKey } from "../util/config/stripe.js";
@@ -157,7 +158,7 @@ export const createTicketCheckoutSession = async ({
 }, {
   createReturned = createReturnedCheckout,
   lease = withBillingLease,
-  hasDuplicate = query => Event.exists(query),
+  hasDuplicate = query => (typeof event?.constructor?.exists === "function" ? event.constructor : Event).exists(query),
   updateRecord = (...args) => BillingRecord.updateOne(...args),
 } = {}) => {
   const promoSignature = JSON.stringify([checkoutPromoAudience(checkoutType, member),
@@ -169,7 +170,7 @@ export const createTicketCheckoutSession = async ({
     const prepared = await prepareEventPromoCheckout({ stripe: stripeClient, event,
       audience: checkoutPromoAudience(checkoutType, member), checkoutData: data });
     return createReturned({ stripe: stripeClient, checkoutData: prepared,
-      region: data.metadata.region, returnPath: `/${data.metadata.region}/purchase-ticket/${eventId}` });
+      region: data.metadata.region, returnPath: `/${publicEventRegion(data.metadata.region)}/purchase-ticket/${eventId}` });
   };
   if (checkoutType !== "member" || isNormalTicket) {
     const session = await createSession(checkoutData);
@@ -421,7 +422,7 @@ export const postCheckoutNoFile = async (req, res, next) => {
 
   let event;
   try {
-    event = await Event.findById(eventId);
+    event = await findManagedEventById(eventId);
   } catch (_) {
     return next(new HttpError("Could not load event", 500));
   }
@@ -511,7 +512,7 @@ export const postCheckoutNoFile = async (req, res, next) => {
 };
 
 export const postCheckoutFile = async (req, res, next, {
-  loadEvent = (id) => Event.findById(id),
+  loadEvent = findManagedEventById,
   reconcile = reconcileAccount,
   generateTicket = generateAndUploadEventTicket,
   reserveToken = reserveTicketToken,
@@ -682,7 +683,7 @@ export const postCheckoutFile = async (req, res, next, {
       free: true,
       message: "Success",
       url: await freeReturn({ origin: origin_url, region: event.region,
-        returnPath: `/${event.region}/event-details/${eventId}`, title: event.title, quantity }),
+        returnPath: `/${publicEventRegion(event.region)}/event-details/${eventId}`, title: event.title, quantity }),
     });
   }
 

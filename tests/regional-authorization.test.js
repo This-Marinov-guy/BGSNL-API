@@ -118,6 +118,7 @@ test("event management rejects foreign list, draft and resource requests before 
   assert.deepEqual(errors.map(error => error.statusCode), [403, 403, 403]);
 
   t.mock.method(Event, "findById", async () => ({ region: "rotterdam" }));
+  t.mock.method(Event, "exists", async () => ({ _id: req.params.eventId }));
   t.mock.method(EventDraft, "findById", async () => null);
   req.body.status = "opened";
   await editEvent(req, res, next);
@@ -129,6 +130,7 @@ test("draft ownership does not override the signed region", async (t) => {
   const { req } = await authenticate();
   req.params = { eventId: "507f1f77bcf86cd799439011" };
   t.mock.method(Event, "findOne", async () => null);
+  t.mock.method(Event, "exists", async () => ({ _id: req.params.eventId }));
   t.mock.method(EventDraft, "findById", async () => ({ region: "rotterdam",
     draftOwner: { userId: board.id } }));
   let error;

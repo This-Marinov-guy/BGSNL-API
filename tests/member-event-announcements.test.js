@@ -305,9 +305,9 @@ test("ticket capabilities and member information are excluded from request logs"
   assert.deepEqual(logged, { method: "GET", url: "/api/payment/event-ticket", path: "/api/payment/event-ticket" });
 });
 
-test("both publication paths save the announcement marker atomically with the event", () => {
+test("both regional publication paths save the announcement marker atomically and national events skip it", () => {
   const source = readFileSync(new URL("../controllers/Events/future-events-action-controller.js", import.meta.url), "utf8");
-  assert.equal((source.match(/new Event\(\{\s*memberAnnouncementQueuedAt: new Date\(\)/g) || []).length, 2);
+  assert.equal((source.match(/region !== DEFAULT_REGION \? \{ memberAnnouncementQueuedAt: new Date\(\) \} : \{\}/g) || []).length, 2);
 });
 
 test("unconfirmed email checkout never directly issues tickets and preserves member metadata", async () => {
