@@ -129,6 +129,18 @@ const optionalNumber = (value) => {
   return Number.isFinite(number) ? number : undefined;
 };
 
+export const syncEventPromoCodes = async (event, region, promoCodes, {
+  create = processPromocodesForCreate,
+  update = processPromocodesForUpdate,
+} = {}) => {
+  const product = event?.product;
+  if (!product?.id) return;
+
+  product.promoCodes = product.promoCodes?.length > 0
+    ? await update(region, product.id, promoCodes, product.promoCodes)
+    : await create(region, product.id, promoCodes);
+};
+
 export const saveEventDraft = async (req, res, next, existingDraft = null) => {
   const region = typeof req.body.region === "string" ? req.body.region.trim() : "";
   if (![...REGIONS, DEFAULT_REGION].includes(region)) {
@@ -1403,21 +1415,7 @@ export const editEvent = async (req, res, next) => {
     }
   }
 
-  // Process promoCodes if provided
-  if (event?.product?.promoCodes?.length > 0) {
-    event.product.promoCodes = await processPromocodesForUpdate(
-      region,
-      event.product.id,
-      promoCodes,
-      event.product.promoCodes
-    );
-  } else {
-    event.product.promoCodes = await processPromocodesForCreate(
-      region,
-      event.product.id,
-      promoCodes
-    );
-  }
+  await syncEventPromoCodes(event, region, promoCodes);
 
   event.images = images;
   event.memberOnly = memberOnly;
