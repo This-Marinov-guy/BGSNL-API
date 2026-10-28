@@ -32,20 +32,28 @@ export function createEmailSender({ env = process.env, queueTemplate = queueDoma
   return async (message) => {
     if (!useDomakinMailer(env) && !DOMAKIN_CAMPAIGN_TEMPLATES.has(String(message.template_uuid || "").toLowerCase())) {
       const send = legacySend || ((payload) => new MailtrapClient({ endpoint: env.MAIL_ENDPOINT, token: env.MAIL_TOKEN }).send(payload));
-      return observeIntegrationRequest("mailtrap", "send-email", "POST", () => send(message));
+      // The operation ID belongs to Domakin Mailer, not the legacy provider.
+      const payload = message.operationId ? { ...message } : message;
+      if (message.operationId) delete payload.operationId;
+      return observeIntegrationRequest("mailtrap", "send-email", "POST", () => send(payload));
     }
     if (!Array.isArray(message.to) || message.to.length !== 1 || message.cc || message.bcc || message.attachments) {
       throw new Error("Domakin delivery requires one recipient and no caller-supplied CC/BCC/attachments.");
     }
     if (message.template_uuid) {
-      return queueTemplate(message.template_uuid, message.to[0], message.template_variables || {});
+      return message.operationId
+        ? queueTemplate(message.template_uuid, message.to[0], message.template_variables || {}, { operationId: message.operationId })
+        : queueTemplate(message.template_uuid, message.to[0], message.template_variables || {});
     }
     if (!message.subject || (!message.text && !message.html)) throw new Error("Email subject and content are required.");
-    return queueTemplate(DOMAKIN_NOTIFICATION_TEMPLATE, message.to[0], {
+    const variables = {
       subject: message.subject,
       html: message.html || `<pre>${escapeHtml(message.text)}</pre>`,
       text: message.text || "",
-    });
+    };
+    return message.operationId
+      ? queueTemplate(DOMAKIN_NOTIFICATION_TEMPLATE, message.to[0], variables, { operationId: message.operationId })
+      : queueTemplate(DOMAKIN_NOTIFICATION_TEMPLATE, message.to[0], variables);
   };
 }
 

@@ -3,7 +3,7 @@ import MemberUser from "../../models/MemberUser.js";
 import AlumniUser from "../../models/AlumniUser.js";
 import { createEmailRunGuard, isEmailSchedulerProcess } from "./email-run-guard.js";
 const birthdayRuns = createEmailRunGuard();
-import { queueDomakinTemplateEmail } from "./domakin-mailer.js";
+import { queueDomakinTemplateEmail, stableMailerOperationId } from "./domakin-mailer.js";
 import { BIRTHDAY_TEMPLATE } from "../../util/config/defines.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
@@ -79,8 +79,13 @@ export const birthdayNotification = ({ name }) => {
   return { templateId: BIRTHDAY_TEMPLATE, templateVariables: { name: firstName } };
 };
 
-export async function deliverBirthdayEmail({ receiver, notification, send = queueDomakinTemplateEmail }) {
-  await send(notification.templateId, receiver, notification.templateVariables);
+export const birthdayOperationId = (dateKey, email) => {
+  const normalizedEmail = String(email).trim().toLowerCase();
+  return stableMailerOperationId("bgsnl-birthday", dateKey, normalizedEmail);
+};
+
+export async function deliverBirthdayEmail({ receiver, notification, operationId, send = queueDomakinTemplateEmail }) {
+  return send(notification.templateId, receiver, notification.templateVariables, { operationId });
 }
 
 export const processBirthdayEmails = async ({
@@ -113,11 +118,13 @@ export const processBirthdayEmails = async ({
     }
 
     try {
-      await send({
+      const delivery = await send({
         receiver: recipient.email,
         notification: birthdayNotification({ name: recipient.name }),
+        operationId: birthdayOperationId(schedule.dateKey, recipient.email),
       });
-      sent += 1;
+      if (["already-accepted", "deduplicated"].includes(delivery?.status)) skipped += 1;
+      else sent += 1;
     } catch (error) {
       failed += 1;
       logIntegrationError("mailer", error, "birthday-email");

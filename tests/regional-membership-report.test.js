@@ -53,6 +53,16 @@ test("one attempt per region and week, including after an ambiguous provider fai
   assert.equal(messages.length, 2);
 });
 
+test("regional report retries across process restarts reuse Mailer operation IDs", async () => {
+  const { options, messages } = setup();
+  await processRegionalMembershipReports({ ...options, runGuard: createEmailRunGuard() });
+  await processRegionalMembershipReports({ ...options, runGuard: createEmailRunGuard() });
+  assert.equal(messages.length, 4);
+  assert.equal(messages[0].operationId, messages[2].operationId);
+  assert.equal(messages[1].operationId, messages[3].operationId);
+  assert.notEqual(messages[0].operationId, messages[1].operationId);
+});
+
 test("missing directory entry never falls back to another region's inbox", async () => {
   const { options, messages } = setup();
   options.loadContacts = async () => ({ groningen: "new-address@example.com" });

@@ -151,6 +151,23 @@ test("an ambiguous provider failure is not retried within the same process", asy
   assert.equal(calls, 1);
 });
 
+test("weekly report retries across process restarts reuse a Mailer operation ID", async () => {
+  const messages = [];
+  const dependencies = {
+    now: new Date("2026-09-27T16:00:00.000Z"),
+    config: { enabled: true, subscribers: ["Team@Example.com"], timeZone: "Europe/Amsterdam" },
+    MemberModel: aggregateModel([]),
+    AlumniModel: alumniCountModel(0),
+    send: async message => messages.push(message),
+    updateAverages: async () => {},
+  };
+  await processWeeklyMembershipReport({ ...dependencies, runGuard: createEmailRunGuard() });
+  await processWeeklyMembershipReport({ ...dependencies, runGuard: createEmailRunGuard() });
+  assert.equal(messages.length, 2);
+  assert.equal(messages[0].operationId, messages[1].operationId);
+  assert.equal(messages[0].receiver, "team@example.com");
+});
+
 test("next run is strictly future and follows Amsterdam daylight saving", () => {
   for (const [now, expected] of [
     ["2026-09-28T10:00:00Z", "2026-10-04T16:00:00.000Z"],

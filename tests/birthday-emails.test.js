@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   birthdayNotification,
+  birthdayOperationId,
   deliverBirthdayEmail,
   getBirthdaySchedule,
   getBirthdayWorkerConfig,
@@ -69,6 +70,46 @@ test("birthday scheduler sends once per inbox per day within one process", async
   assert.deepEqual({ sent: replay.sent, skipped: replay.skipped, failed: replay.failed }, { sent: 0, skipped: 2, failed: 0 });
   assert.equal(messages.length, 2);
   assert.equal(messages[0].notification.templateId, BIRTHDAY_TEMPLATE);
+  assert.match(messages[0].operationId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test("birthday retries across process restarts reuse the mailer's durable operation ID", async () => {
+  const attempts = [];
+  const dependencies = {
+    now: new Date("2026-09-10T08:00:00.000Z"),
+    config: { enabled: true, timeZone: "Europe/Amsterdam" },
+    MemberModel: recordsModel([{ _id: "member_1", email: " Mila@Example.test ", name: "Mila" }], []),
+    AlumniModel: recordsModel([], []),
+    send: async ({ receiver, operationId }) => attempts.push({ receiver, operationId }),
+  };
+  await processBirthdayEmails({ ...dependencies, runGuard: createEmailRunGuard() });
+  await processBirthdayEmails({ ...dependencies, runGuard: createEmailRunGuard() });
+  assert.equal(attempts.length, 2);
+  assert.deepEqual(attempts[0], attempts[1]);
+  assert.equal(attempts[0].receiver, "mila@example.test");
+  assert.equal(birthdayOperationId("2026-09-10", "MILA@example.test"), attempts[0].operationId);
+  assert.notEqual(birthdayOperationId("2026-09-11", attempts[0].receiver), attempts[0].operationId);
+  assert.notEqual(birthdayOperationId("2026-09-10", "other@example.test"), attempts[0].operationId);
+});
+
+test("birthday replay reported by the mailer is counted as skipped", async () => {
+  const sent = new Set();
+  const dependencies = {
+    now: new Date("2026-09-10T08:00:00.000Z"),
+    config: { enabled: true, timeZone: "Europe/Amsterdam" },
+    MemberModel: recordsModel([{ _id: "member_1", email: "mila@example.test", name: "Mila" }], []),
+    AlumniModel: recordsModel([], []),
+    send: async ({ operationId }) => {
+      if (sent.has(operationId)) return { status: "already-accepted" };
+      sent.add(operationId);
+      return { status: "accepted" };
+    },
+  };
+  const first = await processBirthdayEmails({ ...dependencies, runGuard: createEmailRunGuard() });
+  const replay = await processBirthdayEmails({ ...dependencies, runGuard: createEmailRunGuard() });
+  assert.deepEqual({ sent: first.sent, skipped: first.skipped }, { sent: 1, skipped: 0 });
+  assert.deepEqual({ sent: replay.sent, skipped: replay.skipped }, { sent: 0, skipped: 1 });
+  assert.equal(sent.size, 1);
 });
 
 test("birthday notification targets the Domakin Mailer birthday template with the recipient's name", () => {
@@ -87,9 +128,11 @@ test("delivering a birthday email queues it through Domakin Mailer with the reci
   await deliverBirthdayEmail({
     receiver: "mila@example.test",
     notification: birthdayNotification({ name: "Mila" }),
+    operationId: "d0bdeee2-c1b4-4a7a-9cda-60d8f2744428",
     send: async (...args) => calls.push(args),
   });
-  assert.deepEqual(calls, [[BIRTHDAY_TEMPLATE, "mila@example.test", { name: "Mila" }]]);
+  assert.deepEqual(calls, [[BIRTHDAY_TEMPLATE, "mila@example.test", { name: "Mila" },
+    { operationId: "d0bdeee2-c1b4-4a7a-9cda-60d8f2744428" }]]);
 });
 
 

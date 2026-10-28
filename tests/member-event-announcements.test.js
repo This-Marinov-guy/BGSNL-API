@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { buildMemberEventEmail, announcementWorkerEnabled, processMemberEventAnnouncements } from "../services/events/member-event-announcements.js";
+import { buildMemberEventEmail, announcementWorkerEnabled, memberEventAnnouncementOperationId, processMemberEventAnnouncements } from "../services/events/member-event-announcements.js";
 import { createMemberEventLink, verifyMemberEventLink, isCurrentEventMember, memberEventPrice, memberEventPreferencesUrl } from "../services/events/member-event-links.js";
 import { createMemberEventCheckoutHandler } from "../controllers/member-event-checkout-controller.js";
 import { buildReq } from "../util/logging/axiom-log-models.js";
@@ -134,6 +134,16 @@ test("repeated and concurrent worker runs within one process send once per inbox
   await Promise.all([processMemberEventAnnouncements(h.dependencies), processMemberEventAnnouncements(h.dependencies)]);
   await processMemberEventAnnouncements(h.dependencies);
   assert.equal(h.calls.sent.length, 1);
+});
+
+test("announcement retries after a restart keep the same durable mailer operation", async () => {
+  const h = workerHarness();
+  await processMemberEventAnnouncements({ ...h.dependencies, runGuard: createEmailRunGuard() });
+  await processMemberEventAnnouncements({ ...h.dependencies, runGuard: createEmailRunGuard() });
+  assert.equal(h.calls.sent.length, 2);
+  assert.equal(h.calls.sent[0].operationId, h.calls.sent[1].operationId);
+  assert.equal(h.calls.sent[0].operationId, memberEventAnnouncementOperationId(event._id, member.email));
+  assert.notEqual(h.calls.sent[0].operationId, memberEventAnnouncementOperationId("other-event", member.email));
 });
 
 test("ambiguous email failure is not repeated within the same process", async () => {

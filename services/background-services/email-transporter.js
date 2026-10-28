@@ -1,5 +1,5 @@
 import { sendEmail, useDomakinMailer, resolveDomakinResendTemplate } from "./email-provider.js";
-import { queueDomakinTemplateEmail } from "./domakin-mailer.js";
+import { queueDomakinTemplateEmail, stableMailerOperationId } from "./domakin-mailer.js";
 import { logIntegrationError, logIntegrationRequest, logOperationalError } from "../../middleware/axiom-logger.js";
 import { jobNameFromKey, observeJob } from "../monitoring/job-history.js";
 import { Resend } from "resend";
@@ -323,6 +323,7 @@ export const deliverInternalNotificationEmail = async ({
   type,
   entityId,
   category = "internal-notification",
+  operationId,
 }) => {
   const delivery = client.send({
     from: sender,
@@ -335,6 +336,7 @@ export const deliverInternalNotificationEmail = async ({
       notification_type: type,
       entity_id: String(entityId),
     },
+    ...(operationId ? { operationId } : {}),
   });
   let timeout;
   try {
@@ -358,9 +360,13 @@ export const sendInternalNotificationEmail = (message) => {
   });
 };
 
+export const supportReplyOperationId = ({ entityId, receiver }) =>
+  stableMailerOperationId("bgsnl-support-reply", entityId, String(receiver).trim().toLowerCase());
+
 export const sendCustomerSupportEmail = (message) => {
   const key = `support-reply:${message.entityId}:${message.receiver}`;
-  enqueueMail(key, () => deliverInternalNotificationEmail({ ...message, category: "support-reply" }));
+  const operationId = supportReplyOperationId(message);
+  enqueueMail(key, () => deliverInternalNotificationEmail({ ...message, category: "support-reply", operationId }));
 };
 
 // The branded header/footer shell lives in Domakin Mailer's own

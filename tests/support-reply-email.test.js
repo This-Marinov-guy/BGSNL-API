@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { buildCustomerSupportReplyEmail } from "../services/support/reply-email.js";
+import { supportReplyOperationId } from "../services/background-services/email-transporter.js";
 import { createInternalNotificationService } from "../services/background-services/internal-notifications.js";
 import { createSupportService } from "../services/support/conversations.js";
 import { memorySupportStore } from "./fixtures/support-store.js";
@@ -24,6 +25,12 @@ test("customer email has an action link and plaintext fallback, but no private c
   assert.doesNotMatch(JSON.stringify(email), /Private reply|private\.png/);
   assert.match(buildCustomerSupportReplyEmail({ ...ticket, ownerAccountId: null }, reply).text, /same browser/);
   assert.doesNotMatch(buildCustomerSupportReplyEmail({ ...ticket, reference: "<script>" }, reply).html, /<script>/);
+});
+
+test("support reply retries keep one operation ID per saved reply and recipient", () => {
+  const message = buildCustomerSupportReplyEmail(ticket, reply);
+  assert.equal(supportReplyOperationId(message), supportReplyOperationId({ ...message, receiver: message.receiver.toUpperCase() }));
+  assert.notEqual(supportReplyOperationId(message), supportReplyOperationId({ ...message, entityId: `${ticket.id}:${randomUUID()}` }));
 });
 
 test("staff replies email the customer even when internal notifications are disabled", () => {

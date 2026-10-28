@@ -57,11 +57,15 @@ starts archival, refunds, and ticket-holder notifications. The dedicated
 before enabling this API flow.
 
 No birthday, weekly-report or event-announcement delivery collections are used.
-Their scheduler guards are process-local and store no outcomes. As requested,
-removing durable delivery tracking means process restarts/multiple enabled
-workers can repeat an email; event completion still uses its existing marker.
+Their scheduler guards are process-local and store no outcomes. Birthday,
+member-event-announcement, and weekly-report sends use stable operation IDs,
+so Domakin Mailer deduplicates handoffs across API restarts while its receipts
+are retained. Support customer replies use the same protection per saved reply.
+Legacy provider sends have no Mailer replay protection; event completion still
+uses its existing marker.
 Only PM2 worker 0 starts these email schedules. Across multiple API containers,
-enable them on one container only. Restarts can still repeat an unfinished send.
+enable them on one container only. Process-only schedules without a stable
+Mailer operation ID can still repeat an unfinished send after a restart.
 
 ## Local development
 

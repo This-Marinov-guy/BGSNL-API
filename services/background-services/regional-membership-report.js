@@ -3,6 +3,7 @@ import { REGIONS } from "../../util/config/defines.js";
 import { loadRegionEmails } from "../region-contacts.js";
 import { createEmailRunGuard } from "./email-run-guard.js";
 import { deliverInternalNotificationEmail } from "./email-transporter.js";
+import { stableMailerOperationId } from "./domakin-mailer.js";
 import { logIntegrationError } from "../../middleware/axiom-logger.js";
 import {
   buildWeeklyMembershipSummaryNotification, getCompletedMembershipWeek,
@@ -34,7 +35,8 @@ export async function processRegionalMembershipReports({
     try {
       await send({ receiver, ...buildWeeklyMembershipSummaryNotification({
         ...period, rows: [row], region: row.region,
-      }) });
+      }), operationId: stableMailerOperationId("bgsnl-regional-membership-report", period.key,
+        row.region, receiver.trim().toLowerCase()) });
       sent++;
     } catch (error) {
       // A timeout may follow acceptance by the provider. Do not resend blindly.

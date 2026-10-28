@@ -10,6 +10,7 @@ import {
 } from "../../util/config/internal-notifications.js";
 import { CURRENT_ACCOUNT_FILTER } from "../../util/subscriptions/policy.js";
 import { deliverInternalNotificationEmail } from "./email-transporter.js";
+import { stableMailerOperationId } from "./domakin-mailer.js";
 import { logIntegrationError, logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
 import { refreshMemberAverages } from "./regional-averages.js";
@@ -248,7 +249,8 @@ export const processWeeklyMembershipReport = async ({
     }
 
     try {
-      await send({ receiver, ...notification });
+      await send({ receiver, ...notification,
+        operationId: stableMailerOperationId("bgsnl-weekly-membership-report", period.key, receiver) });
       sent += 1;
     } catch (error) {
       failed += 1;

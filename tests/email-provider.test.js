@@ -39,6 +39,21 @@ test("billing and internal messages use the shared notification snapshot", async
   assert.deepEqual(sent, [DOMAKIN_NOTIFICATION_TEMPLATE, { email: "person@example.test" }, { subject: "Payment needs attention", html: "<p>Manage billing</p>", text: "Manage billing" }]);
 });
 
+test("internal operation IDs reach Domakin Mailer but are not sent to the legacy provider", async () => {
+  const operationId = "d0bdeee2-c1b4-4a7a-9cda-60d8f2744428";
+  const message = { to: [{ email: "person@example.test" }], subject: "Weekly report", text: "One report",
+    operationId };
+  let local;
+  await createEmailSender({ env: { BGSNL_EMAIL_PROVIDER: "domakin" },
+    queueTemplate: async (...args) => { local = args; } })(message);
+  assert.equal(local[3].operationId, operationId);
+  let legacy;
+  await createEmailSender({ env: { BGSNL_EMAIL_PROVIDER: "legacy" },
+    legacySend: async payload => { legacy = payload; } })(message);
+  assert.equal(Object.hasOwn(legacy, "operationId"), false);
+  assert.equal(Object.hasOwn(message, "operationId"), true);
+});
+
 test("plain text notification content is escaped for HTML", async () => {
   let sent;
   await createEmailSender({ env: { BGSNL_EMAIL_PROVIDER: "domakin" }, queueTemplate: async (...args) => { sent = args; } })({ to: [{ email: "person@example.test" }], subject: "Test", text: "<script>&" });

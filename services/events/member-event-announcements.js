@@ -2,7 +2,7 @@ import Event from "../../models/Event.js";
 import MemberUser from "../../models/MemberUser.js";
 import { createEmailRunGuard, isEmailSchedulerProcess } from "../background-services/email-run-guard.js";
 const announcementRuns = createEmailRunGuard();
-import { queueDomakinTemplateEmail } from "../background-services/domakin-mailer.js";
+import { queueDomakinTemplateEmail, stableMailerOperationId } from "../background-services/domakin-mailer.js";
 import { logOperationalError } from "../../middleware/axiom-logger.js";
 import { runObservedJob } from "../monitoring/job-history.js";
 import { startDailyCheck } from "../jobs/calendar-check.js";
@@ -15,7 +15,12 @@ import { formatEventEmailDate, safeEventPosterUrl } from "./event-email-preview.
 const plainText = (value) => String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 // The branded header/footer shell lives in Domakin Mailer's own
 // "member-event-announcement" template; this only sends the message envelope.
-const deliverTemplateMessage = (message) => queueDomakinTemplateEmail(message.templateId, message.to[0].email, message.templateVariables);
+const deliverTemplateMessage = (message) => queueDomakinTemplateEmail(message.templateId, message.to[0].email,
+  message.templateVariables, { operationId: message.operationId });
+export const memberEventAnnouncementOperationId = (eventId, email) => {
+  return stableMailerOperationId("bgsnl-member-event-announcement", eventId,
+    String(email).trim().toLowerCase());
+};
 export const announcementWorkerEnabled = (env = process.env) => isEmailSchedulerProcess(env) && (env.EVENT_ANNOUNCEMENTS_ENABLED === undefined ? env.NODE_ENV === "production" : env.EVENT_ANNOUNCEMENTS_ENABLED === "true");
 export const pendingMemberEventAnnouncements = (now = new Date()) => ({ memberAnnouncementQueuedAt: { $exists: true, $lte: now }, memberAnnouncementCompletedAt: { $exists: false }, hidden: { $ne: true }, status: { $nin: ["draft", "archived"] } });
 
@@ -82,7 +87,8 @@ export async function processMemberEventAnnouncements({ now = new Date(), enable
         let timer;
         try {
           await Promise.race([
-            send({ from: { email: NO_REPLY_EMAIL, name: NO_REPLY_EMAIL_NAME }, to: [{ email }], ...notification, category: "new-member-event" }),
+            send({ from: { email: NO_REPLY_EMAIL, name: NO_REPLY_EMAIL_NAME }, to: [{ email }], ...notification,
+              category: "new-member-event", operationId: memberEventAnnouncementOperationId(event._id, email) }),
             new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Delivery not confirmed")), 100000); }),
           ]);
         } finally { clearTimeout(timer); }

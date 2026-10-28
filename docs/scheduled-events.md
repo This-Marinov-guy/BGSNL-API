@@ -222,9 +222,11 @@ both current Member and Alumni collections and skips accounts without a real
 stored date of birth. Migrated/archived source copies are excluded and a shared
 email address receives no more than one greeting.
 
-The separate delivery collection has been removed. The scheduler remembers
-attempted inboxes only in the running process, without outcomes or Mongo logs.
-A restart can repeat a greeting; see [storage-and-redis.md](storage-and-redis.md).
+The scheduler remembers attempted inboxes only in the running process, without
+Mongo delivery logs. Every date/address pair also gets a stable Domakin Mailer
+operation ID. A restart or ambiguous acceptance retry can hand off the same
+greeting again, but the Mailer recognizes the operation and sends it once while
+its delivery receipt is retained. See [storage-and-redis.md](storage-and-redis.md).
 
 Configuration:
 
@@ -301,11 +303,13 @@ WEEKLY_MEMBERSHIP_REPORT_ENABLED=true
 
 Each recipient receives a separate message.
 
-Weekly delivery records have been removed. A process-local schedule guard avoids
-repeating a week's sends during the same process lifetime. A restart schedules
-only the next future Sunday, not a replay. Only the designated email scheduler
-process owns the timer. There is no persistent delivery receipt; manual or
-multiple independently configured scheduler processes are not globally deduplicated.
+Weekly delivery records have been removed from the API. A process-local guard
+avoids repeating a week's sends during the same process lifetime. A restart
+schedules only the next future Sunday, not a replay. Each national week/address
+and regional week/region/address has a stable Domakin Mailer operation ID, so
+repeat handoffs are deduplicated while the Mailer receipt is retained. This
+protection does not apply if the legacy email provider is selected. Only the
+designated email scheduler process owns the timer.
 
 ## Regional new-member summary
 

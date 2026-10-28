@@ -142,10 +142,11 @@ Invalid/expired capabilities and changed or ineligible accounts are rejected.
 ## Email scheduling
 
 There is no separate announcement-delivery collection. Attempts are remembered
-only by the running process, and the Event retains its existing overall
-completion marker. An incomplete announcement can repeat after a process
-restart because individual delivery tracking has been removed. Provider
-failures are reported in process logs.
+by the running process, and the Event retains its overall completion marker.
+Each event/address pair also uses a stable Domakin Mailer operation ID, so a
+restarted worker can retry an incomplete announcement without another delivery
+while the Mailer receipt is retained. Provider failures are reported in process
+logs.
 
 ## Verification
 
