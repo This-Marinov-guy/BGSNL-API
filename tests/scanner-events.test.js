@@ -5,7 +5,9 @@ import { createScannerEventsHandler, scannerPosterUrl } from "../controllers/Eve
 async function run(user, fail = false) {
   let filter, projection, order, lean = false, data, error;
   const headers = {};
-  const handler = createScannerEventsHandler({ EventModel: { find(value) {
+  const handler = createScannerEventsHandler({ NationalEventModel: { find() {
+    return { select() { return this; }, sort() { return this; }, async lean() { return []; } };
+  } }, EventModel: { find(value) {
     filter = value;
     return { select(value) { projection = value; return this; }, sort(value) { order = value; return this; }, async lean() {
       lean = true;
@@ -71,6 +73,23 @@ test("admin and national committee retain cross-region access", async () => {
     assert.equal(r.error, undefined);
     assert.equal(r.filter.region, undefined);
   }
+});
+test("national managers can focus the scanner on a managed national event", async () => {
+  const eventId = "507f1f77bcf86cd799439011";
+  let nationalFilter, data;
+  const empty = { find() { return { select() { return this; }, sort() { return this; }, async lean() { return []; } }; } };
+  const national = { find(filter) {
+    nationalFilter = filter;
+    return { select() { return this; }, sort() { return this; }, async lean() {
+      return [{ _id: eventId, title: "National event", region: "netherlands", status: "opened" }];
+    } };
+  } };
+  const handler = createScannerEventsHandler({ EventModel: empty, NationalEventModel: national });
+  await handler({ user: { roles: ["national_committee_member"], region: "netherlands" }, query: { forEvent: eventId } },
+    { set() {}, status() { return this; }, json(value) { data = value; } }, error => { throw error; });
+  assert.equal(data.events[0].id, eventId);
+  assert.equal(nationalFilter._id, eventId);
+  assert.deepEqual(nationalFilter.title, { $type: "string" });
 });
 test("unauthorized or unscoped accounts fail before querying", async () => {
   for (const user of [undefined, { roles: ["member"], region: "groningen" }, { roles: ["board_member"] }, { roles: ["board_member"], region: "netherlands" }]) {

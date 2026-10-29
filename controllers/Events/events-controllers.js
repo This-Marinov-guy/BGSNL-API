@@ -91,6 +91,18 @@ const canManageEventGuestList = (req, event) => {
   return canAccessRegion(req, "event", event.region);
 };
 
+// Managed national events share the event schema but live in a separate collection.
+const loadGuestListEvent = async (eventId, fields) => {
+  const regional = await Event.findById(eventId).select(fields);
+  if (regional) return { event: regional, EventModel: Event };
+  const national = await ManagedNationalEvent.findOne({ _id: eventId, ...managedNationalEventQuery }).select(fields);
+  return { event: national, EventModel: ManagedNationalEvent };
+};
+
+const syncGuestList = (eventId, EventModel) => EventModel === Event
+  ? eventToSpreadsheet(eventId)
+  : publishGuestListChanged(eventId);
+
 const addEmailRecipient = (recipientsByEmail, invalidEmails, email, name = "") => {
   const normalizedEmail = String(email || "").trim().toLowerCase();
 
@@ -882,7 +894,7 @@ export const postSendNonSocietyEventResendEmail = async (req, res, next) => {
 
 export const getEventGuestList = async (req, res, next) => {
   try {
-    const event = await Event.findById(req.params.eventId).select("region title status guestList extraInputsForm addOns");
+    const { event } = await loadGuestListEvent(req.params.eventId, "region title status guestList extraInputsForm addOns");
     if (!event) return next(new HttpError("No event was found", 404));
     if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
     // Read-only committee access matches the existing analytics scope; it does
@@ -909,25 +921,25 @@ export const getEventGuestList = async (req, res, next) => {
 export const updateGuestPresence = async (req, res, next) => {
   const { eventId, guestId, present } = req.body;
   try {
-    const event = await Event.findById(eventId);
+    const { event, EventModel } = await loadGuestListEvent(eventId);
     if (!event) return next(new HttpError("No event was found", 404));
     if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
     if (event.cancellationRequestedAt) return next(new HttpError("This event has been cancelled", 422));
     const guest = event.guestList.id(guestId);
     if (!guest) return next(new HttpError("This guest is no longer in the list", 404));
     if (guest.refunded) return next(new HttpError("A refunded ticket cannot be checked in", 422));
-    const result = await Event.updateOne({ _id: event._id, region: event.region, cancellationRequestedAt: null,
+    const result = await EventModel.updateOne({ _id: event._id, region: event.region, cancellationRequestedAt: null,
       guestList: { $elemMatch: { _id: guest._id, refunded: { $ne: true } } } },
     { $set: { "guestList.$.status": present ? 1 : 0, "guestList.$.checkedInAt": present ? new Date() : null } });
     if (result.matchedCount !== 1) return next(new HttpError("This ticket changed. Reload the guest list.", 409));
     guest.status = present ? 1 : 0;
-    Promise.resolve().then(() => eventToSpreadsheet(event.id)).catch((error) => {
-      logIntegrationError("google-sheets", error, "guest-presence-sync");
+    Promise.resolve().then(() => syncGuestList(event.id, EventModel)).catch((error) => {
+      logIntegrationError("guest-list", error, "guest-presence-sync");
     });
     return res.status(200).json({
       status: true,
       guest: serializeGuestListEntry(guest),
-      sheetSync: "queued",
+      ...(EventModel === Event ? { sheetSync: "queued" } : {}),
     });
   } catch {
     return next(new HttpError("Updating guest presence failed", 500));
@@ -936,21 +948,21 @@ export const updateGuestPresence = async (req, res, next) => {
 
 export const updateGuestDetails = async (req, res, next) => {
   const { eventId, guestId } = req.params;
-  let event;
-  try { event = await Event.findById(eventId).select("region guestList"); }
+  let event, EventModel;
+  try { ({ event, EventModel } = await loadGuestListEvent(eventId, "region guestList")); }
   catch { return next(new HttpError("Could not load this guest", 500)); }
   if (!event) return next(new HttpError("Event not found", 404));
   if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
   const existingGuest = event.guestList.id(guestId);
   if (!existingGuest) return next(new HttpError("Guest not found", 404));
   try {
-    const result = await Event.updateOne({ _id: eventId, region: event.region, "guestList._id": guestId },
+    const result = await EventModel.updateOne({ _id: eventId, region: event.region, "guestList._id": guestId },
       { $set: { "guestList.$.name": req.body.name, "guestList.$.email": req.body.email.toLowerCase(),
         "guestList.$.phone": req.body.phone } }, { runValidators: true });
     if (result.matchedCount !== 1) return next(new HttpError("This guest changed. Reload the list and try again.", 409));
     let guest;
     try {
-      const updated = await Event.findById(eventId).select("guestList");
+      const updated = await EventModel.findById(eventId).select("guestList");
       guest = updated?.guestList.id(guestId);
     } catch (error) { logOperationalError("service.guest-details-refresh", error); }
     const responseGuest = guest ? serializeGuestListEntry(guest) : {
@@ -958,7 +970,7 @@ export const updateGuestDetails = async (req, res, next) => {
       email: req.body.email.toLowerCase(), phone: req.body.phone,
     };
     void publishGuestListChanged(eventId);
-    void Promise.resolve().then(() => eventToSpreadsheet(eventId)).catch(error =>
+    if (EventModel === Event) void Promise.resolve().then(() => eventToSpreadsheet(eventId)).catch(error =>
       logIntegrationError("google-sheets", error, "guest-details-sync"));
     return res.status(200).json({ status: true, guest: responseGuest });
   } catch (error) {
@@ -1062,7 +1074,7 @@ export const updatePresence = async (req, res, next) => {
       code = ticket.code;
     }
     if (req.body.expectedEventId && String(eventId) !== req.body.expectedEventId) return next(new HttpError("This ticket is for a different event", 422));
-    const event = await Event.findById(eventId).select("region title guestList cancellationRequestedAt");
+    const { event, EventModel } = await loadGuestListEvent(eventId, "region title guestList cancellationRequestedAt");
     if (!event) return next(new HttpError("Event not found", 404));
     if (!canManageEventGuestList(req, event)) return next(new HttpError("No access to this event guest list", 403));
     if (event.cancellationRequestedAt) return next(new HttpError("This event has been cancelled", 422));
@@ -1072,11 +1084,11 @@ export const updatePresence = async (req, res, next) => {
     if (plan.statusCode) return next(new HttpError(messages[plan.outcome], plan.statusCode));
     if (plan.ids) {
       const { filter, update, options } = checkInMutation(event, plan);
-      const result = await Event.updateOne(filter, update, options);
+      const result = await EventModel.updateOne(filter, update, options);
       if (result.modifiedCount !== 1) return next(new HttpError("This ticket changed or was just checked in by another scanner. Check it again before admitting anyone.", 409));
       // Spreadsheet failure must not turn a committed check-in into an error.
-      Promise.resolve().then(() => eventToSpreadsheet(event.id)).catch((error) => {
-        logIntegrationError("google-sheets", error, "guest-presence-sync");
+      Promise.resolve().then(() => syncGuestList(event.id, EventModel)).catch((error) => {
+        logIntegrationError("guest-list", error, "guest-presence-sync");
       });
     }
     const details = { ...plan };
